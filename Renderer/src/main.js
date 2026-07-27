@@ -56,12 +56,20 @@ function revealedCodepoints(text) {
 // expansion). What it hides is byte-equal on both sides — the engine proves that before it
 // offers the fold at all.
 class FoldWidget extends WidgetType {
-  constructor(lines, index) { super(); this.lines = lines; this.index = index; }
-  eq(other) { return other.lines === this.lines && other.index === this.index; }
+  constructor(lines, index, label, extraClass) {
+    super();
+    this.lines = lines;
+    this.index = index;
+    this.label = label;
+    this.extraClass = extraClass || "";
+  }
+  eq(other) {
+    return other.lines === this.lines && other.index === this.index && other.label === this.label;
+  }
   toDOM() {
     const el = document.createElement("span");
-    el.className = "ds-fold";
-    el.textContent = `${this.lines} unchanged lines — \u2318E, or click, to expand`;
+    el.className = "ds-fold" + (this.extraClass ? " " + this.extraClass : "");
+    el.textContent = `${this.label} — \u2318E, or click, to expand`;
     el.setAttribute("role", "button");
     el.addEventListener("mousedown", event => {
       event.preventDefault();
@@ -83,10 +91,15 @@ class DisclosureWidget extends WidgetType {
   }
 }
 
-let folds = [];        // { oldStart, oldEnd, newStart, newEnd, lines }
+// Unchanged folds and formatting-only groups share one list, because they share one expansion
+// path: ⌘E and a click open either, and a reader should not have to learn two ways to see hidden
+// text. They differ only in what the marker says and in DEC-048's pairing condition, which the
+// engine has already applied by the time a group arrives here.
+let folds = [];        // { oldStart, oldEnd, newStart, newEnd, lines, label, kind }
 let expanded = new Set();
 let stops = [];
 let stopIndex = -1;
+let anchors = [];
 
 function foldsFor(state, side) {
   const items = [];
@@ -96,7 +109,9 @@ function foldsFor(state, side) {
     const from = Math.max(0, Math.min(side === "old" ? fold.oldStart : fold.newStart, max));
     const to = Math.max(from, Math.min(side === "old" ? fold.oldEnd : fold.newEnd, max));
     if (to <= from) return;
-    items.push({ from, to, deco: Decoration.replace({ widget: new FoldWidget(fold.lines, index), block: true }) });
+    const widget = new FoldWidget(fold.lines, index, fold.label,
+                                  fold.kind === "formatting" ? "ds-fold-formatting" : "");
+    items.push({ from, to, deco: Decoration.replace({ widget, block: true }) });
   });
   return items;
 }
@@ -247,6 +262,32 @@ function goToStop(delta) {
   return { index: stopIndex, total: stops.length };
 }
 
+// DEC-034: the anchor the reader is currently looking at — the last one at or above the top of
+// the viewport. The engine decides where that anchor goes after a refresh; this only reports it,
+// because a renderer that also chose the destination could drift without anything checking.
+window.diffscopeAnchorState = function () {
+  if (!anchors.length) return null;
+  const top = left.scrollDOM.scrollTop;
+  let current = anchors[0];
+  for (const anchor of anchors) {
+    const position = Math.max(0, Math.min(anchor.oldStart, left.state.doc.length));
+    if (left.coordsAtPos(position) == null) continue;
+    const offset = left.lineBlockAt(position).top;
+    if (offset <= top) current = anchor; else break;
+  }
+  return current;
+};
+
+// Instant, never animated: DEC-016's reduced-motion commitment is met by construction here
+// rather than by a media query someone has to remember to write.
+function restoreAnchor(restore) {
+  if (!restore || restore.resolution === "noPreviousAnchor") return;
+  for (const [view, position] of [[left, restore.oldStart], [right, restore.newStart]]) {
+    const target = Math.max(0, Math.min(position, view.state.doc.length));
+    view.dispatch({ effects: EditorView.scrollIntoView(target, { y: "start" }) });
+  }
+}
+
 window.diffscopeCommand = function (name) {
   switch (name) {
     case "nextChange": return goToStop(1);
@@ -316,12 +357,21 @@ window.diffscopeRender = function (json) {
   stage.style.display = "flex";
   unrenderable.style.display = "none";
 
-  folds = model.collapses || [];
+  folds = (model.collapses || []).map(fold => ({
+    ...fold, kind: "unchanged", label: `${fold.lines} unchanged lines`,
+  })).concat((model.formattingCollapses || []).map(group => ({
+    ...group,
+    kind: "formatting",
+    // DEC-017: a group is only permissible while it says how much it grouped.
+    label: `${group.changes} formatting-only changes over ${group.lines} lines`,
+  })));
   stops = model.stops || [];
+  anchors = model.anchors || [];
   expanded = new Set();
   stopIndex = -1;
   applySide(left, model.payload.old);
   applySide(right, model.payload.new);
+  restoreAnchor(model.restore);
 
   lastSummary = {
     ok: true,
@@ -334,6 +384,9 @@ window.diffscopeRender = function (json) {
     mode: currentMode,
     stops: stops.length,
     folds: folds.length,
+    formattingGroups: folds.filter(fold => fold.kind === "formatting").length,
+    anchors: anchors.length,
+    restored: model.restore ? model.restore.resolution : null,
   };
   return lastSummary;
 };
@@ -349,6 +402,9 @@ window.diffscopeProbe = function () {
     summary: lastSummary,
     formattingMarks: document.querySelectorAll(".ds-formatting").length,
     foldMarks: document.querySelectorAll(".ds-fold").length,
+    formattingFoldMarks: document.querySelectorAll(".ds-fold-formatting").length,
+    foldLabels: [...document.querySelectorAll(".ds-fold")].map(el => el.textContent),
+    scrollTop: Math.round(left.scrollDOM.scrollTop),
     stopIndex,
     badges: [...document.querySelectorAll(".ds-badge")].map(el => el.textContent),
     uncertainMarks: document.querySelectorAll(".ds-uncertain").length,

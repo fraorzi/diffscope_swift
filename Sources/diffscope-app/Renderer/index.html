@@ -69,6 +69,16 @@
     background: color-mix(in srgb, CanvasText 5%, transparent);
     cursor: pointer;
   }
+  /* A group holding real differences, not unchanged text (DEC-048) — so it is marked as
+     changed content that happens to be grouped, and never reads as "nothing here". */
+  .ds-fold-formatting {
+    border-top-style: solid;
+    border-bottom-style: solid;
+    background: repeating-linear-gradient(
+      -45deg,
+      color-mix(in srgb, CanvasText 8%, transparent) 0 3px,
+      transparent 3px 6px);
+  }
   .ds-badge {
     font-size: 10px;
     padding: 0 4px;

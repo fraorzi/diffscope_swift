@@ -1217,3 +1217,67 @@ Both are computed in Swift, not JavaScript, so both are checkable in the headles
 ## Verified on screen
 
 The application selftest renders a 42-line file with an edit at each end, folds the middle, and jumps: `{"index":0,"total":2}`, one fold, both panes showing the same marker with three lines of context. `navigation.png`.
+
+---
+
+# M7-B — Refresh: watching, and the pin that certified a blend
+
+**Status:** Complete, 2026-07-27. Implements DEC-026, DEC-027, F15 and the read half of R-9; produces DEC-049.
+
+## The debounce is tested without waiting
+
+`RefreshDebounce` takes the clock as a parameter. A debounce tested by sleeping is a debounce tested once, on one machine, and the two properties worth asserting — trailing edge, and a cap that survives continuous saving — are both statements about *when*, so they are checkable in microseconds against an injected clock.
+
+Replaying the measured save shape (five events inside 11 ms, DEC-026's context) gives one refresh, 400 ms after the last event, not the first. Replaying a save every 100 ms for four seconds gives a refresh at the 2 s cap: without the cap that stream never refreshes at all, which is the failure the cap exists for.
+
+## The drop path had to be forced
+
+FSEvents delivered 40,041 events for 40,000 file creations — zero drops (DEC-027's measurement). So `MustScanSubDirs`, `UserDropped` and `KernelDropped` will not occur in ordinary use, and a path that never runs is a path that ships untested. The callback body is therefore a separate entry point (`deliver(flags:)`) that the suite calls directly with each flag, and a drop is answered with a **full rescan** rather than a debounced refresh: an incomplete event list understates what changed.
+
+The stream itself is proved separately, against a real directory and a real write, because everything above it can be right while the stream is simply not wired to the file system.
+
+**Configuration, as DEC-026 requires it to be recorded:** `FileEvents | NoDefer | WatchRoot`, latency **0.0**, debounce in application code. The alternative — latency 0.4 with `NoDefer` off — coalesces just as well but hides the debounce in a framework parameter that cannot express a maximum-delay cap.
+
+## R-9: the pin certified a version that never existed
+
+The first fix for a torn worktree read was the obvious one: read twice, require the two reads to agree. Against a writer rewriting a 52 KB file in a tight loop, that let **3 blends through in 8,095 reads**.
+
+The reason is that comparing content asks whether two reads happened to match, not whether anything wrote between them. Two torn reads of a writer alternating between two versions can agree.
+
+What ships brackets the read with a `stat` — inode, size, nanosecond `mtime` before and after. If anything wrote during the read, the stamps differ and the read is retried; five attempts 20 ms apart, then the pair is refused outright and **nothing is rendered** (DEC-049). A blend shown with a warning is still a blend.
+
+```
+writer                  reads    blends    refused
+continuous rewrite          15         0         15
+save every 30 ms          4670         0          0
+```
+
+The hostile row is the point: it is not a realistic editing pattern, and under it the guard refuses every read rather than showing something plausible — 15 reads in 1.5 s, because each one spends its full ~80 ms retry budget before giving up. The realistic row is the other half of the point: 4,670 reads with a save every 30 ms, none refused, none blended. A guard that refuses everything is an outage, not a guard.
+
+---
+
+# M7-C — Anchoring and formatting groups: two things measurement changed
+
+**Status:** Complete, 2026-07-27. Implements DEC-034; produces DEC-048.
+
+## Anchors cannot come from segments labelled unchanged
+
+DEC-034 says "the nearest segment labeled unchanged above the viewport top", and DEC-024 notes that segments are supplied natively, so the anchor needs no separate index. Implemented literally, it produced **zero anchors in Raw** — Raw is one `fallback` segment over the whole file — so every refresh in Raw would have thrown the reader back to the top, silently.
+
+Anchors are therefore taken from the **canonical diff's matched blocks**, the same source `changeStops` uses: byte-equal on both sides by construction, present in every mode, and identical between Raw and Structural. This is DEC-034's intent, not its letter.
+
+## And they have to be line-granular, not block-granular
+
+The second attempt used one anchor per matched block. It resolved to `nearestSurvivingAbove` on the ordinary case — text inserted above the reader — because a matched block spanning everything above the change *contains* the insertion, so its content, and therefore its identity, changes.
+
+Anchor identity has to be **local** to survive edits elsewhere. What ships is one anchor per matched line, identified by a hash of a 3-line window (`anchorWindowLines`) plus an occurrence index for repeats — `}` alone on a line is not an identity. Files longer than `anchorBudget = 2000` anchored lines are strided, which lands the reader within a few lines rather than exactly; still incomparably closer than the top of the file.
+
+Drift is checked directly: twenty consecutive refreshes with no content change resolve to **one** position, not a creep. That is the failure mode DEC-034 names and the only one that needs an hour of editing to notice.
+
+## A reindent has no old side
+
+Formatting-only grouping was first written over per-side runs of formatting-only segments. It found nothing on the corpus case, because a reindent is an **insertion**: the old side has no changed bytes at all, so the left pane has no run to pair.
+
+Grouping is therefore driven by canonical hunks, which are stated on both sides, and offered only where the two sides span the same number of lines (DEC-048) — with the rejected runs counted. The selftest renders a four-line reindent as `4 formatting-only changes over 4 lines`, on both panes, at the same height, above an ordinary `16 unchanged lines` fold: `refresh.png`.
+
+The whole-line expansion needed a guard of its own. Hiding whole lines means a real edit *on* one of those lines would be hidden with them, so any presented segment that is not formatting-only anywhere in the group's lines disqualifies it. The suite asserts the case directly: reindent four lines, change `const c = 3` to `const c = 33` on one of them, and the group must not swallow it.

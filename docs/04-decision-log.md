@@ -2013,3 +2013,75 @@ Measured across 150 real files on the slider case (M6-B):
 ### Revisit trigger
 
 Reopen if the 4% overhead proves visible as noise in review, or if a case appears where snapping merges two changes a reviewer needed to see as separate. Reopen DEC-021 first — not this decision — if true sliding is wanted.
+
+---
+
+## DEC-048 — A formatting-only group is offered only where both sides span the same lines
+
+- **Date:** 2026-07-27
+- **Topic:** The collapse condition for formatting-only runs (DEC-017's mandatory grouping, applied to the class DEC-046 defines).
+- **Status:** Accepted
+
+### Context
+
+M7's fold machinery hides **unchanged** content, and refuses to unless the two sides are byte-equal. A formatting-only group hides content that *differs* by definition, so that condition cannot carry over — but the reason behind it still applies. The panes scroll together, so a group that removes four lines on the left and five on the right slides everything below it out of correspondence, and the misalignment persists for the rest of the file.
+
+Measured while implementing: a reindent is almost always an **insertion**. The old side has no changed bytes at all, so a grouping driven by one side's segments finds nothing to pair on the left and offers nothing.
+
+### Options considered
+
+1. **Group by canonical hunks, offer only where both sides span the same number of lines.**
+2. **Group by per-side runs of formatting-only segments.** Finds nothing for the ordinary reindent, for the reason above.
+3. **Group regardless of line counts, and let the panes drift.** Cheapest, and it breaks side-by-side reading exactly where the reader is trying to skip noise.
+4. **No formatting collapse.** Leaves a whole-file reformat as an unreadable diff, which is the case the classification exists for.
+
+### Final decision
+
+**Option 1.** Grouping is driven by the canonical hunks — stated on both sides by construction, the same reason `changeStops` uses them. Consecutive formatting hunks separated by at most `formattingCollapseGapLines = 2` lines are one group. A group is offered only when its two sides span the **same number of lines**, and rejections are **counted** (`unpaired`), never dropped in silence.
+
+### Consequences
+
+- **Grouping, never filtering.** The segments stay in the model, the marker states how many changes it holds and how many lines, ⌘E or a click opens it, and Expanded offers no formatting groups at all — dropping the quietening is Expanded's whole job. INV-5 is untouched: both modes carry the identical segment set.
+- Whole lines are hidden, so a presented segment of any other kind anywhere on those lines disqualifies the group. A reindent and a renamed variable on the same line is not a formatting change.
+- The `unpaired` count is the same shape of number as `movesBelowFloor` (DEC-038), and exists for the same reason: a floor a reviewer cannot see is indistinguishable from nothing having been found.
+- Line-count equality is a **sufficient** condition for keeping the panes aligned, not a necessary one. A reformat that changes line counts — wrapping a long call across three lines — is real formatting and will not be grouped. That is the conservative direction.
+
+### Revisit trigger
+
+Reopen if line-count-changing reformats (Prettier's print width) prove common enough that the unpaired count dominates the offered one.
+
+---
+
+## DEC-049 — A pin is refused rather than taken from a file that is still being written
+
+- **Date:** 2026-07-27
+- **Topic:** Resolves the read half of test R-9. Refines DEC-007's pinning.
+- **Status:** Accepted
+
+### Context
+
+`pinnedPair` read a worktree file with one `Data(contentsOf:)` and hashed the result. An editor writing in place — as opposed to writing a temp file and renaming — can be interrupted mid-write by that read, which then returns the first half of one version and the second half of another. Hashing it produces a pin that **certifies a version that never existed on disk**, and R-9 forbids exactly that: the result must be the pre-change pin or the post-change pin, never a blend.
+
+**[Measured]** Re-reading and comparing content is not sufficient on its own. Against a writer rewriting a 52 KB file in a tight loop, two consecutive reads agreed on torn content **3 times in 8,095 reads**. Comparing content only asks whether two reads happened to match, not whether anything wrote between them.
+
+### Options considered
+
+1. **Bracket the read with a stat**: same inode, size and modification time before and after means nothing wrote during it. Retry a few times, then refuse.
+2. **Re-read and compare content.** Measurably insufficient, above.
+3. **Copy the file first.** Same race, one level down.
+4. **Accept it and show a warning.** A warned blend is still a blend on screen.
+
+### Final decision
+
+**Option 1.** Five attempts, 20 ms apart; a pair that never settles is returned with `stable == false`, and **the application does not render it** — it says the file is being written and waits for the watcher to fire again. Blob sides come from the object database and are immutable, so only worktree sides are guarded.
+
+### Consequences
+
+- APFS timestamps are nanosecond-resolution, so an overlapping write moves `mtime` even for a same-size rewrite.
+- **[Measured]** Under continuous rewriting, no stable pair was ever a blend, and every read was correctly refused. With a plausible 30 ms gap between saves, the large majority settle on the first attempt — a guard that refused everything would be an outage, not a guard.
+- The refusal costs at most ~80 ms of retries before the view is left as it was. The watcher's trailing-edge debounce (DEC-026) then fires again once the writing stops, so the refusal is self-correcting rather than terminal.
+- Deleted-file and permission cases are unchanged: those already read as empty.
+
+### Revisit trigger
+
+Reopen if a repository on a filesystem with coarse modification timestamps (a network mount) makes the guard either miss tears or refuse constantly.

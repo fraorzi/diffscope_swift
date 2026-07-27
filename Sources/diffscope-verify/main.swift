@@ -305,6 +305,7 @@ runBoundaryChecks { name, ok, detail in report(name, ok, detail) }
 runDisclosureChecks { name, ok, detail in report(name, ok, detail) }
 runMoveChecks { name, ok, detail in report(name, ok, detail) }
 runNavigationChecks { name, ok, detail in report(name, ok, detail) }
+runRefreshChecks { name, ok, detail in report(name, ok, detail) }
 runGitChecks { name, ok, detail in report(name, ok, detail) }
 runBundleFreshnessCheck { name, ok, detail in report(name, ok, detail) }
 

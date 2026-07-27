@@ -32,6 +32,12 @@ public struct ChangedFile: Sendable, Equatable {
     public let path: String
     public let originalPath: String?
     public let kind: ChangeKind
+
+    public init(path: String, originalPath: String?, kind: ChangeKind) {
+        self.path = path
+        self.originalPath = originalPath
+        self.kind = kind
+    }
 }
 
 public enum SideSource: Sendable, Equatable {
@@ -47,6 +53,9 @@ public struct PinnedSourcePair: Sendable {
     public let newHash: String
     public let oldSource: SideSource
     public let newSource: SideSource
+    /// False when a worktree side would not read the same twice (DEC-049, test R-9). The pair is
+    /// still returned, because discarding it silently is the failure the flag exists to prevent.
+    public let stable: Bool
 
     public var isByteEqual: Bool { oldHash == newHash }
 }
@@ -198,6 +207,53 @@ public struct ScopeReader: Sendable {
         }
     }
 
+    /// How many times a worktree read is repeated before the pair is reported unstable (DEC-049).
+    public static let settleAttempts = 5
+    /// Between attempts. One measured atomic save spans ~11 ms, so a save in flight is over well
+    /// inside the budget; a file genuinely being written without pause never settles, and that is
+    /// reported rather than papered over.
+    public static let settleRetryDelay: TimeInterval = 0.02
+
+    /// Identity and last-write time, taken either side of a read. Nanosecond `mtime` on APFS, so
+    /// a write that overlapped the read moves it — re-reading and comparing *content* is not
+    /// enough on its own, because two torn reads of an editor writing in a loop can agree.
+    private struct FileStamp: Equatable {
+        let inode: UInt64
+        let size: UInt64
+        let modified: TimeInterval
+    }
+
+    private func stamp(of url: URL) -> FileStamp? {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let inode = attributes[.systemFileNumber] as? UInt64 ?? (attributes[.systemFileNumber] as? Int).map(UInt64.init),
+              let size = attributes[.size] as? UInt64 ?? (attributes[.size] as? Int).map(UInt64.init),
+              let modified = attributes[.modificationDate] as? Date
+        else { return nil }
+        return FileStamp(inode: inode, size: size, modified: modified.timeIntervalSince1970)
+    }
+
+    /// DEC-049, test R-9: a worktree file being written while it is read can be read half-old and
+    /// half-new, and hashing that blend would certify a version that never existed on disk. Blob
+    /// sides come from the object database and are immutable, so only worktree sides are guarded.
+    ///
+    /// The guard brackets the read with a stat: same inode, same size, same modification time
+    /// before and after means nothing wrote to the file while it was being read.
+    private func settledRead(_ source: SideSource, in repository: URL) throws -> (bytes: [UInt8], stable: Bool) {
+        guard case let .worktree(path) = source else { return (try readSide(source, in: repository), true) }
+        let url = repository.appendingPathComponent(path)
+        var bytes: [UInt8] = []
+        for attempt in 0..<ScopeReader.settleAttempts {
+            let before = stamp(of: url)
+            bytes = try readSide(source, in: repository)
+            let after = stamp(of: url)
+            if before != nil, before == after { return (bytes, true) }
+            if attempt + 1 < ScopeReader.settleAttempts {
+                Thread.sleep(forTimeInterval: ScopeReader.settleRetryDelay)
+            }
+        }
+        return (bytes, false)
+    }
+
     public func pinnedPair(
         for file: ChangedFile,
         scope: ComparisonScope,
@@ -205,15 +261,16 @@ public struct ScopeReader: Sendable {
         mergeBaseRev: String? = nil
     ) throws -> PinnedSourcePair {
         let (oldSource, newSource) = sources(for: file, scope: scope, mergeBaseRev: mergeBaseRev)
-        let oldBytes = try readSide(oldSource, in: repository)
-        let newBytes = try readSide(newSource, in: repository)
+        let old = try settledRead(oldSource, in: repository)
+        let new = try settledRead(newSource, in: repository)
         return PinnedSourcePair(
-            oldBytes: oldBytes,
-            newBytes: newBytes,
-            oldHash: contentHash(oldBytes),
-            newHash: contentHash(newBytes),
+            oldBytes: old.bytes,
+            newBytes: new.bytes,
+            oldHash: contentHash(old.bytes),
+            newHash: contentHash(new.bytes),
             oldSource: oldSource,
-            newSource: newSource
+            newSource: newSource,
+            stable: old.stable && new.stable
         )
     }
 }

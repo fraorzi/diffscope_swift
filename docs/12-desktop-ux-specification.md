@@ -151,6 +151,10 @@ A configured root that has disappeared is reported as such and does not remove t
 
 Auto-refresh on file change, trailing-edge debounce with a maximum-delay cap (DEC-007, DEC-026). `node_modules` excluded from watching (DEC-027).
 
+**FSEvents configuration, as DEC-026 requires it to be recorded here:** one stream on the currently open repository, flags `FileEvents | NoDefer | WatchRoot`, **latency 0.0**, with the debounce in application code — 400 ms of quiet, capped at 2 s from the first event of a burst. The alternative configuration (latency 0.4, `NoDefer` off) coalesces equally well but cannot express the cap. A dropped-event flag produces a **full rescan**, not a refresh, and a `RootChanged` event stops the watcher and says so.
+
+**A file still being written is not rendered** (DEC-049). The worktree read is bracketed by a `stat`; a pair that will not settle within five attempts leaves the current view alone and reports that the file is being written. The watcher fires again when the writing stops.
+
 **Scroll anchoring** (DEC-034): anchor to the nearest segment labelled unchanged above the viewport top. Fallback chain when the anchor is deleted: nearest surviving unchanged segment above → top of file. Re-anchoring must not drift across repeated refreshes, and must have a non-animated path under reduced motion.
 
 File selection is preserved across refresh where the file still exists in the scope, and degrades clearly where it does not.

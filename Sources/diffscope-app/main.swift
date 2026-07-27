@@ -41,6 +41,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var statusLabel: NSTextField!
     var rendererReady = false
     var pendingModel: String?
+    var watcher: RepositoryWatcher?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
@@ -231,7 +232,78 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 let ok = jump.contains("\"index\":0") && !text.contains("\"foldMarks\":0")
                 FileHandle.standardError.write(
                     Data("SELFTEST navigation=\(ok ? "OK" : "MISMATCH") jump=\(jump) stops=\(render.stops.count) folds=\(render.collapses.count)\n".utf8))
-                self.snapshot(named: "navigation") { exit(ok ? 0 : 14) }
+                if !ok { exit(14) }
+                self.snapshot(named: "navigation") { self.runRefreshSelftest() }
+            }
+        }
+    }
+
+    /// M7 part two: a reindented block must arrive as one group that says how much it holds
+    /// (DEC-048), and the reader's position must survive a refresh that inserts text above it
+    /// (DEC-034). Both are decided in the engine, so what this proves is that the decision
+    /// survives the crossing and is actually drawn.
+    private func runRefreshSelftest() {
+        let filler = (1...20).map { "const filler\($0) = \($0);\n" }.joined()
+        let old = [UInt8]("""
+        export function Card({ title }) {
+          const a = 1;
+          const b = 2;
+          const c = 3;
+          const d = 4;
+          return <div>{title}</div>;
+        }
+
+        \(filler)
+        """.utf8)
+        let new = [UInt8]("""
+        export function Card({ title }) {
+            const a = 1;
+            const b = 2;
+            const c = 3;
+            const d = 4;
+          return <div>{title}</div>;
+        }
+
+        \(filler)
+        """.utf8)
+        let outcome = buildModel(path: "selftest.tsx", old: old, new: new, mode: .structural)
+        let render = buildRenderModel(model: outcome.model, pinOld: "pinK", pinNew: "pinL",
+                                      mode: "structural", validation: outcome.validation,
+                                      notices: outcome.notices)
+        guard let json = try? encodeRenderModel(render) else { exit(15) }
+        push(json)
+        webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
+            let text = (value as? String) ?? "nil"
+            let grouped = !text.contains("\"formattingFoldMarks\":0") && text.contains("formatting-only changes")
+            FileHandle.standardError.write(
+                Data("SELFTEST formatting-collapse=\(grouped ? "OK" : "MISMATCH") groups=\(render.formattingCollapses.count) \(text.suffix(200))\n".utf8))
+            if !grouped { exit(16) }
+            self.snapshot(named: "refresh") { self.runAnchorSelftest(old: old, new: new) }
+        }
+    }
+
+    private func runAnchorSelftest(old: [UInt8], new: [UInt8]) {
+        webView.evaluateJavaScript("JSON.stringify(window.diffscopeAnchorState())") { value, _ in
+            guard let text = value as? String, let data = text.data(using: .utf8),
+                  let anchor = try? JSONDecoder().decode(RefreshAnchor.self, from: data) else {
+                FileHandle.standardError.write(Data("SELFTEST anchor=MISMATCH no anchor reported\n".utf8))
+                exit(17)
+            }
+            let prefix = [UInt8]("const inserted = 0;\nconst alsoInserted = 1;\n".utf8)
+            let outcome = self.buildModel(path: "selftest.tsx", old: prefix + old, new: prefix + new,
+                                          mode: .structural)
+            let render = buildRenderModel(model: outcome.model, pinOld: "pinM", pinNew: "pinN",
+                                          mode: "structural", validation: outcome.validation,
+                                          notices: outcome.notices, previousAnchor: anchor)
+            guard let json = try? encodeRenderModel(render) else { exit(18) }
+            self.push(json)
+            self.webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { probe, _ in
+                let observed = (probe as? String) ?? "nil"
+                let moved = (render.restore?.oldStart ?? 0) > anchor.oldStart
+                let ok = render.restore?.resolution == .exact && moved && observed.contains("pinM:pinN")
+                FileHandle.standardError.write(
+                    Data("SELFTEST anchor=\(ok ? "OK" : "MISMATCH") \(String(describing: render.restore?.resolution)) \(anchor.oldStart) → \(render.restore?.oldStart ?? -1)\n".utf8))
+                self.snapshot(named: "anchored") { exit(ok ? 0 : 19) }
             }
         }
     }
@@ -506,23 +578,91 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     }
 
     private func showDiff(for file: ChangedFile) {
-        guard let repository = state.selectedRepository else { return }
         state.selectedFile = file
+        render(file: file, previousAnchor: nil)
+    }
+
+    /// A refresh asks the renderer where the reader is *before* rebuilding, because the answer is
+    /// about the document currently on screen (DEC-034). The engine then decides where that anchor
+    /// lands in the new model; the renderer only executes the decision.
+    private func refreshCurrentFile() {
+        guard let file = state.selectedFile else { return }
+        webView.evaluateJavaScript("JSON.stringify(window.diffscopeAnchorState())") { value, _ in
+            var anchor: RefreshAnchor?
+            if let text = value as? String, let data = text.data(using: .utf8) {
+                anchor = try? JSONDecoder().decode(RefreshAnchor.self, from: data)
+            }
+            self.render(file: file, previousAnchor: anchor)
+        }
+    }
+
+    private func render(file: ChangedFile, previousAnchor: RefreshAnchor?) {
+        guard let repository = state.selectedRepository else { return }
         let mode = state.mode
         DispatchQueue.global(qos: .userInitiated).async {
             guard let pair = try? self.scopes.pinnedPair(
                 for: file, scope: self.state.scope, in: repository.url, mergeBaseRev: self.state.mergeBaseRev
             ) else { return }
+            // DEC-049: the file was still being written, so these bytes may be half of one
+            // version and half of another. Showing them with a warning would still be showing a
+            // blend — the watcher fires again when the writing stops.
+            guard pair.stable else {
+                DispatchQueue.main.async {
+                    self.statusLabel.stringValue =
+                        "\(file.path) is being written — showing it once the file settles"
+                }
+                return
+            }
             let outcome = self.buildModel(path: file.path, old: pair.oldBytes, new: pair.newBytes, mode: mode)
             let render = buildRenderModel(
                 model: outcome.model, pinOld: pair.oldHash, pinNew: pair.newHash,
-                mode: mode.rawValue, validation: outcome.validation, notices: outcome.notices
+                mode: mode.rawValue, validation: outcome.validation, notices: outcome.notices,
+                previousAnchor: previousAnchor
             )
             guard let json = try? encodeRenderModel(render) else { return }
             DispatchQueue.main.async {
                 self.statusLabel.stringValue = "\(file.path) · \(outcome.summary)"
                 if self.rendererReady { self.push(json) } else { self.pendingModel = json }
             }
+        }
+    }
+
+    /// DEC-007/DEC-027: one stream, on the repository being looked at, `node_modules` excluded.
+    private func startWatching(_ repository: RepositorySnapshot) {
+        watcher?.stop()
+        let watcher = RepositoryWatcher(root: repository.url) { [weak self] signal in
+            self?.handle(signal, in: repository)
+        }
+        self.watcher = watcher
+        if !watcher.start() {
+            statusLabel.stringValue = "auto-refresh unavailable for \(repository.displayName)"
+        }
+        for diagnostic in watcher.diagnostics {
+            statusLabel.stringValue = diagnostic.message
+        }
+    }
+
+    private func handle(_ signal: WatchSignal, in repository: RepositorySnapshot) {
+        guard state.selectedRepository?.url == repository.url else { return }
+        switch signal {
+        case .changed, .rescan:
+            let selected = state.selectedFile
+            reloadFiles()
+            // Selection survives where the file is still in scope, and says so where it is not.
+            if let selected, state.files.contains(where: { $0.path == selected.path }) {
+                if let row = state.files.firstIndex(where: { $0.path == selected.path }) {
+                    fileTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+                }
+                refreshCurrentFile()
+            } else if selected != nil {
+                statusLabel.stringValue = "\(selected!.path) is no longer in \(state.scope.title)"
+            }
+            if signal == .rescan {
+                statusLabel.stringValue += " · rescanned after dropped file-system events"
+            }
+        case .rootChanged:
+            statusLabel.stringValue = "\(repository.displayName) was moved or renamed — auto-refresh stopped"
+            watcher?.stop()
         }
     }
 
@@ -604,7 +744,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         guard let table = notification.object as? NSTableView else { return }
         if table === repoTable {
             guard table.selectedRow >= 0 else { return }
-            state.selectedRepository = state.repositories[table.selectedRow]
+            let repository = state.repositories[table.selectedRow]
+            state.selectedRepository = repository
+            startWatching(repository)
             reloadFiles()
         } else {
             guard table.selectedRow >= 0, table.selectedRow < state.files.count else { return }

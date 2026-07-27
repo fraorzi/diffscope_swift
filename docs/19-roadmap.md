@@ -221,15 +221,17 @@ Two incidental findings, both recorded in M6-A: `reconcile` was identifying anch
 
 ---
 
-## M7 — Refresh, watching, and navigation 🚧 NAVIGATION AND FOLDING COMPLETE (2026-07-27)
+## M7 — Refresh, watching, and navigation ✅ COMPLETE (2026-07-28)
 
-**Result: 288/288 checks pass.** Change stops and collapsible ranges are computed in the engine and carried on the render contract, so both are checkable headlessly; the renderer executes a list rather than deciding anything.
+**Result: 330/330 checks pass.** Change stops and collapsible ranges are computed in the engine and carried on the render contract, so both are checkable headlessly; the renderer executes a list rather than deciding anything.
 
 Navigation follows the **canonical diff**, not the presented segments — the presented ranges are supersets after snapping and classification, and walking the superset would drift from the alignment INV-2 is stated against. A fold is offered only where the two sides are **byte-equal**, which both keeps the panes aligned while folded and makes folding safe against the core invariant. Method and reasoning in `22-experiment-log.md` → M7-A.
 
 The keyboard map is in the menu bar (DEC-016): modes, scopes, next/previous change, expand, next/previous file and repository, focus movement, open in editor. Editor integration is a template with `{file}`/`{line}`, defaulting to WebStorm, overridable through `DIFFSCOPE_EDITOR`, never populated from repository content (DEC-015), and its failure is shown in the status line rather than swallowed.
 
-**Still open in M7:** FSEvents watching (DEC-027), debounce (DEC-026), scroll anchoring on refresh (DEC-034), and formatting-only collapse — the fold machinery now exists, so the last one is a small addition rather than a milestone.
+**Refresh landed second** (method in `22-experiment-log.md` → M7-B, M7-C). One FSEvents stream on the open repository, `node_modules` excluded (DEC-027), `FileEvents | NoDefer | WatchRoot` at latency 0.0 with DEC-026's trailing-edge debounce and 2 s cap in application code. F15's drop path is forced through a separate entry point, because 40,000 file creations produced zero drops and an untriggered path ships untested.
+
+Two implementations were changed by measurement rather than by review. **R-9:** re-reading a worktree file and comparing content let 3 blended pins through in 8,095 reads, so the read is now bracketed by a `stat` and a file still being written is not rendered at all (DEC-049). **DEC-034:** anchoring to segments labelled `unchanged` gives Raw zero anchors, so anchors come from the canonical diff's matched blocks, one per line, with a 3-line content hash as identity. Formatting-only collapse (DEC-048) is driven by canonical hunks for the same reason — a reindent is an insertion and has no old side — and is offered only where both sides span the same number of lines.
 
 ---
 

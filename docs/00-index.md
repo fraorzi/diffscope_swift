@@ -173,6 +173,12 @@ Twenty decisions are accepted. Full records, including options rejected and revi
 | DEC-041 | File list follows `git status` under an active filter |
 | DEC-042 | **Architecture: Swift core + CodeMirror in `WKWebView` + Git CLI** |
 | DEC-043 | Validation bounded by **work**, not file size (amends DEC-040) |
+| DEC-044 | Byte↔UTF-16 conversion happens on the Swift side |
+| DEC-045 | Ambiguity is detected but not surfaced in the interface |
+| DEC-046 | Classification detectors are equivalence tests; shipped vocabulary is a subset |
+| DEC-047 | Change boundaries **snapped outward** to syntax boundaries, never slid |
+| DEC-048 | Formatting-only groups only where both sides span the same lines |
+| DEC-049 | A pin is **refused**, not blended, while a file is still being written |
 
 ## Decisions that remain open
 

@@ -8,7 +8,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**Last completed milestone: M7 part one — navigation, folding, and the keyboard map, on top of a complete M6. 288/288 checks pass.**
+**Last completed milestone: M7 — refresh, watching and navigation, on top of a complete M6. 330/330 checks pass.**
 
 | Milestone | State |
 |---|---|
@@ -18,26 +18,26 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 | M3 raw diff end to end | Complete |
 | M4 parsing and partition construction | Complete |
 | M5 matching and alignment | Complete |
-| **M6 classification, moves, trust surface** | **Complete except formatting-only collapse**, which needs M7's folding |
-| M7 refresh, watching, navigation | **Partly done** — navigation, folding and the keyboard map landed; FSEvents, debounce and scroll anchoring remain |
+| **M6 classification, moves, trust surface** | Complete |
+| **M7 refresh, watching, navigation** | **Complete** — navigation, folding, keyboard map, FSEvents watching, debounce, scroll anchoring, formatting-only collapse |
 | M8 hardening and beta | Not started |
 
 Run everything:
 
 ```
-swift run diffscope-verify          # 288 checks, exit 1 on failure
+swift run diffscope-verify          # 330 checks, exit 1 on failure
 swift run -c release diffscope-verify --survey ~/YourProjects
 swift run -c release diffscope-app  # the application
 ```
 
-`DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits: raw ŻABKA probe → structural render with a formatting-only label → INV-5 mode agreement across the webview → invisible-difference disclosure naming `U+0307` → a relocated block reported as one move. Adding `DIFFSCOPE_SNAPSHOT_DIR=/some/dir` writes `structural.png`, `expanded.png`, `disclosure.png` and `moved.png` of what the webview actually drew — the only way to check legibility, which the probe cannot see.
+`DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits: raw ŻABKA probe → structural render with a formatting-only label → INV-5 mode agreement across the webview → invisible-difference disclosure naming `U+0307` → a relocated block reported as one move → navigation and folds → a formatting-only group with its disclosed count → an anchor surviving an insertion above it. Adding `DIFFSCOPE_SNAPSHOT_DIR=/some/dir` writes `structural.png`, `expanded.png`, `disclosure.png`, `moved.png`, `navigation.png`, `refresh.png` and `anchored.png` of what the webview actually drew — the only way to check legibility, which the probe cannot see.
 
 ### What exists in code
 
 | Module | Contains |
 |---|---|
 | `DiffScopeEngine` | Byte partition, canonical Myers diff, invariant validation, UTF-16 mapping, render contract. Imports only `Foundation`. |
-| `DiffScopeGit` | Read-only Git layer: closed operation registry, four scopes, base cascade, discovery, parallel sweep |
+| `DiffScopeGit` | Read-only Git layer: closed operation registry, four scopes, base cascade, discovery, parallel sweep, FSEvents watcher and refresh debounce |
 | `DiffScopeSyntax` | tree-sitter parsing, partition construction, matcher, structural diff |
 | `CTreeSitter`, `CTreeSitterTSX` | Vendored C, MIT |
 | `diffscope-verify` | The whole check suite, headless |
@@ -66,23 +66,31 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 
 **Do not add work to the matcher on the assumption that better matching means better alignment. It does not.**
 
-### What M7 landed so far
+### What M7 landed
 
 - **Change stops and folds are computed in the engine**, carried on the render contract in UTF-16, and merely executed by the renderer — so both are checkable headlessly (M7-A). Navigation follows the **canonical diff**, not the presented segments, because presented ranges are supersets after snapping and walking the superset drifts from the alignment INV-2 is stated against.
 - **A fold is offered only where both sides are byte-equal.** Folding is the one presentation act that hides content, so it is the one place the "never suppress" invariant has teeth. Byte-equality also keeps the two panes aligned while folded.
 - **The keyboard map lives in the menu bar** (DEC-016): modes ⌘1–3, scopes ⇧⌘1–4, ⌘N/⌘P next and previous change, ⌘E expand, ⌘[ ⌘] files, ⇧⌘[ ⇧⌘] repositories, ⌥⌘1–3 focus, ⌘O open in editor.
 - **Editor integration** (DEC-015): a `{file}`/`{line}` template defaulting to WebStorm, overridable through `DIFFSCOPE_EDITOR`, never populated from repository content, with failure shown in the status line.
+- **FSEvents watching** (DEC-027) on the open repository only, `node_modules` excluded, with DEC-026's trailing-edge debounce and 2 s cap in application code — the configuration is `FileEvents | NoDefer | WatchRoot`, latency 0.0, and the reason is in M7-B. F15's drop path is forced through `deliver(flags:)` because it will never fire on its own.
+- **A pin is refused rather than blended** (DEC-049, R-9). Re-reading and comparing content let 3 blends through in 8,095 reads; the read is now bracketed by a `stat`, and a file still being written is not rendered at all.
+- **Scroll anchoring** (DEC-034, measured in M7-C). Anchors come from the canonical diff's matched blocks, one per line, identified by a 3-line content hash plus an occurrence index. Twenty refreshes with no change resolve to one position — the drift clause, checked rather than argued.
+- **Formatting-only collapse** (DEC-048, measured in M7-C). Driven by canonical hunks, because a reindent is an insertion and has no old side; offered only where both sides span the same number of lines, with rejections counted.
 
 ### What to do next
 
-1. **FSEvents watching** (DEC-027, `node_modules` excluded) with the trailing-edge debounce and cap of DEC-026, and R-9's mid-analysis-change fixture.
-2. **Scroll anchoring on refresh** (DEC-034) — anchor to the nearest unchanged segment above the viewport top. The fold pairing already relies on the same "must exist on both sides" argument, so the machinery rhymes.
-3. **Formatting-only collapse** — the fold machinery now exists, so this is a small addition: group by `formatting-only` runs rather than by unchanged stretches.
-4. F15's forced watcher drop and the fixtures that cannot occur locally (M8).
+**M8 — hardening and beta.** `19-roadmap.md` M8 is the whole list. The parts with the most in them:
+
+1. The fixtures that cannot occur locally and must be constructed deliberately (`20-implementation-plan.md` §6) — F15's forced watcher drop now has a path, but the corrupt-object, unreadable-permission and filter-configured cases do not.
+2. **OQ-046** auto-gc on large repositories, still unverified.
+3. Performance against the budgets in `16-performance-and-scaling.md` on the largest corpus repository, with the matcher budgeted on **node count** rather than bytes.
+4. The file list still has no keyboard path of its own beyond ⌘[ / ⌘] stepping.
 
 **Ambiguity display was withdrawn by DEC-045** — detection stays as a guard against ambiguous anchors, but no indicator is built.
 
-Known weaknesses recorded rather than hidden: anchor selection is greedy by old-side position rather than a longest-increasing-subsequence; moved-and-modified content presents as delete plus add (accepted in DEC-038); the file list has no keyboard path yet (M7).
+Known weaknesses recorded rather than hidden: anchor selection is greedy by old-side position rather than a longest-increasing-subsequence; moved-and-modified content presents as delete plus add (accepted in DEC-038); the file list has no keyboard path of its own; a reformat that changes line counts is never grouped (DEC-048, the conservative direction); files over 2000 anchored lines are strided, so a refresh lands the reader within a few lines rather than exactly.
+
+**Two things measurement changed in M7 that reasoning had settled the other way.** DEC-034 says "the nearest segment labeled unchanged" — implemented literally, it gives Raw *zero* anchors, because Raw is one fallback segment over the whole file. And per-side formatting runs find nothing for the ordinary reindent, because a reindent is an insertion and the old side has no changed bytes. Both now derive from the canonical diff instead. If you are about to build something on "the unchanged segments", check what Raw actually contains first.
 
 **When adding a field to `Segment`, grep for every place that rebuilds one.** `snapPresentation` merges neighbouring segments and silently dropped the move `link`, so a verified move reached the renderer unpaired while every harness check passed. The application selftest caught it — see M6-D.
 

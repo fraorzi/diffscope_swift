@@ -67,6 +67,12 @@ public struct RenderModel: Codable, Sendable, Equatable {
     /// renderer sees (DEC-044). Computed here rather than in JavaScript so they are checkable.
     public let stops: [ChangeStop]
     public let collapses: [CollapseRange]
+    /// DEC-048: formatting-only runs offered as one group each. Empty in Expanded, whose whole
+    /// job is to drop the quietening — the segment set is identical either way (INV-5).
+    public let formattingCollapses: [FormattingCollapse]
+    /// DEC-034: where the reader can be put back after a refresh, and where they go this time.
+    public let anchors: [RefreshAnchor]
+    public let restore: AnchorRestore?
 }
 
 public enum ContractError: Error, CustomStringConvertible {
@@ -86,7 +92,8 @@ public func buildRenderModel(
     pinNew: String,
     mode: String = "raw",
     validation: ValidationResult? = nil,
-    notices extra: [String] = []
+    notices extra: [String] = [],
+    previousAnchor: RefreshAnchor? = nil
 ) -> RenderModel {
     let result = validation ?? validate(model)
     var notices: [String] = extra
@@ -102,12 +109,19 @@ public func buildRenderModel(
         let new = try renderSide(bytes: model.newBytes, partition: model.newPartition)
         let byteStops = changeStops(model)
         let byteCollapses = collapseRanges(model, stops: byteStops)
+        // Expanded exists to stop quietening formatting changes, so it offers no formatting group.
+        let byteFormatting = mode == "expanded" ? [] : formattingCollapses(model).ranges
+        let byteAnchors = refreshAnchors(model)
         let oldMapper = Utf16OffsetMapper(bytes: model.oldBytes)
         let newMapper = Utf16OffsetMapper(bytes: model.newBytes)
         let oldMap = try oldMapper.map(byteOffsets: byteStops.flatMap { [$0.oldStart, $0.oldEnd] }
-            + byteCollapses.flatMap { [$0.oldStart, $0.oldEnd] })
+            + byteCollapses.flatMap { [$0.oldStart, $0.oldEnd] }
+            + byteFormatting.flatMap { [$0.oldStart, $0.oldEnd] }
+            + byteAnchors.map(\.oldStart))
         let newMap = try newMapper.map(byteOffsets: byteStops.flatMap { [$0.newStart, $0.newEnd] }
-            + byteCollapses.flatMap { [$0.newStart, $0.newEnd] })
+            + byteCollapses.flatMap { [$0.newStart, $0.newEnd] }
+            + byteFormatting.flatMap { [$0.newStart, $0.newEnd] }
+            + byteAnchors.map(\.newStart))
         let stops = byteStops.compactMap { stop -> ChangeStop? in
             guard let a = oldMap[stop.oldStart], let b = oldMap[stop.oldEnd],
                   let c = newMap[stop.newStart], let d = newMap[stop.newEnd] else { return nil }
@@ -118,12 +132,26 @@ public func buildRenderModel(
                   let c = newMap[range.newStart], let d = newMap[range.newEnd] else { return nil }
             return CollapseRange(oldStart: a, oldEnd: b, newStart: c, newEnd: d, lines: range.lines)
         }
+        let formatting = byteFormatting.compactMap { range -> FormattingCollapse? in
+            guard let a = oldMap[range.oldStart], let b = oldMap[range.oldEnd],
+                  let c = newMap[range.newStart], let d = newMap[range.newEnd] else { return nil }
+            return FormattingCollapse(oldStart: a, oldEnd: b, newStart: c, newEnd: d,
+                                      lines: range.lines, changes: range.changes)
+        }
+        let anchors = byteAnchors.compactMap { anchor -> RefreshAnchor? in
+            guard let a = oldMap[anchor.oldStart], let b = newMap[anchor.newStart] else { return nil }
+            return RefreshAnchor(digest: anchor.digest, occurrence: anchor.occurrence,
+                                 oldStart: a, newStart: b)
+        }
         return RenderModel(
             pinOld: pinOld, pinNew: pinNew, mode: mode,
             payload: .text(old: old, new: new),
             coverageVerified: result.coverageChecked,
             notices: notices,
-            stops: stops, collapses: collapses
+            stops: stops, collapses: collapses,
+            formattingCollapses: formatting,
+            anchors: anchors,
+            restore: resolveAnchor(previous: previousAnchor, candidates: anchors)
         )
     } catch {
         notices.append("content is not valid UTF-8; no text rendering is offered")
@@ -132,7 +160,8 @@ public func buildRenderModel(
             payload: .unrenderable(reason: String(describing: error)),
             coverageVerified: result.coverageChecked,
             notices: notices,
-            stops: [], collapses: []
+            stops: [], collapses: [],
+            formattingCollapses: [], anchors: [], restore: nil
         )
     }
 }

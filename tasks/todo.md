@@ -126,3 +126,57 @@ stated against. Every stop still lands inside a presented range — asserted, no
 Folding is the only act that hides content, so the engine refuses to offer a fold unless the
 old and new bytes in it are equal. That also makes the fold well-defined on both panes, which
 is what keeps them aligned while folded.
+
+## Step 7 — M7 part two: watching and debounce (DEC-026, DEC-027, F15)
+
+- [x] `RefreshDebounce` with an injected clock: trailing edge, max-delay cap
+- [x] `RepositoryWatcher` — one stream on the open repository, `FileEvents | NoDefer | WatchRoot`,
+      latency 0.0, `node_modules` excluded, exclusion overflow reported not truncated silently
+- [x] Drop and root-changed arms behind `deliver(flags:)` so F15 can be forced
+- [x] Application wiring: watcher per selected repository, selection preserved across refresh
+- [x] Checks: debounce shape, forced drop, a real file write reaching the application
+
+## Step 8 — R-9: no blended pin (DEC-049)
+
+- [x] Worktree reads bracketed by a `stat`, five attempts, 20 ms apart
+- [x] `PinnedSourcePair.stable`; the application refuses to render an unsettled pair
+- [x] Racing check against a writer rewriting in place, hostile and realistic
+
+## Step 9 — scroll anchoring (DEC-034)
+
+- [x] `RefreshAnchor` from the canonical diff's matched blocks, one per line, 3-line hash identity
+- [x] `resolveAnchor` implementing the fallback chain literally, with the reason carried
+- [x] Contract carries `anchors` and `restore` in UTF-16; renderer reports and executes, never decides
+- [x] Drift check: twenty refreshes, one position
+
+## Step 10 — formatting-only collapse (DEC-048)
+
+- [x] `formattingCollapses` driven by canonical hunks, merged across ≤2-line gaps
+- [x] Offered only where both sides span the same number of lines; rejections counted
+- [x] Whole-line guard: a real edit on a grouped line disqualifies the group
+- [x] Empty in Expanded; INV-5 unaffected
+- [x] Renderer group widget sharing the fold expansion path
+- [x] Application selftest → `refresh.png`, `anchored.png`
+
+### Steps 7–10 — done, after two measurements contradicted the plan
+
+**R-9 was fixed twice.** The obvious guard — read the worktree file twice, require the reads to
+agree — let 3 blends through in 8,095 reads against a writer rewriting in place. Comparing content
+asks whether two reads matched, not whether anything wrote between them. The read is now bracketed
+by a `stat`; a pair that will not settle is not rendered at all, because a blend shown with a
+warning is still a blend.
+
+**DEC-034 could not be implemented as written.** "The nearest segment labeled unchanged" gives Raw
+zero anchors — Raw is one `fallback` segment over the whole file — so every Raw refresh would have
+jumped to the top, silently. Anchors come from the canonical diff's matched blocks instead, which
+is where `changeStops` already gets its stops. Block-granular anchors then failed the ordinary
+case, because a block spanning everything above the reader changes whenever anything above them is
+edited; identity has to be local, so it is one anchor per line over a 3-line window.
+
+**A reindent has no old side.** Formatting runs computed per side found nothing on the corpus case,
+because reindentation is an insertion. Grouping is driven by hunks, which are stated on both sides,
+and the pairing condition is equal line counts — the argument byte-equality makes for ordinary
+folds, applied to content that is allowed to differ.
+
+330/330 checks pass. The application selftest renders the group and the restored anchor across the
+webview, since the harness cannot see either.
