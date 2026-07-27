@@ -32,6 +32,17 @@ public final class TSXParser {
 
     deinit { ts_parser_delete(parser) }
 
+    func parseRaw(_ bytes: [UInt8]) -> OpaquePointer? {
+        bytes.withUnsafeBufferPointer { buffer in
+            guard let base = buffer.baseAddress else { return nil }
+            return ts_parser_parse_string(
+                parser, nil,
+                UnsafeRawPointer(base).assumingMemoryBound(to: CChar.self),
+                UInt32(buffer.count)
+            )
+        }
+    }
+
     public func parse(_ bytes: [UInt8]) -> ParseOutcome? {
         guard !bytes.isEmpty else {
             return ParseOutcome(leaves: [], hasErrorNodes: false, rootEndByte: 0, byteCount: 0)

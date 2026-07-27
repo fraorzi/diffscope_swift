@@ -299,6 +299,7 @@ do {
 
 runContractChecks { name, ok, detail in report(name, ok, detail) }
 runSyntaxChecks { name, ok, detail in report(name, ok, detail) }
+runMatchingChecks { name, ok, detail in report(name, ok, detail) }
 runGitChecks { name, ok, detail in report(name, ok, detail) }
 
 print("\n\(checks - failures)/\(checks) checks passed")
