@@ -1090,3 +1090,55 @@ The 0-byte row reproduces M5-B's 38.0% within the difference between the two per
 Snapping before `reconcile` rather than after it widens the mask that decides labels — and `reconcile` reads an anchor overlapping the mask as evidence of a **move**. The widened bytes are unchanged, so that would manufacture move claims out of a presentation setting. Applied after labelling, the only effect is that some unchanged bytes are shown inside a change.
 
 The same ordering trap cost the classification pass its recall the first time: snapping split classified changes into a classified core and unclassified flanks, dropping M6-A's 97.8% to 40.9%. Fixed by having a flank inherit the run's classification where every change in that run agrees — and only there. Back to 98.1%.
+
+---
+
+# M6-C — Invisible differences: the detector that nearly could not detect anything
+
+**Status:** Complete, 2026-07-27. Implements DEC-023 and the confidence half of DEC-017.
+
+## The defect this found, which is the reason to read this entry
+
+The normalization-form test was written the obvious way:
+
+```swift
+oldText.precomposedStringWithCanonicalMapping == newText.precomposedStringWithCanonicalMapping
+```
+
+**Swift's `String` equality is canonical equivalence.** `nfc(text) == text` is therefore *always* true, and `nfc(text) != text` always false. The detector's headline case appeared to pass its unit checks — because canonically equivalent strings compare equal with or without the mapping — while the corpus scan built on the same idiom reported **0 of 6705 files** containing a decomposed sequence. An independent scan in Python found 28 in the same tree, including one real `.tsx`.
+
+Comparing `Array(text.unicodeScalars)` instead reports 28 of 6705. Every comparison in the detector now goes through scalar arrays.
+
+This is DEC-021's hazard — *normalisation hides real byte changes* — reappearing **inside the detector written to disclose it**, one layer down, in the standard library's definition of `==`. A fixture-only suite would not have caught it: the fixtures passed.
+
+## Prevalence in the real corpus
+
+6705 `.ts/.tsx/.js/.jsx` files under the projects root:
+
+```
+decomposed sequences        : 28 files
+zero-width or bidi controls : 27 files
+whitespace lookalikes       : 78 files
+```
+
+None of these are exotic. The `ŻABKA` case that forced DEC-021 is one of 28.
+
+## What is disclosed
+
+| Class | Test (all scalar-exact) |
+|---|---|
+| `normalization-form` | equal after canonical composition |
+| `invisible-control` | equal after removing zero-width, bidi and soft-hyphen scalars |
+| `whitespace-lookalike` | equal after collapsing every space-like scalar, tab included |
+
+Homoglyphs stay deferred (DEC-023), so half of the Trojan Source surface remains undisclosed — stated here rather than left implicit.
+
+Disclosure rides alongside classification as a separate field, because the two axes genuinely cross: a trailing non-breaking space is both `whitespace` formatting and invisible.
+
+## Confidence
+
+`confidenceFloor = 0.8` lives in the engine, not the renderer, and the contract carries a computed `uncertain` flag. The threshold is a trust-surface decision — a renderer that picks its own would be able to quietly stop showing uncertainty. Ordinary changed segments sit exactly at the floor; reconciliation's guesses sit at 0.6 and are marked.
+
+## Rendering
+
+One badge per *run* of adjacent disclosed segments, not per segment. The first version put one on each, and a single decomposed character produced four badges across two panes — reconciliation and snapping split the edit, and repeating the reason on every piece read as four separate problems.

@@ -6,8 +6,14 @@ public struct RenderSegment: Codable, Sendable, Equatable {
     public let label: String
     public let classification: String?
     public let group: String?
+    public let disclosure: String?
+    public let uncertain: Bool
     public let confidence: Double?
 }
+
+/// Below this, a segment's alignment is worth marking as uncertain in the interface. Ordinary
+/// changed segments sit at 0.8; anything less came from a guess the layer could not confirm.
+public let confidenceFloor = 0.8
 
 public struct RenderSide: Codable, Sendable, Equatable {
     public let text: String
@@ -127,6 +133,8 @@ func renderSide(bytes: [UInt8], partition: Partition) throws -> RenderSide {
             label: segment.label.rawValue,
             classification: segment.classification,
             group: classificationGroup(of: segment.classification),
+            disclosure: segment.disclosure,
+            uncertain: (segment.confidence ?? 1) < confidenceFloor,
             confidence: segment.confidence
         ))
     }

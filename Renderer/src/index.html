@@ -51,6 +51,24 @@
   .ds-behaviour {
     text-decoration-style: wavy;
   }
+  /* An alignment the structural layer could not confirm (DEC-017 confidence indication). */
+  .ds-uncertain {
+    text-decoration-style: dashed;
+  }
+  /* A difference that is real in the bytes and absent on screen (DEC-023). */
+  .ds-invisible {
+    outline: 1px dotted color-mix(in srgb, CanvasText 55%, transparent);
+    outline-offset: 1px;
+  }
+  .ds-badge {
+    font-size: 10px;
+    padding: 0 4px;
+    margin-left: 4px;
+    border-radius: 6px;
+    border: 1px solid color-mix(in srgb, CanvasText 35%, transparent);
+    white-space: nowrap;
+    vertical-align: baseline;
+  }
 </style>
 </head>
 <body>

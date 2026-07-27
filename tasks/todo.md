@@ -32,6 +32,14 @@ becomes testable *against real files on screen* afterwards.
 - [x] Negative control in the suite: budget 0 must leave the change starting mid-identifier
 - [x] DEC-047, including why sliding is not implementable under INV-2 as recorded
 
+## Step 4 — trust surface: disclosure and confidence
+
+- [x] `invisibleDifference` detector: normalization form, invisible controls, whitespace lookalikes
+- [x] Disclosure as a second axis beside classification (the axes cross)
+- [x] `confidenceFloor` in the engine; contract carries a computed `uncertain` flag
+- [x] Renderer: dotted outline, dashed underline for uncertain, one badge per run, codepoints in Expanded
+- [x] Corpus prevalence + the Swift `String ==` defect → `22-experiment-log.md` M6-C
+
 ## Review
 
 ### Step 1 — done
@@ -64,3 +72,13 @@ survives by construction. 34.3% → 97.0% of boundaries land on syntax, for +4.4
 Two ordering traps found by measuring rather than reasoning: snapping before `reconcile`
 manufactures `moved` claims from a presentation setting, and snapping without inheriting
 the run's classification dropped M6-A's recall from 97.8% to 40.9%.
+
+### Step 4 — done, and it found a defect in itself
+
+The detector for "normalisation hides real byte changes" was itself written on an idiom
+that normalises: Swift's `String ==` is canonical equivalence, so `nfc(text) != text` is
+always false. Fixtures passed; the corpus scan reported 0 decomposed files in a tree that
+contains 28. Every comparison now goes through scalar arrays.
+
+Confidence threshold lives in the engine, not the renderer — a renderer that owns the
+threshold can quietly stop showing uncertainty.

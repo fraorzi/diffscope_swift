@@ -12,6 +12,7 @@ public struct Segment: Sendable, Equatable {
     public let end: Int
     public let label: SegmentLabel
     public let classification: String?
+    public let disclosure: String?
     public let confidence: Double?
     public let link: Int?
 
@@ -20,6 +21,7 @@ public struct Segment: Sendable, Equatable {
         end: Int,
         label: SegmentLabel,
         classification: String? = nil,
+        disclosure: String? = nil,
         confidence: Double? = nil,
         link: Int? = nil
     ) {
@@ -27,6 +29,7 @@ public struct Segment: Sendable, Equatable {
         self.end = end
         self.label = label
         self.classification = classification
+        self.disclosure = disclosure
         self.confidence = confidence
         self.link = link
     }

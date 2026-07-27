@@ -111,22 +111,26 @@ public func snapPresentation(
     // A widened flank is unchanged content, so it cannot make a run behave differently. It may
     // therefore carry the run's classification — but only where every change inside that run
     // agrees on one. A run holding an unclassified change stays unclassified.
-    let inherited = snapped.map { range -> String? in
+    func agreed(_ range: (start: Int, end: Int), _ field: (Segment) -> String?) -> String? {
         var found: String??
         for segment in partition.segments
         where segment.isPresented && segment.start < range.end && segment.end > range.start {
-            if found == nil { found = segment.classification }
-            else if found! != segment.classification { return nil }
+            if found == nil { found = field(segment) }
+            else if found! != field(segment) { return nil }
         }
         return found ?? nil
     }
+    let inherited = snapped.map { agreed($0, \.classification) }
+    let disclosed = snapped.map { agreed($0, \.disclosure) }
 
     var out: [Segment] = []
     func append(_ segment: Segment) {
         if let last = out.last, last.end == segment.start, last.label == segment.label,
-           last.classification == segment.classification, last.confidence == segment.confidence {
+           last.classification == segment.classification, last.disclosure == segment.disclosure,
+           last.confidence == segment.confidence {
             out[out.count - 1] = Segment(start: last.start, end: segment.end, label: last.label,
                                          classification: last.classification,
+                                         disclosure: last.disclosure,
                                          confidence: last.confidence)
         } else {
             out.append(segment)
@@ -148,7 +152,8 @@ public func snapPresentation(
                                confidence: segment.confidence))
             }
             append(Segment(start: overlapStart, end: overlapEnd, label: .changed,
-                           classification: inherited[index], confidence: segment.confidence))
+                           classification: inherited[index], disclosure: disclosed[index],
+                           confidence: segment.confidence))
             cursor = overlapEnd
         }
         if cursor < segment.end {

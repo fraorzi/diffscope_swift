@@ -212,6 +212,26 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
+    /// DEC-023: the corpus's own case — one side decomposed, both rendering identically. The
+    /// interface has to say why the marked region looks the same on both sides.
+    private func runDisclosureSelftest() {
+        let old = [UInt8]("const shop = \"Z\u{0307}ABKA\";\n".utf8)
+        let new = [UInt8]("const shop = \"\u{017B}ABKA\";\n".utf8)
+        let outcome = buildModel(path: "selftest.tsx", old: old, new: new, mode: .expanded)
+        let render = buildRenderModel(model: outcome.model, pinOld: "pinE", pinNew: "pinF",
+                                      mode: "expanded", validation: outcome.validation,
+                                      notices: outcome.notices)
+        guard let json = try? encodeRenderModel(render) else { exit(9) }
+        push(json)
+        webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
+            let text = (value as? String) ?? "nil"
+            let ok = text.contains("normalization-form") && text.contains("U+0307")
+            FileHandle.standardError.write(
+                Data("SELFTEST disclosure=\(ok ? "OK" : "MISMATCH") \(outcome.summary) \(text.suffix(220))\n".utf8))
+            self.snapshot(named: "disclosure") { exit(ok ? 0 : 10) }
+        }
+    }
+
     /// The rendered result is otherwise only checkable through the probe, which cannot see
     /// whether a mark is legible. `DIFFSCOPE_SNAPSHOT_DIR` writes what the webview drew.
     private func snapshot(named name: String, then next: @escaping () -> Void) {
@@ -250,7 +270,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             let ok = sameSegments && quietened && text.contains("\"mode\":\"expanded\"")
             FileHandle.standardError.write(
                 Data("SELFTEST modes=\(ok ? "OK" : "MISMATCH") segments agree=\(sameSegments) expanded marks=\(field(text, "formattingMarks") ?? "?")\n".utf8))
-            self.snapshot(named: "expanded") { exit(ok ? 0 : 8) }
+            if !ok { exit(8) }
+            self.snapshot(named: "expanded") { self.runDisclosureSelftest() }
         }
     }
 
@@ -367,6 +388,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         if stats.movedSegments > 0 { summary += " · \(stats.movedSegments) moved" }
         if stats.formattingOnlySegments > 0 { summary += " · \(stats.formattingOnlySegments) formatting-only" }
         if stats.behaviorAffectingSegments > 0 { summary += " · \(stats.behaviorAffectingSegments) reordered" }
+        if stats.invisibleSegments > 0 { summary += " · \(stats.invisibleSegments) invisible" }
         if stats.ambiguities > 0 { summary += " · \(stats.ambiguities) ambiguous" }
         return ModelOutcome(model: result.model, validation: validation, notices: [], summary: summary)
     }

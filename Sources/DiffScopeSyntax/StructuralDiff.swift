@@ -11,10 +11,12 @@ public struct StructuralStats: Sendable, Equatable {
     public let movedSegments: Int
     public let formattingOnlySegments: Int
     public let behaviorAffectingSegments: Int
+    public let invisibleSegments: Int
 
     public init(anchors: Int, ambiguities: Int, unchangedBytesOld: Int, unchangedBytesNew: Int,
                 usedFallback: Bool, fallbackReason: String?, movedSegments: Int = 0,
-                formattingOnlySegments: Int = 0, behaviorAffectingSegments: Int = 0) {
+                formattingOnlySegments: Int = 0, behaviorAffectingSegments: Int = 0,
+                invisibleSegments: Int = 0) {
         self.anchors = anchors
         self.ambiguities = ambiguities
         self.unchangedBytesOld = unchangedBytesOld
@@ -24,6 +26,7 @@ public struct StructuralStats: Sendable, Equatable {
         self.movedSegments = movedSegments
         self.formattingOnlySegments = formattingOnlySegments
         self.behaviorAffectingSegments = behaviorAffectingSegments
+        self.invisibleSegments = invisibleSegments
     }
 }
 
@@ -137,17 +140,18 @@ public func structuralDiff(
         // The gap pair is the only place both sides of a change are known to correspond,
         // so classification happens here, before reconciliation subdivides it.
         let classification = equal ? nil : changeClassification(old: oldSlice, new: newSlice)?.rawValue
+        let disclosure = equal ? nil : invisibleDifference(old: oldSlice, new: newSlice)?.rawValue
         if !oldSpan.isEmpty {
             oldSegments.append(Segment(start: oldSpan.lowerBound, end: oldSpan.upperBound,
                                        label: equal ? .unchanged : .changed,
-                                       classification: classification,
+                                       classification: classification, disclosure: disclosure,
                                        confidence: equal ? 1 : 0.8))
             if equal { unchangedOld += oldSlice.count }
         }
         if !newSpan.isEmpty {
             newSegments.append(Segment(start: newSpan.lowerBound, end: newSpan.upperBound,
                                        label: equal ? .unchanged : .changed,
-                                       classification: classification,
+                                       classification: classification, disclosure: disclosure,
                                        confidence: equal ? 1 : 0.8))
             if equal { unchangedNew += newSlice.count }
         }
@@ -212,7 +216,10 @@ public func structuralDiff(
             formattingOnlySegments: segmentCount(in: oldPartition, group: .formattingOnly)
                 + segmentCount(in: newPartition, group: .formattingOnly),
             behaviorAffectingSegments: segmentCount(in: oldPartition, group: .potentiallyBehaviorAffecting)
-                + segmentCount(in: newPartition, group: .potentiallyBehaviorAffecting)
+                + segmentCount(in: newPartition, group: .potentiallyBehaviorAffecting),
+            invisibleSegments: [oldPartition, newPartition].reduce(0) { total, partition in
+                total + partition.segments.filter { $0.disclosure != nil }.count
+            }
         )
     )
 }
@@ -242,7 +249,8 @@ func reconcile(
                                        confidence: 1))
                 }
                 out.append(Segment(start: overlapStart, end: overlapEnd, label: .changed,
-                                   classification: segment.classification, confidence: segment.confidence))
+                                   classification: segment.classification,
+                                   disclosure: segment.disclosure, confidence: segment.confidence))
                 cursor = overlapEnd
             }
             if cursor < segment.end {
@@ -270,6 +278,7 @@ func reconcile(
                 start: overlapStart, end: overlapEnd,
                 label: wasAnchor ? .moved : .changed,
                 classification: segment.classification,
+                disclosure: segment.disclosure,
                 confidence: 0.6
             ))
             if wasAnchor { moved += 1 }

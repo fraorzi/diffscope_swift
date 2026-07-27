@@ -29,8 +29,42 @@ class NoticeWidget extends WidgetType {
   }
 }
 
+// DEC-023: a change that renders identically on both sides reads as a tool defect unless the
+// tool says why nothing is visible. The badge carries the reason as text, not colour (DEC-035),
+// and Expanded names the codepoints outright.
+const INVISIBLE_SCALARS = new Set([
+  0x00ad, 0x200b, 0x200c, 0x200d, 0x200e, 0x200f, 0x202a, 0x202b, 0x202c, 0x202d, 0x202e,
+  0x2060, 0x2066, 0x2067, 0x2068, 0x2069, 0xfeff, 0x00a0, 0x1680, 0x2000, 0x2001, 0x2002,
+  0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x202f, 0x205f, 0x3000,
+  0x0009,
+]);
+
+function revealedCodepoints(text) {
+  const out = [];
+  for (const char of text) {
+    const code = char.codePointAt(0);
+    const combining = /\p{Mn}|\p{Mc}/u.test(char);
+    if (INVISIBLE_SCALARS.has(code) || combining) {
+      out.push("U+" + code.toString(16).toUpperCase().padStart(4, "0"));
+    }
+  }
+  return out;
+}
+
+class DisclosureWidget extends WidgetType {
+  constructor(text) { super(); this.text = text; }
+  eq(other) { return other.text === this.text; }
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "ds-badge";
+    el.textContent = this.text;
+    return el;
+  }
+}
+
 function decorationsFor(state, segments) {
   const items = [];
+  const disclosureRuns = [];
   const max = state.doc.length;
   for (const seg of segments) {
     const cls = LABEL_CLASS[seg.label];
@@ -38,14 +72,40 @@ function decorationsFor(state, segments) {
     const from = Math.max(0, Math.min(seg.start, max));
     const to = Math.max(from, Math.min(seg.end, max));
     if (to <= from) continue;
-    const groupClass = currentMode === "expanded" ? undefined : GROUP_CLASS[seg.group];
+    const classes = [cls];
+    if (currentMode !== "expanded" && GROUP_CLASS[seg.group]) classes.push(GROUP_CLASS[seg.group]);
+    if (seg.uncertain) classes.push("ds-uncertain");
+    if (seg.disclosure) classes.push("ds-invisible");
+    const attributes = {};
+    if (seg.classification) attributes["data-classification"] = seg.classification;
+    if (seg.disclosure) attributes["data-disclosure"] = seg.disclosure;
+    if (seg.confidence != null) attributes["data-confidence"] = String(seg.confidence);
     items.push({
       from,
       to,
       deco: Decoration.mark({
-        class: groupClass ? cls + " " + groupClass : cls,
-        attributes: seg.classification ? { "data-classification": seg.classification } : undefined,
+        class: classes.join(" "),
+        attributes: Object.keys(attributes).length ? attributes : undefined,
       }),
+    });
+    if (seg.disclosure) {
+      const last = disclosureRuns[disclosureRuns.length - 1];
+      if (last && last.to === from && last.reason === seg.disclosure) last.to = to;
+      else disclosureRuns.push({ from, to, reason: seg.disclosure });
+    }
+  }
+
+  // One badge per visible change, not per segment — reconciliation and snapping split a single
+  // invisible edit into several, and repeating the reason on each reads as several problems.
+  for (const run of disclosureRuns) {
+    const codepoints = currentMode === "expanded"
+      ? revealedCodepoints(state.doc.sliceString(run.from, run.to))
+      : [];
+    const label = codepoints.length ? run.reason + " " + codepoints.join(" ") : run.reason;
+    items.push({
+      from: run.to,
+      to: run.to,
+      deco: Decoration.widget({ widget: new DisclosureWidget(label), side: 1 }),
     });
   }
   items.sort((a, b) => a.from - b.from || a.to - b.to);
@@ -115,8 +175,12 @@ function groupCounts(model) {
   if (model.payload.kind !== "text") return counts;
   for (const side of [model.payload.old, model.payload.new]) {
     for (const seg of side.segments) {
-      if (!seg.group) continue;
-      counts.set(seg.group, (counts.get(seg.group) || 0) + 1);
+      if (seg.group) counts.set(seg.group, (counts.get(seg.group) || 0) + 1);
+      if (seg.disclosure) {
+        const key = "invisible: " + seg.disclosure;
+        counts.set(key, (counts.get(key) || 0) + 1);
+      }
+      if (seg.uncertain) counts.set("uncertain", (counts.get("uncertain") || 0) + 1);
     }
   }
   return counts;
@@ -184,6 +248,8 @@ window.diffscopeProbe = function () {
     newText: right.state.doc.toString(),
     summary: lastSummary,
     formattingMarks: document.querySelectorAll(".ds-formatting").length,
+    badges: [...document.querySelectorAll(".ds-badge")].map(el => el.textContent),
+    uncertainMarks: document.querySelectorAll(".ds-uncertain").length,
   };
 };
 
