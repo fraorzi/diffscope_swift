@@ -8,7 +8,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**Last completed milestone: M5 — matching and alignment, plus the M5-B value benchmark. 177/177 checks pass.**
+**Last completed milestone: M6 part one — classification, and the structural model wired into the application. 212/212 checks pass.**
 
 | Milestone | State |
 |---|---|
@@ -18,19 +18,19 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 | M3 raw diff end to end | Complete |
 | M4 parsing and partition construction | Complete |
 | M5 matching and alignment | Complete |
-| **M6 classification, moves, trust surface** | **Next** |
+| **M6 classification, moves, trust surface** | **Partly done** — classification, modes and app wiring landed; confidence display and boundary tie-breaking remain |
 | M7 refresh, watching, navigation | Not started |
 | M8 hardening and beta | Not started |
 
 Run everything:
 
 ```
-swift run diffscope-verify          # 177 checks, exit 1 on failure
+swift run diffscope-verify          # 212 checks, exit 1 on failure
 swift run -c release diffscope-verify --survey ~/YourProjects
 swift run -c release diffscope-app  # the application
 ```
 
-`DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits.
+`DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits: raw ŻABKA probe → structural render with a formatting-only label → INV-5 mode agreement across the webview. Adding `DIFFSCOPE_SNAPSHOT_DIR=/some/dir` writes `structural.png` and `expanded.png` of what the webview actually drew — the only way to check legibility, which the probe cannot see.
 
 ### What exists in code
 
@@ -44,7 +44,15 @@ swift run -c release diffscope-app  # the application
 | `diffscope-app` | AppKit shell + `WKWebView` |
 | `Renderer/src` | CodeMirror renderer; build with `npm run build` in `Renderer/` |
 
-### Read this before planning M6
+### What M6 landed so far
+
+- **Classification** (DEC-046). Byte-level equivalence tests over the aligned gap pair, computed before reconciliation because that is the only point where both sides of a change are known to correspond. Vocabulary: `whitespace`, `quote-style`, `trailing-comma`, `paren-only` → `formatting-only`; `reordering` → `potentially-behavior-affecting`. Measured on 120 real files: 97.8% recall on a whitespace-only edit, **0 false formatting-only claims of 1111** on a rename (M6-A).
+- **The diagnostic labels are gone.** `anchor`, `filler`, `refined` and `moved-content` no longer exist; the suite asserts nothing outside the typed vocabulary reaches presentation. Note the trap this sprang: `reconcile` identified anchors by testing `classification == "anchor"`, so removing the strings silently disabled move detection until anchor identity was passed explicitly.
+- **The application shows structure.** `diffscope-app` runs `structuralDiff` for the structural modes and raw otherwise; a structural result that fails validation is discarded whole and replaced by raw with the reason shown (INV-4). Status line reports anchors, moves, formatting-only and ambiguity counts.
+- **Raw · Structural · Expanded** as presentation flags over one model (DEC-013). Expanded simply drops the quietening of grouped marks, so INV-5 holds by construction and is checked both in the harness and across the webview.
+- **`runBundleFreshnessCheck` is now actually registered.** It was written in M5 and never called, so a stale renderer bundle would have shipped silently. Worth remembering as a class of defect: a check that is not run is not a check.
+
+### Read this before planning the rest of M6
 
 A benchmark after M5 (`22-experiment-log.md` → M5-B) established that **the structural layer contributes nothing to alignment quality** — and cannot, because INV-2 caps the "unchanged" set at whatever the canonical byte diff already found. Measured identical to a tenth of a percent across four perturbations on 120 real files each.
 
@@ -54,15 +62,16 @@ The slider problem was measured and is real here: **only 38% of canonical-diff h
 
 **Do not add work to the matcher on the assumption that better matching means better alignment. It does not.**
 
-### What M6 should do next
+### What to do next
 
-0. Consider prioritising **boundary tie-breaking** — shifting hunk boundaries to syntax boundaries among equally-minimal alignments. It is the one measured, unaddressed weakness.
-1. Replace diagnostic segment labels (`anchor`, `filler`, `refined`, `moved-content`) with the DEC-017 classification vocabulary, so formatting-only grouping becomes possible.
+1. **Boundary tie-breaking** — shifting hunk boundaries onto syntax boundaries among equally-minimal alignments. Still the one measured, unaddressed weakness, and now testable against something a human can look at. Baseline to beat: 38.0% of hunk boundaries land on a node boundary, 91% of files contain at least one misalignment.
 2. Surface **confidence** in the renderer. **Ambiguity display was withdrawn by DEC-045** — detection stays as a guard against ambiguous anchors, but no indicator is built; its safety rationale lapsed once reconciliation began correcting wrong "unchanged" claims.
-3. Wire `structuralDiff` into `diffscope-app`, which still calls `trivialModel` and therefore always shows raw.
-4. Implement the Structural/Expanded mode pair as presentation flags over one renderer (DEC-013, INV-5).
+3. Deliberate byte-identical move search (DEC-038). Moves are currently only discovered where reconciliation happens to reveal them.
+4. Invisible-difference disclosure (DEC-023) — the `ŻABKA` case renders identically on both sides and nothing yet says so.
 
-Known weaknesses recorded rather than hidden: anchor selection is greedy by old-side position rather than a longest-increasing-subsequence; moves are only discovered where reconciliation reveals them; the native window layout has never been visually verified.
+Known weaknesses recorded rather than hidden: anchor selection is greedy by old-side position rather than a longest-increasing-subsequence; moves are only discovered where reconciliation reveals them; the file list has no keyboard path yet (M7).
+
+The native window layout **has** now been looked at — repository list, file list, scope and mode controls, and the founding case rendering with children preserved. Everything below that in the interface (gutter, navigation, collapsed ranges) is still absent rather than unverified.
 
 ---
 

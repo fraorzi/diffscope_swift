@@ -1919,3 +1919,45 @@ What remains is a usability question the product owner put directly: what does a
 ### Revisit trigger
 
 Reopen if a case appears where an ambiguous match produces a *misleading* result that reconciliation does not correct — most plausibly a wrong `moved` label rather than a wrong `unchanged`.
+
+---
+
+## DEC-046 — Classification detectors are equivalence tests, and the shipped vocabulary is a subset
+
+- **Date:** 2026-07-27 · **Topic:** Implements `10-diff-engine-specification.md` §3.8 · **Status:** Accepted
+- **Prompted by:** M6 needing an actual definition of `formatting-only`, which the specification listed as a vocabulary without saying how a label is decided
+
+### Context
+
+§3.8 derived its vocabulary by inverting SemanticDiff's suppression list: `paren-only`, `literal-base`, `escape-style`, `trailing-comma`, `quote-style`, `object-key-reorder`, `jsx-attr-reorder`, `jsx-whitespace`, `import-reorder`, `tailwind-class-reorder`, `arrow-vs-function`. It did not say what evidence attaches a label.
+
+That matters more than it looks. A `formatting-only` label invites a reviewer to skim, so a wrong one is a **trust defect**, and no invariant catches it — mislabelling violates none of INV-1…5, exactly as the M5-B `reconcile` bug violated none.
+
+### Options considered
+
+1. **Pattern matching on node types** — classify from the tree (a `jsx_attribute` reordered under the same element, etc.).
+2. **Equivalence tests on bytes** — normalise both sides of an aligned pair by a transformation that provably preserves everything it does not remove, and label only on exact equality.
+3. **Heuristic scoring** — similarity thresholds with a confidence.
+
+### Decision
+
+**Option 2. A classification is attached only when the two sides of an aligned pair are byte-equal after a normalisation, and the vocabulary shipped is the subset for which such a test exists.**
+
+Shipped: `whitespace`, `quote-style`, `trailing-comma`, `paren-only` (group `formatting-only`); `reordering` (group `potentially-behavior-affecting`).
+
+Not shipped, and deliberately absent rather than approximated: `literal-base`, `escape-style`, `arrow-vs-function`, and the per-construct reorder names (`object-key-reorder`, `jsx-attr-reorder`, `import-reorder`, `tailwind-class-reorder`) — the general `reordering` covers what those distinguish, and splitting them needs tree context this test does not have.
+
+`jsx-whitespace` is subsumed by `whitespace`: the test cannot tell JSX text from any other whitespace, and claiming it could would be a false precision.
+
+Classification is computed on the **aligned gap pair, before reconciliation**. That is the only point in the pipeline where both sides of a change are known to correspond; reconciliation splits each side against the canonical mask independently and the correspondence is gone afterwards.
+
+### Consequences
+
+- A missing label is the failure mode, never a wrong one. Measured (M6-A): 97.8% of changed segments recognised on a whitespace-only edit, **0 of 1111 falsely claimed formatting-only** on a rename.
+- Option 1 was rejected because the tree cannot see inter-token whitespace at all — filler is ~24% of bytes and is *where formatting lives*. Option 3 was rejected outright: a threshold makes "formatting-only" a guess, and this label is read as a promise.
+- `reordering` is grouped `potentially-behavior-affecting`, never `formatting-only`. Spread props and object keys can change behaviour, so the grouping must not invite skimming.
+- The vocabulary is closed and typed (`ChangeClass`), and the suite asserts no segment carries a name outside it — the M5 diagnostic labels (`anchor`, `filler`, `refined`, `moved-content`) can no longer leak into presentation.
+
+### Revisit trigger
+
+Reopen if a real review case is found where a shipped label is wrong, or where an absent one costs a reviewer time — the first is a defect, the second is a scope question.

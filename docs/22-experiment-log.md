@@ -996,3 +996,54 @@ Sample boundaries, all showing the classic shape — the hunk starts immediately
 The structural layer's justification **moves** rather than disappears. It cannot find more unchanged content than the byte diff. What it can do — and currently does not — is choose *where* a changed region begins and ends among equally valid options, so that a diff does not start mid-expression.
 
 That is now the strongest remaining argument for keeping the matcher, and it is untested work.
+
+---
+
+# M6-A — Does the classification vocabulary fire on real files, and only where it should?
+
+**Status:** Complete, 2026-07-27.
+
+M5-B listed classification as one of three things the structural layer can still contribute. It is the first to be built, and the only one whose failure mode is a **trust defect rather than a quality one**: a segment wrongly labelled `formatting-only` invites the reviewer to skim a real change. The invariants cannot catch it — mislabelling violates none of them, exactly as the `reconcile` bug in M5-B violated none.
+
+So the measurement is two-sided by design: a detector that never fires is useless, and a detector that fires wrongly is worse than useless.
+
+## Method
+
+120 real `.tsx` files (200 B – 60 KB, `node_modules` and `.build` excluded), each diffed twice through `structuralDiff`:
+
+- **whitespace-only edit** — every `"\n  "` becomes `"\n    "`, a reindent that changes no token
+- **rename edit** — `className` → `class_Name`, which changes tokens and nothing else
+
+Then every segment labelled `changed` on both sides was counted by classification.
+
+## Result
+
+```
+whitespace-only edit : 11920 of 12183 changed segments classified   (97.8%)
+rename edit          :     0 of  1111 changed segments claimed formatting-only
+```
+
+Zero false claims, and the recall on a genuinely formatting-only edit is 97.8%. The residual 2.2% is reconciliation splitting a gap pair whose two halves are not individually whitespace-equal; those stay unclassified, which is the safe direction.
+
+## Detectors
+
+Cumulative-normaliser equality tests over the aligned gap pair, first match wins:
+
+| Class | Test | Group |
+|---|---|---|
+| `whitespace` | equal after dropping ASCII whitespace | `formatting-only` |
+| `quote-style` | equal after unifying `'`, `` ` `` and `"` | `formatting-only` |
+| `trailing-comma` | equal after dropping commas before a closer | `formatting-only` |
+| `paren-only` | equal after dropping `(` and `)` | `formatting-only` |
+| `reordering` | same multiset of top-level comma-separated items, different order | `potentially-behavior-affecting` |
+
+Reordering is deliberately **not** formatting-only: spread props and object keys can change behaviour (`10-…` §3.8).
+
+## Where classification is computed, and why it matters
+
+On the **gap pair**, before reconciliation. That is the only point in the pipeline where both sides of a change are known to correspond — after reconciliation each side has been split against the canonical mask independently, and the correspondence is gone. Reconciliation then carries the label into each piece it produces.
+
+## Two incidental findings
+
+- **`reconcile` was reading a diagnostic string as data.** Move detection tested `segment.classification == "anchor"`, so replacing the diagnostic vocabulary silently disabled move detection until anchor identity was passed explicitly as a set of start offsets. The diagnostic labels were load-bearing, which is precisely why they had to go.
+- **`runBundleFreshnessCheck` was never called.** It was written in M5 and left unregistered in `main.swift`, so a stale renderer bundle would have shipped unnoticed. Now registered — 207 checks, up from 177 plus 27 new ones. A check that is not run is not a check.

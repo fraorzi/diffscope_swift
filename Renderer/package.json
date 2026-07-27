@@ -2,7 +2,9 @@
   "name": "diffscope-renderer",
   "private": true,
   "type": "module",
-  "scripts": { "build": "esbuild src/main.js --bundle --format=iife --outfile=dist/renderer.js --minify" },
+  "scripts": {
+    "build": "esbuild src/main.js --bundle --format=iife --outfile=../Sources/diffscope-app/Renderer/renderer.js --minify && cp src/index.html ../Sources/diffscope-app/Renderer/index.html && node hash-sources.mjs"
+  },
   "dependencies": {
     "@codemirror/lang-javascript": "^6.2.4",
     "@codemirror/state": "^6.5.2",

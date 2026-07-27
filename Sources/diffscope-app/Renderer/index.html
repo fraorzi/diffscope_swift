@@ -42,6 +42,15 @@
     outline: 1px dashed color-mix(in srgb, CanvasText 45%, transparent);
     outline-offset: -1px;
   }
+  /* Grouping quietens, it never hides: the underline stays, only its weight drops (DEC-017). */
+  .ds-formatting {
+    background: none;
+    text-decoration-style: dotted;
+    text-decoration-thickness: 1px;
+  }
+  .ds-behaviour {
+    text-decoration-style: wavy;
+  }
 </style>
 </head>
 <body>

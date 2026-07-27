@@ -193,7 +193,19 @@ Still open: DEC-017 classification vocabulary, deliberate move search, LIS ancho
 
 ---
 
-## M6 — Classification, moves, and trust surface
+## M6 — Classification, moves, and trust surface 🚧 PART ONE COMPLETE (2026-07-27)
+
+**Result so far: 212/212 checks pass.** Classification landed as byte-level equivalence tests over the aligned gap pair (DEC-046), measured in `22-experiment-log.md` → M6-A: 97.8% recall on a whitespace-only edit across 120 real files, **0 false `formatting-only` claims of 1111** on a rename.
+
+The structural model now reaches the interface. `diffscope-app` runs `structuralDiff` for Structural and Expanded and raw for Raw, discards a structural result that fails validation and says so, and reports anchors, moves, formatting-only and ambiguity counts. The three modes are flags over one model, so INV-5 holds by construction — checked in the harness and again across the webview.
+
+Two incidental findings, both recorded in M6-A: `reconcile` was identifying anchors by reading a diagnostic label as data, and `runBundleFreshnessCheck` had been written in M5 and never registered.
+
+**Still open in M6:** confidence display, deliberate move search (DEC-038), invisible-difference disclosure (DEC-023), and boundary tie-breaking.
+
+---
+
+## M6 — original scope
 
 **Scope.** Classification vocabulary; formatting-only grouping with disclosed counts; byte-identical move detection (DEC-038); confidence and parser-state indicators; invisible-difference disclosure (DEC-023); Structural and Expanded modes as one renderer with flags (DEC-013).
 

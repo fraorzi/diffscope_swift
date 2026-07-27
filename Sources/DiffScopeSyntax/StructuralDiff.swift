@@ -9,9 +9,12 @@ public struct StructuralStats: Sendable, Equatable {
     public let usedFallback: Bool
     public let fallbackReason: String?
     public let movedSegments: Int
+    public let formattingOnlySegments: Int
+    public let behaviorAffectingSegments: Int
 
     public init(anchors: Int, ambiguities: Int, unchangedBytesOld: Int, unchangedBytesNew: Int,
-                usedFallback: Bool, fallbackReason: String?, movedSegments: Int = 0) {
+                usedFallback: Bool, fallbackReason: String?, movedSegments: Int = 0,
+                formattingOnlySegments: Int = 0, behaviorAffectingSegments: Int = 0) {
         self.anchors = anchors
         self.ambiguities = ambiguities
         self.unchangedBytesOld = unchangedBytesOld
@@ -19,6 +22,8 @@ public struct StructuralStats: Sendable, Equatable {
         self.usedFallback = usedFallback
         self.fallbackReason = fallbackReason
         self.movedSegments = movedSegments
+        self.formattingOnlySegments = formattingOnlySegments
+        self.behaviorAffectingSegments = behaviorAffectingSegments
     }
 }
 
@@ -120,21 +125,29 @@ public func structuralDiff(
     var unchangedOld = 0
     var unchangedNew = 0
 
+    var oldAnchorStarts: Set<Int> = []
+    var newAnchorStarts: Set<Int> = []
+
     func emitGap(oldTo: Int, newTo: Int) {
         let oldSpan = oldCursor..<oldTo
         let newSpan = newCursor..<newTo
         let oldSlice = oldSpan.isEmpty ? [] : Array(oldBytes[oldSpan])
         let newSlice = newSpan.isEmpty ? [] : Array(newBytes[newSpan])
         let equal = oldSlice == newSlice
+        // The gap pair is the only place both sides of a change are known to correspond,
+        // so classification happens here, before reconciliation subdivides it.
+        let classification = equal ? nil : changeClassification(old: oldSlice, new: newSlice)?.rawValue
         if !oldSpan.isEmpty {
             oldSegments.append(Segment(start: oldSpan.lowerBound, end: oldSpan.upperBound,
                                        label: equal ? .unchanged : .changed,
+                                       classification: classification,
                                        confidence: equal ? 1 : 0.8))
             if equal { unchangedOld += oldSlice.count }
         }
         if !newSpan.isEmpty {
             newSegments.append(Segment(start: newSpan.lowerBound, end: newSpan.upperBound,
                                        label: equal ? .unchanged : .changed,
+                                       classification: classification,
                                        confidence: equal ? 1 : 0.8))
             if equal { unchangedNew += newSlice.count }
         }
@@ -142,10 +155,12 @@ public func structuralDiff(
 
     for anchor in found {
         emitGap(oldTo: anchor.oldStart, newTo: anchor.newStart)
+        oldAnchorStarts.insert(anchor.oldStart)
+        newAnchorStarts.insert(anchor.newStart)
         oldSegments.append(Segment(start: anchor.oldStart, end: anchor.oldEnd,
-                                   label: .unchanged, classification: "anchor", confidence: 1))
+                                   label: .unchanged, confidence: 1))
         newSegments.append(Segment(start: anchor.newStart, end: anchor.newEnd,
-                                   label: .unchanged, classification: "anchor", confidence: 1))
+                                   label: .unchanged, confidence: 1))
         unchangedOld += anchor.oldEnd - anchor.oldStart
         unchangedNew += anchor.newEnd - anchor.newStart
         oldCursor = anchor.oldEnd
@@ -164,23 +179,31 @@ public func structuralDiff(
         }
     }
 
-    let reconciledOld = reconcile(oldSegments, against: oldChangedMask, applied: coverageKnown)
-    let reconciledNew = reconcile(newSegments, against: newChangedMask, applied: coverageKnown)
+    let reconciledOld = reconcile(oldSegments, against: oldChangedMask,
+                                  anchorStarts: oldAnchorStarts, applied: coverageKnown)
+    let reconciledNew = reconcile(newSegments, against: newChangedMask,
+                                  anchorStarts: newAnchorStarts, applied: coverageKnown)
 
     unchangedOld = reconciledOld.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
     unchangedNew = reconciledNew.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
 
+    let oldPartition = Partition(totalLength: oldBytes.count, segments: reconciledOld.segments)
+    let newPartition = Partition(totalLength: newBytes.count, segments: reconciledNew.segments)
+
     return StructuralResult(
         model: DiffModel(
             oldBytes: oldBytes, newBytes: newBytes,
-            oldPartition: Partition(totalLength: oldBytes.count, segments: reconciledOld.segments),
-            newPartition: Partition(totalLength: newBytes.count, segments: reconciledNew.segments)
+            oldPartition: oldPartition, newPartition: newPartition
         ),
         stats: StructuralStats(
             anchors: found.count, ambiguities: mapping.ambiguities.count,
             unchangedBytesOld: unchangedOld, unchangedBytesNew: unchangedNew,
             usedFallback: false, fallbackReason: nil,
-            movedSegments: reconciledOld.moved + reconciledNew.moved
+            movedSegments: reconciledOld.moved + reconciledNew.moved,
+            formattingOnlySegments: segmentCount(in: oldPartition, group: .formattingOnly)
+                + segmentCount(in: newPartition, group: .formattingOnly),
+            behaviorAffectingSegments: segmentCount(in: oldPartition, group: .potentiallyBehaviorAffecting)
+                + segmentCount(in: newPartition, group: .potentiallyBehaviorAffecting)
         )
     )
 }
@@ -188,6 +211,7 @@ public func structuralDiff(
 func reconcile(
     _ segments: [Segment],
     against mask: [(start: Int, end: Int)],
+    anchorStarts: Set<Int> = [],
     applied: Bool
 ) -> (segments: [Segment], moved: Int) {
     guard applied else { return (segments, 0) }
@@ -206,7 +230,7 @@ func reconcile(
                 guard overlapEnd > overlapStart else { continue }
                 if overlapStart > cursor {
                     out.append(Segment(start: cursor, end: overlapStart, label: .unchanged,
-                                       classification: "refined", confidence: 1))
+                                       confidence: 1))
                 }
                 out.append(Segment(start: overlapStart, end: overlapEnd, label: .changed,
                                    classification: segment.classification, confidence: segment.confidence))
@@ -214,7 +238,7 @@ func reconcile(
             }
             if cursor < segment.end {
                 out.append(Segment(start: cursor, end: segment.end, label: .unchanged,
-                                   classification: "refined", confidence: 1))
+                                   confidence: 1))
             }
             continue
         }
@@ -232,11 +256,11 @@ func reconcile(
                 out.append(Segment(start: cursor, end: overlapStart, label: .unchanged,
                                    classification: segment.classification, confidence: segment.confidence))
             }
-            let wasAnchor = segment.classification == "anchor"
+            let wasAnchor = anchorStarts.contains(segment.start)
             out.append(Segment(
                 start: overlapStart, end: overlapEnd,
                 label: wasAnchor ? .moved : .changed,
-                classification: wasAnchor ? "moved-content" : segment.classification,
+                classification: segment.classification,
                 confidence: 0.6
             ))
             if wasAnchor { moved += 1 }

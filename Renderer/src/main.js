@@ -9,6 +9,16 @@ const LABEL_CLASS = {
   fallback: "ds-fallback",
 };
 
+// A group is a presentation grouping, never a filter: the segment keeps its label and its
+// bytes stay on screen. Structural mode quietens formatting-only marks; Expanded drops the
+// quietening. Both modes render the same segment set (INV-5).
+const GROUP_CLASS = {
+  "formatting-only": "ds-formatting",
+  "potentially-behavior-affecting": "ds-behaviour",
+};
+
+let currentMode = "raw";
+
 class NoticeWidget extends WidgetType {
   constructor(text) { super(); this.text = text; }
   toDOM() {
@@ -28,7 +38,15 @@ function decorationsFor(state, segments) {
     const from = Math.max(0, Math.min(seg.start, max));
     const to = Math.max(from, Math.min(seg.end, max));
     if (to <= from) continue;
-    items.push({ from, to, deco: Decoration.mark({ class: cls, attributes: seg.classification ? { "data-classification": seg.classification } : undefined }) });
+    const groupClass = currentMode === "expanded" ? undefined : GROUP_CLASS[seg.group];
+    items.push({
+      from,
+      to,
+      deco: Decoration.mark({
+        class: groupClass ? cls + " " + groupClass : cls,
+        attributes: seg.classification ? { "data-classification": seg.classification } : undefined,
+      }),
+    });
   }
   items.sort((a, b) => a.from - b.from || a.to - b.to);
   const builder = new RangeSetBuilder();
@@ -83,6 +101,7 @@ link(left, right);
 link(right, left);
 
 let currentPin = null;
+let lastSummary = null;
 
 function applySide(view, side) {
   view.dispatch({
@@ -91,11 +110,27 @@ function applySide(view, side) {
   view.dispatch({ effects: setSegments.of(side.segments) });
 }
 
+function groupCounts(model) {
+  const counts = new Map();
+  if (model.payload.kind !== "text") return counts;
+  for (const side of [model.payload.old, model.payload.new]) {
+    for (const seg of side.segments) {
+      if (!seg.group) continue;
+      counts.set(seg.group, (counts.get(seg.group) || 0) + 1);
+    }
+  }
+  return counts;
+}
+
 function renderNotices(model) {
   const bar = document.getElementById("notices");
   bar.innerHTML = "";
   const items = [...model.notices];
   if (!model.coverageVerified) items.push("coverage not verified");
+  // Disclosed counts (DEC-017): grouping is only permissible while it says how much it grouped.
+  for (const [group, count] of [...groupCounts(model)].sort()) {
+    items.push(`${group}: ${count} shown`);
+  }
   items.push(`mode: ${model.mode}`);
   for (const text of items) {
     const chip = document.createElement("span");
@@ -108,6 +143,7 @@ function renderNotices(model) {
 window.diffscopeRender = function (json) {
   const model = typeof json === "string" ? JSON.parse(json) : json;
   currentPin = model.pinOld + ":" + model.pinNew;
+  currentMode = model.mode;
   renderNotices(model);
 
   const stage = document.getElementById("stage");
@@ -116,7 +152,8 @@ window.diffscopeRender = function (json) {
     stage.style.display = "none";
     unrenderable.style.display = "block";
     unrenderable.textContent = model.payload.reason || "content cannot be displayed as text";
-    return { ok: true, pin: currentPin, rendered: "unrenderable" };
+    lastSummary = { ok: true, pin: currentPin, rendered: "unrenderable", mode: currentMode };
+    return lastSummary;
   }
   stage.style.display = "flex";
   unrenderable.style.display = "none";
@@ -124,23 +161,29 @@ window.diffscopeRender = function (json) {
   applySide(left, model.payload.old);
   applySide(right, model.payload.new);
 
-  return {
+  lastSummary = {
     ok: true,
     pin: currentPin,
     oldLength: left.state.doc.length,
     newLength: right.state.doc.length,
     oldSegments: model.payload.old.segments.length,
     newSegments: model.payload.new.segments.length,
+    groups: Object.fromEntries(groupCounts(model)),
+    mode: currentMode,
   };
+  return lastSummary;
 };
 
 window.diffscopeProbe = function () {
   return {
     pin: currentPin,
+    mode: currentMode,
     oldDocLength: left.state.doc.length,
     newDocLength: right.state.doc.length,
     oldText: left.state.doc.toString(),
     newText: right.state.doc.toString(),
+    summary: lastSummary,
+    formattingMarks: document.querySelectorAll(".ds-formatting").length,
   };
 };
 

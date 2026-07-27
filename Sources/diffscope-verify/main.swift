@@ -300,7 +300,9 @@ do {
 runContractChecks { name, ok, detail in report(name, ok, detail) }
 runSyntaxChecks { name, ok, detail in report(name, ok, detail) }
 runMatchingChecks { name, ok, detail in report(name, ok, detail) }
+runClassificationChecks { name, ok, detail in report(name, ok, detail) }
 runGitChecks { name, ok, detail in report(name, ok, detail) }
+runBundleFreshnessCheck { name, ok, detail in report(name, ok, detail) }
 
 print("\n\(checks - failures)/\(checks) checks passed")
 if failures > 0 { print("FAILED"); exit(1) }

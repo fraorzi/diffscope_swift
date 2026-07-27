@@ -5,6 +5,7 @@ public struct RenderSegment: Codable, Sendable, Equatable {
     public let end: Int
     public let label: String
     public let classification: String?
+    public let group: String?
     public let confidence: Double?
 }
 
@@ -72,10 +73,11 @@ public func buildRenderModel(
     pinOld: String,
     pinNew: String,
     mode: String = "raw",
-    validation: ValidationResult? = nil
+    validation: ValidationResult? = nil,
+    notices extra: [String] = []
 ) -> RenderModel {
     let result = validation ?? validate(model)
-    var notices: [String] = []
+    var notices: [String] = extra
     if !result.passed {
         notices.append("invariant violation — falling back to raw: \(result.summary)")
     }
@@ -124,6 +126,7 @@ func renderSide(bytes: [UInt8], partition: Partition) throws -> RenderSide {
             end: end,
             label: segment.label.rawValue,
             classification: segment.classification,
+            group: classificationGroup(of: segment.classification),
             confidence: segment.confidence
         ))
     }
