@@ -24,10 +24,13 @@ becomes testable *against real files on screen* afterwards.
 - [x] Invariant failure falls back to raw and says so (INV-4)
 - [x] INV-5 check: Structural and Expanded produce identical segment sets
 
-## Step 3 — boundary tie-breaking (deferred, next session)
+## Step 3 — boundary snapping
 
-Shift hunk boundaries onto syntax boundaries among equally-minimal alignments.
-Measured baseline: 38% of canonical hunk boundaries land on a node boundary.
+- [x] `SyntaxBoundaries` over named nodes; outward snap with a byte budget
+- [x] Applied as a presentation pass after labelling, never to the mask `reconcile` reads
+- [x] Budget chosen by measurement → `22-experiment-log.md` M6-B, `boundarySnapBudget = 16`
+- [x] Negative control in the suite: budget 0 must leave the change starting mid-identifier
+- [x] DEC-047, including why sliding is not implementable under INV-2 as recorded
 
 ## Review
 
@@ -50,3 +53,14 @@ Anchor identity moved out of the `classification` string into an explicit
 falls back to raw on invariant failure with the reason shown, and exposes Raw ·
 Structural · Expanded as presentation flags over one model. INV-5 is enforced by
 construction (both modes render the same `RenderModel` payload) and checked.
+
+### Step 3 — done, but narrower than the name suggests
+
+The plan said "tie-breaking". What is implemented is **snapping**, and the difference
+matters: tie-breaking picks a different equally-minimal alignment, which moves bytes out
+of the presented set and fails INV-2 as recorded. Snapping only widens, so containment
+survives by construction. 34.3% → 97.0% of boundaries land on syntax, for +4.4% bytes.
+
+Two ordering traps found by measuring rather than reasoning: snapping before `reconcile`
+manufactures `moved` claims from a presentation setting, and snapping without inheriting
+the run's classification dropped M6-A's recall from 97.8% to 40.9%.

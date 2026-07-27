@@ -8,7 +8,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**Last completed milestone: M6 part one — classification, and the structural model wired into the application. 212/212 checks pass.**
+**Last completed milestone: M6 part one — classification, boundary snapping, and the structural model wired into the application. 232/232 checks pass.**
 
 | Milestone | State |
 |---|---|
@@ -18,14 +18,14 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 | M3 raw diff end to end | Complete |
 | M4 parsing and partition construction | Complete |
 | M5 matching and alignment | Complete |
-| **M6 classification, moves, trust surface** | **Partly done** — classification, modes and app wiring landed; confidence display and boundary tie-breaking remain |
+| **M6 classification, moves, trust surface** | **Partly done** — classification, boundary snapping, modes and app wiring landed; confidence display, move search and formatting-only collapse remain |
 | M7 refresh, watching, navigation | Not started |
 | M8 hardening and beta | Not started |
 
 Run everything:
 
 ```
-swift run diffscope-verify          # 212 checks, exit 1 on failure
+swift run diffscope-verify          # 232 checks, exit 1 on failure
 swift run -c release diffscope-verify --survey ~/YourProjects
 swift run -c release diffscope-app  # the application
 ```
@@ -50,24 +50,24 @@ swift run -c release diffscope-app  # the application
 - **The diagnostic labels are gone.** `anchor`, `filler`, `refined` and `moved-content` no longer exist; the suite asserts nothing outside the typed vocabulary reaches presentation. Note the trap this sprang: `reconcile` identified anchors by testing `classification == "anchor"`, so removing the strings silently disabled move detection until anchor identity was passed explicitly.
 - **The application shows structure.** `diffscope-app` runs `structuralDiff` for the structural modes and raw otherwise; a structural result that fails validation is discarded whole and replaced by raw with the reason shown (INV-4). Status line reports anchors, moves, formatting-only and ambiguity counts.
 - **Raw · Structural · Expanded** as presentation flags over one model (DEC-013). Expanded simply drops the quietening of grouped marks, so INV-5 holds by construction and is checked both in the harness and across the webview.
+- **Boundary snapping** (DEC-047, measured in M6-B). Changed ranges widen outward onto named-node boundaries within a 16-byte budget: **34.3% → 97.0%** of boundaries land on a syntax boundary, costing **+4.4%** bytes presented. Applied *after* labelling — widening the mask `reconcile` consumes would manufacture `moved` claims out of a presentation setting.
 - **`runBundleFreshnessCheck` is now actually registered.** It was written in M5 and never called, so a stale renderer bundle would have shipped silently. Worth remembering as a class of defect: a check that is not run is not a check.
 
 ### Read this before planning the rest of M6
 
 A benchmark after M5 (`22-experiment-log.md` → M5-B) established that **the structural layer contributes nothing to alignment quality** — and cannot, because INV-2 caps the "unchanged" set at whatever the canonical byte diff already found. Measured identical to a tenth of a percent across four perturbations on 120 real files each.
 
-Its remaining value is three things: `moved` labels (bytes cannot express moves), classification, and **tie-breaking among equally-minimal alignments**. The third is unimplemented and is now the strongest argument for keeping the matcher at all.
+Its remaining value is three things: `moved` labels (bytes cannot express moves), classification, and **where a change is shown to begin and end**. The third is the slider problem: only 38% of canonical-diff hunk boundaries land on a tree-sitter node boundary, and 91% of files contain at least one misalignment.
 
-The slider problem was measured and is real here: **only 38% of canonical-diff hunk boundaries land on a tree-sitter node boundary, and 91% of files contain at least one misalignment.** Diffs routinely begin immediately after a closing brace and end mid-structure.
+**Boundary snapping now addresses the presentation half of that** (DEC-047) — 97.0% of boundaries land on a syntax boundary for +4.4% bytes shown. **Tie-breaking proper is still not done and cannot be under INV-2 as recorded**, because choosing a different equally-minimal alignment moves bytes out of the presented set while the validator recomputes one specific alignment and demands containment. Reopen DEC-021 first if you want it; do not attempt it as an implementation detail.
 
 **Do not add work to the matcher on the assumption that better matching means better alignment. It does not.**
 
 ### What to do next
 
-1. **Boundary tie-breaking** — shifting hunk boundaries onto syntax boundaries among equally-minimal alignments. Still the one measured, unaddressed weakness, and now testable against something a human can look at. Baseline to beat: 38.0% of hunk boundaries land on a node boundary, 91% of files contain at least one misalignment.
-2. Surface **confidence** in the renderer. **Ambiguity display was withdrawn by DEC-045** — detection stays as a guard against ambiguous anchors, but no indicator is built; its safety rationale lapsed once reconciliation began correcting wrong "unchanged" claims.
-3. Deliberate byte-identical move search (DEC-038). Moves are currently only discovered where reconciliation happens to reveal them.
-4. Invisible-difference disclosure (DEC-023) — the `ŻABKA` case renders identically on both sides and nothing yet says so.
+1. Surface **confidence** in the renderer. **Ambiguity display was withdrawn by DEC-045** — detection stays as a guard against ambiguous anchors, but no indicator is built; its safety rationale lapsed once reconciliation began correcting wrong "unchanged" claims.
+2. Deliberate byte-identical move search (DEC-038). Moves are currently only discovered where reconciliation happens to reveal them.
+3. Invisible-difference disclosure (DEC-023) — the `ŻABKA` case renders identically on both sides and nothing yet says so.
 
 Known weaknesses recorded rather than hidden: anchor selection is greedy by old-side position rather than a longest-increasing-subsequence; moves are only discovered where reconciliation reveals them; the file list has no keyboard path yet (M7).
 

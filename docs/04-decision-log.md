@@ -1961,3 +1961,55 @@ Classification is computed on the **aligned gap pair, before reconciliation**. T
 ### Revisit trigger
 
 Reopen if a real review case is found where a shipped label is wrong, or where an absent one costs a reviewer time — the first is a defect, the second is a scope question.
+
+---
+
+## DEC-047 — Change boundaries are snapped outward to syntax boundaries, never slid
+
+- **Date:** 2026-07-27 · **Topic:** Resolves the slider problem recorded in `22-experiment-log.md` → M5-B · **Status:** Accepted
+- **Prompted by:** M5-B concluding that tie-breaking among equally-minimal alignments is the strongest remaining argument for keeping the matcher
+
+### Context
+
+M5-B measured that only 38.0% of canonical hunk boundaries land on a tree-sitter node boundary, and that 91% of files contain at least one misalignment. Diffs routinely begin immediately after a closing brace and end mid-structure. Myers' minimality does not select a unique alignment; where several are equally short it picks arbitrarily.
+
+The obvious remedy is git's: **slide** the hunk along the file while the alignment stays equally minimal, and stop where it reads best. That is what "tie-breaking among equally-minimal alignments" means, and it is what M5-B recommended looking at.
+
+### Why sliding was not implemented
+
+Sliding moves bytes **out** of the presented set. INV-2 as recorded requires every byte of *the canonical diff's* hunks to lie within a presented range, and the validator recomputes those hunks with the same deterministic implementation. A slid presentation therefore fails validation by construction — not incidentally, but because the invariant names one specific alignment as the thing to contain.
+
+Sliding could be made legitimate, but only by **reopening DEC-021** and restating INV-2 as *"the presented model corresponds to some minimal alignment"* — checkable, but a different and weaker property, and one where a defect in the check no longer has an independent implementation behind it. That is not a change to make in passing.
+
+### Options considered
+
+1. **Slide onto boundaries** — best legibility, requires reopening the core invariant.
+2. **Snap outward onto boundaries** — widen each changed range to the nearest syntax boundary within a byte budget. Monotone, so containment survives; presents slightly more than the minimal change.
+3. **Nothing** — accept 38%.
+
+### Decision
+
+**Option 2, with a 16-byte budget, applied as a presentation pass after labelling.**
+
+Measured across 150 real files on the slider case (M6-B):
+
+| Budget | Boundaries on a syntax boundary | Bytes presented vs minimal |
+|---|---|---|
+| 0 B | 34.3% | +0.0% |
+| 8 B | 85.3% | +2.6% |
+| **16 B** | **97.0%** | **+4.4%** |
+| 64 B | 99.7% | +5.4% |
+
+16 bytes takes almost all of the available gain; beyond it the curve is flat and the cost keeps rising.
+
+### Consequences
+
+- **This is not tie-breaking, and must not be described as one.** It makes a change *begin and end* where the syntax does, at the price of showing about 4% more bytes than strictly changed. The equally-minimal-alternative question stays open.
+- Applied **after** reconciliation, never before. Widening the mask that `reconcile` consumes would let the extra bytes be read as evidence of a move, and `moved` is a claim about content rather than about where a mark begins.
+- The extra bytes are unchanged content shown *inside* a change — the direction that makes a reviewer read more, never less. The opposite direction would be an INV-2 violation.
+- A widened flank inherits the run's classification only where every change in that run agrees on one; a run containing an unclassified change stays unclassified.
+- Budget lives in `MatcherSettings.boundarySnapBudget`, so 0 is a supported configuration and is used as the negative control in the suite.
+
+### Revisit trigger
+
+Reopen if the 4% overhead proves visible as noise in review, or if a case appears where snapping merges two changes a reviewer needed to see as separate. Reopen DEC-021 first — not this decision — if true sliding is wanted.

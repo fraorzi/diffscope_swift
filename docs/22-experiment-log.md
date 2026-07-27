@@ -1047,3 +1047,46 @@ On the **gap pair**, before reconciliation. That is the only point in the pipeli
 
 - **`reconcile` was reading a diagnostic string as data.** Move detection tested `segment.classification == "anchor"`, so replacing the diagnostic vocabulary silently disabled move detection until anchor identity was passed explicitly as a set of start offsets. The diagnostic labels were load-bearing, which is precisely why they had to go.
 - **`runBundleFreshnessCheck` was never called.** It was written in M5 and left unregistered in `main.swift`, so a stale renderer bundle would have shipped unnoticed. Now registered — 207 checks, up from 177 plus 27 new ones. A check that is not run is not a check.
+
+---
+
+# M6-B — What outward boundary snapping buys, and what it costs
+
+**Status:** Complete, 2026-07-27. Answers the question M5-B left open: the slider problem is real, so what can be done about it *without* touching INV-2.
+
+## The finding that shaped the design
+
+Sliding a hunk — git's approach, and the natural reading of "tie-breaking among equally-minimal alignments" — moves bytes out of the presented set. INV-2 names *the* canonical diff's hunks as what must be contained, and the validator recomputes them deterministically, so a slid presentation fails validation by construction. Recorded as DEC-047; the alternative is reopening DEC-021, which is not a passing change.
+
+What survives is **outward** snapping: widen each changed range onto the nearest syntax boundary within a budget. Expansion is monotone, so containment holds by construction — the same argument `10-…` §3.6 already makes for grapheme snapping.
+
+## Method
+
+150 real `.tsx` files (400 B – 40 KB), each perturbed into the slider case by construction: **duplicate four consecutive lines in place**, which makes the alignment ambiguous by exactly the length of the repeated block. For each file, the canonical diff's new-side hunk boundaries were snapped at a range of budgets and two things counted — how many boundaries land on a named-node boundary, and how many bytes are presented compared with the minimal change.
+
+Named nodes only. Anonymous tokens (`{`, `)`, `return`) would make nearly every offset a boundary and the measurement meaningless.
+
+## Result
+
+```
+budget   on a syntax boundary   bytes presented vs minimal
+   0 B                 34.3%                      +0.0%
+   4 B                 70.3%                      +1.2%
+   8 B                 85.3%                      +2.6%
+  16 B                 97.0%                      +4.4%
+  32 B                 99.3%                      +5.1%
+  64 B                 99.7%                      +5.4%
+```
+
+The 0-byte row reproduces M5-B's 38.0% within the difference between the two perturbations, which is the point of including it. **16 bytes takes almost all of the gain**; past that the curve is flat while the cost keeps climbing. Shipped as `boundarySnapBudget = 16`.
+
+## Two things this measurement does not show
+
+- **It is not tie-breaking.** The presented change now begins and ends where the syntax does, but it is a *superset* of the minimal change, not an equally-minimal alternative. The question M5-B actually posed is still open.
+- **It does not prove legibility.** It proves boundary alignment and byte overhead. Whether +4.4% reads as noise is a review question, and the revisit trigger in DEC-047 is written against it.
+
+## Where it goes wrong if applied too early
+
+Snapping before `reconcile` rather than after it widens the mask that decides labels — and `reconcile` reads an anchor overlapping the mask as evidence of a **move**. The widened bytes are unchanged, so that would manufacture move claims out of a presentation setting. Applied after labelling, the only effect is that some unchanged bytes are shown inside a change.
+
+The same ordering trap cost the classification pass its recall the first time: snapping split classified changes into a classified core and unclassified flanks, dropping M6-A's 97.8% to 40.9%. Fixed by having a flank inherit the run's classification where every change in that run agrees — and only there. Back to 98.1%.

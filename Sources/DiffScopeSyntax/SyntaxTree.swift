@@ -10,6 +10,7 @@ public struct SyntaxNode: Sendable {
     public let end: Int
     public let type: String
     public let isLeaf: Bool
+    public let isNamed: Bool
     public let isError: Bool
     public let height: Int
     public let descendantCount: Int
@@ -61,10 +62,11 @@ private struct TreeBuilder {
         let start = Int(ts_node_start_byte(tsNode))
         let end = Int(ts_node_end_byte(tsNode))
         let isError = type == "ERROR" || ts_node_is_missing(tsNode)
+        let isNamed = ts_node_is_named(tsNode)
 
         nodes.append(SyntaxNode(
             id: id, parent: parent, children: [], start: start, end: end,
-            type: type, isLeaf: true, isError: isError,
+            type: type, isLeaf: true, isNamed: isNamed, isError: isError,
             height: 1, descendantCount: 1, structuralHash: 0
         ))
 
@@ -89,7 +91,7 @@ private struct TreeBuilder {
 
         nodes[id] = SyntaxNode(
             id: id, parent: parent, children: childIDs, start: start, end: end,
-            type: type, isLeaf: childIDs.isEmpty, isError: isError,
+            type: type, isLeaf: childIDs.isEmpty, isNamed: isNamed, isError: isError,
             height: height, descendantCount: descendants, structuralHash: hasher.value
         )
         return id

@@ -201,7 +201,9 @@ The structural model now reaches the interface. `diffscope-app` runs `structural
 
 Two incidental findings, both recorded in M6-A: `reconcile` was identifying anchors by reading a diagnostic label as data, and `runBundleFreshnessCheck` had been written in M5 and never registered.
 
-**Still open in M6:** confidence display, deliberate move search (DEC-038), invisible-difference disclosure (DEC-023), and boundary tie-breaking.
+**Boundary snapping landed too** (DEC-047, measured in M6-B). Changed ranges are widened outward onto named-node boundaries within a 16-byte budget: **34.3% → 97.0%** of boundaries land on a syntax boundary, at **+4.4%** bytes presented. Sliding — the version M5-B recommended looking at — is not implemented and cannot be without reopening DEC-021, because it moves bytes out of the presented set and INV-2 names one specific alignment as the thing to contain.
+
+**Still open in M6:** confidence display, deliberate move search (DEC-038), invisible-difference disclosure (DEC-023), and formatting-only *collapse* (grouping today is a quieter mark plus a disclosed count, not a foldable region).
 
 ---
 

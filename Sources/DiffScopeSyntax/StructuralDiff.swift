@@ -187,8 +187,17 @@ public func structuralDiff(
     unchangedOld = reconciledOld.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
     unchangedNew = reconciledNew.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
 
-    let oldPartition = Partition(totalLength: oldBytes.count, segments: reconciledOld.segments)
-    let newPartition = Partition(totalLength: newBytes.count, segments: reconciledNew.segments)
+    let oldPartition = snapPresentation(
+        Partition(totalLength: oldBytes.count, segments: reconciledOld.segments),
+        boundaries: SyntaxBoundaries(tree: oldTree), budget: settings.boundarySnapBudget
+    )
+    let newPartition = snapPresentation(
+        Partition(totalLength: newBytes.count, segments: reconciledNew.segments),
+        boundaries: SyntaxBoundaries(tree: newTree), budget: settings.boundarySnapBudget
+    )
+
+    unchangedOld = oldPartition.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
+    unchangedNew = newPartition.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
 
     return StructuralResult(
         model: DiffModel(
