@@ -159,7 +159,23 @@ Still open: no matching yet — both sides are partitioned independently. That i
 
 ---
 
-## M5 — Matching and alignment
+## M5 — Matching and alignment ✅ COMPLETE (2026-07-27)
+
+**Result: 177/177 checks pass.** The founding case works: wrapper removal preserves the children.
+
+Matcher implemented from the papers (DEC-030), consumed as a node mapping only (DEC-029), `minimumHeight` 1 rather than the JSX-hostile default of 2.
+
+**The invariant caught a real defect.** Prop reordering failed INV-2: a structural anchor claimed `disabled` was unchanged while the canonical byte diff had aligned the file differently and counted those bytes deleted. Fixed by reconciling structural labels against the canonical diff mask — the rule `14-…` §7.1 already stated.
+
+Reconciliation applied in both directions also produced **character-level refinement for free**: the brief's comma example now reports the comma alone, 31 of 32 bytes unchanged.
+
+Corpus: 120 real `.tsx` files, rename-like edit, **0 invariant failures, 92.3% mean unchanged**.
+
+Still open: DEC-017 classification vocabulary, deliberate move search, LIS anchor selection, and wiring the structural model into the app.
+
+---
+
+## M5 — original scope
 
 **Goal.** The product's actual value: wrapper removal that reads as a wrapper change.
 

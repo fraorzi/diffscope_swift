@@ -827,3 +827,102 @@ The conflict-marker check matters more than it looks: without it, a conflicted f
 - No matching. Both sides are partitioned independently; nothing is aligned yet — that is M5, and it is where the product's actual value appears.
 - Segments carry leaf type as `classification`, which is diagnostic rather than the DEC-017 vocabulary.
 - The grammar's `#306` whitespace-in-jsx_text behaviour was not re-tested here; M0-1 established it does not threaten the partition.
+
+---
+
+# M5 — Matching and alignment
+
+**Status:** Complete, 2026-07-27. **177/177 checks pass** (151 from M4 plus 26 new). The product's distinguishing behaviour now exists.
+
+## The founding case works
+
+```
+<div>            →   <>
+  <Header />           <Header />
+  <Content />          <Content />
+</div>           →   </>
+```
+
+```
+children survive as unchanged on the old side    PASS
+children survive as unchanged on the new side    PASS
+the wrapper itself is not reported unchanged     PASS
+most bytes are preserved rather than rewritten   PASS
+```
+
+## Matcher
+
+GumTree-family, **implemented from the papers, no source ported** (DEC-030). Top-down phase pairs isomorphic subtrees by structural hash; bottom-up phase pairs remaining internal nodes by Dice similarity over already-matched descendants.
+
+`minimumHeight` is **1**, not the customary 2. The research finding that a Java-derived default of 2 is hostile to JSX proved concrete: `<Item />` is a height-1–2 subtree that must be matchable.
+
+Output is consumed **only as a node↔node mapping** (DEC-029). No edit script is derived or stored.
+
+## The invariant caught a real defect — the important part of this milestone
+
+Prop reordering failed INV-2 on first run:
+
+```
+INV-2 old: byte 8 differs but lies in no presented segment (hunk old[8..<16] new[9..<9])
+
+OLD:  8..16  unchanged "disabled"      ← structural anchor
+NEW: 42..50  unchanged "disabled"      ← same bytes, different place
+```
+
+The anchor asserted *"these bytes are unchanged"* because the two leaves matched structurally. The canonical byte diff had aligned the file differently and counted those bytes as deleted.
+
+**Diagnosis:** labelling is a claim about *alignment*, and the authority on alignment is the textual layer. The structural matcher had produced a locally-plausible but globally non-optimal anchor set, excluding `size` and `variant` from anchoring; Myers found the better alignment and disagreed.
+
+**Fix, taken verbatim from `14-…` §7.1** — *"where they disagree about whether something differs, the textual layer wins unconditionally"*. Structural labels are now **reconciled against the canonical diff mask** before being emitted. The rule the specification already stated is now the rule the code implements.
+
+This is exactly the class of error the invariant exists to catch, and it was caught on the first run rather than shipped.
+
+## Reconciliation turned out to do two jobs
+
+Applying the mask in **both** directions produced nested refinement for free:
+
+| Direction | Effect |
+|---|---|
+| `unchanged` ∩ mask | → `moved` (if it was an anchor) or `changed` — the fix above |
+| `changed` ∖ mask | → `unchanged` — **character-level refinement** |
+
+The second direction is what the brief asked for in its string example:
+
+```
+const t = "Witaj użytkowniku";  →  const t = "Witaj, użytkowniku";
+
+unchanged  " \"Witaj"
+changed    ","          ← the comma alone
+unchanged  " użytkowniku\""
+```
+
+**31 of 32 bytes unchanged.** No separate token or character differ was needed; the canonical diff already knew.
+
+And prop reordering now reads correctly:
+
+```
+unchanged  "  size=\"lg\""
+moved      "disabled"
+```
+
+## Ambiguity is surfaced, not guessed (DEC-031)
+
+Three identical `<Item />` siblings with one edited produce a **recorded ambiguity** naming multiple candidates per side. The matcher pairs them positionally to make progress but keeps the candidate set, and anchoring **refuses to use ambiguous nodes** — so an ambiguous match never becomes a confident "unchanged" claim.
+
+## Corpus
+
+120 real `.tsx` files, each diffed against a copy with `className` renamed throughout:
+
+```
+every structural diff satisfies the invariants   PASS   0 failed of 120
+mean unchanged: 92.3%   ·   fallbacks: 0
+```
+
+A rename-like edit preserves 92.3% of the file rather than rewriting it.
+
+## Not yet done
+
+- **Classification vocabulary.** Segments carry diagnostic labels (`anchor`, `filler`, `refined`, `moved-content`), not the DEC-017 taxonomy (`formatting-only`, `jsx-attr-reorder`, …). Formatting-only grouping is therefore not yet possible.
+- **Moves are detected only where reconciliation reveals them** — a byte-identical anchor contradicted by the byte alignment. That satisfies DEC-038 but is narrower than a deliberate move search.
+- Anchor selection is greedy by old-side position, not a longest-increasing-subsequence. Reconciliation makes this safe, but a better anchor set would mean fewer bytes reported as changed.
+- The renderer still shows only `raw`; wiring the structural model into the app is not done.

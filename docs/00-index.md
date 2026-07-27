@@ -39,7 +39,7 @@ In brief: comparison is on **bytes**, normalization is **never** applied anywher
 
 **Planning complete. All phases 0–8 done.** 42 decisions recorded.
 
-**M0 through M4 are complete (2026-07-27).** M0's gates confirmed DEC-042; M1 delivered the engine skeleton and invariant harness; M2 the Git layer; M3 the raw diff end to end; M4 parsing and partition construction. **151/151 checks pass.** Details in [22-experiment-log.md](22-experiment-log.md).
+**M0 through M5 are complete (2026-07-27).** M0's gates confirmed DEC-042; M1 delivered the engine skeleton and invariant harness; M2 the Git layer; M3 the raw diff end to end; M4 parsing and partition construction; M5 matching and alignment. **177/177 checks pass.** Details in [22-experiment-log.md](22-experiment-log.md).
 
 **Implementation is under way.** Code lives in `Sources/` and `fixtures/`.
 
@@ -60,7 +60,7 @@ swift run -c release diffscope-app
 ```
 
 
-Next milestone: **M5 — matching and alignment**, where the product's actual value appears. See [19-roadmap.md](19-roadmap.md). A new agent should start at [21-agent-handoff.md](21-agent-handoff.md).
+Next milestone: **M6 — classification, moves and trust surface**, which turns diagnostic labels into the DEC-017 vocabulary and wires the structural model into the app. See [19-roadmap.md](19-roadmap.md). A new agent should start at [21-agent-handoff.md](21-agent-handoff.md).
 
 **The stack is now chosen** (DEC-042, after five spikes): **Swift shell and engine, tree-sitter via its C API, CodeMirror 6 in a `WKWebView`, Git through the CLI.** See [09-recommended-architecture.md](09-recommended-architecture.md).
 

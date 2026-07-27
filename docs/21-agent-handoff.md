@@ -1,7 +1,57 @@
 # 21 — Agent Handoff
 
-**For an agent joining with no knowledge of the conversation that produced this.**
-Read this document, then `glossary.md`, then `04-decision-log.md`.
+**Start here if you are new to this project.** This document is kept current; everything below reflects the state as of the last completed milestone.
+
+Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-roadmap.md`.
+
+---
+
+## 0. Where the project stands right now
+
+**Last completed milestone: M5 — matching and alignment. 177/177 checks pass.**
+
+| Milestone | State |
+|---|---|
+| M0 verification gates | Complete — DEC-042 confirmed |
+| M1 engine skeleton, invariant harness | Complete |
+| M2 Git layer | Complete |
+| M3 raw diff end to end | Complete |
+| M4 parsing and partition construction | Complete |
+| M5 matching and alignment | Complete |
+| **M6 classification, moves, trust surface** | **Next** |
+| M7 refresh, watching, navigation | Not started |
+| M8 hardening and beta | Not started |
+
+Run everything:
+
+```
+swift run diffscope-verify          # 177 checks, exit 1 on failure
+swift run -c release diffscope-verify --survey ~/YourProjects
+swift run -c release diffscope-app  # the application
+```
+
+`DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits.
+
+### What exists in code
+
+| Module | Contains |
+|---|---|
+| `DiffScopeEngine` | Byte partition, canonical Myers diff, invariant validation, UTF-16 mapping, render contract. Imports only `Foundation`. |
+| `DiffScopeGit` | Read-only Git layer: closed operation registry, four scopes, base cascade, discovery, parallel sweep |
+| `DiffScopeSyntax` | tree-sitter parsing, partition construction, matcher, structural diff |
+| `CTreeSitter`, `CTreeSitterTSX` | Vendored C, MIT |
+| `diffscope-verify` | The whole check suite, headless |
+| `diffscope-app` | AppKit shell + `WKWebView` |
+| `Renderer/src` | CodeMirror renderer; build with `npm run build` in `Renderer/` |
+
+### What M6 should do next
+
+1. Replace diagnostic segment labels (`anchor`, `filler`, `refined`, `moved-content`) with the DEC-017 classification vocabulary, so formatting-only grouping becomes possible.
+2. Surface ambiguity and confidence in the renderer — the data exists in `NodeMapping.ambiguities` and is currently discarded before it reaches the UI (DEC-031 requires it be shown).
+3. Wire `structuralDiff` into `diffscope-app`, which still calls `trivialModel` and therefore always shows raw.
+4. Implement the Structural/Expanded mode pair as presentation flags over one renderer (DEC-013, INV-5).
+
+Known weaknesses recorded rather than hidden: anchor selection is greedy by old-side position rather than a longest-increasing-subsequence; moves are only discovered where reconciliation reveals them; the native window layout has never been visually verified.
 
 ---
 
@@ -129,6 +179,8 @@ M0 verification gates → M1 engine skeleton and invariant harness → M2 Git la
 `18-version-one-scope.md` §"Definition of done". In short: every P0 fixture passes T-0…T-11; R-8 covers every Git operation; wrapper removal reads correctly; prop reordering never reports "no change"; parser failure degrades visibly; a 63-file working tree is reviewable from the keyboard; the application is demonstrably incapable of modifying a repository.
 
 ## 13. Keeping this synchronised
+
+**§0 of this document is the entry point and must be updated at every milestone boundary** — last milestone, check count, what the next milestone should do, and any new known weakness. If §0 is stale, a fresh agent starts from a false picture, which is worse than starting from none.
 
 A decision changed in code but not in `04-decision-log.md` is a **defect**. New decisions get the full format including rejected options and a revisit trigger. Measurements go in `22-experiment-log.md` with method. When research invalidates a decision, reopen it explicitly rather than working around it.
 
