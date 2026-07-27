@@ -190,7 +190,7 @@ func reconcile(
     against mask: [(start: Int, end: Int)],
     applied: Bool
 ) -> (segments: [Segment], moved: Int) {
-    guard applied, !mask.isEmpty else { return (segments, 0) }
+    guard applied else { return (segments, 0) }
     let sorted = mask.sorted { $0.start < $1.start }
     var out: [Segment] = []
     var moved = 0
