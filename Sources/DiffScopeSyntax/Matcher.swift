@@ -6,13 +6,16 @@ public struct MatcherSettings: Sendable {
     public var minimumDice: Double
     public var maximumCandidates: Int
     public var boundarySnapBudget: Int
+    public var moveContentFloor: Int
 
     public init(minimumHeight: Int = 1, minimumDice: Double = 0.5, maximumCandidates: Int = 32,
-                boundarySnapBudget: Int = DiffScopeSyntax.boundarySnapBudget) {
+                boundarySnapBudget: Int = DiffScopeSyntax.boundarySnapBudget,
+                moveContentFloor: Int = DiffScopeSyntax.moveContentFloor) {
         self.minimumHeight = minimumHeight
         self.minimumDice = minimumDice
         self.maximumCandidates = maximumCandidates
         self.boundarySnapBudget = boundarySnapBudget
+        self.moveContentFloor = moveContentFloor
     }
 }
 

@@ -212,6 +212,39 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
+    /// DEC-038: a block relocated without modification must read as one move, on both sides.
+    private func runMoveSelftest() {
+        let old = [UInt8]("""
+        const formatPrice = (value: number) => value.toFixed(2) + " zl";
+
+        export function Cart({ items }) {
+          return <ul>{items.map(i => <li>{formatPrice(i.price)}</li>)}</ul>;
+        }
+
+        """.utf8)
+        let new = [UInt8]("""
+        export function Cart({ items }) {
+          return <ul>{items.map(i => <li>{formatPrice(i.price)}</li>)}</ul>;
+        }
+
+        const formatPrice = (value: number) => value.toFixed(2) + " zl";
+
+        """.utf8)
+        let outcome = buildModel(path: "selftest.tsx", old: old, new: new, mode: .structural)
+        let render = buildRenderModel(model: outcome.model, pinOld: "pinG", pinNew: "pinH",
+                                      mode: "structural", validation: outcome.validation,
+                                      notices: outcome.notices)
+        guard let json = try? encodeRenderModel(render) else { exit(11) }
+        push(json)
+        webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
+            let text = (value as? String) ?? "nil"
+            let ok = text.contains("\"moved\":") && text.contains("pinG:pinH")
+            FileHandle.standardError.write(
+                Data("SELFTEST moves=\(ok ? "OK" : "MISMATCH") \(outcome.summary)\n".utf8))
+            self.snapshot(named: "moved") { exit(ok ? 0 : 12) }
+        }
+    }
+
     /// DEC-023: the corpus's own case — one side decomposed, both rendering identically. The
     /// interface has to say why the marked region looks the same on both sides.
     private func runDisclosureSelftest() {
@@ -228,7 +261,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             let ok = text.contains("normalization-form") && text.contains("U+0307")
             FileHandle.standardError.write(
                 Data("SELFTEST disclosure=\(ok ? "OK" : "MISMATCH") \(outcome.summary) \(text.suffix(220))\n".utf8))
-            self.snapshot(named: "disclosure") { exit(ok ? 0 : 10) }
+            if !ok { exit(10) }
+            self.snapshot(named: "disclosure") { self.runMoveSelftest() }
         }
     }
 

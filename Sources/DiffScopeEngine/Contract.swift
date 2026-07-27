@@ -9,6 +9,8 @@ public struct RenderSegment: Codable, Sendable, Equatable {
     public let disclosure: String?
     public let uncertain: Bool
     public let confidence: Double?
+    /// Pairs the two sides of one move. Both sides carry the same value (DEC-038).
+    public let link: Int?
 }
 
 /// Below this, a segment's alignment is worth marking as uncertain in the interface. Ordinary
@@ -135,7 +137,8 @@ func renderSide(bytes: [UInt8], partition: Partition) throws -> RenderSide {
             group: classificationGroup(of: segment.classification),
             disclosure: segment.disclosure,
             uncertain: (segment.confidence ?? 1) < confidenceFloor,
-            confidence: segment.confidence
+            confidence: segment.confidence,
+            link: segment.link
         ))
     }
 

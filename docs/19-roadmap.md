@@ -193,9 +193,9 @@ Still open: DEC-017 classification vocabulary, deliberate move search, LIS ancho
 
 ---
 
-## M6 — Classification, moves, and trust surface 🚧 PART ONE COMPLETE (2026-07-27)
+## M6 — Classification, moves, and trust surface 🚧 ALL BUT COLLAPSE COMPLETE (2026-07-27)
 
-**Result so far: 212/212 checks pass.** Classification landed as byte-level equivalence tests over the aligned gap pair (DEC-046), measured in `22-experiment-log.md` → M6-A: 97.8% recall on a whitespace-only edit across 120 real files, **0 false `formatting-only` claims of 1111** on a rename.
+**Result: 268/268 checks pass.** Classification landed as byte-level equivalence tests over the aligned gap pair (DEC-046), measured in `22-experiment-log.md` → M6-A: 97.8% recall on a whitespace-only edit across 120 real files, **0 false `formatting-only` claims of 1111** on a rename.
 
 The structural model now reaches the interface. `diffscope-app` runs `structuralDiff` for Structural and Expanded and raw for Raw, discards a structural result that fails validation and says so, and reports anchors, moves, formatting-only and ambiguity counts. The three modes are flags over one model, so INV-5 holds by construction — checked in the harness and again across the webview.
 
@@ -205,7 +205,9 @@ Two incidental findings, both recorded in M6-A: `reconcile` was identifying anch
 
 **Invisible-difference disclosure and confidence landed too** (DEC-023, DEC-017; measured in M6-C). Three classes are disclosed as a second axis beside classification, and Expanded names the codepoints. The measurement's real finding was a defect: Swift's `String ==` is canonical equivalence, so the obvious NFC test is always false — the detector passed its fixtures while reporting 0 decomposed files in a tree that contains 28.
 
-**Still open in M6:** deliberate move search (DEC-038), and formatting-only *collapse* (grouping today is a quieter mark plus a disclosed count, not a foldable region — folding needs M7's navigation work).
+**Move search landed too** (DEC-038, measured in M6-D): line-matched byte-identical moves, linked pair by pair, 120 of 120 corpus files with **0 false moves**. Two redesigns got there — whole-run matching fired on 11 of 120 because anchors survive inside a moved block and split the two sides differently, and a block move needs one range *per line* because the whitespace between moved lines need not match.
+
+**Still open in M6:** formatting-only *collapse* (grouping today is a quieter mark plus a disclosed count, not a foldable region — folding needs M7's navigation work).
 
 ---
 

@@ -172,6 +172,7 @@ function applySide(view, side) {
 
 function groupCounts(model) {
   const counts = new Map();
+  const moves = new Set();
   if (model.payload.kind !== "text") return counts;
   for (const side of [model.payload.old, model.payload.new]) {
     for (const seg of side.segments) {
@@ -181,8 +182,12 @@ function groupCounts(model) {
         counts.set(key, (counts.get(key) || 0) + 1);
       }
       if (seg.uncertain) counts.set("uncertain", (counts.get("uncertain") || 0) + 1);
+      if (seg.label === "moved" && seg.link != null) moves.add(seg.link);
     }
   }
+  // Both sides carry the same move, so the pairing — not the segment count — is the number
+  // worth showing (DEC-038: a move regroups what is presented, it never adds to it).
+  if (moves.size) counts.set("moved", moves.size);
   return counts;
 }
 

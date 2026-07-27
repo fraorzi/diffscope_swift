@@ -127,11 +127,12 @@ public func snapPresentation(
     func append(_ segment: Segment) {
         if let last = out.last, last.end == segment.start, last.label == segment.label,
            last.classification == segment.classification, last.disclosure == segment.disclosure,
-           last.confidence == segment.confidence {
+           last.confidence == segment.confidence, last.link == segment.link {
             out[out.count - 1] = Segment(start: last.start, end: segment.end, label: last.label,
                                          classification: last.classification,
                                          disclosure: last.disclosure,
-                                         confidence: last.confidence)
+                                         confidence: last.confidence,
+                                         link: last.link)
         } else {
             out.append(segment)
         }

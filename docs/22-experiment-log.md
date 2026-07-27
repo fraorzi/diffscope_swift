@@ -1142,3 +1142,49 @@ Disclosure rides alongside classification as a separate field, because the two a
 ## Rendering
 
 One badge per *run* of adjacent disclosed segments, not per segment. The first version put one on each, and a single decomposed character produced four badges across two panes — reconciliation and snapping split the edit, and repeating the reason on every piece read as four separate problems.
+
+---
+
+# M6-D — Move detection, and the two redesigns it took
+
+**Status:** Complete, 2026-07-27. Implements DEC-038.
+
+## What was there before, and why it had to go
+
+`reconcile` already produced `moved` labels: an anchor claiming *unchanged* that the byte diff contradicted was relabelled `moved`. That claim was not checkable where it was made. `reconcile` sees **one side at a time**, so it could not compare the two ranges DEC-038 requires to be byte-equal — it inferred a move from a disagreement rather than from evidence.
+
+Removed. Moves are now searched for deliberately, against both sides, after reconciliation, and the pass condition is asked of the finished model: content labelled `moved` must be byte-equal across the linked pair.
+
+## Redesign one: runs → lines
+
+The first search compared whole runs of changed content. On the corpus it fired on **11 of 120** files.
+
+Cause: structural anchors survive *inside* a relocated block — identical tokens still match — so one moved block arrives as several changed runs split by unchanged pieces, and the two sides split **differently**. Whole-run equality almost never holds.
+
+Matching line by line and extending while both sides continue: **120 of 120**. That is the unit `git --color-moved` settled on, presumably after meeting the same wall.
+
+## Redesign two: one record, several ranges
+
+A block move cannot be one byte-equal range pair: the content between two moved lines — indentation, blank lines — need not match. So a `MoveRecord` holds **one range per line**, all sharing a link. The pass condition stays trivially checkable per range, and the interface still shows one move.
+
+## Result
+
+120 real `.tsx` files, imports relocated to the end of the file without modification, against a rename control:
+
+```
+floor   files with a move   files where a rename faked one
+   4 B             120/120                            0
+   8 B             120/120                            0
+  12 B             120/120                            0
+  24 B             120/120                            0
+```
+
+Zero false moves at every floor, and every move in the corpus byte-identical across sides. The floor does not discriminate here because import lines are long; it exists for small relocations, and `12` non-whitespace bytes is what ships.
+
+**The floor is counted, not silent.** DEC-038 records `git --color-moved` applying a 20-alphanumeric-character floor that *silently* drops small moves. `movesBelowFloor` reports what the floor rejected, so a reviewer can tell "no moves" from "moves too small to show".
+
+## A defect the harness could not see
+
+`snapPresentation` merges adjacent segments that agree on label, classification, disclosure and confidence. It did not compare `link`, and the merged segment was rebuilt without it. So a verified move reached the renderer **unpaired**, and the two sides could no longer be shown as one move.
+
+Every harness check still passed: the labels were right, the bytes were right, the invariants were right. It was caught by the application selftest, which asks the *rendered document* whether a pairing exists. Worth remembering when adding a field to `Segment`: every function that rebuilds a segment is a place to drop it.

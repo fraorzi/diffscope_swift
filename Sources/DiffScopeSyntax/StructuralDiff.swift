@@ -12,11 +12,13 @@ public struct StructuralStats: Sendable, Equatable {
     public let formattingOnlySegments: Int
     public let behaviorAffectingSegments: Int
     public let invisibleSegments: Int
+    public let movesFound: Int
+    public let movesBelowFloor: Int
 
     public init(anchors: Int, ambiguities: Int, unchangedBytesOld: Int, unchangedBytesNew: Int,
                 usedFallback: Bool, fallbackReason: String?, movedSegments: Int = 0,
                 formattingOnlySegments: Int = 0, behaviorAffectingSegments: Int = 0,
-                invisibleSegments: Int = 0) {
+                invisibleSegments: Int = 0, movesFound: Int = 0, movesBelowFloor: Int = 0) {
         self.anchors = anchors
         self.ambiguities = ambiguities
         self.unchangedBytesOld = unchangedBytesOld
@@ -27,6 +29,8 @@ public struct StructuralStats: Sendable, Equatable {
         self.formattingOnlySegments = formattingOnlySegments
         self.behaviorAffectingSegments = behaviorAffectingSegments
         self.invisibleSegments = invisibleSegments
+        self.movesFound = movesFound
+        self.movesBelowFloor = movesBelowFloor
     }
 }
 
@@ -128,9 +132,6 @@ public func structuralDiff(
     var unchangedOld = 0
     var unchangedNew = 0
 
-    var oldAnchorStarts: Set<Int> = []
-    var newAnchorStarts: Set<Int> = []
-
     func emitGap(oldTo: Int, newTo: Int) {
         let oldSpan = oldCursor..<oldTo
         let newSpan = newCursor..<newTo
@@ -159,8 +160,6 @@ public func structuralDiff(
 
     for anchor in found {
         emitGap(oldTo: anchor.oldStart, newTo: anchor.newStart)
-        oldAnchorStarts.insert(anchor.oldStart)
-        newAnchorStarts.insert(anchor.newStart)
         oldSegments.append(Segment(start: anchor.oldStart, end: anchor.oldEnd,
                                    label: .unchanged, confidence: 1))
         newSegments.append(Segment(start: anchor.newStart, end: anchor.newEnd,
@@ -183,21 +182,35 @@ public func structuralDiff(
         }
     }
 
-    let reconciledOld = reconcile(oldSegments, against: oldChangedMask,
-                                  anchorStarts: oldAnchorStarts, applied: coverageKnown)
-    let reconciledNew = reconcile(newSegments, against: newChangedMask,
-                                  anchorStarts: newAnchorStarts, applied: coverageKnown)
+    let reconciledOld = reconcile(oldSegments, against: oldChangedMask, applied: coverageKnown)
+    let reconciledNew = reconcile(newSegments, against: newChangedMask, applied: coverageKnown)
 
     unchangedOld = reconciledOld.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
     unchangedNew = reconciledNew.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
 
-    let oldPartition = snapPresentation(
+    // A move regroups what is presented; it never removes it. Searched on the reconciled
+    // labels, so the candidates are exactly the content the byte diff already calls changed.
+    let search = findMoves(oldBytes: oldBytes, oldSegments: reconciledOld.segments,
+                           newBytes: newBytes, newSegments: reconciledNew.segments,
+                           floor: settings.moveContentFloor)
+    let movedOld = applyMoves(
         Partition(totalLength: oldBytes.count, segments: reconciledOld.segments),
-        boundaries: SyntaxBoundaries(tree: oldTree), budget: settings.boundarySnapBudget
+        ranges: search.moves.enumerated().flatMap { index, move in
+            move.oldRanges.map { (start: $0.lowerBound, end: $0.upperBound, link: index) }
+        }
+    )
+    let movedNew = applyMoves(
+        Partition(totalLength: newBytes.count, segments: reconciledNew.segments),
+        ranges: search.moves.enumerated().flatMap { index, move in
+            move.newRanges.map { (start: $0.lowerBound, end: $0.upperBound, link: index) }
+        }
+    )
+
+    let oldPartition = snapPresentation(
+        movedOld, boundaries: SyntaxBoundaries(tree: oldTree), budget: settings.boundarySnapBudget
     )
     let newPartition = snapPresentation(
-        Partition(totalLength: newBytes.count, segments: reconciledNew.segments),
-        boundaries: SyntaxBoundaries(tree: newTree), budget: settings.boundarySnapBudget
+        movedNew, boundaries: SyntaxBoundaries(tree: newTree), budget: settings.boundarySnapBudget
     )
 
     unchangedOld = oldPartition.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
@@ -212,14 +225,16 @@ public func structuralDiff(
             anchors: found.count, ambiguities: mapping.ambiguities.count,
             unchangedBytesOld: unchangedOld, unchangedBytesNew: unchangedNew,
             usedFallback: false, fallbackReason: nil,
-            movedSegments: reconciledOld.moved + reconciledNew.moved,
+            movedSegments: search.moves.count,
             formattingOnlySegments: segmentCount(in: oldPartition, group: .formattingOnly)
                 + segmentCount(in: newPartition, group: .formattingOnly),
             behaviorAffectingSegments: segmentCount(in: oldPartition, group: .potentiallyBehaviorAffecting)
                 + segmentCount(in: newPartition, group: .potentiallyBehaviorAffecting),
             invisibleSegments: [oldPartition, newPartition].reduce(0) { total, partition in
                 total + partition.segments.filter { $0.disclosure != nil }.count
-            }
+            },
+            movesFound: search.moves.count,
+            movesBelowFloor: search.belowFloor
         )
     )
 }
@@ -227,7 +242,6 @@ public func structuralDiff(
 func reconcile(
     _ segments: [Segment],
     against mask: [(start: Int, end: Int)],
-    anchorStarts: Set<Int> = [],
     applied: Bool
 ) -> (segments: [Segment], moved: Int) {
     guard applied else { return (segments, 0) }
@@ -273,15 +287,17 @@ func reconcile(
                 out.append(Segment(start: cursor, end: overlapStart, label: .unchanged,
                                    classification: segment.classification, confidence: segment.confidence))
             }
-            let wasAnchor = anchorStarts.contains(segment.start)
+            // An anchor the byte diff contradicts used to be relabelled `moved` here. That was
+            // a claim this function cannot check: it sees one side only, so it could not compare
+            // the two ranges DEC-038 requires to be byte-equal. Moves are now searched for
+            // deliberately, against both sides, after reconciliation.
             out.append(Segment(
                 start: overlapStart, end: overlapEnd,
-                label: wasAnchor ? .moved : .changed,
+                label: .changed,
                 classification: segment.classification,
                 disclosure: segment.disclosure,
                 confidence: 0.6
             ))
-            if wasAnchor { moved += 1 }
             cursor = overlapEnd
         }
         if cursor < segment.end {

@@ -8,7 +8,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**Last completed milestone: M6 — classification, boundary snapping, invisible-difference disclosure, confidence, and the structural model wired into the application. 254/254 checks pass.**
+**Last completed milestone: M6 — classification, boundary snapping, disclosure, confidence, move search, and the structural model wired into the application. 268/268 checks pass.**
 
 | Milestone | State |
 |---|---|
@@ -18,19 +18,19 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 | M3 raw diff end to end | Complete |
 | M4 parsing and partition construction | Complete |
 | M5 matching and alignment | Complete |
-| **M6 classification, moves, trust surface** | **Nearly done** — classification, boundary snapping, disclosure, confidence, modes and app wiring landed; deliberate move search and formatting-only collapse remain |
+| **M6 classification, moves, trust surface** | **Complete except formatting-only collapse**, which needs M7's folding |
 | M7 refresh, watching, navigation | Not started |
 | M8 hardening and beta | Not started |
 
 Run everything:
 
 ```
-swift run diffscope-verify          # 254 checks, exit 1 on failure
+swift run diffscope-verify          # 268 checks, exit 1 on failure
 swift run -c release diffscope-verify --survey ~/YourProjects
 swift run -c release diffscope-app  # the application
 ```
 
-`DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits: raw ŻABKA probe → structural render with a formatting-only label → INV-5 mode agreement across the webview → invisible-difference disclosure naming `U+0307`. Adding `DIFFSCOPE_SNAPSHOT_DIR=/some/dir` writes `structural.png`, `expanded.png` and `disclosure.png` of what the webview actually drew — the only way to check legibility, which the probe cannot see.
+`DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits: raw ŻABKA probe → structural render with a formatting-only label → INV-5 mode agreement across the webview → invisible-difference disclosure naming `U+0307` → a relocated block reported as one move. Adding `DIFFSCOPE_SNAPSHOT_DIR=/some/dir` writes `structural.png`, `expanded.png`, `disclosure.png` and `moved.png` of what the webview actually drew — the only way to check legibility, which the probe cannot see.
 
 ### What exists in code
 
@@ -47,15 +47,16 @@ swift run -c release diffscope-app  # the application
 ### What M6 landed
 
 - **Classification** (DEC-046). Byte-level equivalence tests over the aligned gap pair, computed before reconciliation because that is the only point where both sides of a change are known to correspond. Vocabulary: `whitespace`, `quote-style`, `trailing-comma`, `paren-only` → `formatting-only`; `reordering` → `potentially-behavior-affecting`. Measured on 120 real files: 97.8% recall on a whitespace-only edit, **0 false formatting-only claims of 1111** on a rename (M6-A).
-- **The diagnostic labels are gone.** `anchor`, `filler`, `refined` and `moved-content` no longer exist; the suite asserts nothing outside the typed vocabulary reaches presentation. Note the trap this sprang: `reconcile` identified anchors by testing `classification == "anchor"`, so removing the strings silently disabled move detection until anchor identity was passed explicitly.
+- **The diagnostic labels are gone.** `anchor`, `filler`, `refined` and `moved-content` no longer exist; the suite asserts nothing outside the typed vocabulary reaches presentation. Note the trap this sprang: `reconcile` identified anchors by testing `classification == "anchor"`, so removing the strings silently changed its behaviour until anchor identity was passed explicitly — and that mechanism has since been replaced entirely by the move search.
 - **The application shows structure.** `diffscope-app` runs `structuralDiff` for the structural modes and raw otherwise; a structural result that fails validation is discarded whole and replaced by raw with the reason shown (INV-4). Status line reports anchors, moves, formatting-only and ambiguity counts.
 - **Raw · Structural · Expanded** as presentation flags over one model (DEC-013). Expanded simply drops the quietening of grouped marks, so INV-5 holds by construction and is checked both in the harness and across the webview.
 - **Boundary snapping** (DEC-047, measured in M6-B). Changed ranges widen outward onto named-node boundaries within a 16-byte budget: **34.3% → 97.0%** of boundaries land on a syntax boundary, costing **+4.4%** bytes presented. Applied *after* labelling — widening the mask `reconcile` consumes would manufacture `moved` claims out of a presentation setting.
 - **Invisible-difference disclosure** (DEC-023, measured in M6-C). `normalization-form`, `invisible-control` and `whitespace-lookalike` ride as a second axis beside classification, because the axes cross — a trailing non-breaking space is both formatting and invisible. Expanded names the codepoints. **Read M6-C before touching it:** Swift's `String ==` is canonical equivalence, so the obvious NFC test is always false and the detector silently detected nothing while its fixtures passed.
 - **Confidence is indicated, not merely computed.** `confidenceFloor = 0.8` lives in the engine and the contract carries a computed `uncertain` flag, so a renderer cannot quietly redefine what counts as certain.
+- **Deliberate move search** (DEC-038, measured in M6-D). Line-matched, byte-identical, linked pair by pair; 120 of 120 corpus files recognise a relocation with **0 false moves**. The old reconciliation-derived `moved` label is gone — it claimed a move while seeing one side only, so it could not check the condition DEC-038 names. The rejection floor is *counted* (`movesBelowFloor`), because DEC-038 records git's silent floor as the thing to avoid.
 - **`runBundleFreshnessCheck` is now actually registered.** It was written in M5 and never called, so a stale renderer bundle would have shipped silently. Worth remembering as a class of defect: a check that is not run is not a check.
 
-### Read this before planning the rest of M6
+### Read this before planning M7
 
 A benchmark after M5 (`22-experiment-log.md` → M5-B) established that **the structural layer contributes nothing to alignment quality** — and cannot, because INV-2 caps the "unchanged" set at whatever the canonical byte diff already found. Measured identical to a tenth of a percent across four perturbations on 120 real files each.
 
@@ -67,13 +68,14 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 
 ### What to do next
 
-1. Deliberate byte-identical move search (DEC-038). Moves are currently only discovered where reconciliation happens to reveal them, which is accidental coverage rather than a search.
-2. Formatting-only **collapse** — DEC-017 asks for grouping with a disclosed count *and immediate expansion*. The count and the quieter mark exist; a foldable region does not, and folding needs the navigation work in M7.
-3. Then M7: FSEvents refresh, keyboard navigation, collapsed unchanged ranges.
+1. Formatting-only **collapse** — DEC-017 asks for grouping with a disclosed count *and immediate expansion*. The count and the quieter mark exist; a foldable region does not, and folding needs the navigation work in M7.
+2. Then M7: FSEvents refresh, keyboard navigation, collapsed unchanged ranges — collapse and navigation are the same machinery, which is why the one remaining M6 item waits for them.
 
 **Ambiguity display was withdrawn by DEC-045** — detection stays as a guard against ambiguous anchors, but no indicator is built.
 
-Known weaknesses recorded rather than hidden: anchor selection is greedy by old-side position rather than a longest-increasing-subsequence; moves are only discovered where reconciliation reveals them; the file list has no keyboard path yet (M7).
+Known weaknesses recorded rather than hidden: anchor selection is greedy by old-side position rather than a longest-increasing-subsequence; moved-and-modified content presents as delete plus add (accepted in DEC-038); the file list has no keyboard path yet (M7).
+
+**When adding a field to `Segment`, grep for every place that rebuilds one.** `snapPresentation` merges neighbouring segments and silently dropped the move `link`, so a verified move reached the renderer unpaired while every harness check passed. The application selftest caught it — see M6-D.
 
 The native window layout **has** now been looked at — repository list, file list, scope and mode controls, and the founding case rendering with children preserved. Everything below that in the interface (gutter, navigation, collapsed ranges) is still absent rather than unverified.
 

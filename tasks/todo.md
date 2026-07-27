@@ -40,6 +40,15 @@ becomes testable *against real files on screen* afterwards.
 - [x] Renderer: dotted outline, dashed underline for uncertain, one badge per run, codepoints in Expanded
 - [x] Corpus prevalence + the Swift `String ==` defect → `22-experiment-log.md` M6-C
 
+## Step 5 — deliberate move search (DEC-038)
+
+- [x] Line-matched byte-identical search over reconciled changed content
+- [x] `MoveRecord` holds one range per line; both sides share a `link`
+- [x] Reconciliation no longer invents `moved` labels it cannot verify
+- [x] Rejection floor counted, not silent (`movesBelowFloor`)
+- [x] Corpus + false-positive control → `22-experiment-log.md` M6-D
+- [x] Application selftest renders a relocation and checks the pairing survives
+
 ## Review
 
 ### Step 1 — done
@@ -54,6 +63,7 @@ Detectors are cumulative-normaliser equality tests, first match wins. A false
 
 Anchor identity moved out of the `classification` string into an explicit
 `anchorStarts` set passed to `reconcile` — the diagnostic string was load-bearing.
+*(Step 5 then removed that path entirely: the label it fed could not be verified.)*
 
 ### Step 2 — done
 
@@ -82,3 +92,17 @@ contains 28. Every comparison now goes through scalar arrays.
 
 Confidence threshold lives in the engine, not the renderer — a renderer that owns the
 threshold can quietly stop showing uncertainty.
+
+### Step 5 — done, after two redesigns
+
+Whole-run matching fired on 11 of 120 corpus files: anchors survive inside a moved block,
+so the two sides split into runs differently. Line matching, extended while both sides
+continue, gives 120 of 120 with zero false moves.
+
+A block move is one record with one range *per line*, because the ranges must be byte-equal
+and the whitespace between moved lines need not be.
+
+`snapPresentation` merged neighbouring segments without comparing `link` and rebuilt them
+without it, so a verified move reached the renderer unpaired while every harness check
+passed. Caught by the application selftest, which asks the rendered document instead of
+the model.
