@@ -1,0 +1,56 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { color-scheme: light dark; }
+  html, body { margin: 0; height: 100%; font: 12px ui-monospace, SFMono-Regular, Menlo, monospace; }
+  body { display: flex; flex-direction: column; background: Canvas; color: CanvasText; }
+
+  #notices { display: flex; gap: 6px; padding: 6px 8px; flex-wrap: wrap;
+             border-bottom: 1px solid color-mix(in srgb, CanvasText 18%, transparent); }
+  .ds-chip { padding: 2px 8px; border-radius: 10px; font-size: 11px;
+             border: 1px solid color-mix(in srgb, CanvasText 30%, transparent); }
+  .ds-chip-alert { border-style: dashed; font-weight: 600; }
+
+  #stage { display: flex; flex: 1; min-height: 0; }
+  #left, #right { flex: 1; min-width: 0; overflow: hidden;
+                  border-right: 1px solid color-mix(in srgb, CanvasText 18%, transparent); }
+  #right { border-right: none; }
+  .cm-editor { height: 100%; }
+  .cm-scroller { overflow: auto; }
+
+  #unrenderable { display: none; padding: 16px; white-space: pre-wrap; }
+
+  /* Change meaning is carried by texture and underline, never by token colour (DEC-035). */
+  .ds-changed {
+    background: repeating-linear-gradient(
+      -45deg,
+      color-mix(in srgb, CanvasText 10%, transparent) 0 3px,
+      transparent 3px 6px);
+    text-decoration: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 2px;
+  }
+  .ds-fallback {
+    background: color-mix(in srgb, CanvasText 7%, transparent);
+    text-decoration: underline dotted;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 2px;
+  }
+  .ds-moved {
+    outline: 1px dashed color-mix(in srgb, CanvasText 45%, transparent);
+    outline-offset: -1px;
+  }
+</style>
+</head>
+<body>
+  <div id="notices"></div>
+  <div id="stage">
+    <div id="left"></div>
+    <div id="right"></div>
+  </div>
+  <pre id="unrenderable"></pre>
+  <script src="renderer.js"></script>
+</body>
+</html>
