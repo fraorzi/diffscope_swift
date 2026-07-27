@@ -1,0 +1,110 @@
+{
+  "empty-to-content": {
+    "after": {
+      "bytes": 13,
+      "ext": "ts",
+      "sha256": "95befdd6e691d4d89031a2a2901cc74fc6242109980b060e08ddf87829924483"
+    },
+    "before": {
+      "bytes": 0,
+      "ext": "ts",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "identical": {
+    "after": {
+      "bytes": 13,
+      "ext": "ts",
+      "sha256": "95befdd6e691d4d89031a2a2901cc74fc6242109980b060e08ddf87829924483"
+    },
+    "before": {
+      "bytes": 13,
+      "ext": "ts",
+      "sha256": "95befdd6e691d4d89031a2a2901cc74fc6242109980b060e08ddf87829924483"
+    }
+  },
+  "jsx-wrapper-removal": {
+    "after": {
+      "bytes": 34,
+      "ext": "tsx",
+      "sha256": "ac65926b00c6401351d825c91af135dd1519ddbf1bfa4771743c4ea83f167826"
+    },
+    "before": {
+      "bytes": 40,
+      "ext": "tsx",
+      "sha256": "d512a6041218e0a935426af36bf008a815f8ce989437c00b9cf95bed6a19d018"
+    }
+  },
+  "line-ending-change": {
+    "after": {
+      "bytes": 20,
+      "ext": "txt",
+      "sha256": "c8dba68945249de9b4faed72b89e041e3df77ffff885122599e6c2f7c65a68b2"
+    },
+    "before": {
+      "bytes": 17,
+      "ext": "txt",
+      "sha256": "4fdbc441ea7b546100e086ac1e4fc5ae6749b7314311c99db05be450eca12996"
+    }
+  },
+  "nfc-vs-nfd": {
+    "after": {
+      "bytes": 26,
+      "ext": "ts",
+      "sha256": "677b54b8d216e977e51f0cc6d61c54a39de0e939c2fa771740e4be1f8260c90b"
+    },
+    "before": {
+      "bytes": 27,
+      "ext": "ts",
+      "sha256": "5db09c95882659819334fe66084318f7d27e53389103d35a43b69b34f145021c"
+    }
+  },
+  "no-trailing-newline": {
+    "after": {
+      "bytes": 12,
+      "ext": "ts",
+      "sha256": "3f41cbb303012f33212c92326b27f6cc604fd414e20315cb10f2be7f1f6bb83c"
+    },
+    "before": {
+      "bytes": 13,
+      "ext": "ts",
+      "sha256": "95befdd6e691d4d89031a2a2901cc74fc6242109980b060e08ddf87829924483"
+    }
+  },
+  "string-single-character": {
+    "after": {
+      "bytes": 37,
+      "ext": "ts",
+      "sha256": "2aa565ace3d3926b234500b9db2acdb430b0054e83d51c48921d0a52a43787cd"
+    },
+    "before": {
+      "bytes": 36,
+      "ext": "ts",
+      "sha256": "b65d4603e3732cfdfe9a287a93fba67611bafbd5d9690604bc5656b6af17492f"
+    }
+  },
+  "unicode-graphemes": {
+    "after": {
+      "bytes": 29,
+      "ext": "ts",
+      "sha256": "6b30e808bb9b7d0eb605d42db3517683679b91ff89a24482af819a0ebcb8da10"
+    },
+    "before": {
+      "bytes": 22,
+      "ext": "ts",
+      "sha256": "c8046e7a3d8f4d19e6b2a74f9338c3429528dda7539f3a79459561ab49ee65a3"
+    }
+  },
+  "whitespace-only": {
+    "after": {
+      "bytes": 31,
+      "ext": "js",
+      "sha256": "be30f47d12297532dc8950e2586f7ddeff6c22173246c84b4c1ec71d7c8c4821"
+    },
+    "before": {
+      "bytes": 29,
+      "ext": "js",
+      "sha256": "44de7d27d30a4d6aac67658f06b02a356af4b556db4c4611af962a92620f48e6"
+    }
+  }
+}
