@@ -1188,3 +1188,32 @@ Zero false moves at every floor, and every move in the corpus byte-identical acr
 `snapPresentation` merges adjacent segments that agree on label, classification, disclosure and confidence. It did not compare `link`, and the merged segment was rebuilt without it. So a verified move reached the renderer **unpaired**, and the two sides could no longer be shown as one move.
 
 Every harness check still passed: the labels were right, the bytes were right, the invariants were right. It was caught by the application selftest, which asks the *rendered document* whether a pairing exists. Worth remembering when adding a field to `Segment`: every function that rebuilds a segment is a place to drop it.
+
+---
+
+# M7-A — Navigation and folding: two decisions worth stating
+
+**Status:** Complete, 2026-07-27. First slice of M7 (DEC-016 keyboard map, DEC-017 expansion, DEC-034's pairing idea applied to jumps).
+
+## Navigation follows the canonical diff, not the presented segments
+
+"Next change" could have walked the presented runs. It walks the **canonical diff's hunks** instead, converted to UTF-16 in the same pass as everything else (DEC-044).
+
+The reason is that presented ranges are supersets of the canonical hunks — snapping widened them by ~4.4% (M6-B), classification split them, folds have to avoid them. Navigating the superset means "next change" drifts away from the alignment INV-2 is stated against. Navigating the hunks keeps the two definitions of *change* identical, and every stop still lands inside a presented range because containment is exactly what INV-2 guarantees. The suite asserts that last property directly rather than trusting the argument.
+
+## A fold has to be byte-equal on both sides, or it is not offered
+
+Folding is the only presentation act that puts content **out of sight**, so it is the only place where the invariant's "never suppress" has real teeth. The engine offers a fold only when:
+
+- the range lies strictly between two stops, on both sides;
+- it starts and ends on line boundaries, keeping `collapseContextLines = 3` around each change;
+- it is at least `collapseMinimumLines = 8` long — below that a fold costs a reader more than it saves;
+- **the old and new bytes in the folded range are equal.**
+
+The last condition makes the fold pair well-defined on both panes, which is what keeps them aligned while folded. It is the same argument DEC-034 makes for scroll anchoring: an anchor that exists on one side only cannot align two panes.
+
+Both are computed in Swift, not JavaScript, so both are checkable in the headless suite — the renderer receives a list and executes it.
+
+## Verified on screen
+
+The application selftest renders a 42-line file with an edit at each end, folds the middle, and jumps: `{"index":0,"total":2}`, one fold, both panes showing the same marker with three lines of context. `navigation.png`.

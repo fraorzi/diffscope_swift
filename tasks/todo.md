@@ -106,3 +106,23 @@ and the whitespace between moved lines need not be.
 without it, so a verified move reached the renderer unpaired while every harness check
 passed. Caught by the application selftest, which asks the rendered document instead of
 the model.
+
+## Step 6 — M7 part one: navigation, folding, keyboard
+
+- [x] `changeStops` from the canonical diff; `collapseRanges` between them
+- [x] A fold is offered only where both sides are byte-equal, on line boundaries, with context
+- [x] Both carried on the render contract in UTF-16 → checkable headlessly
+- [x] Renderer: block fold widget with a disclosed count, click or ⌘E to expand; paired jumps
+- [x] Menu-bar keyboard map covering every function DEC-016 lists
+- [x] Editor integration with a `{file}`/`{line}` template, failure shown not swallowed
+- [x] Application selftest renders folds and jumps → `navigation.png`
+
+### Step 6 — done
+
+Navigation walks the canonical hunks rather than the presented segments: presented ranges are
+supersets after snapping, and navigating the superset drifts from the alignment INV-2 is
+stated against. Every stop still lands inside a presented range — asserted, not assumed.
+
+Folding is the only act that hides content, so the engine refuses to offer a fold unless the
+old and new bytes in it are equal. That also makes the fold well-defined on both panes, which
+is what keeps them aligned while folded.

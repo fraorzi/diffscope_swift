@@ -221,7 +221,19 @@ Two incidental findings, both recorded in M6-A: `reconcile` was identifying anch
 
 ---
 
-## M7 — Refresh, watching, and navigation
+## M7 — Refresh, watching, and navigation 🚧 NAVIGATION AND FOLDING COMPLETE (2026-07-27)
+
+**Result: 288/288 checks pass.** Change stops and collapsible ranges are computed in the engine and carried on the render contract, so both are checkable headlessly; the renderer executes a list rather than deciding anything.
+
+Navigation follows the **canonical diff**, not the presented segments — the presented ranges are supersets after snapping and classification, and walking the superset would drift from the alignment INV-2 is stated against. A fold is offered only where the two sides are **byte-equal**, which both keeps the panes aligned while folded and makes folding safe against the core invariant. Method and reasoning in `22-experiment-log.md` → M7-A.
+
+The keyboard map is in the menu bar (DEC-016): modes, scopes, next/previous change, expand, next/previous file and repository, focus movement, open in editor. Editor integration is a template with `{file}`/`{line}`, defaulting to WebStorm, overridable through `DIFFSCOPE_EDITOR`, never populated from repository content (DEC-015), and its failure is shown in the status line rather than swallowed.
+
+**Still open in M7:** FSEvents watching (DEC-027), debounce (DEC-026), scroll anchoring on refresh (DEC-034), and formatting-only collapse — the fold machinery now exists, so the last one is a small addition rather than a milestone.
+
+---
+
+## M7 — original scope
 
 **Scope.** FSEvents with `node_modules` excluded (DEC-027); trailing-edge debounce with cap (DEC-026); scroll anchoring to nearest unchanged segment (DEC-034); complete keyboard map (DEC-016); previous/next change; collapsed ranges; editor integration (DEC-015).
 

@@ -43,6 +43,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var pendingModel: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        buildMenu()
         buildWindow()
         loadRenderer()
         let root = ProcessInfo.processInfo.environment["DIFFSCOPE_ROOT"]
@@ -212,6 +213,29 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
+    /// M7: two edits far apart, so the middle is foldable and "next change" has somewhere to go.
+    private func runNavigationSelftest() {
+        let lines = (1...40).map { "const value\($0) = \($0);\n" }.joined()
+        let old = [UInt8]("const first = 1;\n\(lines)const last = 2;\n".utf8)
+        let new = [UInt8]("const first = 111;\n\(lines)const last = 222;\n".utf8)
+        let outcome = buildModel(path: "selftest.tsx", old: old, new: new, mode: .structural)
+        let render = buildRenderModel(model: outcome.model, pinOld: "pinI", pinNew: "pinJ",
+                                      mode: "structural", validation: outcome.validation,
+                                      notices: outcome.notices)
+        guard let json = try? encodeRenderModel(render) else { exit(13) }
+        push(json)
+        webView.evaluateJavaScript("JSON.stringify(window.diffscopeCommand(\"nextChange\"))") { value, _ in
+            let jump = (value as? String) ?? "nil"
+            self.webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { probe, _ in
+                let text = (probe as? String) ?? "nil"
+                let ok = jump.contains("\"index\":0") && !text.contains("\"foldMarks\":0")
+                FileHandle.standardError.write(
+                    Data("SELFTEST navigation=\(ok ? "OK" : "MISMATCH") jump=\(jump) stops=\(render.stops.count) folds=\(render.collapses.count)\n".utf8))
+                self.snapshot(named: "navigation") { exit(ok ? 0 : 14) }
+            }
+        }
+    }
+
     /// DEC-038: a block relocated without modification must read as one move, on both sides.
     private func runMoveSelftest() {
         let old = [UInt8]("""
@@ -241,7 +265,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             let ok = text.contains("\"moved\":") && text.contains("pinG:pinH")
             FileHandle.standardError.write(
                 Data("SELFTEST moves=\(ok ? "OK" : "MISMATCH") \(outcome.summary)\n".utf8))
-            self.snapshot(named: "moved") { exit(ok ? 0 : 12) }
+            if !ok { exit(12) }
+            self.snapshot(named: "moved") { self.runNavigationSelftest() }
         }
     }
 
@@ -328,6 +353,126 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     @objc private func scopeChanged() {
         state.scope = [.allLocalVsHead, .unstagedVsIndex, .stagedVsHead, .branchVsMergeBase][scopeControl.selectedSegment]
         reloadFiles()
+    }
+
+    /// DEC-016 commits to full keyboard operation of *every* function, so this is a map rather
+    /// than a shortcut list: anything reachable only by pointer is a defect. The bindings live
+    /// in the menu bar so they are discoverable and so macOS routes them regardless of focus.
+    func buildMenu() {
+        let main = NSMenu()
+
+        let appItem = NSMenuItem()
+        let appMenu = NSMenu()
+        appMenu.addItem(withTitle: "Quit DiffScope", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        appItem.submenu = appMenu
+        main.addItem(appItem)
+
+        let viewItem = NSMenuItem()
+        let view = NSMenu(title: "View")
+        for (index, mode) in PresentationMode.allCases.enumerated() {
+            let item = view.addItem(withTitle: mode.title, action: #selector(selectMode(_:)),
+                                    keyEquivalent: String(index + 1))
+            item.tag = index
+            item.target = self
+        }
+        view.addItem(.separator())
+        for (index, title) in ["All local", "Unstaged", "Staged", "vs base"].enumerated() {
+            let item = view.addItem(withTitle: "Scope: \(title)", action: #selector(selectScope(_:)),
+                                    keyEquivalent: String(index + 1))
+            item.keyEquivalentModifierMask = [.command, .shift]
+            item.tag = index
+            item.target = self
+        }
+        viewItem.submenu = view
+        main.addItem(viewItem)
+
+        let navigateItem = NSMenuItem()
+        let navigate = NSMenu(title: "Navigate")
+        let bindings: [(String, Selector, String, NSEvent.ModifierFlags)] = [
+            ("Next Change", #selector(nextChange), "n", [.command]),
+            ("Previous Change", #selector(previousChange), "p", [.command]),
+            ("Expand All Collapsed Ranges", #selector(expandAll), "e", [.command]),
+            ("Next File", #selector(nextFile), "]", [.command]),
+            ("Previous File", #selector(previousFile), "[", [.command]),
+            ("Next Repository", #selector(nextRepository), "]", [.command, .shift]),
+            ("Previous Repository", #selector(previousRepository), "[", [.command, .shift]),
+            ("Focus Repositories", #selector(focusRepositories), "1", [.command, .option]),
+            ("Focus Files", #selector(focusFiles), "2", [.command, .option]),
+            ("Focus Diff", #selector(focusDiff), "3", [.command, .option]),
+            ("Open in Editor", #selector(openInEditor), "o", [.command]),
+        ]
+        for (title, action, key, modifiers) in bindings {
+            let item = navigate.addItem(withTitle: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = modifiers
+            item.target = self
+        }
+        navigateItem.submenu = navigate
+        main.addItem(navigateItem)
+
+        NSApplication.shared.mainMenu = main
+    }
+
+    @objc private func selectMode(_ sender: NSMenuItem) {
+        modeControl.selectedSegment = sender.tag
+        modeChanged()
+    }
+
+    @objc private func selectScope(_ sender: NSMenuItem) {
+        scopeControl.selectedSegment = sender.tag
+        scopeChanged()
+    }
+
+    @objc private func nextChange() { runCommand("nextChange") }
+    @objc private func previousChange() { runCommand("previousChange") }
+    @objc private func expandAll() { runCommand("expandAll") }
+
+    private func runCommand(_ name: String) {
+        webView.evaluateJavaScript("JSON.stringify(window.diffscopeCommand(\"\(name)\"))") { value, _ in
+            guard let text = value as? String, text != "null" else { return }
+            self.statusLabel.stringValue = "\(name): \(text)"
+        }
+    }
+
+    private func step(_ table: NSTableView, by delta: Int) {
+        let count = numberOfRows(in: table)
+        guard count > 0 else { return }
+        let next = max(0, min(count - 1, (table.selectedRow < 0 ? 0 : table.selectedRow + delta)))
+        table.selectRowIndexes(IndexSet(integer: next), byExtendingSelection: false)
+        table.scrollRowToVisible(next)
+    }
+
+    @objc private func nextFile() { step(fileTable, by: 1) }
+    @objc private func previousFile() { step(fileTable, by: -1) }
+    @objc private func nextRepository() { step(repoTable, by: 1) }
+    @objc private func previousRepository() { step(repoTable, by: -1) }
+    @objc private func focusRepositories() { window.makeFirstResponder(repoTable) }
+    @objc private func focusFiles() { window.makeFirstResponder(fileTable) }
+    @objc private func focusDiff() { window.makeFirstResponder(webView) }
+
+    /// DEC-015: a configurable template, never populated from repository content — the template
+    /// is user configuration and a repository is untrusted input. Failure is shown, not swallowed.
+    @objc private func openInEditor() {
+        guard let repository = state.selectedRepository, let file = state.selectedFile else {
+            statusLabel.stringValue = "open in editor: no file selected"
+            return
+        }
+        let template = ProcessInfo.processInfo.environment["DIFFSCOPE_EDITOR"]
+            ?? "/usr/bin/open -a WebStorm {file}"
+        let path = repository.url.appendingPathComponent(file.path).path
+        let parts = template.replacingOccurrences(of: "{file}", with: path)
+            .replacingOccurrences(of: "{line}", with: "1")
+            .split(separator: " ").map(String.init)
+        guard let executable = parts.first else { return }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = Array(parts.dropFirst())
+        do {
+            try process.run()
+            statusLabel.stringValue = "opened \(file.path) in the editor"
+        } catch {
+            statusLabel.stringValue = "open in editor failed: \(error.localizedDescription)"
+        }
     }
 
     @objc private func modeChanged() {

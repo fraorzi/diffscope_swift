@@ -8,7 +8,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**Last completed milestone: M6 — classification, boundary snapping, disclosure, confidence, move search, and the structural model wired into the application. 268/268 checks pass.**
+**Last completed milestone: M7 part one — navigation, folding, and the keyboard map, on top of a complete M6. 288/288 checks pass.**
 
 | Milestone | State |
 |---|---|
@@ -19,13 +19,13 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 | M4 parsing and partition construction | Complete |
 | M5 matching and alignment | Complete |
 | **M6 classification, moves, trust surface** | **Complete except formatting-only collapse**, which needs M7's folding |
-| M7 refresh, watching, navigation | Not started |
+| M7 refresh, watching, navigation | **Partly done** — navigation, folding and the keyboard map landed; FSEvents, debounce and scroll anchoring remain |
 | M8 hardening and beta | Not started |
 
 Run everything:
 
 ```
-swift run diffscope-verify          # 268 checks, exit 1 on failure
+swift run diffscope-verify          # 288 checks, exit 1 on failure
 swift run -c release diffscope-verify --survey ~/YourProjects
 swift run -c release diffscope-app  # the application
 ```
@@ -66,10 +66,19 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 
 **Do not add work to the matcher on the assumption that better matching means better alignment. It does not.**
 
+### What M7 landed so far
+
+- **Change stops and folds are computed in the engine**, carried on the render contract in UTF-16, and merely executed by the renderer — so both are checkable headlessly (M7-A). Navigation follows the **canonical diff**, not the presented segments, because presented ranges are supersets after snapping and walking the superset drifts from the alignment INV-2 is stated against.
+- **A fold is offered only where both sides are byte-equal.** Folding is the one presentation act that hides content, so it is the one place the "never suppress" invariant has teeth. Byte-equality also keeps the two panes aligned while folded.
+- **The keyboard map lives in the menu bar** (DEC-016): modes ⌘1–3, scopes ⇧⌘1–4, ⌘N/⌘P next and previous change, ⌘E expand, ⌘[ ⌘] files, ⇧⌘[ ⇧⌘] repositories, ⌥⌘1–3 focus, ⌘O open in editor.
+- **Editor integration** (DEC-015): a `{file}`/`{line}` template defaulting to WebStorm, overridable through `DIFFSCOPE_EDITOR`, never populated from repository content, with failure shown in the status line.
+
 ### What to do next
 
-1. Formatting-only **collapse** — DEC-017 asks for grouping with a disclosed count *and immediate expansion*. The count and the quieter mark exist; a foldable region does not, and folding needs the navigation work in M7.
-2. Then M7: FSEvents refresh, keyboard navigation, collapsed unchanged ranges — collapse and navigation are the same machinery, which is why the one remaining M6 item waits for them.
+1. **FSEvents watching** (DEC-027, `node_modules` excluded) with the trailing-edge debounce and cap of DEC-026, and R-9's mid-analysis-change fixture.
+2. **Scroll anchoring on refresh** (DEC-034) — anchor to the nearest unchanged segment above the viewport top. The fold pairing already relies on the same "must exist on both sides" argument, so the machinery rhymes.
+3. **Formatting-only collapse** — the fold machinery now exists, so this is a small addition: group by `formatting-only` runs rather than by unchanged stretches.
+4. F15's forced watcher drop and the fixtures that cannot occur locally (M8).
 
 **Ambiguity display was withdrawn by DEC-045** — detection stays as a guard against ambiguous anchors, but no indicator is built.
 

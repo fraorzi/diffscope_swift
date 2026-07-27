@@ -51,6 +51,27 @@ function revealedCodepoints(text) {
   return out;
 }
 
+// Folding is the only presentation act that puts content out of sight, so the marker states
+// exactly how much and stays one keystroke from opening (DEC-017: disclosed count, immediate
+// expansion). What it hides is byte-equal on both sides — the engine proves that before it
+// offers the fold at all.
+class FoldWidget extends WidgetType {
+  constructor(lines, index) { super(); this.lines = lines; this.index = index; }
+  eq(other) { return other.lines === this.lines && other.index === this.index; }
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "ds-fold";
+    el.textContent = `${this.lines} unchanged lines — \u2318E, or click, to expand`;
+    el.setAttribute("role", "button");
+    el.addEventListener("mousedown", event => {
+      event.preventDefault();
+      expandFold(this.index);
+    });
+    return el;
+  }
+  ignoreEvent() { return false; }
+}
+
 class DisclosureWidget extends WidgetType {
   constructor(text) { super(); this.text = text; }
   eq(other) { return other.text === this.text; }
@@ -62,7 +83,25 @@ class DisclosureWidget extends WidgetType {
   }
 }
 
-function decorationsFor(state, segments) {
+let folds = [];        // { oldStart, oldEnd, newStart, newEnd, lines }
+let expanded = new Set();
+let stops = [];
+let stopIndex = -1;
+
+function foldsFor(state, side) {
+  const items = [];
+  const max = state.doc.length;
+  folds.forEach((fold, index) => {
+    if (expanded.has(index)) return;
+    const from = Math.max(0, Math.min(side === "old" ? fold.oldStart : fold.newStart, max));
+    const to = Math.max(from, Math.min(side === "old" ? fold.oldEnd : fold.newEnd, max));
+    if (to <= from) return;
+    items.push({ from, to, deco: Decoration.replace({ widget: new FoldWidget(fold.lines, index), block: true }) });
+  });
+  return items;
+}
+
+function decorationsFor(state, segments, side) {
   const items = [];
   const disclosureRuns = [];
   const max = state.doc.length;
@@ -108,6 +147,7 @@ function decorationsFor(state, segments) {
       deco: Decoration.widget({ widget: new DisclosureWidget(label), side: 1 }),
     });
   }
+  items.push(...foldsFor(state, side));
   items.sort((a, b) => a.from - b.from || a.to - b.to);
   const builder = new RangeSetBuilder();
   for (const item of items) builder.add(item.from, item.to, item.deco);
@@ -119,7 +159,7 @@ function makePane(parent, side) {
     create: () => Decoration.none,
     update: (value, tr) => {
       for (const effect of tr.effects) if (effect.is(setSegments)) {
-        return decorationsFor(tr.state, effect.value);
+        return decorationsFor(tr.state, effect.value, side);
       }
       return value.map(tr.changes);
     },
@@ -167,8 +207,57 @@ function applySide(view, side) {
   view.dispatch({
     changes: { from: 0, to: view.state.doc.length, insert: side.text },
   });
+  view.__segments = side.segments;
   view.dispatch({ effects: setSegments.of(side.segments) });
 }
+
+function refreshDecorations() {
+  for (const view of [left, right]) {
+    view.dispatch({ effects: setSegments.of(view.__segments || []) });
+  }
+}
+
+function expandFold(index) {
+  expanded.add(index);
+  refreshDecorations();
+}
+
+// Both panes scroll to the same stop, because a stop is stated on both sides (DEC-034 uses the
+// same idea for refresh: an anchor that exists on one side only cannot align two panes).
+function goToStop(delta) {
+  if (!stops.length) return null;
+  stopIndex = stopIndex < 0
+    ? (delta > 0 ? 0 : stops.length - 1)
+    : (stopIndex + delta + stops.length) % stops.length;
+  const stop = stops[stopIndex];
+  for (const [view, from] of [[left, stop.oldStart], [right, stop.newStart]]) {
+    const position = Math.max(0, Math.min(from, view.state.doc.length));
+    // A fold covering the target would swallow the jump.
+    folds.forEach((fold, index) => {
+      const start = view === left ? fold.oldStart : fold.newStart;
+      const end = view === left ? fold.oldEnd : fold.newEnd;
+      if (position >= start && position < end) expanded.add(index);
+    });
+    view.dispatch({
+      effects: EditorView.scrollIntoView(position, { y: "center" }),
+      selection: { anchor: position },
+    });
+  }
+  refreshDecorations();
+  return { index: stopIndex, total: stops.length };
+}
+
+window.diffscopeCommand = function (name) {
+  switch (name) {
+    case "nextChange": return goToStop(1);
+    case "previousChange": return goToStop(-1);
+    case "expandAll":
+      folds.forEach((_, index) => expanded.add(index));
+      refreshDecorations();
+      return { expanded: folds.length };
+    default: return null;
+  }
+};
 
 function groupCounts(model) {
   const counts = new Map();
@@ -227,6 +316,10 @@ window.diffscopeRender = function (json) {
   stage.style.display = "flex";
   unrenderable.style.display = "none";
 
+  folds = model.collapses || [];
+  stops = model.stops || [];
+  expanded = new Set();
+  stopIndex = -1;
   applySide(left, model.payload.old);
   applySide(right, model.payload.new);
 
@@ -239,6 +332,8 @@ window.diffscopeRender = function (json) {
     newSegments: model.payload.new.segments.length,
     groups: Object.fromEntries(groupCounts(model)),
     mode: currentMode,
+    stops: stops.length,
+    folds: folds.length,
   };
   return lastSummary;
 };
@@ -253,6 +348,8 @@ window.diffscopeProbe = function () {
     newText: right.state.doc.toString(),
     summary: lastSummary,
     formattingMarks: document.querySelectorAll(".ds-formatting").length,
+    foldMarks: document.querySelectorAll(".ds-fold").length,
+    stopIndex,
     badges: [...document.querySelectorAll(".ds-badge")].map(el => el.textContent),
     uncertainMarks: document.querySelectorAll(".ds-uncertain").length,
   };
