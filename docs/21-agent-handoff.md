@@ -8,7 +8,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**Last completed milestone: M5 — matching and alignment. 177/177 checks pass.**
+**Last completed milestone: M5 — matching and alignment, plus the M5-B value benchmark. 177/177 checks pass.**
 
 | Milestone | State |
 |---|---|
@@ -44,10 +44,21 @@ swift run -c release diffscope-app  # the application
 | `diffscope-app` | AppKit shell + `WKWebView` |
 | `Renderer/src` | CodeMirror renderer; build with `npm run build` in `Renderer/` |
 
+### Read this before planning M6
+
+A benchmark after M5 (`22-experiment-log.md` → M5-B) established that **the structural layer contributes nothing to alignment quality** — and cannot, because INV-2 caps the "unchanged" set at whatever the canonical byte diff already found. Measured identical to a tenth of a percent across four perturbations on 120 real files each.
+
+Its remaining value is three things: `moved` labels (bytes cannot express moves), classification, and **tie-breaking among equally-minimal alignments**. The third is unimplemented and is now the strongest argument for keeping the matcher at all.
+
+The slider problem was measured and is real here: **only 38% of canonical-diff hunk boundaries land on a tree-sitter node boundary, and 91% of files contain at least one misalignment.** Diffs routinely begin immediately after a closing brace and end mid-structure.
+
+**Do not add work to the matcher on the assumption that better matching means better alignment. It does not.**
+
 ### What M6 should do next
 
+0. Consider prioritising **boundary tie-breaking** — shifting hunk boundaries to syntax boundaries among equally-minimal alignments. It is the one measured, unaddressed weakness.
 1. Replace diagnostic segment labels (`anchor`, `filler`, `refined`, `moved-content`) with the DEC-017 classification vocabulary, so formatting-only grouping becomes possible.
-2. Surface ambiguity and confidence in the renderer — the data exists in `NodeMapping.ambiguities` and is currently discarded before it reaches the UI (DEC-031 requires it be shown).
+2. Surface **confidence** in the renderer. **Ambiguity display was withdrawn by DEC-045** — detection stays as a guard against ambiguous anchors, but no indicator is built; its safety rationale lapsed once reconciliation began correcting wrong "unchanged" claims.
 3. Wire `structuralDiff` into `diffscope-app`, which still calls `trivialModel` and therefore always shows raw.
 4. Implement the Structural/Expanded mode pair as presentation flags over one renderer (DEC-013, INV-5).
 

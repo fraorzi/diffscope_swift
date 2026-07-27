@@ -926,3 +926,73 @@ A rename-like edit preserves 92.3% of the file rather than rewriting it.
 - **Moves are detected only where reconciliation reveals them** — a byte-identical anchor contradicted by the byte alignment. That satisfies DEC-038 but is narrower than a deliberate move search.
 - Anchor selection is greedy by old-side position, not a longest-increasing-subsequence. Reconciliation makes this safe, but a better anchor set would mean fewer bytes reported as changed.
 - The renderer still shows only `raw`; wiring the structural model into the app is not done.
+
+---
+
+# M5-B — What the structural layer is actually worth
+
+**Status:** Complete, 2026-07-27. Run because the product owner asked whether recognising repeated identical `<Item />` siblings is useful in review, or merely complexity.
+
+Answering that honestly required measuring something previously assumed: **how much the structural layer adds over a plain byte diff.**
+
+## A defect found by measuring
+
+The first comparison showed structural performing *worse* than bytes on pure insertions (−10 bytes on the comma case, −15 on repeated siblings).
+
+Cause: `reconcile` returned early when the change mask was empty. For a pure insertion the **old side's** mask is empty, so every `changed` segment on that side stayed `changed` even though no old byte had changed. Fixed by narrowing the guard. 177/177 still green.
+
+Worth recording because the bug was invisible to the invariants — a segment wrongly labelled `changed` violates nothing. Only a comparison against an independent baseline exposed it.
+
+## Result: structure adds nothing to alignment
+
+Four perturbations, 120 real `.tsx` files each, measuring old-side bytes preserved and fragmentation (count of contiguous changed runs):
+
+| Perturbation | bytes un% | struct un% | bytes runs | struct runs |
+|---|---|---|---|---|
+| delete a JSX block | 77.6% | **77.6%** | 1.0 | **1.0** |
+| wrap the return | 100.0% | 100.0% | 0.0 | 0.0 |
+| duplicate a line | 100.0% | 100.0% | 0.0 | 0.0 |
+| move imports to the end | 83.5% | **83.5%** | 2.5 | **2.5** |
+
+Identical to a tenth of a percent.
+
+### This is a consequence of INV-2, not an empirical accident
+
+INV-2 requires every byte the canonical diff calls changed to lie inside a presented segment. So **the set of bytes the model may call "unchanged" can never exceed the byte diff's unchanged set.** Structure cannot beat bytes on that metric — the invariant forbids it. The measurement was destined to return zero.
+
+Two of the four perturbations were also pure insertions, which leave the old side untouched and therefore cannot discriminate at all. There were really two test cases, not four.
+
+## What structure can still contribute
+
+Three things, of which the benchmark measured none:
+
+1. **`moved` labels.** Myers has no move operation, so a byte diff cannot express one. Already implemented.
+2. **Classification** (`formatting-only` and the rest of the DEC-017 vocabulary). Grouping, not alignment. That is M6.
+3. **Tie-breaking among equally-minimal alignments** — the slider problem. Myers' minimality does not select a unique alignment; where several are equally short it picks arbitrarily. The Phase 2 research recommended exactly this: *"a secondary pass that picks the most legible among equal-cost results."* **Not implemented, and the benchmark could not see it.**
+
+## The slider problem is real here — measured
+
+Probe: duplicate a four-line block after a closing brace, in 150 real files, then check whether the canonical diff's hunk boundaries land on tree-sitter node boundaries.
+
+```
+hunk boundaries examined              : 300
+landing on a syntax boundary          : 114 (38.0%)
+files with at least one misalignment  : 136 of 150 (91%)
+```
+
+Sample boundaries, all showing the classic shape — the hunk starts immediately after a closing brace and ends mid-structure:
+
+```
+…/div>\n    </div>\n  );\n}\n      </div>\n    </div>\n…
+…/div>\n    </div>\n  );\n}\n\nfunction TransactionIte…
+```
+
+**62% of hunk boundaries fall somewhere a syntax tree does not consider a boundary**, and 91% of files contain at least one.
+
+**Honest limit of this probe:** misalignment does not by itself prove an equally-minimal aligned alternative exists. For *this* perturbation it does, by construction — inserting a copy of an existing block makes the alignment ambiguous by exactly the length of the repeated content. Generalising beyond that needs a separate check.
+
+## Consequence
+
+The structural layer's justification **moves** rather than disappears. It cannot find more unchanged content than the byte diff. What it can do — and currently does not — is choose *where* a changed region begins and ends among equally valid options, so that a diff does not start mid-expression.
+
+That is now the strongest remaining argument for keeping the matcher, and it is untested work.

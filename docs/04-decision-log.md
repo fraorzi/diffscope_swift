@@ -1886,3 +1886,36 @@ Implementation showed the webview is the wrong side to convert on. JavaScript re
 ### Revisit trigger
 
 Reopen if the renderer ever needs byte offsets for its own purposes, which would reintroduce a conversion on the JS side.
+
+---
+
+## DEC-045 — Ambiguity is detected but not surfaced in the interface
+
+- **Date:** 2026-07-27 · **Topic:** Amends DEC-031 · **Status:** Accepted
+- **Prompted by:** the product owner asking whether recognising repeated identical siblings is actually useful in review
+
+### Context
+
+DEC-031 accepted surfacing matcher ambiguity on the grounds that an ambiguous match could otherwise become a **confident wrong claim of "unchanged"** — and that no existing tool exposes it, making it a cheap differentiator.
+
+M5 changed the facts. Structural labels are now **reconciled against the canonical byte diff** (see the M5 entry in `22-experiment-log.md`). Any wrong "unchanged" claim is corrected by the textual layer regardless of whether the matcher guessed the right pairing. **The safety rationale for surfacing ambiguity has therefore lapsed** — the protection is now provided by a different mechanism.
+
+What remains is a usability question the product owner put directly: what does a reviewer do with *"I am not sure which of these three `<Item />` matched"*? The bytes are shown correctly either way.
+
+### Decision
+
+**Ambiguity detection stays. Ambiguity display is dropped.**
+
+- The matcher continues to record ambiguity, and **anchoring continues to refuse ambiguous nodes**. That guard is roughly twenty lines already written and costs nothing.
+- No ambiguity indicator is designed or built for the interface. DEC-031's UI obligation is withdrawn.
+
+### Consequences
+
+- Removes UI design work from M6 for an indicator of unproven review value.
+- The "cheapest genuine differentiator" framing in DEC-031 is retired. **A differentiator is not the same as a useful feature**, and that conflation is what carried the original decision.
+- `NodeMapping.ambiguities` remains part of the engine API and is still asserted by tests, so the information is available if a use for it appears.
+- Confidence display (a separate DEC-017 item) is untouched by this.
+
+### Revisit trigger
+
+Reopen if a case appears where an ambiguous match produces a *misleading* result that reconciliation does not correct — most plausibly a wrong `moved` label rather than a wrong `unchanged`.
