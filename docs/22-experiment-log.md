@@ -1,0 +1,829 @@
+# 22 — Experiment Log (Phase 3.5)
+
+Durable record of spike results. **Spike code is thrown away; only these results survive** (DEC-032).
+
+Budget: ~3 days, four spikes, selected because they **eliminate** options rather than rank them.
+
+| Spike | Question | Box | Status |
+|---|---|---|---|
+| X-1 | Do candidate parser/binding pairs report the offsets they claim, on non-ASCII? | 3 h | **Complete** |
+| X-2 | Can a candidate render this diff at acceptable speed? | 2 d | **Complete** (web only; native unmeasured) |
+| X-3 | tree-sitter and oxc on the 4800-truncation corpus | 1 d | **Complete** |
+| X-4 | libgit2 measured, to remove the CLI's testing-order advantage | 4 h | **Complete** |
+
+## Summary — what Phase 3.5 eliminated
+
+| Eliminated | Grounds |
+|---|---|
+| **oxc** as parser | Returns an empty program for 94.77% of truncated TSX while appearing to succeed (X-3) |
+| **Babel** as parser | Throws on 91.67% of truncations; `errorRecovery` does not cover the relevant error class |
+| **Any UTF-16 offset used directly** as partition coordinates | Silent corruption, invisible to structural self-checks (X-1) |
+
+| Survived | Note |
+|---|---|
+| tree-sitter, TypeScript | Both never throw; ranking between them unsettled — metrics not yet comparable |
+| Monaco, CodeMirror | Both viable on rendering; decision rests on non-performance criteria |
+| Git CLI, libgit2 | Genuinely contested after X-4; CLI leads on more criteria |
+| Native macOS rendering | **Unmeasured** — a real gap, not a rejection |
+
+---
+
+## X-1 — Coordinate system trap
+
+**Status:** Complete, 2026-07-26. Partial — TypeScript measured directly; tree-sitter and oxc are not installed on this machine and remain to be covered under X-3.
+
+### Question
+
+Do candidate parsers report position offsets in the unit their documentation and type definitions claim? DEC-024 builds a byte partition, so a mismatch corrupts the model.
+
+### Method
+
+A single source file was constructed so that **UTF-8 bytes, UTF-16 code units, and codepoints all diverge by different amounts** before the measured node:
+
+| Character | UTF-8 bytes | UTF-16 units | Codepoints |
+|---|---|---|---|
+| `ó` U+00F3 | 2 | 1 | 1 |
+| `Ż` as U+005A U+0307 (NFD — the real corpus case) | 3 | 2 | 2 |
+| `中` U+4E2D | 3 | 1 | 1 |
+| `😀` U+1F600 | 4 | 2 | 1 |
+
+The reported start position of a later node was then compared against all three computed offsets. This design means no two units can be confused, and it uses the actual decomposed `Ż` sequence measured in `5bonsai__website__nextjs`.
+
+### Result — TypeScript 6.0.3
+
+```
+reported node position   : 81
+JS string index (UTF-16) : 81      ← match
+UTF-8 byte offset        : 87
+codepoint offset         : 80
+```
+
+**TypeScript reports UTF-16 code units.** Confirms the finding in `research/parsers-and-tree-matching.md` by independent measurement. Divergence over this short file is already 6 units.
+
+### The finding that matters more than the unit
+
+Applying the reported offset to a byte buffer does not fail. It returns **different, plausible, wrong text**:
+
+```
+src.slice(pos, pos+6)   →  "MARKER"    correct, on the JS string
+buf.slice(pos, pos+6)   →  "const "    same number, on the byte buffer
+```
+
+No exception, no out-of-range, no corrupted encoding — just a different valid identifier. A partition built this way would be **wrong while looking entirely healthy**.
+
+### Consequence for the test plan — load-bearing
+
+Trace this defect through the invariant tests:
+
+| Test | Outcome | Why |
+|---|---|---|
+| T-0 partition well-formedness | **PASSES** | Offsets stay monotonic, so segments still tile with no gaps or overlaps |
+| T-1 reconstruction | **PASSES** | Concatenating the partition still yields the file |
+| T-3 coverage (containment) | **FAILS** | Presented ranges do not contain the bytes the canonical byte diff reports as changed |
+
+This is direct empirical justification for a decision taken earlier on general principle: **T-1 and T-3 are retained even though DEC-024 makes them hold by construction, and are implemented independently of the partition code.** Had T-3 been dropped as redundant, this class of defect would ship silently.
+
+It also refines spike design guidance: a coordinate bug is invisible to structural self-checks and visible only to a check that goes back to raw bytes.
+
+### Verdict
+
+- **[Eliminated]** Using any UTF-16-reporting parser's offsets **directly** as partition coordinates. This is not a tuning matter; it is a correctness defect that structural validation cannot see.
+- **[Permitted, with cost]** UTF-16-reporting parsers behind an explicit, independently tested conversion layer. The conversion is then itself a correctness surface requiring its own fixtures — including 4-byte characters, where UTF-16 uses surrogate pairs.
+- **[Preferred]** Byte-native bindings — tree-sitter's C, Rust, and **Swift** bindings — which remove the conversion surface entirely.
+- **Stack impact:** a JavaScript-hosted engine cannot reach tree-sitter's byte-native offsets, since both JS bindings divide by two (`ts_node_start_byte(node) / 2`; `byte_to_code_unit(byte) { return byte >> 1 }`). This is an input to OQ-033, not merely to parser choice.
+
+### Not covered
+
+tree-sitter and oxc were not measured — neither is installed. Rolled into X-3, which must apply this same discriminating-string probe to both, and to any binding under consideration rather than to the parser in the abstract. **The binding is the unit of measurement here, not the parser.**
+
+---
+
+## X-2 — Rendering bake-off
+
+**Status:** Complete for the two web candidates, 2026-07-26. Native macOS rendering **not measured**. Well under box.
+
+Scoped per decision to **rendering only**, fed a pre-computed diff model — the renderers were never asked to diff anything, matching how the real engine would drive them.
+
+### Method
+
+Synthetic TSX-shaped corpus with the diff model generated ahead of time: line-level and character-level decorations plus alignment gaps. Two scenarios:
+
+- **normal** — 5000 lines, 795 decorations, 42 alignment gaps
+- **long** — 3000 lines including six 50,000-character lines, 477 decorations, 25 gaps
+
+Monaco driven as **two plain editors** with `createDecorationsCollection` and `changeViewZones` (the public primitives, not the diff editor). CodeMirror driven as **two plain `EditorView`s** with `Decoration.mark`/`Decoration.line` and block widgets. Linked scrolling wired manually in both.
+
+### Methodology correction, recorded because it invalidated a result
+
+The first harness measured frame time via `requestAnimationFrame`. CodeMirror produced a clean-looking 16.7 ms p50 — then Monaco hung. Instrumenting showed **rAF was firing 0 frames in 3.95 s** in this environment, with both editors present in the DOM. The CodeMirror number was therefore not a measurement of CodeMirror; it was a measurement taken before the environment stopped scheduling frames.
+
+Rewritten to measure **synchronous layout cost per scroll step** (set `scrollTop`, force layout by reading geometry) — a proxy for frame cost, not frame cost, applied identically to both. **Both renderers were re-measured from scratch under the new method.**
+
+A second defect surfaced: CodeMirror's `scrollTop` assignment was silently a no-op (`scrollTop` stayed 0) because the harness CSS left CM's internal scroller unsized — so its near-zero scroll cost meant "did nothing", not "did it fast". Fixed with `.cm-editor{height:100%}` and an **in-harness `scrollWorks` assertion** that fails loudly rather than reporting a flattering zero. Monaco lacks the equivalent assertion; its `setScrollTop` is an API call and its non-trivial timings indicate real work, but that asymmetry is noted rather than hidden.
+
+### Results
+
+| Metric | Monaco 0.56.0 | CodeMirror 6.43.6 |
+|---|---|---|
+| Bundle size (esbuild, ESM) | **9.3 MB** | **667 KB** |
+| normal — create both editors | 176.3 ms | **64.3 ms** |
+| normal — apply 795 decorations | 18.1 ms | 17.1 ms |
+| normal — 42 alignment gaps | **2.8 ms** | 9.3 ms |
+| normal — scroll, 120 steps total | 22.6 ms | **11.3 ms** |
+| normal — scroll p50 / p95 / max | 0.1 / 0.6 / 1.4 ms | 0.1 / 0.2 / **0.2** ms |
+| long — create | 163.6 ms | **39.8 ms** |
+| long — decorations | 7.5 ms | 5.5 ms |
+| long — gaps | 5.4 ms | 4.1 ms |
+| long — scroll total / max | 22.5 ms / 2.5 ms | **11.4 ms / 0.4 ms** |
+| Virtualization confirmed | — | 36 of 5000 lines in DOM |
+
+### Findings
+
+**1. Neither candidate is eliminated on performance.** Both handle 5000 lines with ~800 decorations and 42 alignment gaps in well under a frame budget for scrolling, and both create in under 200 ms. The DEC-014 side-by-side choice is not blocked by renderer capability.
+
+**2. 50,000-character lines produced no cliff in either.** Notably, Monaco was configured with `stopRenderingLineAfter: -1`, disabling its 10,000-character truncation default — so this exercised the **un-truncated** path and still held up. Monaco's `long` create was slightly *faster* than its `normal` create, consistent with cost tracking line count rather than bytes.
+
+**3. CodeMirror leads on most measures**, and by a large margin on bundle size (14×) and create time (2.7×). Monaco leads only on view-zone insertion.
+
+**4. Both require building the diff UI from primitives regardless.** Neither offers a usable external-diff path — Monaco's diff editor rejects an external algorithm through public API, and `@codemirror/merge`'s `DiffConfig.override` returns bare ranges with no room for labels or confidence. So the work of gutters, navigation, collapsing, and alignment is the same either way. This equalises the two more than the raw numbers suggest.
+
+### Verdict
+
+- **[Not eliminated] Monaco and CodeMirror** — both viable on rendering performance.
+- **[Not measured] Native macOS text rendering.** Requires GUI work beyond the scratchpad harness and is unmeasured. Since DEC-002 makes macOS-native a first-class option, this is a **real gap** in the bake-off and must be stated as such rather than allowed to look like a rejection by omission.
+- The decision between the two web candidates does **not** rest on rendering speed. It rests on bundle size, API stability, and stack fit — which belong to Phase 7.
+- **Caveat on all numbers:** measured as synchronous layout cost, in an environment where rAF was unavailable. They are comparable to each other and sufficient for elimination decisions. They are **not** frame-rate measurements and should not be quoted as such.
+
+### Cleanup
+
+Server stopped; the temporary `x2-bakeoff` entry added to `.claude/launch.json` was removed, restoring the file to its prior contents. All harness code remains in the scratchpad and is discarded per DEC-032.
+
+---
+
+## X-5 — Native macOS rendering
+
+**Status:** Complete, 2026-07-27. Funded specifically to close the X-2 gap, because it removes the largest unknown from **two** architecture options at once.
+
+**Toolchain finding:** AppKit and TextKit 2 build and run with **Command Line Tools only** — full Xcode is not required for this measurement (`xcrun --sdk macosx swiftc`). This was itself uncertain beforehand.
+
+### Method
+
+Same corpus file as X-2 (`data-normal.json`): 5000 lines, 795 decorations, 42 alignment gaps. Same measurement method — synchronous layout cost, 120 scroll steps — so the numbers sit alongside the web results rather than beside them.
+
+Decorations applied as `.backgroundColor` (line-level) and `.underlineStyle` + `.backgroundColor` (character-level), matching DEC-035's rule that change meaning is carried by texture and underline rather than token colour. Alignment gaps approximated with `paragraphSpacing`.
+
+### A trap worth recording
+
+The first run reported `textKit2: false`. Cause: **touching `NSTextView.layoutManager` silently downgrades the view to TextKit 1 compatibility mode.** The measurement had therefore exercised the legacy path while appearing to test the modern one.
+
+Re-run with an explicitly constructed TextKit 2 stack — `NSTextContentStorage` + `NSTextLayoutManager` + `NSTextContainer`, never touching `.layoutManager`. Both sets are reported below, because the divergence is itself informative.
+
+### Results
+
+| Metric | Monaco | CodeMirror | **TextKit 1** | **TextKit 2** |
+|---|---|---|---|---|
+| Create both panes | 176.3 ms | 64.3 ms | 74.5 ms | 108.6 ms |
+| 795 decorations | 18.1 ms | 17.1 ms | 30.9 ms | 56.5 ms |
+| 42 alignment gaps | 2.8 ms | 9.3 ms | 28.0 ms | 46.4 ms |
+| Scroll, 120 steps total | 22.6 ms | 11.3 ms | **2.2 ms** | 20.9 ms |
+| Scroll p50 / max | 0.1 / 1.4 ms | 0.1 / 0.2 ms | 0.02 / 0.05 ms | 0.17 / 0.34 ms |
+
+**Measurement caveat, stated rather than buried:** the TextKit 2 scroll figure is a **pessimistic upper bound**. The harness enumerates layout fragments from the document start on each step instead of maintaining viewport state through `NSTextViewportLayoutController`, so its cost grows with scroll depth. A real implementation would not work this way. TextKit 1's figure does not have this problem, which is part of why it looks so much better.
+
+### Findings
+
+**1. Native rendering is viable. There is no performance cliff.** All figures are the same order of magnitude as the web candidates. The unknown that blocked options A and C is closed.
+
+**2. TextKit 2 is measurably more expensive than TextKit 1** on every axis here — roughly 1.5× create, 1.8× decoration, 1.7× gaps — and its scroll advantage disappears under the pessimistic harness. TextKit 2 is Apple's direction and the correct target for new work, so the honest reading is that the modern path costs more than the legacy one at this workload, while remaining acceptable.
+
+**3. Decoration is native rendering's relative weak spot** — 56.5 ms versus ~17 ms for both web renderers, roughly 3.3×. Still comfortably within budget for a per-file operation, but it is the axis where the web candidates lead.
+
+### What this does and does not settle
+
+**Settles:** whether native text rendering can carry this diff view at acceptable speed. It can.
+
+**Does not settle:** how much *engineering* the native path costs. This measured text layout with attributes — not virtualised side-by-side panes, real alignment-gap widgets, collapsed regions, a gutter, linked scrolling, or navigation. Those are the substance of option A's work, and X-5 measured their **floor**, not their total.
+
+So the native risk changes character rather than disappearing: it is no longer *"performance might not work"* — it is *"this is weeks of UI construction the web candidates give you for free."*
+
+### Verdict
+
+- **[Closed] The X-2 native gap.** Options A and C are no longer blocked by an unmeasured renderer.
+- **[Recorded] Effort, not performance, is now the native path's cost.**
+- **[Recorded] Target TextKit 2, not TextKit 1**, despite TextKit 1 measuring better — and note the downgrade trap, which is easy to trigger accidentally and silently.
+
+---
+
+# M0 — Verification gates
+
+Run before any implementation, because gate 1 could invalidate DEC-042.
+
+## M0-1 — `tree-sitter-typescript` range correctness on real multiline JSX
+
+**Status:** Complete, 2026-07-27. **DEC-042 confirmed on this gate.**
+
+### Question
+
+Issue #306 reports incorrect node ranges for multiline JSX. DEC-024 builds the byte partition from those ranges, so wrong ranges would undermine the architecture.
+
+### Method
+
+All `.tsx` files tracked in the 21 repositories, 500 B – 200 KB: **1375 files**. For each, collect tree-sitter leaf nodes, check whether they tile the source, then build the DEC-024 partition (drop zero-width → clamp overlaps → fill gaps from bytes) and verify it.
+
+### Results
+
+```
+parsed successfully        : 1370 / 1375
+files containing multiline JSX : 1151 / 1370      ← the #306 population
+
+RAW LEAF TILING
+  files with a gap or overlap : 1370 / 1370
+  total gaps                  : 226,648
+  total overlaps              : 0                 ← decisive
+  zero-width leaves           : 1
+
+DEC-024 CONSTRUCTION
+  partition valid             : 1370 / 1370
+  partition failed            : 0
+  filler                      : 930,129 / 3,589,253 chars (25.91%)
+```
+
+### Findings
+
+**1. #306 does not manifest as bad ranges on this corpus.** **Zero overlaps** across 1370 files, 1151 of which contain multiline JSX. If node ranges were incorrect in the way the issue describes, overlapping or misplaced ranges would appear here. They do not.
+
+**2. The DEC-024 construction is validated on real code at scale** — 1370 of 1370 files produce a valid partition that reconstructs the source exactly. This is the first test of the construction against the real corpus rather than a synthetic case.
+
+**3. tree-sitter leaves never tile — by design, not by defect.** Gaps appear in 100% of files because tree-sitter excludes inter-token whitespace from leaf nodes. This is why the construction's gap-filling step exists.
+
+**4. Filler is 25.9%, not the ~0.01% measured for TypeScript.** A structural consequence worth carrying forward: TypeScript's node ranges *include* trivia, tree-sitter's do not. So under DEC-042 roughly **26% of bytes live in filler segments carrying no structural label**.
+
+Not a correctness problem — the partition is valid and complete. And there is an unplanned benefit: **the filler segments essentially *are* the formatting.** Whitespace and indentation changes land in filler by construction, which gives the `formatting-only` classification (DEC-017) a natural home rather than requiring it to be inferred.
+
+### Verdict
+
+**Gate passed.** #306 is not reproducible as a range defect on this corpus. DEC-042 stands.
+
+Residual caution: this tested the **Node binding's** view of ranges. The Swift/C path should be spot-checked during M4, though both read the same underlying tree.
+
+### Correction — #306 was mischaracterised in the planning documents
+
+The issue was recorded throughout planning as *"incorrect node ranges for multiline JSX"* and treated as the single highest-priority risk to DEC-042. That description came from a research agent's summary and **was never checked against the issue itself.**
+
+Fetched directly:
+
+> **#306 — "bug: JSX captures whitespaces in nested, multiline tags"** · open since 2024-07-23 · 2 comments
+
+That is a different defect. It concerns JSX **text nodes capturing surrounding whitespace**, not node ranges being wrong. For a byte partition that distinction is decisive: whitespace landing *inside* a leaf rather than in a filler segment changes which segment owns those bytes, but **not** whether the partition is valid, complete, or reconstructive.
+
+Tested directly on the product's own headline example — the `<div>` wrapper with `<Header />` and `<Content />` children:
+
+```
+22 leaf nodes · all spans correct · 0 overlaps
+jsx_text nodes: 0            ← the #306 behaviour does not even appear here
+partition reconstructs exactly: true
+```
+
+Inter-element whitespace is simply absent from any leaf and becomes filler, which is exactly what the DEC-024 construction expects.
+
+**Revised risk assessment:** #306 is a **cosmetic/highlighting concern, not a correctness risk to the byte partition.** It should not have been carried as the top pre-implementation risk. Corrected across `04-decision-log.md`, `07-`, `09-`, `17-`, `19-`, `20-`, and `21-`.
+
+**Process note, worth more than the finding:** this risk survived six documents and an architecture decision on the strength of a one-line summary nobody opened the source for. The gate caught it only because the gate existed. Verify the primary source before elevating something to a blocking risk.
+
+---
+
+## M0-3 — Swift tree-sitter binding health
+
+**Status:** Complete, 2026-07-27. **Gate passed.**
+
+Fetched from the GitHub API, 2026-07-27:
+
+| Repository | Last push | Last release | Licence | Open issues | Verdict |
+|---|---|---|---|---|---|
+| `tree-sitter/swift-tree-sitter` | 2026-05-26 | 0.10.0 (2026-03-18) | **BSD-3-Clause** | 3 | **Healthy** |
+| `tree-sitter/tree-sitter-typescript` | 2025-08-29 | v0.23.2 (2024-11-11) | MIT | 47 | **Stale** |
+
+**Findings**
+
+**1. The Swift binding is healthy and officially maintained.** Pushed two months ago, released four months ago, three open issues, and it lives in the **tree-sitter organisation itself** rather than being a community side project. BSD-3-Clause is permissive and clean under DEC-020.
+
+**2. ChimeHQ/SwiftTreeSitter — the widely-used community binding — now redirects into the tree-sitter org.** The community implementation was adopted upstream, which consolidates rather than fragments the ecosystem. A positive signal for a dependency this architecture rests on.
+
+**3. `tree-sitter-typescript` staleness is confirmed with dates.** Last release 20 months ago, last push 11 months ago, 47 open issues. The grammar is genuinely under-maintained.
+
+But with #306 corrected, staleness is now a **generic maintenance risk rather than a specific correctness threat**. MIT licensing means forking remains available if a real defect appears.
+
+### Verdict
+
+**Gate passed.** The binding this architecture depends on is in better health than the grammar it parses with — and the grammar's problem is neglect, not a known break.
+
+---
+
+## M0-1a — Node binding hard size limit (incidental finding)
+
+**Status:** Complete. Not a risk for DEC-042; recorded because it is decisive for a rejected option.
+
+5 of 1375 files failed to parse with `Invalid argument`. Binary search located the boundary exactly:
+
+```
+parse(32767 chars)  → OK
+parse(32768 chars)  → throws        32768 = 0x8000
+chunked callback form, 72,000 chars → OK
+```
+
+**This is a `node-tree-sitter` binding limitation, not a tree-sitter limitation.** The C API takes an explicit length; the callback form works around it in Node.
+
+**Consequence:** irrelevant to DEC-042, which reaches tree-sitter through the C API from Swift. But it would have been a live defect in **Option B (full web)** — silently failing on every source file above 32 KB, of which this corpus has several. A retroactive point in favour of the architecture chosen, found only because the gate ran against real files rather than synthetic ones.
+
+---
+
+## M0-2 — Engine↔renderer serialisation cost
+
+**Status:** Complete, 2026-07-27. **Gate passed.** This was the last remaining quantitative unknown in DEC-042.
+
+### Method
+
+A realistic partition built from the largest real `.tsx` file under the Node binding's limit — `5bonsai__website__nextjs/src/app/[locale]/page.tsx`, 23,807 bytes → **5149 segments**, with ~15% marked changed and carrying confidence and classification, as the real model would.
+
+Transferred from Swift into a real `WKWebView` via `evaluateJavaScript`, measured end to end including the JS-side parse. Two encodings compared.
+
+### Results
+
+```
+source                    :  23,807 bytes
+segments                  :   5,149
+JSON payload              : 276,026 bytes   (11.6× source)
+flat Int32 payload        :  61,788 bytes → 82,384 as base64
+
+JSON.parse, first call    : 4.65 ms
+JSON.parse, steady state  : 1.13 ms
+flat Int32 + base64       : 7.36 ms
+```
+
+Both paths were verified to deliver all 5149 segments to the JS side.
+
+### Findings
+
+**1. Serialisation is not a bottleneck.** 1.13 ms steady state for a 5000-segment model. Against DEC-026's ~400 ms refresh debounce and the measured rendering costs (CodeMirror creates 5000 lines in 64 ms), this is negligible. **The risk flagged in DEC-042 and `09-recommended-architecture.md` §7 is resolved.**
+
+**2. The obvious optimisation is slower.** A flat `Int32` encoding is 4.5× smaller as bytes (61.8 KB vs 276 KB) and still **6.5× slower end to end** (7.36 ms vs 1.13 ms), because base64 decoding in JavaScript costs more than `JSON.parse` saves. Recorded deliberately: shrinking the payload is the natural instinct when someone later decides this needs optimising, and on this evidence it would make things worse. `JSON.parse` is a native fast path.
+
+**3. The model is ~11.6× the size of the source.** Worth knowing for memory budgeting, though it did not translate into a time cost worth acting on.
+
+### Verdict
+
+**Gate passed. JSON is the right encoding and needs no optimisation.** Revisit only if profiling on much larger files contradicts this — and re-measure rather than assuming a smaller payload will help.
+
+## X-3 — Broken-JSX survival, extended
+
+**Status:** Complete, 2026-07-26. Under box (well below 1 day).
+
+Packages installed into the session scratchpad only, per DEC-032: `tree-sitter@0.21.1`, `tree-sitter-typescript@0.23.2`, `oxc-parser@0.141.0`. Nothing was added to any user project.
+
+### Part A — Coordinate probe extended to all three Node parsers
+
+The X-1 probe was rewritten with **all non-ASCII written as escape sequences**, after discovering that the original X-1 and X-3 probe files disagreed: X-1 contained a true NFD sequence (`U+005A U+0307`) while a re-typed version had silently become precomposed `U+017B`. The conclusion was unaffected — the 4-byte emoji discriminates bytes from UTF-16 on its own — but the probes were not identical across parsers, so the test was made source-normalisation-proof and re-run uniformly.
+
+Probe integrity was asserted in the script itself (NFD sequence present: true).
+
+```
+reference: utf16=81  bytes=87  codepoints=80
+
+tree-sitter 0.21.1 (node)   position 81  =>  UTF-16 CODE UNITS
+oxc-parser 0.141.0 (node)   position 81  =>  UTF-16 CODE UNITS
+typescript 6.0.3            position 81  =>  UTF-16 CODE UNITS
+
+byte-buffer slice at that offset, all three:  "const "   (expected "MARKER")
+```
+
+**All three Node-hosted parsers report UTF-16 code units, and all three produce the same silent corruption** when their offsets are applied to a byte buffer.
+
+### Part B — Truncation corpus
+
+**Method.** 120 `.tsx` files sampled deterministically from all 21 repositories (size 800 B – 60 KB, listed via `git ls-files`, read-only). Each truncated at 40 evenly spaced points → **4800 truncation points**. Plus a valid-file baseline pass.
+
+| Parser | Threw | Structural outcome |
+|---|---|---|
+| **tree-sitter 0.21.1** | **0 / 4800 (0.00%)** | 89.79% of trees contain `ERROR`; **mean 38.4% of bytes lie outside ERROR spans** |
+| **oxc-parser 0.141.0** | **0 / 4800 (0.00%)** | `panicked: true` **never fired (0.00%)**; but **94.77% returned an EMPTY program body**; 95.29% reported errors |
+| TypeScript 6.0.3 | 0 / 4800 *(prior measurement)* | ~76% of tree intact *(different metric — see caveat)* |
+| Babel | 4400 / 4800 (91.67%) *(prior measurement)* | n/a — throws |
+
+**Valid-file baseline:** oxc returned an empty program on **0 of 120** valid files. So the empty-program result is specific to broken input, not a general defect.
+
+### Findings
+
+**1. oxc is effectively eliminated for this product.** The research predicted the risk as `panicked: true`; the measured failure mode is different but worse in practice. oxc does not panic and does not throw — it **silently returns a well-formed response containing no program** for 94.77% of truncated TSX. Under DEC-007, where half-typed source is routine, oxc would supply no structural information at all in the common case, while looking like it succeeded.
+
+**2. tree-sitter survives but degrades more than expected.** Never throwing is the strongest possible result for the DEC-007 requirement. However, only **38.4% of bytes** on average fall outside `ERROR` spans — error recovery does not confine damage to the truncated tail. Under DEC-024 this is not a correctness problem (ERROR regions become fallback segments, visibly marked per INV-4) but it does bound achievable alignment quality on partially-typed files.
+
+**3. Metric caveat, stated rather than glossed.** tree-sitter's 38.4% (bytes outside ERROR) and TypeScript's ~76% (tree intact) are **different measurements and are not directly comparable**. Both indicate survival; neither ranks the two against the other. A strictly comparable metric — identical definition applied to both — is required before using these numbers to choose between TypeScript and tree-sitter.
+
+### Verdict
+
+- **[Eliminated] oxc**, on broken-input behavior. Not a tuning matter: silent empty results are the worst available failure mode for this product.
+- **[Eliminated] Babel**, on prior measurement (91.67% throw rate).
+- **[Surviving] tree-sitter and TypeScript**, both never throwing. Ranking between them is **not settled** and requires the comparable-metric work above.
+- **[Unchanged] Coordinate handling** is a binding-level property, not a parser-level one. Every Node binding measured reports UTF-16. Byte-native access requires the C, Rust, or Swift bindings — which is a constraint on the stack (OQ-033), not on the parser.
+
+## X-4 — libgit2 measurement
+
+**Status:** Complete, 2026-07-26. Under box.
+
+Measured via `pygit2 1.15.1` / **libgit2 1.8.1** in a scratchpad virtualenv. Python was used because it was the fastest route to a working libgit2 — the binding language is irrelevant to the questions asked, which concern libgit2's own behavior.
+
+### Result 1 — Read-only: clean
+
+| Operation | Writes to `.git`? |
+|---|---|
+| `Repository()` open | No |
+| `r.status()` | No |
+| `r.diff()` (worktree) | No |
+| `r.revparse_single("HEAD")` | No |
+
+Snapshot method identical to the CLI audit: SHA-256 of every file under `.git` before and after.
+
+### Result 2 — EOL filter parity: **contradicts the earlier assessment**
+
+Scratch repository with `.gitattributes` containing `*.txt text eol=crlf`, renormalised, worktree forced to CRLF — the DEC-025 case.
+
+```
+git diff  : 0 lines
+libgit2   : 0 lines
+IDENTICAL : True
+```
+
+**libgit2 handled the built-in CRLF filter correctly and agreed with `git diff` exactly.**
+
+This **narrows a claim recorded earlier**. The research finding was that libgit2 supports *only* built-in CRLF and IDENT filters, not external clean/smudge drivers — which is accurate. But that was carried forward as though libgit2 would fail the DEC-025 case generally, and it does not. Built-in CRLF is precisely the common case (`core.autocrlf`, `text`/`eol` attributes), and libgit2 gets it right.
+
+**The residual gap is narrower than stated: external filter drivers only** — Git LFS, custom `filter.*.clean` definitions. That gap remains **untested here** and is where the risk actually lies. Note DEC-028 already routes filtered files to raw fallback, which covers this regardless of mechanism.
+
+### Result 3 — Unborn HEAD: libgit2 is *better* than the CLI idiom
+
+The `carrefour-inapp` case, reproduced in a scratch repository:
+
+```
+libgit2  head_is_unborn          : True
+libgit2  head_is_detached        : False
+libgit2  r.head                  : raises GitError "reference 'refs/heads/main' not found"
+
+git      symbolic-ref -q HEAD    : "refs/heads/main"   ← exit 0, and wrong
+```
+
+**libgit2 has a first-class, correct API for the exact state the Git CLI idiom reports incorrectly.** This is a substantive point in libgit2's favour, directly relevant to OQ-050. Using the CLI requires knowing to probe with `git rev-parse --verify HEAD` instead; libgit2 answers the question directly.
+
+### Result 4 — Cost: libgit2 is **slower**, contradicting the spawn-overhead assumption
+
+On the real 1.5 GB repository (`mailingi-2025`), read-only:
+
+```
+libgit2 status : 264 ms
+git CLI status :  46 ms      ← 5.7× faster
+```
+
+The assumption that avoiding process spawn would favour libgit2 is **wrong at this scale**. The measured spawn floor is 6.2 ms; libgit2's slower traversal dwarfs it.
+
+### Result 5 — Status semantics differ by default
+
+libgit2 reported **165 entries**; `git status --porcelain` reports **63**. Investigated and explained precisely:
+
+```
+git status --porcelain        :  63 lines   (untracked directories collapsed)
+git status --porcelain -uall  : 165 lines   (untracked directories expanded)
+```
+
+**libgit2 defaults to the expanded semantics.** Not a defect in either — a default difference. But it means **DEC-012's "uncommitted file count" would differ by 2.6× for the same repository depending on mechanism.** Whichever is chosen must be explicit and documented, and the repository-list count must not be assumed to mean the same thing as what `git status` prints.
+
+### Verdict — OQ-010 is now genuinely contested
+
+The asymmetry X-4 existed to remove is removed, and the picture is more balanced than the pre-measurement position suggested.
+
+| Criterion | Winner |
+|---|---|
+| Read-only safety | Tie (both clean on tested operations) |
+| Built-in EOL filter parity | Tie (identical output) |
+| External filter drivers | CLI (libgit2 unsupported; mitigated by DEC-028) |
+| Unborn HEAD handling | **libgit2** (first-class API; CLI idiom lies) |
+| Status performance | **CLI** (5.7× faster on the large repo) |
+| Raw-mode output fidelity | CLI (it *is* the reference by definition) |
+| Binding health for plausible stacks | CLI (SwiftGit2 2019, nodegit 2020) |
+| Licensing under DEC-020 | CLI (libgit2 GPL-2.0 + linking exception) |
+
+**Still not a decision.** The CLI leads on more criteria, and the two decisive ones for this product — Raw mode being defined as `git diff` output, and binding health — are structural rather than incidental. But libgit2's unborn-HEAD superiority is real and should inform the design regardless of mechanism: **the app needs a correct unborn-HEAD probe either way**, and the CLI route requires knowing not to trust `symbolic-ref`.
+
+---
+
+# M1 — Engine skeleton and invariant harness
+
+**Status:** Complete, 2026-07-27. **68/68 checks pass.** First application code in the project.
+
+## What was built
+
+```
+Package.swift
+Sources/DiffScopeEngine/      Partition · CanonicalDiff · Validation · TrivialPartition   (557 lines)
+Sources/diffscope-verify/     headless harness, exit code 1 on failure                    (257 lines)
+fixtures/                     9 seed fixtures + MANIFEST.json with recorded hashes
+```
+
+Built in the order mandated by `20-implementation-plan.md` §3 — **the checker before the thing checked**. The trivial partition producer was written last, sixth, deliberately.
+
+`DiffScopeEngine` imports only `Foundation`. DEC-002's headless requirement is therefore **structural**, not aspirational: the module cannot reach AppKit or WebKit.
+
+## Toolchain finding
+
+**Neither `Testing` nor `XCTest` is available with Command Line Tools** — both ship with Xcode.app, which is not installed.
+
+Not a blocker. DEC-002 already requires the fixture corpus to run headlessly in CI, so the harness is an **executable returning a non-zero exit code**, with zero external dependencies. A test framework would be convenience, not capability. If IDE-integrated tests are wanted later, that is a reason to install Xcode — not a reason to change the design.
+
+## Verification of the canonical diff
+
+`D` is Myers over bytes, implemented independently of everything on the presentation path (DEC-039). Correctness is not asserted — it is **cross-checked against an independent dynamic-programming LCS**, which is the ground truth for minimality:
+
+```
+matched length equals LCS on 600 random pairs   PASS
+every reported match is byte-equal              PASS
+matches strictly increasing on both sides       PASS
+no old byte in both a hunk and a match          PASS
+no old byte in neither a hunk nor a match       PASS
+```
+
+The last two together prove the hunk/match split is a genuine partition of the old side — the same property the model itself must satisfy, checked here on the validator.
+
+## The validator was tested by breaking things on purpose
+
+A validator that only ever sees valid input proves nothing. Four models were deliberately malformed:
+
+| Injected defect | Caught by |
+|---|---|
+| "no changes" claimed on differing bytes | INV-3 |
+| changes claimed on byte-identical input | INV-3 |
+| a changed byte left outside every presented segment | INV-2 |
+| a partition whose declared length lies | INV-1 / T-0 |
+
+## Performance, release builds
+
+| Input | Result |
+|---|---|
+| 24 KB, realistic churn | 0.3 ms |
+| 400 KB | 8.9 ms |
+| 1 MB | 41 ms |
+| 2 MB | 153 ms, exact, 1259 hunks |
+| 100 KB **unrelated content** | **>120 s before the budget; ~81 ms after** |
+
+**Debug builds are ~260× slower** (78.5 ms vs 0.3 ms on the same input). Never benchmark this code in debug.
+
+The unrelated-content result invalidated DEC-040's file-size threshold and produced **DEC-043**: validation is bounded by work performed, not input size. See the decision log.
+
+## Fixtures
+
+Nine seeded, written **programmatically with recorded SHA-256 hashes** in `fixtures/MANIFEST.json`, because `15-test-corpus-plan.md` §2 warns that an editor silently repairing CRLF or NFD produces a fixture that passes while testing nothing.
+
+Byte-verified at creation:
+
+```
+nfc-vs-nfd/before.ts   ...27 5a cc 87 41 42 4b 41...   Z + combining dot above
+nfc-vs-nfd/after.ts    ...27 c5 bb 41 42 4b 41...      precomposed Ż
+line-ending-change     ...61 6c 70 68 61 0d 0a...      CRLF
+```
+
+The `nfc-vs-nfd` pair is lifted from real source — `5bonsai__website__nextjs/.../case-studies/page.tsx:168`.
+
+## Honest limits of M1
+
+- Every fixture passes **vacuously**. The trivial partition marks the whole file as one fallback segment, so coverage is satisfied by construction. These fixtures become meaningful at M4 and M5.
+- INV-5 (mode agreement) is untested — there are no modes yet.
+- The `Move` container exists in neither code nor model yet; DEC-038 lands at M6.
+- No parser, no Git, no UI.
+
+What M1 does establish is that **the harness catches real defects**, proven by feeding it broken models on purpose.
+
+---
+
+# M2 — Git layer
+
+**Status:** Complete, 2026-07-27. **101/101 checks pass** (68 from M1 plus 33 new). 760 lines in `DiffScopeGit`.
+
+## Design: writes are unexpressible, not merely forbidden
+
+`GitOperation` is a **closed registry of static factory methods**, not free-form arguments. There is no case for `commit`, `fetch`, `add`, or `reset`, so the application cannot express a write — a deny-list would have been weaker, since it protects only against what someone thought to list.
+
+Three further mechanisms:
+
+- `GitRunner` prepends `--no-optional-locks` to **every** invocation. Callers cannot omit it; it is not a parameter.
+- The runner also sets `GIT_OPTIONAL_LOCKS=0`, `GIT_TERMINAL_PROMPT=0`, `GIT_CONFIG_NOSYSTEM=1`.
+- The runner **records the label of every operation it executes**. The suite then asserts that the set actually executed is a subset of the set proven read-only — so using a new operation without proving it fails CI, which is what `20-implementation-plan.md` §5 asked for.
+
+## R-8: the read-only proof
+
+Every one of the **16 registered operations** was run against a scratch repository with staged, unstaged and untracked changes, hashing every file under `.git` before and after.
+
+```
+all 16 registered operations leave .git byte-identical            PASS
+status leaves .git untouched even with a stale stat cache         PASS
+every executed operation appears in the proven registry           PASS
+the runner always passes --no-optional-locks                      PASS
+```
+
+The stale-stat-cache case is the one that matters: it is the condition under which plain `git status` *does* rewrite the index, and it is this application's normal operating mode.
+
+## R-12: the idiom that lies, now tested
+
+```
+git symbolic-ref reports a branch that does not exist             PASS
+headState uses rev-parse --verify and reports unborn              PASS
+all four scopes unavailable with a stated reason on unborn HEAD   PASS
+ahead count is unknown, never a fabricated zero                   PASS
+```
+
+The first check **asserts the defect**: on an unborn repository `symbolic-ref` exits 0 and returns `main`. Pinning that behaviour in a test means a future refactor toward the "obvious" idiom fails loudly.
+
+## Verification against the real corpus
+
+`diffscope-verify --survey` run read-only over `~/WebstormProjects`:
+
+```
+discovered 21 repositories
+base resolution: originHead=17  uniqueLocalDefault=3  needsUserChoice=1
+```
+
+**Exactly matching the Phase 0 measurement** (17 / 3 / 1) — the cascade in DEC-009 behaves in production as it did in analysis.
+
+Two decisions visibly doing their job:
+
+- `carrefour-inapp` → `no commits yet (main)`, 6 changed, ahead **unknown** — DEC-012's prohibition on a fabricated zero.
+- `5bonsai__website__nextjs` → 0 changed, **ahead 2** — the case that killed hiding clean repositories.
+
+## Performance: a correction to an earlier estimate
+
+| Sweep | Elapsed |
+|---|---|
+| Sequential | **15,478 ms** |
+| Parallel (`RepositorySweep`) | **478 ms** |
+
+32× improvement, and within DEC-006's expectation.
+
+**The earlier "well under 100 ms parallelised" estimate was wrong** because it was derived from a `status`-only sweep (326 ms sequential). A full snapshot issues about **seven** Git invocations per repository — head state, status, base cascade, preferred ref, committer date, merge-base, ahead count — so roughly 147 subprocess spawns for 21 repositories. At the measured 6.2 ms spawn floor that is ~900 ms of spawn cost alone before any work.
+
+**478 ms is the honest figure for the full sweep.** If it needs to be lower, the lever is fewer invocations per repository (batching via `for-each-ref`, or deferring ahead-counts), not more threads.
+
+## Also covered
+
+- **R-1…R-3** base cascade: unique local default, ambiguous `main`+`master` → prompt, explicit override wins.
+- **R-4** detached HEAD identified; merge-base scope unavailable.
+- **R-7** four scopes select the right files from `git status` codes (DEC-041), with `X`/`Y` giving the staged/unstaged split naturally. Pinned pairs carry SHA-256 hashes per side and were verified **byte-exact** against merge-base blob, HEAD blob, and worktree file — including the Polish `żółć` content.
+- **R-10, R-11** discovery: depth 2 honoured, deeper excluded, individual repositories accepted at any depth, missing sources and non-repositories reported rather than silently dropped, symlink escaping its root refused, multiple sources merged without duplicates.
+
+## Not yet done
+
+- Filter detection (`check-attr`) is registered as an operation but not yet wired into scope selection — DEC-028's raw fallback lands with the diff pipeline.
+- No caching between sweeps; every focus event would currently redo the full 478 ms.
+- Rename detection relies on Git's own `-> ` reporting; not stress-tested.
+
+---
+
+# M3 — Raw diff end to end
+
+**Status:** Complete, 2026-07-27. **125/125 checks pass.** First milestone with visible output.
+
+## The conversion function, and why it moved sides
+
+`09-…` §5 specified conversion on the **webview** side. Implementation showed that is the wrong side: JavaScript receives a decoded string and would have to re-encode it to UTF-8 to count bytes — work on data it did not produce. Swift already holds the bytes.
+
+**Moved to Swift; recorded as DEC-044.** The model now crosses carrying **UTF-16 offsets only**; JavaScript never sees a byte offset.
+
+The hazard is confined to `Utf16OffsetMapper` and tested from both directions:
+
+```
+probe integrity: the three units genuinely differ                        PASS
+byte offset maps to UTF-16, not to the byte or codepoint offset          PASS
+slicing the JS-side string at the mapped offset yields MARKER            PASS
+applying the UTF-16 offset to the byte buffer yields plausible WRONG text PASS
+NFD sequence survived into the probe                                     PASS
+```
+
+The fourth check is the **negative control** and matters most: it confirms the X-1 failure is still reachable if the conversion were skipped, so the positive check is not passing for a trivial reason.
+
+**Two test bugs were found and fixed while writing these**, both in the expectation rather than the code: the first computed the offset of the enclosing *line* while asserting the slice would yield `MARKER`; the second applied a byte offset to a byte array — correct by construction, so it could never have failed.
+
+The converter **refuses rather than guesses**: offsets inside a multi-byte sequence, out-of-range offsets, and invalid UTF-8 all throw. Non-UTF-8 content is declared `unrenderable` with a notice, never mangled.
+
+## Contract
+
+`RenderModel` carries pin identity, mode, per-side text and segments, coverage status, and notices. Verified: exact byte round-trip of both sides, UTF-16 offsets shorter than byte length on non-ASCII, last segment ending exactly at the UTF-16 length, JSON round-trip equality, and non-UTF-8 declared unrenderable.
+
+## Renderer
+
+CodeMirror 6 as **two plain `EditorView`s** — no `@codemirror/merge`, no diff model. Bundle **356 KB** minified.
+
+Verified live in the browser with a model produced by the Swift binary:
+
+| Check | Result |
+|---|---|
+| Old/new text round-trip through the boundary | exact |
+| `nfc-vs-nfd` fixture: old has U+0307, new has U+017B | both confirmed |
+| The two render identically after NFC | `true` |
+| Yet the strings differ | `true` |
+| Syntax highlighting active | 8 tokens, 2 distinct colours |
+| Change mark carries texture | `repeating-linear-gradient(-45d…` |
+| Change mark carries underline | `underline` |
+| Classification exposed to the DOM | `formatting-only` |
+| Alert notice styled by border, not colour alone | `true` |
+
+**DEC-035 validated visually**: syntax colour is untouched — identifiers stay green under a change mark — while change meaning is carried by underline and background texture.
+
+## Native path
+
+`diffscope-app`: AppKit shell, three-pane split (repositories · files · diff), scope selector, status line, `WKWebView` hosting the renderer.
+
+A `DIFFSCOPE_SELFTEST` mode drives the whole native path headlessly:
+
+```
+SELFTEST renderer=index.html
+SELFTEST probe=OK {"pin":"pinA:pinB","oldDocLength":20,"newDocLength":19,
+                   "oldText":"const a = \"ŻABKA\";\n",
+                   "newText":"const a = \"ŻABKA\";\n"}
+```
+
+Both sides **render identically** while differing in length by one — the ŻABKA case carried through Swift → `WKWebView` → CodeMirror with pin identity intact.
+
+**A diagnostic error worth recording:** an earlier check reported the renderer resource as missing from the build. It was present; `find` does not follow the `.build/release` symlink. The build was fine and the diagnostic was wrong — which is why the self-test was added rather than inferring health from the absence of a crash.
+
+## Not yet done
+
+- Alignment gaps, collapsed regions, gutter, and change navigation — M6/M7.
+- The native window itself was **not visually verified** from this environment; the self-test proves the pipeline, not the layout.
+- Every file is still one `fallback` segment: real structural segmentation arrives in M4.
+
+---
+
+# M4 — Parsing and partition construction
+
+**Status:** Complete, 2026-07-27. **151/151 checks pass** (125 from M3 plus 26 new). 232 lines of Swift over vendored C.
+
+## Vendoring rather than depending
+
+tree-sitter core and the TSX grammar are **vendored as C targets** — `Sources/CTreeSitter` (592 KB) and `Sources/CTreeSitterTSX` (8.4 MB, almost all of it the generated `parser.c`). Both MIT; their `LICENSE` files are copied alongside the sources.
+
+This avoids a SwiftPM network dependency and pins the grammar exactly, which matters given M0-3 measured `tree-sitter-typescript` as stale (last release 2024-11-11). If a grammar defect ever bites, the fork is already in the repository.
+
+Two build snags, both recorded because they are non-obvious:
+
+- The TSX `scanner.c` includes `../../common/scanner.h`, a path that only exists in the grammar's own repository layout. Vendored `common/` alongside and rewrote the one include.
+- Removing `wasm_store.c` — apparently unnecessary without WASM — **broke linking**, because other translation units reference its symbols unconditionally. The file guards its body behind `#ifdef TREE_SITTER_FEATURE_WASM` and compiles to stubs, so it must be kept.
+
+## The architecture's premise, finally tested directly
+
+This is the check DEC-042 exists for. The same discriminating probe from X-1, now against tree-sitter reached through its **C API from Swift**:
+
+```
+probe integrity: byte and UTF-16 offsets differ                          PASS
+the MARKER identifier is found as a leaf                                 PASS
+its start byte equals the UTF-8 byte offset, NOT the UTF-16 offset       PASS
+root end byte equals the byte count, not the UTF-16 length               PASS
+```
+
+**Confirmed byte-native.** Every Node-hosted binding measured in X-1 and X-3 reported UTF-16 while typing it as bytes; the C API does not. The partition is built directly from parser offsets with no conversion layer, which is precisely what Option B could not have had.
+
+## DEC-024 construction against 400 real files
+
+```
+real .tsx files were found to sweep         PASS   400 files
+every partition is well formed              PASS   0 malformed
+every partition reconstructs byte for byte  PASS   0 mismatched
+filler: 23.3% of 1,360,687 bytes
+```
+
+**23.3% filler independently confirms M0-1's 25.9%** — measured through a different binding, a different language, and a different implementation of the same construction. The two agreeing is meaningful; it means the number is a property of tree-sitter's tree shape, not of either implementation.
+
+The construction does what DEC-024 specified: drop zero-width leaves (`MISSING` nodes), clamp overlaps, fill the gaps from bytes. No file needed the raw fallback.
+
+## Error recovery
+
+```
+broken source still yields a tree                    PASS
+the tree reports error nodes                         PASS
+partition of broken source is still well formed      PASS
+partition of broken source still reconstructs exactly PASS
+```
+
+`ERROR` leaves are labelled `.fallback` with confidence 0, so they are **presented** rather than silently absorbed (INV-4). Half-typed source degrades presentation quality and nothing else.
+
+## Classification (DEC-004)
+
+`.tsx .ts .jsx .js .mts .cts .mjs .cjs` are structural; everything else falls back with a stated reason. Three content-based checks run before parsing:
+
+| Trigger | Outcome |
+|---|---|
+| NUL byte present | `binary content` |
+| Not valid UTF-8 | `not valid UTF-8` |
+| Merge conflict marker at line start | `merge conflict marker at byte N` |
+
+The conflict-marker check matters more than it looks: without it, a conflicted file parses as syntactically plausible nonsense and would be aligned against the wrong thing. It is checked at **line starts only**, so a string containing `=======` does not trigger it.
+
+## Not yet done
+
+- No matching. Both sides are partitioned independently; nothing is aligned yet — that is M5, and it is where the product's actual value appears.
+- Segments carry leaf type as `classification`, which is diagnostic rather than the DEC-017 vocabulary.
+- The grammar's `#306` whitespace-in-jsx_text behaviour was not re-tested here; M0-1 established it does not threaten the partition.
