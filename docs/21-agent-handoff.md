@@ -8,7 +8,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**Last completed milestone: M7 — refresh, watching and navigation, on top of a complete M6. 330/330 checks pass.**
+**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening has started: the structural budgets are measured and enforced. 345/345 checks pass.**
 
 | Milestone | State |
 |---|---|
@@ -20,13 +20,14 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 | M5 matching and alignment | Complete |
 | **M6 classification, moves, trust surface** | Complete |
 | **M7 refresh, watching, navigation** | **Complete** — navigation, folding, keyboard map, FSEvents watching, debounce, scroll anchoring, formatting-only collapse |
-| M8 hardening and beta | Not started |
+| M8 hardening and beta | **Started** — DEC-050 budgets measured and enforced; the rest of §"What to do next" remains |
 
 Run everything:
 
 ```
-swift run diffscope-verify          # 330 checks, exit 1 on failure
+swift run diffscope-verify          # 345 checks, exit 1 on failure
 swift run -c release diffscope-verify --survey ~/YourProjects
+swift run -c release diffscope-verify --budget-survey ~/YourProjects
 swift run -c release diffscope-app  # the application
 ```
 
@@ -77,14 +78,19 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 - **Scroll anchoring** (DEC-034, measured in M7-C). Anchors come from the canonical diff's matched blocks, one per line, identified by a 3-line content hash plus an occurrence index. Twenty refreshes with no change resolve to one position — the drift clause, checked rather than argued.
 - **Formatting-only collapse** (DEC-048, measured in M7-C). Driven by canonical hunks, because a reindent is an insertion and has no old side; offered only where both sides span the same number of lines, with rejections counted.
 
+### What M8 has landed so far
+
+- **The structural path has budgets** (DEC-050, measured in M8-A): 2 MB before parsing, 30,000 nodes before matching, 10,000,000 counted comparisons during it. Before this there were **none** — a minified bundle was a hang, and a hang takes the interface with it. Matching cost is roughly **quadratic** in node count, and the budget is counted work rather than a deadline because T-7 makes giving up part of the output.
+- `--budget-survey` reports the distribution the values came from, including what sits **nearest each gate**. On the corpus that is `.next` build output every time; no hand-written file comes close.
+- **Failure copy has one source** (`fallbackNotice`, `discardedNotice`): what was withheld, why, and what remains trustworthy — the third part being the one `13-…` §6 says is usually omitted and matters most.
+
 ### What to do next
 
-**M8 — hardening and beta.** `19-roadmap.md` M8 is the whole list. The parts with the most in them:
-
-1. The fixtures that cannot occur locally and must be constructed deliberately (`20-implementation-plan.md` §6) — F15's forced watcher drop now has a path, but the corrupt-object, unreadable-permission and filter-configured cases do not.
-2. **OQ-046** auto-gc on large repositories, still unverified.
-3. Performance against the budgets in `16-performance-and-scaling.md` on the largest corpus repository, with the matcher budgeted on **node count** rather than bytes.
-4. The file list still has no keyboard path of its own beyond ⌘[ / ⌘] stepping.
+1. **Degradation ordering as an explicit precedence** (`13-error-and-fallback-model.md` §5, F1–F15). It is currently implicit in the order of guards in `structuralDiff` and `buildModel`, which is right today and has nothing checking it stays right.
+2. The fixtures that cannot occur locally (`20-implementation-plan.md` §6) — F15's drop path now has one, but `eol-filter-active` (F8), the oversized-file case above the `D` threshold (F6, now reachable through DEC-050) and the broken-editor case (F13) do not.
+3. A **T-0…T-11 coverage audit** against every fixture: T-10 (grapheme-cluster alignment) and T-11 (moves carry their delta) have no dedicated checks by those names.
+4. **Definition of done §6** — a 63-file working tree reviewable entirely from the keyboard. The file list still has no keyboard path of its own beyond ⌘[ / ⌘] stepping.
+5. **OQ-046** auto-gc on large repositories, still unverified.
 
 **Ambiguity display was withdrawn by DEC-045** — detection stays as a guard against ambiguous anchors, but no indicator is built.
 

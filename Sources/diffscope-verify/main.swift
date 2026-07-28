@@ -11,6 +11,11 @@ if CommandLine.arguments.count > 3, CommandLine.arguments[1] == "--emit-model" {
     exit(0)
 }
 
+if CommandLine.arguments.count > 2, CommandLine.arguments[1] == "--budget-survey" {
+    runBudgetSurvey(root: URL(fileURLWithPath: CommandLine.arguments[2]))
+    exit(0)
+}
+
 if CommandLine.arguments.count > 2, CommandLine.arguments[1] == "--survey" {
     let root = URL(fileURLWithPath: CommandLine.arguments[2])
     let discovery = RepositoryDiscovery(maximumDepth: 2)
@@ -306,6 +311,7 @@ runDisclosureChecks { name, ok, detail in report(name, ok, detail) }
 runMoveChecks { name, ok, detail in report(name, ok, detail) }
 runNavigationChecks { name, ok, detail in report(name, ok, detail) }
 runRefreshChecks { name, ok, detail in report(name, ok, detail) }
+runBudgetChecks { name, ok, detail in report(name, ok, detail) }
 runGitChecks { name, ok, detail in report(name, ok, detail) }
 runBundleFreshnessCheck { name, ok, detail in report(name, ok, detail) }
 

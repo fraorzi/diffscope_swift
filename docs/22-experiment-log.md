@@ -1281,3 +1281,61 @@ Formatting-only grouping was first written over per-side runs of formatting-only
 Grouping is therefore driven by canonical hunks, which are stated on both sides, and offered only where the two sides span the same number of lines (DEC-048) — with the rejected runs counted. The selftest renders a four-line reindent as `4 formatting-only changes over 4 lines`, on both panes, at the same height, above an ordinary `16 unchanged lines` fold: `refresh.png`.
 
 The whole-line expansion needed a guard of its own. Hiding whole lines means a real edit *on* one of those lines would be hidden with them, so any presented segment that is not formatting-only anywhere in the group's lines disqualifies it. The suite asserts the case directly: reindent four lines, change `const c = 3` to `const c = 33` on one of them, and the group must not swallow it.
+
+---
+
+# M8-A — The two budgets that were still estimates
+
+**Status:** Complete, 2026-07-28. Produces DEC-050; replaces the estimates in `16-performance-and-scaling.md` §3.
+
+`16-…` §2 has said since planning that **the matcher is the risk**, that the budget belongs on node count rather than bytes, and that the two numbers written down — ~50,000 nodes and 500 ms — were estimates that "must be derived during implementation against the fixture corpus". Until this experiment the structural path had **no budget of any kind**: no size limit, no node limit, no deadline. A minified bundle was a hang.
+
+## Method
+
+`diffscope-verify --budget-survey ~/WebstormProjects` walks real `.ts`/`.tsx`/`.js`/`.jsx` files (skipping `node_modules` and `.build`), parses each, and matches it against a rename-shaped perturbation — the same perturbation the M6 corpus measurements use, so the numbers are comparable. It records bytes, node count, parse time, match time, and counted match work. Synthetic dense-JSX and minified ladders extend the curve past what the corpus contains. Read-only throughout.
+
+## The corpus, 400 files
+
+```
+                  p50        p95        p99        max
+nodes             841     168390     530897    1427856
+nodes per KB    186.2      345.2      400.3      573.0
+match ms         1.01     557.88    1520.86    1975.67
+longest line      447     247943    6409544    9527358
+```
+
+The median real file matches in **1 ms**. The tail is entirely build output — `.next` chunks and a 31 MB `react-icons` vendor bundle — and it is the tail that costs seconds.
+
+## The curve is quadratic, and the same bytes cost wildly different amounts
+
+```
+shape         bytes    nodes   match ms        work
+dense JSX     14068     7839       10.8      352151
+dense JSX     28268    15639       35.5     1343951
+dense JSX     56668    31239      126.8     5247551
+dense JSX    114668    62439      505.8    20734751
+minified       7669     4001       18.3      814003
+minified      15669     8001       63.8     3228003
+minified      33468    16001      255.9    12856003
+minified      70268    32001     1091.7    51312003
+```
+
+Doubling nodes roughly quadruples cost, in both shapes. And 33 KB of minified code costs **twice** what 57 KB of JSX costs, because it has half the bytes and a comparable node count — which is the whole reason §2 said to budget on nodes.
+
+Work units track time linearly at roughly **40,000 units per millisecond**, across both shapes and three orders of magnitude. That is what makes a counted budget usable as a time budget without being one.
+
+## Why counted work rather than a deadline
+
+A wall-clock deadline makes the *result* depend on machine load: the same file could diff structurally on an idle machine and fall back on a busy one. T-7 requires the same input to produce the same output, and giving up is part of the output. The suite asserts it directly — a budget that bites spends exactly the same work on every run.
+
+## What the gates reject
+
+With `structuralSizeLimit = 2 MB`, `structuralNodeBudget = 30,000`, `matchWorkBudget = 10,000,000`:
+
+```
+gates on 400 files: size 15, nodes 47, work 0 — structural 338 (84.5%)
+```
+
+Every one of the 62 rejected files is build output. The eight nearest the gate — the ones that would indicate a badly placed budget — are `.next/dev/static/chunks/*` and `.next/server/app/*/page.js`. **No hand-written source file in the corpus comes near any gate**, and the median uses about a thousandth of the work budget.
+
+The work gate rejecting nothing is not redundancy: it is the gate that catches a file the other two admit, and the synthetic ladder shows those exist at 30,000 nodes.

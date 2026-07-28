@@ -179,6 +179,7 @@ Twenty decisions are accepted. Full records, including options rejected and revi
 | DEC-047 | Change boundaries **snapped outward** to syntax boundaries, never slid |
 | DEC-048 | Formatting-only groups only where both sides span the same lines |
 | DEC-049 | A pin is **refused**, not blended, while a file is still being written |
+| DEC-050 | Structural budgets: 2 MB, 30,000 nodes, 10M counted match comparisons |
 
 ## Decisions that remain open
 

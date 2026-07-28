@@ -7,15 +7,38 @@ public struct MatcherSettings: Sendable {
     public var maximumCandidates: Int
     public var boundarySnapBudget: Int
     public var moveContentFloor: Int
+    /// Counted work, not elapsed time. A wall-clock deadline makes the *result* depend on machine
+    /// load, and T-7 requires the same input to produce the same output — including the same
+    /// decision to give up. Measured against time in M8-A.
+    public var matchWorkBudget: Int
 
     public init(minimumHeight: Int = 1, minimumDice: Double = 0.5, maximumCandidates: Int = 32,
                 boundarySnapBudget: Int = DiffScopeSyntax.boundarySnapBudget,
-                moveContentFloor: Int = DiffScopeSyntax.moveContentFloor) {
+                moveContentFloor: Int = DiffScopeSyntax.moveContentFloor,
+                matchWorkBudget: Int = DiffScopeSyntax.matchWorkBudget) {
         self.minimumHeight = minimumHeight
         self.minimumDice = minimumDice
         self.maximumCandidates = maximumCandidates
         self.boundarySnapBudget = boundarySnapBudget
         self.moveContentFloor = moveContentFloor
+        self.matchWorkBudget = matchWorkBudget
+    }
+}
+
+/// The same shape as `WorkBudget` in the engine's canonical diff, and for the same reason: the
+/// expensive phase must be able to stop, and stopping must be a reported outcome rather than a
+/// quietly worse answer.
+final class MatchBudget {
+    let limit: Int
+    private(set) var used = 0
+    private(set) var exceeded = false
+
+    init(limit: Int) { self.limit = limit }
+
+    @inline(__always)
+    func spend(_ amount: Int) {
+        used += amount
+        if used > limit { exceeded = true }
     }
 }
 
@@ -30,6 +53,11 @@ public struct NodeMapping: Sendable {
     public private(set) var oldToNew: [Int: Int] = [:]
     public private(set) var newToOld: [Int: Int] = [:]
     public private(set) var ambiguities: [AmbiguityRecord] = []
+    /// True when matching gave up part-way. The partial mapping is **not** usable: a structural
+    /// result built from half a matching would present fewer anchors and more change than the file
+    /// contains, which is a worse answer wearing the same clothes. `structuralDiff` discards it.
+    public internal(set) var exceededBudget = false
+    public internal(set) var workUsed = 0
 
     mutating func link(old: Int, new: Int) {
         guard oldToNew[old] == nil, newToOld[new] == nil else { return }
@@ -61,19 +89,25 @@ public func matchTrees(
     var mapping = NodeMapping()
     guard let oldRoot = old.rootID, let newRoot = new.rootID else { return mapping }
 
-    topDown(old: old, new: new, oldRoot: oldRoot, newRoot: newRoot, settings: settings, mapping: &mapping)
-    bottomUp(old: old, new: new, oldRoot: oldRoot, newRoot: newRoot, settings: settings, mapping: &mapping)
+    let budget = MatchBudget(limit: settings.matchWorkBudget)
+    topDown(old: old, new: new, oldRoot: oldRoot, newRoot: newRoot, settings: settings,
+            mapping: &mapping, budget: budget)
+    bottomUp(old: old, new: new, oldRoot: oldRoot, newRoot: newRoot, settings: settings,
+             mapping: &mapping, budget: budget)
+    mapping.exceededBudget = budget.exceeded
+    mapping.workUsed = budget.used
     return mapping
 }
 
 private func topDown(
     old: SyntaxTree, new: SyntaxTree, oldRoot: Int, newRoot: Int,
-    settings: MatcherSettings, mapping: inout NodeMapping
+    settings: MatcherSettings, mapping: inout NodeMapping, budget: MatchBudget
 ) {
     var oldFrontier = [oldRoot]
     var newFrontier = [newRoot]
 
-    while !oldFrontier.isEmpty, !newFrontier.isEmpty {
+    while !oldFrontier.isEmpty, !newFrontier.isEmpty, !budget.exceeded {
+        budget.spend(oldFrontier.count + newFrontier.count)
         let oldMax = oldFrontier.map { old.node($0).height }.max() ?? 0
         let newMax = newFrontier.map { new.node($0).height }.max() ?? 0
 
@@ -151,8 +185,9 @@ private func mapSubtrees(old: SyntaxTree, new: SyntaxTree, oldID: Int, newID: In
 
 private func bottomUp(
     old: SyntaxTree, new: SyntaxTree, oldRoot: Int, newRoot: Int,
-    settings: MatcherSettings, mapping: inout NodeMapping
+    settings: MatcherSettings, mapping: inout NodeMapping, budget: MatchBudget
 ) {
+    guard !budget.exceeded else { return }
     var oldMappedDescendants: [Int: Set<Int>] = [:]
     for id in old.descendants(of: oldRoot).sorted(by: >) {
         var set = Set<Int>()
@@ -173,6 +208,7 @@ private func bottomUp(
     let oldCandidatesByType = Dictionary(grouping: old.descendants(of: oldRoot).sorted()) { old.node($0).type }
 
     for newID in newPostOrder.reversed() {
+        guard !budget.exceeded else { return }
         guard !mapping.isMapped(new: newID) else { continue }
         let newNode = new.node(newID)
         guard !newNode.isLeaf else { continue }
@@ -185,9 +221,13 @@ private func bottomUp(
 
         var best: (id: Int, dice: Double)?
         for oldID in oldCandidatesByType[newNode.type] ?? [] {
+            guard !budget.exceeded else { return }
             guard !mapping.isMapped(old: oldID) else { continue }
             let oldMapped = oldMappedDescendants[oldID] ?? []
             guard !oldMapped.isEmpty else { continue }
+            // This intersection is where the superlinearity lives: candidates of one type times
+            // the mapped descendants of each. Charging it is what makes the budget mean anything.
+            budget.spend(1 + min(oldMapped.count, translated.count))
             let shared = oldMapped.intersection(translated).count
             guard shared > 0 else { continue }
             let dice = 2.0 * Double(shared) / Double(oldMapped.count + newMapped.count)

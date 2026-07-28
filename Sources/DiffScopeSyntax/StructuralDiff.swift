@@ -117,12 +117,32 @@ public func structuralDiff(
     let newClass = classify(path: newPath, bytes: newBytes)
     if case let .fallback(reason) = oldClass { return fallbackResult(reason) }
     if case let .fallback(reason) = newClass { return fallbackResult(reason) }
+
+    // Gate one, before parsing: parsing a 31 MB bundle costs about a second before anything can be
+    // decided about it (DEC-050, measured in M8-A).
+    let largest = max(oldBytes.count, newBytes.count)
+    if largest > structuralSizeLimit {
+        return fallbackResult("file is \(largest / 1024) KB, above the \(structuralSizeLimit / 1024) KB structural limit")
+    }
+
     guard let parser,
           let oldTree = parser.parseTree(oldBytes),
           let newTree = parser.parseTree(newBytes)
     else { return fallbackResult("parser unavailable") }
 
+    // Gate two, after parsing and before matching: parsing is linear, matching is not.
+    let nodes = max(oldTree.nodes.count, newTree.nodes.count)
+    if nodes > structuralNodeBudget {
+        return fallbackResult("file has \(nodes) syntax nodes, above the \(structuralNodeBudget) budget")
+    }
+
     let mapping = matchTrees(old: oldTree, new: newTree, settings: settings)
+    // Gate three: matching gave up part-way. A partial mapping would present fewer anchors and
+    // therefore *more* apparent change than the file contains — a worse answer that looks like a
+    // normal one, which is exactly what INV-4 exists to prevent.
+    if mapping.exceededBudget {
+        return fallbackResult("structural matching exceeded its work budget after \(mapping.workUsed) units")
+    }
     let found = anchors(old: oldTree, new: newTree, mapping: mapping)
 
     var oldSegments: [Segment] = []

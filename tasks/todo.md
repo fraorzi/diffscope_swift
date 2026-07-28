@@ -180,3 +180,33 @@ folds, applied to content that is allowed to differ.
 
 330/330 checks pass. The application selftest renders the group and the restored anchor across the
 webview, since the harness cannot see either.
+
+## Step 11 — M8 slice one: the budgets that were still estimates (DEC-050)
+
+- [x] `--budget-survey` measuring nodes, parse time, match time and counted work over real files
+- [x] Synthetic dense-JSX and minified ladders to extend the curve past the corpus
+- [x] `MatchBudget` inside `matchTrees`, charged where the superlinearity is
+- [x] Three gates in `structuralDiff`: 2 MB, 30,000 nodes, 10M comparisons — each raw with a reason
+- [x] A partial mapping is discarded, never used
+- [x] `fallbackNotice` / `discardedNotice`: what was withheld, why, what remains trustworthy
+- [x] Checks: pathological input returns, negative control stays structural, giving up is deterministic
+- [x] DEC-050, M8-A, and `16-performance-and-scaling.md` §3 with the estimates kept beside the results
+
+### Step 11 — done
+
+The structural path had **no budget of any kind** before this: no size limit, no node limit, no
+deadline. A 900 KB build chunk took ~2 s to match and a 31 MB vendor bundle took ~3 s including
+parsing, on the main path, while the reader waited.
+
+Two things the planning estimates had wrong, both found by measuring rather than reasoning.
+Matching cost is roughly **quadratic** in node count, not linear — doubling nodes quadruples the
+cost in both shapes tested. And the budget cannot be a wall-clock deadline: that makes the diff
+depend on machine load, so the same file would diff structurally on an idle machine and fall back
+on a busy one, which T-7 forbids because giving up is part of the output. Counted work tracks time
+at ~40,000 units per millisecond across three orders of magnitude, so a counted budget buys the
+time bound without buying the nondeterminism.
+
+The number worth keeping is what sits **nearest the gate**: all eight are `.next` build output. A
+budget is only a budget if it rejects the right things, and that is the line that says so.
+
+345/345 checks pass.

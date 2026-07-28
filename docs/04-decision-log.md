@@ -2085,3 +2085,49 @@ Reopen if line-count-changing reformats (Prettier's print width) prove common en
 ### Revisit trigger
 
 Reopen if a repository on a filesystem with coarse modification timestamps (a network mount) makes the guard either miss tears or refuse constantly.
+
+---
+
+## DEC-050 — Structural budgets: size, node count, and counted matching work
+
+- **Date:** 2026-07-28
+- **Topic:** Replaces the estimates in `16-performance-and-scaling.md` §3 with measured values, and gives the structural path the gates it did not have.
+- **Status:** Accepted
+
+### Context
+
+`16-…` §2 identified the matcher as the product's performance risk and said to budget on **node count, not bytes**, citing difftastic #373 — a moderate-size lockfile consuming 64 GB. The two numbers written down (~50,000 nodes, 500 ms) were marked as estimates.
+
+Until now the structural path enforced **none of it**: `structuralDiff` classified, parsed and matched anything it was handed. Measured (M8-A): matching a 900 KB build chunk takes ~2 s, and the cost grows roughly quadratically in node count. A file being reviewed while the interface waits is the worst version of this — a hang is worse than a fallback, because raw would have shown every byte immediately.
+
+### Options considered
+
+1. **Three gates: byte size, node count, counted matching work.**
+2. **Node count only.** Still parses a 31 MB bundle first, which costs ~1.1 s before any decision.
+3. **A wall-clock deadline on matching.** Simplest to explain, and it makes the *result* depend on machine load — the same file would diff structurally on an idle machine and fall back on a busy one. T-7 requires determinism, and giving up is part of the output.
+4. **A byte budget.** Rejected by §2 on the product's own evidence, and confirmed by M8-A: 33 KB of minified code costs twice what 57 KB of JSX costs.
+
+### Final decision
+
+**Option 1**, in cost order, each degrading to raw with a stated reason:
+
+| Gate | Value | Checked |
+|---|---|---|
+| `structuralSizeLimit` | 2 MB | before parsing |
+| `structuralNodeBudget` | 30,000 nodes | after parsing, before matching |
+| `matchWorkBudget` | 10,000,000 counted candidate comparisons | during matching |
+
+Measured at ~40,000 work units per millisecond, so the work budget is about a quarter of a second of matching. The corpus median uses ~10,000 units — about a thousandth of it.
+
+### Consequences
+
+- **A breach costs structure, never content.** Raw shows every byte, and the reason is carried through `StructuralStats.fallbackReason` into a notice (INV-4).
+- **A partial mapping is discarded, not used.** Matching that gave up halfway produces fewer anchors and therefore *more* apparent change than the file contains — a worse answer wearing the same clothes.
+- On the 400-file corpus, 84.5% of files stay structural and every rejected file is build output; the eight nearest the gates are all `.next` chunks. A budget that rejected hand-written source would be in the wrong place, so the survey reports what sits nearest each gate.
+- The work counter is charged where the superlinearity lives — candidate comparisons in the bottom-up phase, weighted by the descendant sets being intersected.
+- 2 MB matches DEC-040's independent-validation threshold, so a file that is too large to validate is also too large to analyse structurally. One number, two uses, deliberately.
+- The values are machine-relative in the *time* they correspond to, not in behaviour: the same file is treated identically everywhere, and only the wall-clock cost of the ceiling varies.
+
+### Revisit trigger
+
+Reopen if a hand-written source file in any real repository is rejected by a gate, or if the matcher is changed in a way that alters the work-to-time relationship measured in M8-A.

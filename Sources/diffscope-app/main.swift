@@ -690,14 +690,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         if result.stats.usedFallback {
             let reason = result.stats.fallbackReason ?? "structural analysis unavailable"
             return ModelOutcome(model: result.model, validation: validate(result.model),
-                                notices: ["raw for this file — \(reason)"],
+                                notices: [fallbackNotice(reason: reason)],
                                 summary: "raw — \(reason)")
         }
 
         let validation = validate(result.model)
         guard validation.passed else {
             return rawOutcome(
-                notices: ["structural result discarded — \(validation.summary)"],
+                notices: [discardedNotice(reason: validation.summary)],
                 summary: "raw — structural result discarded"
             )
         }

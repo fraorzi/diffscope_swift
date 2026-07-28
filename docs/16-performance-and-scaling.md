@@ -75,13 +75,15 @@ Provisional. Each has a defined degradation, and none may be exceeded silently.
 |---|---|---|
 | File size, structural path | 2 MB | Raw fallback |
 | File size, independent `D` validation | 2 MB (DEC-040) | Label **unverified**; partition assertions still run |
-| Node count per file | ~50,000 *(estimate, unmeasured)* | Raw fallback, reason stated |
-| Matching time per file | 500 ms *(estimate)* | Abort matching, raw fallback |
+| Node count per file | **30,000** *(measured, M8-A; the estimate was ~50,000)* | Raw fallback, reason stated |
+| Matching work per file | **10,000,000 counted comparisons** ≈ 250 ms *(measured, M8-A; the estimate was a 500 ms deadline)* | Abort matching, raw fallback |
 | Single line length | 50,000 chars *(measured safe in rendering)* | Rendering degradation, not fallback |
 | Launch sweep, all roots | < 1 s to first paint | Progressive fill |
 | Refresh debounce | ~400 ms trailing edge + max cap (DEC-026) | — |
 
-**Explicitly marked estimates** — node count and matching time — are the two that matter most and are exactly the two not yet measured. They must be derived during implementation against the fixture corpus, not carried forward as if they were data.
+**Both estimates have now been replaced by measurement** (M8-A, DEC-050), against 400 real files plus synthetic dense-JSX and minified ladders. Two things the estimates had wrong: matching cost is roughly **quadratic** in node count rather than linear, and the budget must be **counted work** rather than elapsed time, because a wall-clock deadline makes the diff depend on machine load and T-7 requires determinism. The estimates are kept above beside what they turned out to be.
+
+The remaining estimate in this table is the single-line length, which is a rendering measurement rather than an engine one.
 
 ## 4. Scaling dimensions
 
@@ -93,7 +95,7 @@ Provisional. Each has a defined degradation, and none may be exceeded silently.
 
 **Line length.** Measured no cliff at 50,000 characters in either web renderer — notably with Monaco's 10,000-character truncation default *disabled*. DEC-014's side-by-side choice makes long lines the weak spot for legibility, not for performance.
 
-**Node count.** The unmeasured dimension, and the one carrying the real risk.
+**Node count.** Measured in M8-A: p50 841, p95 168,390 across 400 real files — and the whole tail is build output. Nodes per KB range from 186 (p50) to 573 (max), which is why the budget is on nodes: the same byte count buys three times the work in generated code.
 
 ## 5. Concurrency
 
