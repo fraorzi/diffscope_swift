@@ -407,6 +407,9 @@ window.diffscopeProbe = function () {
     scrollTop: Math.round(left.scrollDOM.scrollTop),
     stopIndex,
     badges: [...document.querySelectorAll(".ds-badge")].map(el => el.textContent),
+    // Asked from the document rather than from the model: INV-4 is a promise about what the reader
+    // can see, and a notice that never reached the DOM is not visible however well it was computed.
+    notices: [...document.querySelectorAll("#notices .ds-chip")].map(el => el.textContent),
     uncertainMarks: document.querySelectorAll(".ds-uncertain").length,
   };
 };

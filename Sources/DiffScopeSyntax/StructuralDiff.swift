@@ -7,7 +7,10 @@ public struct StructuralStats: Sendable, Equatable {
     public let unchangedBytesOld: Int
     public let unchangedBytesNew: Int
     public let usedFallback: Bool
-    public let fallbackReason: String?
+    /// The condition that caused the fallback, ranked (DEC-051). Carried whole rather than as a
+    /// sentence so the caller can say which taxonomy row fired, not merely what went wrong.
+    public let degradation: Degradation?
+    public var fallbackReason: String? { degradation?.reason }
     public let movedSegments: Int
     public let formattingOnlySegments: Int
     public let behaviorAffectingSegments: Int
@@ -16,7 +19,7 @@ public struct StructuralStats: Sendable, Equatable {
     public let movesBelowFloor: Int
 
     public init(anchors: Int, ambiguities: Int, unchangedBytesOld: Int, unchangedBytesNew: Int,
-                usedFallback: Bool, fallbackReason: String?, movedSegments: Int = 0,
+                usedFallback: Bool, degradation: Degradation?, movedSegments: Int = 0,
                 formattingOnlySegments: Int = 0, behaviorAffectingSegments: Int = 0,
                 invisibleSegments: Int = 0, movesFound: Int = 0, movesBelowFloor: Int = 0) {
         self.anchors = anchors
@@ -24,7 +27,7 @@ public struct StructuralStats: Sendable, Equatable {
         self.unchangedBytesOld = unchangedBytesOld
         self.unchangedBytesNew = unchangedBytesNew
         self.usedFallback = usedFallback
-        self.fallbackReason = fallbackReason
+        self.degradation = degradation
         self.movedSegments = movedSegments
         self.formattingOnlySegments = formattingOnlySegments
         self.behaviorAffectingSegments = behaviorAffectingSegments
@@ -80,13 +83,18 @@ func anchors(old: SyntaxTree, new: SyntaxTree, mapping: NodeMapping) -> [Anchor]
     return kept
 }
 
+/// - Parameter external: conditions this module cannot detect for itself — F8 (a Git filter is
+///   active) and F10 (the pin would not settle) both belong to the Git layer, which the syntax
+///   layer must not import. They join the ranking rather than pre-empting it, so a filtered `.png`
+///   still reports as binary: F9 outranks F8.
 public func structuralDiff(
     oldPath: String, oldBytes: [UInt8],
     newPath: String, newBytes: [UInt8],
     parser: TSXParser?,
-    settings: MatcherSettings = MatcherSettings()
+    settings: MatcherSettings = MatcherSettings(),
+    external: [Degradation] = []
 ) -> StructuralResult {
-    func fallbackResult(_ reason: String) -> StructuralResult {
+    func fallbackResult(_ degradation: Degradation) -> StructuralResult {
         let label: SegmentLabel = oldBytes == newBytes ? .unchanged : .fallback
         return StructuralResult(
             model: DiffModel(
@@ -96,11 +104,15 @@ public func structuralDiff(
             ),
             stats: StructuralStats(anchors: 0, ambiguities: 0,
                                    unchangedBytesOld: 0, unchangedBytesNew: 0,
-                                   usedFallback: true, fallbackReason: reason)
+                                   usedFallback: true, degradation: degradation)
         )
     }
 
     if oldBytes == newBytes {
+        // INV-3 holds: the sides are byte-equal, so nothing is labelled changed. An external
+        // condition still travels with the answer, because F8 is precisely the case where "no
+        // changes" needs its caveat — the file list says the file changed (DEC-041, following
+        // `git status`), this view compares bytes the filter did not touch, and both are right.
         return StructuralResult(
             model: DiffModel(
                 oldBytes: oldBytes, newBytes: newBytes,
@@ -109,31 +121,34 @@ public func structuralDiff(
             ),
             stats: StructuralStats(anchors: 0, ambiguities: 0,
                                    unchangedBytesOld: oldBytes.count, unchangedBytesNew: newBytes.count,
-                                   usedFallback: false, fallbackReason: nil)
+                                   usedFallback: false,
+                                   degradation: Degradation.mostConservative(external))
         )
     }
 
-    let oldClass = classify(path: oldPath, bytes: oldBytes)
-    let newClass = classify(path: newPath, bytes: newBytes)
-    if case let .fallback(reason) = oldClass { return fallbackResult(reason) }
-    if case let .fallback(reason) = newClass { return fallbackResult(reason) }
-
-    // Gate one, before parsing: parsing a 31 MB bundle costs about a second before anything can be
-    // decided about it (DEC-050, measured in M8-A).
+    // Everything knowable before parsing, gathered rather than short-circuited, so the reason shown
+    // is the most conservative one that is true (DEC-051). Gate one lives here: parsing a 31 MB
+    // bundle costs about a second before anything can be decided about it (DEC-050, M8-A).
+    var upfront = external
+    upfront += sourceDegradations(path: oldPath, bytes: oldBytes)
+    upfront += sourceDegradations(path: newPath, bytes: newBytes)
     let largest = max(oldBytes.count, newBytes.count)
     if largest > structuralSizeLimit {
-        return fallbackResult("file is \(largest / 1024) KB, above the \(structuralSizeLimit / 1024) KB structural limit")
+        upfront.append(.budgetExceeded(
+            reason: "file is \(largest / 1024) KB, above the \(structuralSizeLimit / 1024) KB structural limit"))
     }
+    if let worst = Degradation.mostConservative(upfront) { return fallbackResult(worst) }
 
     guard let parser,
           let oldTree = parser.parseTree(oldBytes),
           let newTree = parser.parseTree(newBytes)
-    else { return fallbackResult("parser unavailable") }
+    else { return fallbackResult(Degradation.parseFailure(reason: "parser unavailable")) }
 
     // Gate two, after parsing and before matching: parsing is linear, matching is not.
     let nodes = max(oldTree.nodes.count, newTree.nodes.count)
     if nodes > structuralNodeBudget {
-        return fallbackResult("file has \(nodes) syntax nodes, above the \(structuralNodeBudget) budget")
+        return fallbackResult(Degradation.budgetExceeded(
+            reason: "file has \(nodes) syntax nodes, above the \(structuralNodeBudget) budget"))
     }
 
     let mapping = matchTrees(old: oldTree, new: newTree, settings: settings)
@@ -141,7 +156,8 @@ public func structuralDiff(
     // therefore *more* apparent change than the file contains — a worse answer that looks like a
     // normal one, which is exactly what INV-4 exists to prevent.
     if mapping.exceededBudget {
-        return fallbackResult("structural matching exceeded its work budget after \(mapping.workUsed) units")
+        return fallbackResult(Degradation.budgetExceeded(
+            reason: "structural matching exceeded its work budget after \(mapping.workUsed) units"))
     }
     let found = anchors(old: oldTree, new: newTree, mapping: mapping)
 
@@ -244,7 +260,7 @@ public func structuralDiff(
         stats: StructuralStats(
             anchors: found.count, ambiguities: mapping.ambiguities.count,
             unchangedBytesOld: unchangedOld, unchangedBytesNew: unchangedNew,
-            usedFallback: false, fallbackReason: nil,
+            usedFallback: false, degradation: nil,
             movedSegments: search.moves.count,
             formattingOnlySegments: segmentCount(in: oldPartition, group: .formattingOnly)
                 + segmentCount(in: newPartition, group: .formattingOnly),

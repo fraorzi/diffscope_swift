@@ -45,9 +45,11 @@ public struct GitOperation: Sendable, Equatable {
         GitOperation("log-committer-date", ["log", "-1", "--format=%cI", ref])
     }
 
-    public static func catFile(rev: String, path: String) -> GitOperation {
-        GitOperation("cat-file", ["cat-file", "--textconv", "\(rev):\(path)"])
-    }
+    // `cat-file --textconv` was registered here and never called. It is read-only in the sense R-8
+    // proves — it leaves `.git` byte-identical — and that is exactly why it was dangerous to leave
+    // lying in a registry whose purpose is to make DEC-028 structural: `--textconv` runs a command
+    // the *repository* configures. Removed by DEC-051, with `noExecutingArguments` below standing
+    // guard so it cannot come back as a convenience.
 
     public static func catFileBlob(rev: String, path: String) -> GitOperation {
         GitOperation("cat-file-blob", ["cat-file", "blob", "\(rev):\(path)"])
@@ -61,8 +63,11 @@ public struct GitOperation: Sendable, Equatable {
         GitOperation("diff-raw", ["diff", "--no-color"] + arguments)
     }
 
-    public static func checkAttr(_ attribute: String, path: String) -> GitOperation {
-        GitOperation("check-attr", ["check-attr", attribute, "--", path])
+    /// One invocation for every attribute that can make the compared bytes differ from `git diff`'s
+    /// (DEC-028). `-z` because a path may contain anything, including the separator git would
+    /// otherwise use.
+    public static func checkAttr(_ attributes: [String], path: String) -> GitOperation {
+        GitOperation("check-attr", ["check-attr", "-z"] + attributes + ["--", path])
     }
 
     public static func lsFiles() -> GitOperation {
@@ -83,14 +88,28 @@ public struct GitOperation: Sendable, Equatable {
         .mergeBase("HEAD", "HEAD"),
         .revListCount("HEAD..HEAD"),
         .refCommitterDate("HEAD"),
-        .catFile(rev: "HEAD", path: "a.txt"),
         .catFileBlob(rev: "HEAD", path: "a.txt"),
         .diffNameStatus([]),
         .diffRaw([]),
-        .checkAttr("text", path: "a.txt"),
+        .checkAttr(FilterCheck.attributes, path: "a.txt"),
         .lsFiles(),
         .remotes(),
     ]
+
+    /// Arguments that would let repository content decide what runs, or let a caller inject
+    /// configuration into an operation the registry claims to describe (DEC-028, DEC-003).
+    ///
+    /// R-8 proves an operation does not *write*. That is a different property from not *executing*,
+    /// and `cat-file --textconv` satisfied the first while breaking the second for two milestones.
+    public static let forbiddenArguments = ["--textconv", "--filters", "--ext-diff", "-c"]
+
+    /// Registered operations that would execute repository-configured commands. Empty is the only
+    /// acceptable value; the check reports the offenders rather than a boolean.
+    public static var executingOperations: [GitOperation] {
+        allProvenReadOnly.filter { operation in
+            operation.arguments.contains { forbiddenArguments.contains($0) }
+        }
+    }
 }
 
 public struct GitInvocationResult: Sendable {

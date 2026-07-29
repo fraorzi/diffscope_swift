@@ -1339,3 +1339,59 @@ gates on 400 files: size 15, nodes 47, work 0 — structural 338 (84.5%)
 Every one of the 62 rejected files is build output. The eight nearest the gate — the ones that would indicate a badly placed budget — are `.next/dev/static/chunks/*` and `.next/server/app/*/page.js`. **No hand-written source file in the corpus comes near any gate**, and the median uses about a thousandth of the work budget.
 
 The work gate rejecting nothing is not redundancy: it is the gate that catches a file the other two admit, and the synthetic ladder shows those exist at 30,000 nodes.
+
+---
+
+# M8-B — forcing the failure paths that cannot occur locally
+
+**Date:** 2026-07-29 · **Method:** scratch repositories and deliberately broken commands built inside `diffscope-verify`, following the pattern already used for R-8. Nothing here is observable in the corpus: `13-…` §3 lists these as the rows that ship untested unless someone forces them.
+
+## The eol-filter fixture reproduces nothing if built in the obvious order
+
+The plan said: repository with `.gitattributes` `text eol=crlf`, commit, rewrite the worktree, observe the discrepancy. Built that way it reproduces **nothing** — `status=[]`, `diff-lines=0`. With the attribute in place before the commit, both sides agree and there is no filter effect to disclose.
+
+Six configurations were measured to find one that reproduces DEC-041's state:
+
+| # | Setup | `git status` | `git diff` lines |
+|---|---|---|---|
+| f1 | LF blob, attribute added after, worktree LF | *clean* | 0 |
+| f2 | CRLF blob, `text eol=lf` added after, worktree CRLF | ` M` | 9 |
+| f3 | attribute committed first, worktree LF | *clean* | 0 |
+| f4 | LF blob, `core.autocrlf=true`, worktree CRLF | ` M` | **0** |
+| f5 | CRLF blob, `*.ts text` added after, worktree CRLF | ` M` | 9 |
+| **f6** | **LF blob, `*.ts text eol=crlf` added after, worktree CRLF** | **` M`** | **0** |
+
+f6 is the fixture: the blob was committed **before** the attribute existed, so the attribute now describes a worktree form the object database does not hold. f4 is the same effect through configuration rather than attributes.
+
+The state that matters: `git status` reports the file modified, `git diff` reports nothing, and **the pair this application compares does differ** — the old side is the LF blob, the new side is the CRLF worktree. So all three of git's answers and ours are individually correct and mutually inconsistent, which is precisely why DEC-041 requires the disclosure to explain the *discrepancy* rather than name the filter.
+
+## What the precedence table caught
+
+Constructed inputs satisfying two conditions at once, with the reported code recorded:
+
+| Input | Conditions | Reported | Was |
+|---|---|---|---|
+| `logo.png` containing NUL | F9 + F7 | **F9** | F7 |
+| `notes.md` with invalid UTF-8 | F9 + F7 | **F9** | F7 |
+| `a.ts` with conflict markers + NUL | F9 + F2 | **F9** | F9 |
+| 2 MB+ `vendor.css` | F16 + F7 | **F7** | F16 |
+| 2 MB+ `vendor.js` | F16 | **F16** | F16 |
+| `a.ts` under a filter | F8 | **F8** | *not detected at all* |
+| `a.ts` under a filter, containing NUL | F9 + F8 | **F9** | *not detected at all* |
+
+Four of seven changed. Each ended in raw before and after — what changed is the sentence, which under INV-4 is the part being promised.
+
+## F13 found a defect that had nothing to do with F13
+
+The check for "the template is filled, not re-parsed" failed on the first run. `EditorCommand` substituted `{file}` into the template string and split the result on spaces, so a path such as `~/My Projects/a.ts` arrived as **three arguments** and the editor opened none of them. Nobody had reported it because the corpus paths contain no spaces.
+
+Fixed by splitting the template first and filling the tokens afterwards: the template decides what the arguments are, the path only decides their contents.
+
+Both arms of F13 now behave: `/nonexistent/editor` reports `notLaunched`, `/usr/bin/false` reports `failed(exitCode: 1)`, and `/bin/echo` still reports success as a negative control.
+
+## Two smaller findings
+
+- **F6 "unverified" is no longer reachable by size.** §2 describes F6 as "structural allowed, checks skipped", but since DEC-050 an oversized file is withheld from structure entirely, so it is raw-and-explained rather than structural-and-unverified. The remaining route is dissimilarity: two unrelated 120 KB buffers exhaust the `D` budget, and the contract carries `coverageVerified: false` with its notice. Recorded in DEC-051 instead of left as a silent divergence between the document and the code.
+- **The snapshot writer reported success it had not achieved.** `try? png.write(to:)` printed the path whether or not the directory existed, so a run with a mistyped `DIFFSCOPE_SNAPSHOT_DIR` looked identical to a successful one. Now reported. Same shape as the `runBundleFreshnessCheck` defect: the failure path was written and never exercised.
+
+380/380 checks pass. The application selftest gained an arm for the disclosure, because the harness can prove the ranking but only the webview can prove the sentence reached the screen — `degraded.png` shows it wrapping to three lines and remaining legible.

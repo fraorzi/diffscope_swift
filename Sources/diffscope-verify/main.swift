@@ -313,6 +313,7 @@ runNavigationChecks { name, ok, detail in report(name, ok, detail) }
 runRefreshChecks { name, ok, detail in report(name, ok, detail) }
 runBudgetChecks { name, ok, detail in report(name, ok, detail) }
 runGitChecks { name, ok, detail in report(name, ok, detail) }
+runDegradationChecks { name, ok, detail in report(name, ok, detail) }
 runBundleFreshnessCheck { name, ok, detail in report(name, ok, detail) }
 
 print("\n\(checks - failures)/\(checks) checks passed")

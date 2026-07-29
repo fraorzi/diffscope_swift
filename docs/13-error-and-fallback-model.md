@@ -30,16 +30,19 @@
 | F13 | Editor launch failure | Non-zero exit / not found | Report | Visible error, never a no-op |
 | F14 | Root directory missing | Path check | Empty-state picker (DEC-036) | Picker screen |
 | F15 | Watcher event loss | FSEvents drop signal | Full rescan of the repository | Refresh indication |
+| F16 | Structural budget exceeded | Size, node count or counted work (DEC-050) | Whole-file raw | Fallback + which budget and its value |
+
+**F16 was added by DEC-051.** This table predates the budgets, and a condition with no row cannot be given a rank in §5.
 
 ## 3. Failure paths that need deliberate testing
 
 Several of these cannot occur in the current corpus and will therefore **ship untested unless forced**:
 
-- **F8** — 0 of 21 repositories have Git filters active. Requires the `eol-filter-active` fixture.
-- **F15** — 40,000 file creations produced 40,041 events with zero drops in measurement. The drop path exists in FSEvents but will not be exercised by normal use; it must be triggered deliberately.
-- **F6** — depends on a threshold not yet chosen (OQ-043).
-- **F10** — requires deliberately racing a file change against analysis (test R-9).
-- **F13** — requires an intentionally broken editor command.
+- **F8** — 0 of 21 repositories have Git filters active. Requires the `eol-filter-active` fixture. **Forced in M8-B** — and the obvious construction reproduces nothing; the blob must be committed *before* the attribute exists.
+- **F15** — 40,000 file creations produced 40,041 events with zero drops in measurement. The drop path exists in FSEvents but will not be exercised by normal use; it must be triggered deliberately. **Forced in M7** through `deliver(flags:)`.
+- **F6** — depends on a threshold not yet chosen (OQ-043). **Forced in M8-B**, by dissimilarity rather than size: DEC-050 withholds structure above 2 MB, so the size route now ends in F16 and never reaches "unverified".
+- **F10** — requires deliberately racing a file change against analysis (test R-9). **Forced in M7**, against a writer rewriting in place.
+- **F13** — requires an intentionally broken editor command. **Forced in M8-B**, both arms, and it exposed a space-in-path defect in the template handling.
 
 Recording this explicitly because "we never saw it fail" is not evidence when the trigger cannot arise locally.
 
@@ -63,11 +66,13 @@ When multiple conditions apply, the **most conservative** wins. Precedence, high
 
 ```
 F10 stale pin  →  F9 binary  →  F8 filter  →  F5 invariant violation
-→  F2 whole-file parse failure  →  F7 unsupported  →  F6 unverified
+→  F2 whole-file parse failure  →  F7 unsupported  →  F16 budget  →  F6 unverified
 →  F3/F4 confidence/ambiguity  →  F1 partial parse error
 ```
 
-Rationale: a stale pin invalidates everything downstream, so it is checked first; ambiguity and partial parse errors are the mildest and only affect presentation of regions that are otherwise sound.
+Rationale: a stale pin invalidates everything downstream, so it is checked first; ambiguity and partial parse errors are the mildest and only affect presentation of regions that are otherwise sound. F16 sits below F7 because for a file whose language has no structural support the size is beside the point — it would be raw at any size.
+
+**This order is implemented as data** (DEC-051): `Degradation` in `DiffScopeEngine` carries the rank, and the suite asserts the sequence above literally. Note that precedence is **not** evaluation order — gates still fire where they are cheapest to check, and precedence decides only which reason is shown when several conditions hold. Conflating the two is what left a binary `.png` reporting "unsupported language" for two milestones.
 
 ## 6. Error message requirements
 

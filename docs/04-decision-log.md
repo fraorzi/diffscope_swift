@@ -2131,3 +2131,56 @@ Measured at ~40,000 work units per millisecond, so the work budget is about a qu
 ### Revisit trigger
 
 Reopen if a hand-written source file in any real repository is rejected by a gate, or if the matcher is changed in a way that alters the work-to-time relationship measured in M8-A.
+
+---
+
+## DEC-051 — Degradation precedence is data, and F8/F13 are wired to it
+
+- **Date:** 2026-07-29 · **Topic:** Makes `13-error-and-fallback-model.md` §5 executable; resolves the untested rows of §3 · **Status:** Accepted
+- **Discovered by:** M8 implementation reading
+
+### Context
+
+§5 states a precedence over the failure taxonomy — *"when multiple conditions apply, the most conservative wins"* — and until now nothing implemented it. The order was implicit in the sequence of guards inside `classify` and `structuralDiff`, which was right by accident and had nothing keeping it right.
+
+It was also already wrong in one place. §5 ranks **F9 binary** above **F7 unsupported**, but `classify` returned on its first guard, so a binary `.png` reported *"unsupported language"* — true, and the milder of two true statements. Under INV-4 the reason **is** the guarantee, so the milder statement is a defect even when the outcome (raw) is identical.
+
+Two further gaps came out of the same reading:
+
+- **F8 was never implemented.** `GitOperation.checkAttr` existed and was never called, so DEC-028 (no structural claim under an active filter) and DEC-041 (the list follows `git status`, the view explains the discrepancy) were both unenforced. Same class of defect as `runBundleFreshnessCheck` in M5: *a check that is not run is not a check*.
+- **F13 covered one of its two arms.** §2 says "non-zero exit / not found"; the application reported only the launch that throws, so an editor command that started and then failed read as success.
+
+And one hazard found in passing: `GitOperation.catFile` carried **`--textconv`**, which runs a command the *repository* configures. It was unused, but it sat inside `allProvenReadOnly` — a registry whose entire purpose is to make "we never execute repository content" structural. R-8 proved it does not **write**; that is a different property from not **executing**, and it satisfied the first while breaking the second for two milestones.
+
+### Options considered
+
+1. **Precedence as data on a typed vocabulary**, with the ordering asserted against §5 and multi-condition inputs constructed to exercise it.
+2. **Keep the guard order and document it.** Free today; identical to the state that already drifted.
+3. **A single "degraded" flag with a free-text reason.** What exists now; cannot express "which of these conditions wins" at all.
+
+### Final decision
+
+**Option 1.** `Degradation` in `DiffScopeEngine` carries a `code`, a `rank` transcribing §5, and `mostConservative(_:)`. `classify` gathers every condition that holds instead of returning on the first, and `structuralDiff` takes an `external:` seam through which the Git layer supplies conditions the syntax layer cannot detect.
+
+Three mappings the code needs and §2 does not supply, recorded rather than invented silently:
+
+| Condition | Row | Why |
+|---|---|---|
+| Invalid UTF-8 | **F9** | No row of its own; "content this tool cannot treat as text" is what F9 names |
+| Merge-conflict markers | **F2** | A file mid-merge is not source, which is the condition a whole-file parse failure reports |
+| Structural budget exceeded (DEC-050) | **new F16** | §2 predates the budgets. Ranked *below* F7: for a file whose language has no structure the size is beside the point |
+
+`cat-file --textconv` is removed from the registry, with `GitOperation.forbiddenArguments` standing guard so it cannot return as a convenience.
+
+### Consequences
+
+- **Evaluation order and precedence are now separate concepts.** Gates still fire where they are cheapest — the 2 MB check before parsing — while the *reason shown* is chosen from the conditions that are true. Conflating them is what produced the F9/F7 defect.
+- **F8 costs one `git check-attr` per file the reader opens**, not per file listed. The disclosure belongs to the diff view, and a 63-file sweep would pay 63 invocations for an answer nobody is looking at.
+- **An external condition joins the ranking rather than pre-empting it**, so a filtered binary file still reports binary (F9 over F8).
+- **A filter is disclosed even when the two sides are byte-equal.** That is the DEC-041 case exactly: the list says changed, the view shows nothing, and both are correct. INV-3 is untouched — nothing is labelled changed, a sentence is added.
+- The application's status summary and the renderer's notice now come from the same vocabulary, so a fallback cannot acquire wording that has not been reviewed.
+- Building the F13 fixture found a defect nobody had reported: the editor template was substituted **before** being split, so a path containing a space became three arguments and the editor opened the wrong file. Templates are now tokenised first and filled afterwards.
+
+### Revisit trigger
+
+Reopen if a new failure condition does not fit any existing row — the mapping table above is the precedent for adding one, not for stretching an existing row to cover it. Reopen the F8 cost decision if per-file `check-attr` becomes visible in interaction latency.

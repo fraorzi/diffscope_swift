@@ -4,8 +4,9 @@ import Foundation
 
 private let fm = FileManager.default
 
+/// Shared with `DegradationChecks`: the forced fixtures build repositories the same way.
 @discardableResult
-private func shell(_ args: [String], in dir: URL) -> String {
+func shell(_ args: [String], in dir: URL) -> String {
     let process = Process()
     process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
     process.arguments = ["-C", dir.path] + args
@@ -35,7 +36,7 @@ private func snapshotGitDirectory(_ repository: URL) -> [String: String] {
     return digest
 }
 
-private func makeRepository(_ name: String, in parent: URL) -> URL {
+func makeRepository(_ name: String, in parent: URL) -> URL {
     let url = parent.appendingPathComponent(name)
     try? fm.createDirectory(at: url, withIntermediateDirectories: true)
     shell(["init", "-q", "-b", "main", "."], in: url)

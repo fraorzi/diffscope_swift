@@ -29,6 +29,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     let discovery = RepositoryDiscovery(maximumDepth: 2)
     let reader = RepositoryReader()
     let scopes = ScopeReader()
+    /// Asked once per file the reader opens, not once per file listed: the disclosure belongs to
+    /// the diff view, and a sweep over 63 files would pay 63 `git check-attr` invocations for an
+    /// answer nobody is looking at yet (DEC-051).
+    let filters = FilterCheck(runner: GitRunner())
 
     let parser = TSXParser()
 
@@ -303,8 +307,38 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 let ok = render.restore?.resolution == .exact && moved && observed.contains("pinM:pinN")
                 FileHandle.standardError.write(
                     Data("SELFTEST anchor=\(ok ? "OK" : "MISMATCH") \(String(describing: render.restore?.resolution)) \(anchor.oldStart) → \(render.restore?.oldStart ?? -1)\n".utf8))
-                self.snapshot(named: "anchored") { exit(ok ? 0 : 19) }
+                self.snapshot(named: "anchored") {
+                    if ok { self.runDegradationSelftest() } else { exit(19) }
+                }
             }
+        }
+    }
+
+    /// DEC-051/INV-4: the most conservative condition must reach the *screen*, not merely the model.
+    /// The harness can prove the ranking; only the webview can prove the sentence arrived, and the
+    /// snapshot is the only way to see whether a sentence this long is still readable as a chip.
+    private func runDegradationSelftest() {
+        let old = [UInt8]("const a = 1;\n".utf8)
+        let new = [UInt8]("const a = 2;\n".utf8)
+        let disclosure = "a Git filter is active for this file (eol=crlf text=set), so the bytes on "
+            + "disk and the bytes recorded in the object database are not the same text. This view "
+            + "compares them as they are actually stored, which is why the file can be listed as "
+            + "changed by `git status` while `git diff` reports nothing"
+        let outcome = buildModel(path: "selftest.tsx", old: old, new: new, mode: .structural,
+                                 external: [.filterActive(reason: disclosure)])
+        let render = buildRenderModel(model: outcome.model, pinOld: "pinO", pinNew: "pinP",
+                                      mode: "structural", validation: outcome.validation,
+                                      notices: outcome.notices)
+        guard let json = try? encodeRenderModel(render) else { exit(20) }
+        push(json)
+        webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
+            let text = (value as? String) ?? "nil"
+            let ok = text.contains("Structural analysis unavailable")
+                && text.contains("git status")
+                && text.contains("All textual differences are shown")
+            FileHandle.standardError.write(
+                Data("SELFTEST degradation=\(ok ? "OK" : "MISMATCH") \(outcome.summary.prefix(80))\n".utf8))
+            self.snapshot(named: "degraded") { exit(ok ? 0 : 21) }
         }
     }
 
@@ -374,8 +408,16 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                let rep = NSBitmapImageRep(data: tiff),
                let png = rep.representation(using: .png, properties: [:]) {
                 let url = URL(fileURLWithPath: dir).appendingPathComponent("\(name).png")
-                try? png.write(to: url)
-                FileHandle.standardError.write(Data("SELFTEST snapshot=\(url.path)\n".utf8))
+                // Reported rather than swallowed: this line claimed to have written a snapshot
+                // whether or not the directory existed, so a run with a mistyped path looked
+                // identical to a successful one.
+                do {
+                    try png.write(to: url)
+                    FileHandle.standardError.write(Data("SELFTEST snapshot=\(url.path)\n".utf8))
+                } catch {
+                    FileHandle.standardError.write(
+                        Data("SELFTEST snapshot=FAILED \(url.path) — \(error)\n".utf8))
+                }
             }
             next()
         }
@@ -529,21 +571,18 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             return
         }
         let template = ProcessInfo.processInfo.environment["DIFFSCOPE_EDITOR"]
-            ?? "/usr/bin/open -a WebStorm {file}"
+            ?? EditorCommand.defaultTemplate
         let path = repository.url.appendingPathComponent(file.path).path
-        let parts = template.replacingOccurrences(of: "{file}", with: path)
-            .replacingOccurrences(of: "{line}", with: "1")
-            .split(separator: " ").map(String.init)
-        guard let executable = parts.first else { return }
-
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = Array(parts.dropFirst())
-        do {
-            try process.run()
-            statusLabel.stringValue = "opened \(file.path) in the editor"
-        } catch {
-            statusLabel.stringValue = "open in editor failed: \(error.localizedDescription)"
+        guard let command = EditorCommand(template: template, file: path, line: 1) else {
+            statusLabel.stringValue = "open in editor failed — the editor template is empty"
+            return
+        }
+        // Waiting for the exit status is the point (F13), so it happens off the main thread: a
+        // template that takes a second to return must not take the interface with it.
+        statusLabel.stringValue = "opening \(file.path)…"
+        DispatchQueue.global(qos: .userInitiated).async {
+            let outcome = launchEditor(command, file: file.path)
+            DispatchQueue.main.async { self.statusLabel.stringValue = outcome.message }
         }
     }
 
@@ -613,7 +652,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 }
                 return
             }
-            let outcome = self.buildModel(path: file.path, old: pair.oldBytes, new: pair.newBytes, mode: mode)
+            // DEC-028/DEC-041: asked here, on the file actually being shown, so an active filter is
+            // disclosed where the discrepancy it causes is visible.
+            let filterState = self.filters.state(for: file.path, in: repository.url)
+            let external = filterState.disclosure.map { [Degradation.filterActive(reason: $0)] } ?? []
+            let outcome = self.buildModel(path: file.path, old: pair.oldBytes, new: pair.newBytes,
+                                          mode: mode, external: external)
             let render = buildRenderModel(
                 model: outcome.model, pinOld: pair.oldHash, pinNew: pair.newHash,
                 mode: mode.rawValue, validation: outcome.validation, notices: outcome.notices,
@@ -676,28 +720,39 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// Raw is never a degraded structural run: it is its own path on the same pinned pair.
     /// A structural result that fails validation is discarded whole and replaced by raw,
     /// carrying a notice — a fallback that is not visible is an INV-4 violation.
-    func buildModel(path: String, old: [UInt8], new: [UInt8], mode: PresentationMode) -> ModelOutcome {
+    ///
+    /// - Parameter external: conditions detected outside the syntax layer, F8 above all (DEC-051).
+    ///   They are disclosed in **every** mode, because a filter changes what the compared bytes
+    ///   mean — Raw is not exempt from an explanation it is the reason for.
+    func buildModel(path: String, old: [UInt8], new: [UInt8], mode: PresentationMode,
+                    external: [Degradation] = []) -> ModelOutcome {
+        let outside = Degradation.mostConservative(external)
+
         func rawOutcome(notices: [String], summary: String) -> ModelOutcome {
             let model = trivialModel(oldBytes: old, newBytes: new)
             return ModelOutcome(model: model, validation: validate(model),
                                 notices: notices, summary: summary)
         }
 
-        guard mode.usesStructure else { return rawOutcome(notices: [], summary: "raw") }
+        guard mode.usesStructure else {
+            return rawOutcome(notices: outside.map { [$0.notice] } ?? [],
+                              summary: outside.map { "raw — \($0.reason)" } ?? "raw")
+        }
 
         let result = structuralDiff(oldPath: path, oldBytes: old, newPath: path, newBytes: new,
-                                    parser: parser)
+                                    parser: parser, external: external)
         if result.stats.usedFallback {
-            let reason = result.stats.fallbackReason ?? "structural analysis unavailable"
+            let degradation = result.stats.degradation
+                ?? .parseFailure(reason: "structural analysis unavailable")
             return ModelOutcome(model: result.model, validation: validate(result.model),
-                                notices: [fallbackNotice(reason: reason)],
-                                summary: "raw — \(reason)")
+                                notices: [degradation.notice],
+                                summary: "raw — \(degradation.reason)")
         }
 
         let validation = validate(result.model)
         guard validation.passed else {
             return rawOutcome(
-                notices: [discardedNotice(reason: validation.summary)],
+                notices: [Degradation.invariantViolation(reason: validation.summary).notice],
                 summary: "raw — structural result discarded"
             )
         }
@@ -709,7 +764,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         if stats.behaviorAffectingSegments > 0 { summary += " · \(stats.behaviorAffectingSegments) reordered" }
         if stats.invisibleSegments > 0 { summary += " · \(stats.invisibleSegments) invisible" }
         if stats.ambiguities > 0 { summary += " · \(stats.ambiguities) ambiguous" }
-        return ModelOutcome(model: result.model, validation: validation, notices: [], summary: summary)
+        // A structural run that succeeded can still carry a condition worth disclosing: byte-equal
+        // sides under an active filter are shown as unchanged while the file list says changed.
+        let carried = stats.degradation ?? outside
+        return ModelOutcome(model: result.model, validation: validation,
+                            notices: carried.map { [$0.notice] } ?? [],
+                            summary: carried.map { "\(summary) · \($0.reason)" } ?? summary)
     }
 
     private func push(_ json: String) {

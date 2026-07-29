@@ -3,9 +3,16 @@ import Foundation
 
 public enum SourceClassification: Sendable, Equatable {
     case structural
-    case fallback(reason: String)
+    case fallback(Degradation)
 
     public var isStructural: Bool { self == .structural }
+
+    public var degradation: Degradation? {
+        if case let .fallback(degradation) = self { return degradation }
+        return nil
+    }
+
+    public var reason: String? { degradation?.reason }
 }
 
 public struct PartitionBuildStats: Sendable, Equatable {
@@ -23,22 +30,38 @@ public struct SyntaxPartitionResult: Sendable {
     public let usedFallback: Bool
 }
 
-public func classify(path: String, bytes: [UInt8]) -> SourceClassification {
+/// Every condition that holds for this source, unranked and in no particular order.
+///
+/// All four are linear scans of a buffer already in memory, so asking all four costs what asking
+/// the first one used to. That is what makes precedence affordable here: the reason shown can be
+/// chosen from the conditions that are true rather than from the order they happened to be tested.
+public func sourceDegradations(path: String, bytes: [UInt8]) -> [Degradation] {
+    var found: [Degradation] = []
     let lower = path.lowercased()
     let structuralExtensions = [".tsx", ".ts", ".jsx", ".js", ".mts", ".cts", ".mjs", ".cjs"]
-    guard structuralExtensions.contains(where: { lower.hasSuffix($0) }) else {
-        return .fallback(reason: "unsupported language")
+    if !structuralExtensions.contains(where: { lower.hasSuffix($0) }) {
+        found.append(.unsupportedLanguage(reason: "unsupported language"))
     }
     if bytes.contains(0) {
-        return .fallback(reason: "binary content")
-    }
-    if !Utf16OffsetMapper(bytes: bytes).isValidUTF8 {
-        return .fallback(reason: "not valid UTF-8")
+        found.append(.binary(reason: "binary content"))
+    } else if !Utf16OffsetMapper(bytes: bytes).isValidUTF8 {
+        // Mapped to F9 by DEC-051: §2 has no row for undecodable text, and "content this tool
+        // cannot treat as text" is what F9 names. Reported only when there is no NUL to report,
+        // because a NUL is the more direct statement about the same file.
+        found.append(.binary(reason: "not valid UTF-8"))
     }
     if let marker = firstConflictMarker(in: bytes) {
-        return .fallback(reason: "merge conflict marker at byte \(marker)")
+        // F2 by DEC-051: a file mid-merge is not source, which is the condition a whole-file parse
+        // failure reports. Ranked there rather than invented as a row of its own.
+        found.append(.parseFailure(reason: "merge conflict marker at byte \(marker)"))
     }
-    return .structural
+    return found
+}
+
+public func classify(path: String, bytes: [UInt8]) -> SourceClassification {
+    guard let worst = Degradation.mostConservative(sourceDegradations(path: path, bytes: bytes))
+    else { return .structural }
+    return .fallback(worst)
 }
 
 func firstConflictMarker(in bytes: [UInt8]) -> Int? {

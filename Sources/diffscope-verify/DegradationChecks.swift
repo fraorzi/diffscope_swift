@@ -1,0 +1,226 @@
+import DiffScopeEngine
+import DiffScopeGit
+import DiffScopeSyntax
+import Foundation
+
+/// `13-error-and-fallback-model.md` §5 (precedence) and §3 (the failure paths that cannot arise in
+/// this corpus and therefore ship untested unless forced).
+///
+/// The second half is the reason this file builds repositories and runs broken commands: F8, F13
+/// and the oversized case have no natural trigger here, and "we never saw it fail" is not evidence
+/// when the trigger cannot occur.
+func runDegradationChecks(_ report: (String, Bool, String) -> Void) {
+    func check(_ name: String, _ ok: Bool, _ detail: String = "") { report(name, ok, detail) }
+
+    let fm = FileManager.default
+    let scratch = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("diffscope-m8b-\(UUID().uuidString)")
+    try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: scratch) }
+
+    let parser = TSXParser()
+
+    print("\n=== the precedence of 13-…§5 is data, not the order of guards ===")
+    do {
+        let ranks = Degradation.all.map(\.rank)
+        check("every taxonomy row has a distinct rank", Set(ranks).count == ranks.count)
+        check("the ranks are dense, so a new row cannot be added without placing it",
+              Set(ranks) == Set(0..<Degradation.all.count),
+              ranks.map(String.init).joined(separator: ","))
+        check("the order matches §5 exactly",
+              Degradation.all.sorted { $0.rank < $1.rank }.map(\.code)
+                  == ["F10", "F9", "F8", "F5", "F2", "F7", "F16", "F6", "F3/F4", "F1"],
+              Degradation.all.sorted { $0.rank < $1.rank }.map(\.code).joined(separator: " → "))
+        check("the most conservative of several conditions wins regardless of the order offered",
+              Degradation.mostConservative([.partialParseError(reason: ""), .binary(reason: ""),
+                                            .unsupportedLanguage(reason: "")])?.code == "F9"
+                  && Degradation.mostConservative([.binary(reason: ""), .partialParseError(reason: "")])?.code == "F9")
+        check("no condition means no degradation", Degradation.mostConservative([]) == nil)
+    }
+
+    print("\n=== conditions that hold at once report the most conservative one ===")
+    do {
+        // Before DEC-051 each of these reported whichever guard was written first, which was the
+        // milder statement in every case below.
+        let binaryImage = classify(path: "logo.png", bytes: [0x89, 0x50, 0x00, 0x4E])
+        check("a binary file with an unsupported extension reports binary, not unsupported",
+              binaryImage.degradation?.code == "F9", String(describing: binaryImage))
+
+        let undecodable = classify(path: "notes.md", bytes: [0x61, 0xFF, 0x62])
+        check("undecodable content outranks its unsupported extension",
+              undecodable.degradation?.code == "F9", String(describing: undecodable))
+
+        let conflicted = [UInt8]("const a = 1;\n<<<<<<< HEAD\nx\n=======\ny\n>>>>>>> other\n".utf8)
+        check("a conflicted supported file reports the conflict as F2",
+              classify(path: "a.ts", bytes: conflicted).degradation?.code == "F2")
+        check("a conflicted *binary* file still reports binary",
+              classify(path: "a.ts", bytes: conflicted + [0x00]).degradation?.code == "F9")
+
+        let big = [UInt8](repeating: 0x61, count: structuralSizeLimit + 1)
+        let oversizedUnsupported = structuralDiff(
+            oldPath: "vendor.css", oldBytes: big, newPath: "vendor.css", newBytes: big + [0x62],
+            parser: parser)
+        check("an oversized file whose language has no structure reports the language (F7 over F16)",
+              oversizedUnsupported.stats.degradation?.code == "F7",
+              oversizedUnsupported.stats.fallbackReason ?? "none")
+
+        let oversizedSupported = structuralDiff(
+            oldPath: "vendor.js", oldBytes: big, newPath: "vendor.js", newBytes: big + [0x62],
+            parser: parser)
+        check("an oversized supported file reports the budget (F16)",
+              oversizedSupported.stats.degradation?.code == "F16",
+              oversizedSupported.stats.fallbackReason ?? "none")
+
+        let source = [UInt8]("const a = 1;\n".utf8)
+        let filtered = structuralDiff(
+            oldPath: "a.ts", oldBytes: source, newPath: "a.ts", newBytes: source + [0x32],
+            parser: parser, external: [.filterActive(reason: "text=auto")])
+        check("an external condition joins the ranking rather than pre-empting it",
+              filtered.stats.degradation?.code == "F8", filtered.stats.fallbackReason ?? "none")
+        let filteredBinary = structuralDiff(
+            oldPath: "a.ts", oldBytes: source + [0x00], newPath: "a.ts", newBytes: source,
+            parser: parser, external: [.filterActive(reason: "text=auto")])
+        check("and loses to a more conservative one detected here (F9 over F8)",
+              filteredBinary.stats.degradation?.code == "F9", filteredBinary.stats.fallbackReason ?? "none")
+    }
+
+    print("\n=== F8: eol-filter-active, the fixture the corpus cannot produce ===")
+    do {
+        // Built in the order that actually reproduces DEC-041's measurement, which is not the
+        // order the plan assumed: commit an LF blob **first**, add the attribute after, then give
+        // the worktree the CRLF the attribute asks for. Setting the attribute before the commit
+        // leaves both sides agreeing and reproduces nothing — measured, see M8-B.
+        let repo = makeRepository("eol-filter-active", in: scratch)
+        try? "const a = 1;\nconst b = 2;\n".write(to: repo.appendingPathComponent("a.ts"),
+                                                  atomically: true, encoding: .utf8)
+        try? "plain\n".write(to: repo.appendingPathComponent("b.md"), atomically: true, encoding: .utf8)
+        shell(["add", "-A"], in: repo)
+        shell(["commit", "-qm", "c1"], in: repo)
+        try? "*.ts text eol=crlf\n".write(to: repo.appendingPathComponent(".gitattributes"),
+                                          atomically: true, encoding: .utf8)
+        shell(["add", ".gitattributes"], in: repo)
+        shell(["commit", "-qm", "attrs"], in: repo)
+        try? "const a = 1;\r\nconst b = 2;\r\n".write(to: repo.appendingPathComponent("a.ts"),
+                                                      atomically: true, encoding: .utf8)
+
+        let runner = GitRunner()
+        let filters = FilterCheck(runner: runner)
+        let filtered = filters.state(for: "a.ts", in: repo)
+        let clean = filters.state(for: "b.md", in: repo)
+        check("check-attr reports the active filter on the covered path",
+              filtered.isActive && !filtered.unknown, filtered.summary)
+        check("and reports nothing for a path the attributes do not cover",
+              !clean.isActive && !clean.unknown, clean.summary)
+        check("unspecified is not mistaken for a filter",
+              !FilterCheck.parse(Data("b.md\0text\0unspecified\0".utf8)).isActive)
+        check("a failed query is unknown, never clean",
+              filters.state(for: "a.ts", in: scratch.appendingPathComponent("not-a-repo")).unknown)
+
+        let scopes = ScopeReader(runner: runner)
+        let listed = (try? scopes.changedFiles(scope: .allLocalVsHead, in: repo)) ?? []
+        check("DEC-041: the file the filter affects is still listed as changed",
+              listed.contains { $0.path == "a.ts" },
+              listed.map(\.path).joined(separator: ", "))
+
+        let pair = try? scopes.pinnedPair(for: ChangedFile(path: "a.ts", originalPath: nil, kind: .modified),
+                                          scope: .allLocalVsHead, in: repo)
+        let external = filtered.disclosure.map { [Degradation.filterActive(reason: $0)] } ?? []
+        let result = structuralDiff(oldPath: "a.ts", oldBytes: pair?.oldBytes ?? [],
+                                    newPath: "a.ts", newBytes: pair?.newBytes ?? [],
+                                    parser: parser, external: external)
+        check("a filtered file gets no structural claim (DEC-028)",
+              result.stats.usedFallback && result.stats.degradation?.code == "F8",
+              result.stats.fallbackReason ?? "none")
+
+        let notice = result.stats.degradation?.notice ?? ""
+        check("the disclosure explains the discrepancy, not merely the filter",
+              notice.contains("git status") && notice.contains("git diff"), notice)
+        check("and still says what remains trustworthy",
+              notice.contains("All textual differences are shown"), notice)
+
+        // The state DEC-041 was written about, asserted rather than assumed: git's own two tools
+        // disagree here, which is why the file list and the diff view can look inconsistent.
+        let diff = shell(["diff", "--", "a.ts"], in: repo)
+        let status = shell(["status", "--porcelain", "--", "a.ts"], in: repo)
+        check("the fixture reproduces DEC-041's measurement: status says modified, diff says nothing",
+              status.hasSuffix("a.ts") && diff.isEmpty,
+              "status=\"\(status)\" diff-lines=\(diff.isEmpty ? 0 : diff.split(separator: "\n").count)")
+        check("and the pair this application compares does differ, which is what needs explaining",
+              pair?.oldBytes != pair?.newBytes)
+    }
+
+    print("\n=== F6: unverified is reachable, and says so ===")
+    do {
+        // DEC-043 replaced DEC-040's size threshold with a work budget, so the route to unverified
+        // is dissimilarity, not size. Two unrelated buffers exhaust `D` long before they finish.
+        var rng = SystemRandomNumberGenerator()
+        let a = (0..<120_000).map { _ in UInt8.random(in: 0x61...0x7A, using: &rng) }
+        let b = (0..<120_000).map { _ in UInt8.random(in: 0x41...0x5A, using: &rng) }
+        let model = trivialModel(oldBytes: a, newBytes: b)
+        let validation = validate(model)
+        check("the coverage check gives up rather than claiming a violation",
+              validation.passed && !validation.coverageChecked, validation.summary)
+        let render = buildRenderModel(model: model, pinOld: "a", pinNew: "b", validation: validation)
+        check("and the contract carries the unverified state across to the renderer",
+              !render.coverageVerified && render.notices.contains { $0.contains("coverage") },
+              render.notices.joined(separator: " | "))
+
+        // The oversized route now stops earlier than §2 describes: DEC-050 withholds structure
+        // entirely above 2 MB, so such a file is raw-and-explained rather than structural-and-
+        // unverified. Recorded in DEC-051 rather than left as a silent divergence.
+        let big = [UInt8](repeating: 0x61, count: structuralSizeLimit + 1)
+        let oversized = structuralDiff(oldPath: "big.ts", oldBytes: big,
+                                       newPath: "big.ts", newBytes: big + [0x62], parser: parser)
+        check("an oversized file is withheld from structure rather than shown unverified",
+              oversized.stats.usedFallback && oversized.stats.degradation?.code == "F16",
+              oversized.stats.fallbackReason ?? "none")
+    }
+
+    print("\n=== F13: an editor that fails is reported, both ways it can fail ===")
+    do {
+        let command = EditorCommand(template: "/usr/bin/open -a WebStorm {file}:{line}",
+                                    file: "/tmp/x.ts", line: 42)
+        check("the template substitutes both placeholders and nothing else",
+              command?.executable == "/usr/bin/open"
+                  && command?.arguments == ["-a", "WebStorm", "/tmp/x.ts:42"],
+              String(describing: command))
+        check("an empty template is refused rather than half-run",
+              EditorCommand(template: "", file: "/tmp/x.ts", line: 1) == nil)
+        // Found by this check: substituting before splitting gave the path's spaces the same
+        // meaning as the template's, so a project directory with a space in its name opened three
+        // files, none of them the right one.
+        check("a path containing spaces stays one argument",
+              EditorCommand(template: "/usr/bin/open -a WebStorm {file}",
+                            file: "/Users/x/My Projects/a.ts", line: 1)?.arguments
+                  == ["-a", "WebStorm", "/Users/x/My Projects/a.ts"])
+        check("and nothing but {file} and {line} is substituted",
+              EditorCommand(template: "/bin/echo {file}", file: "$(rm -rf /)", line: 1)?.arguments
+                  == ["$(rm -rf /)"])
+
+        let missing = launchEditor(EditorCommand(template: "/nonexistent/editor {file}",
+                                                 file: "/tmp/x.ts", line: 1)!, file: "x.ts")
+        if case .notLaunched = missing {
+            check("a command that will not launch is reported", true, missing.message)
+        } else {
+            check("a command that will not launch is reported", false, missing.message)
+        }
+
+        let failing = launchEditor(EditorCommand(template: "/usr/bin/false {file}",
+                                                 file: "/tmp/x.ts", line: 1)!, file: "x.ts")
+        check("a command that launches and then fails is reported too, not read as success",
+              failing == .failed(exitCode: 1), failing.message)
+
+        let working = launchEditor(EditorCommand(template: "/bin/echo {file}",
+                                                 file: "/tmp/x.ts", line: 1)!, file: "x.ts")
+        check("and the negative control still reports success", working.succeeded, working.message)
+    }
+
+    print("\n=== DEC-028: the registry cannot execute repository-configured commands ===")
+    do {
+        check("no registered operation carries an executing argument",
+              GitOperation.executingOperations.isEmpty,
+              GitOperation.executingOperations.map(\.label).joined(separator: ", "))
+        check("the guard would catch one if it returned",
+              GitOperation.forbiddenArguments.contains("--textconv"))
+    }
+}
