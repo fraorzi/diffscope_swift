@@ -210,3 +210,53 @@ The number worth keeping is what sits **nearest the gate**: all eight are `.next
 budget is only a budget if it rejects the right things, and that is the line that says so.
 
 345/345 checks pass.
+
+## Step 12 — M8 slice two: degradation precedence, F8, F13 (DEC-051)
+
+- [x] `Degradation` in the engine: F-code, rank transcribing `13-…` §5, `mostConservative`
+- [x] `classify` gathers every condition that holds; `structuralDiff` takes an `external:` seam
+- [x] F16 added to the taxonomy — §2 predates DEC-050's budgets and a row is needed to hold a rank
+- [x] `FilterCheck` over `check-attr -z filter text eol`, registered so R-8 covers it
+- [x] Disclosure explains the *discrepancy* (DEC-041), and applies to byte-equal sides too
+- [x] `cat-file --textconv` removed; `forbiddenArguments` guards its return
+- [x] `EditorCommand` + `launchEditor`: both F13 arms, template tokenised before filling
+- [x] Forced fixtures: `eol-filter-active`, unverified by dissimilarity, broken editor, precedence table
+- [x] Selftest arm + `degraded.png` — the harness ranks, only the webview shows
+- [x] DEC-051, M8-B, `13-…` §2/§3/§5, handoff §0
+
+### Step 12 — done, and three of the findings were not in the plan
+
+**The eol fixture built the obvious way reproduces nothing.** Attribute, commit, rewrite worktree → clean, zero diff lines. Six configurations were measured to find the one that produces DEC-041's state: the blob has to be committed **before** the attribute exists, so the attribute describes a worktree form the object database does not hold. The result is that git's own two tools disagree and our compared pair differs from both — which is why the disclosure has to explain the discrepancy rather than name the filter.
+
+**F13's fixture found a defect that has nothing to do with F13.** The editor template was substituted and *then* split on spaces, so `~/My Projects/a.ts` became three arguments. Nobody had reported it because no corpus path contains a space. Tokenise first, fill after: the template decides what the arguments are, the path only decides their contents.
+
+**The snapshot writer reported success it had not achieved** — `try? png.write` printed the path whether or not the directory existed. Same shape as `runBundleFreshnessCheck`: a failure path written and never exercised.
+
+Four of seven multi-condition inputs changed which reason they report. Every one of them ended in raw before and after; what changed is the sentence, which under INV-4 is the part being promised.
+
+380/380 checks pass.
+
+## Step 13 — three handover gates added to the plan (not yet executed)
+
+Requested by the product owner: milestones after which the application is handed to
+*somebody*, rather than milestones after which a measurement holds. Written to
+`docs/23-release-gates.md`, referenced from the roadmap, handoff §0 and the index.
+
+- [x] **G1 POC** — walkthrough on the owner's real repositories, no new features, gaps list
+      written to `23a-poc-report.md`. Signal: **POC READY**.
+- [x] **G2 design intake** — one token file, mirrored AppKit constants, `24-design-contract.md`
+      naming every emitted class, and checks that a `ds-` class carrying a difference can be
+      restyled but never hidden. Signal: **DESIGN INTAKE READY**.
+- [x] **G3 tester build** — `Scripts/package.sh` → unsigned `DiffScope.app` in a zip with a
+      checksum, proven to run with the source tree moved away, plus `25-tester-packet.md`.
+      Signal: **TESTER BUILD READY**.
+
+Order G1 → G2 → G3: the gaps list feeds every later decision, a design applied before the
+app has been used is a design for an imagined product, and a stranger's first impression is
+the one thing that cannot be asked for twice.
+
+**The rule attached to all three:** no gate is announced from checks alone. Each requires
+running the application and looking at what it drew — M6-D is the precedent, where a verified
+move reached the renderer unpaired while every harness check passed.
+
+Boxes above mark the gates as *planned and specified*. None has been executed.

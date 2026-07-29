@@ -37,9 +37,9 @@ In brief: comparison is on **bytes**, normalization is **never** applied anywher
 
 ## Current planning status
 
-**Planning complete. All phases 0–8 done.** 42 decisions recorded.
+**Planning complete. All phases 0–8 done.** 51 decisions recorded.
 
-**M0 through M5 are complete (2026-07-27).** M0's gates confirmed DEC-042; M1 delivered the engine skeleton and invariant harness; M2 the Git layer; M3 the raw diff end to end; M4 parsing and partition construction; M5 matching and alignment. **177/177 checks pass.** Details in [22-experiment-log.md](22-experiment-log.md).
+**M0 through M7 are complete; M8 is under way (2026-07-29).** M0's gates confirmed DEC-042; M1 delivered the engine skeleton and invariant harness; M2 the Git layer; M3 the raw diff end to end; M4 parsing and partition construction; M5 matching and alignment; M6 classification, moves and the trust surface; M7 refresh, watching and navigation. M8 has landed the structural budgets (DEC-050) and the degradation precedence with F8/F13 wired (DEC-051). **380/380 checks pass.** Details in [22-experiment-log.md](22-experiment-log.md).
 
 **Implementation is under way.** Code lives in `Sources/` and `fixtures/`.
 
@@ -60,7 +60,13 @@ swift run -c release diffscope-app
 ```
 
 
-Next milestone: **M6 — classification, moves and trust surface**, which turns diagnostic labels into the DEC-017 vocabulary and wires the structural model into the app. See [19-roadmap.md](19-roadmap.md). A new agent should start at [21-agent-handoff.md](21-agent-handoff.md).
+Prove the whole native pipeline headlessly, writing a snapshot of each state it renders:
+
+```
+DIFFSCOPE_SELFTEST=1 DIFFSCOPE_SNAPSHOT_DIR=/tmp/shots swift run -c release diffscope-app
+```
+
+Next: the rest of **M8 — hardening**, then the three **handover gates** in [23-release-gates.md](23-release-gates.md) — a proof of concept the product owner can use, a design-intake boundary, and an unsigned `.app` a third-party tester can run. See [19-roadmap.md](19-roadmap.md). A new agent should start at [21-agent-handoff.md](21-agent-handoff.md).
 
 **The stack is now chosen** (DEC-042, after five spikes): **Swift shell and engine, tree-sitter via its C API, CodeMirror 6 in a `WKWebView`, Git through the CLI.** See [09-recommended-architecture.md](09-recommended-architecture.md).
 
@@ -113,6 +119,7 @@ Only documents that exist are authoritative. Planned documents are listed below 
 | `20-implementation-plan.md` | **Exists** | How to start |
 | `21-agent-handoff.md` | **Exists** | **Start here if you are new** |
 | `22-experiment-log.md` | **Exists** | Authoritative for spike results |
+| `23-release-gates.md` | **Exists** | Authoritative for the three handover gates: POC, design intake, tester build |
 | `research/losslessness-invariant.md` | Exists | Corpus measurements behind DEC-021 |
 | `research/domain-existing-tools.md` | Exists | Phase 2 — known failure modes of existing tools |
 | `research/stack-desktop-and-rendering.md` | Exists | Phase 3 — stacks and rendering |

@@ -251,6 +251,44 @@ Two implementations were changed by measurement rather than by review. **R-9:** 
 
 **Acceptance.** All of §"Definition of done" in `18-version-one-scope.md`.
 
+**Landed so far.** DEC-050 budgets (M8-A); DEC-051 degradation precedence with F8 and F13 wired and the forced fixtures (M8-B). Remaining: the T-0…T-11 coverage audit, the keyboard path through the file list, and OQ-046.
+
+---
+
+## G1 — Proof of concept, ready for the owner to use
+
+**Goal.** The product owner reviews a real change in their own repositories, and gets a written list of what is missing.
+
+**Scope.** No new features — deliberately. A scripted walkthrough on real repositories covering every mode, scope, navigation key, refresh, editor launch and degradation notice; the result and the known-gaps list written to `docs/23a-poc-report.md`.
+
+**Acceptance.** Every box in `23-release-gates.md` §G1, and the sentence **POC READY** with the report beside it.
+
+**Why before the design gate.** The gaps list is the input to every decision after it, and a design applied before the application has been used is a design for an imagined product.
+
+---
+
+## G2 — Ready to receive a design
+
+**Goal.** A design — tokens or a working HTML/CSS prototype — can be pasted in without touching behaviour and without any route to hiding a difference.
+
+**Scope.** One token file for the renderer; a mirrored constant table for the AppKit chrome; `24-design-contract.md` naming every emitted class and what it means; and checks that enforce the boundary — a literal colour outside the tokens fails the suite, and a `ds-` class carrying a difference may be restyled but never hidden.
+
+**Acceptance.** `23-release-gates.md` §G2, then **DESIGN INTAKE READY** naming the file to paste into.
+
+**Risk this gate exists for.** A restyle can violate the core invariant through CSS alone: the model still holds the difference, the reader no longer sees it, and every engine check still passes. That is why the rule is checked rather than documented.
+
+---
+
+## G3 — A build a third party can test
+
+**Goal.** Somebody who has never seen this repository runs the application and reports something useful.
+
+**Scope.** `Scripts/package.sh` producing an unsigned `DiffScope.app` in a zip with a recorded checksum; the bundle proven to run with the source tree moved away; a stranger's first run (no default root, no repositories, no WebStorm) explained rather than crashed; `25-tester-packet.md` with Gatekeeper instructions, what to try, what is known missing, and the privacy statement.
+
+**Acceptance.** `23-release-gates.md` §G3, then **TESTER BUILD READY** with the zip and its SHA-256.
+
+**What the tester is asked.** Narrower than "find bugs": *did the diff ever tell you something that was not true?* Only that class of report threatens the invariant.
+
 ---
 
 ## Sequencing notes
