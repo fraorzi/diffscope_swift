@@ -12,7 +12,7 @@ A gate is not passed by an agent's opinion. Each one ends with a **report writte
 
 | Gate | Report | The sentence that announces it |
 |---|---|---|
-| G1 | `docs/23a-poc-report.md` | **POC READY** — with the walkthrough log and the known-gaps list |
+| G1 | `docs/23a-poc-report.md` | **POC READY** — with the walkthrough log and the known-gaps list *(written 2026-07-29)* |
 | G2 | `docs/24-design-contract.md` | **DESIGN INTAKE READY** — naming the one file to paste into |
 | G3 | `docs/25-tester-packet.md` | **TESTER BUILD READY** — naming the `.zip` and its checksum |
 

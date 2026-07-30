@@ -25,13 +25,14 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 Run everything:
 
 ```
-swift run diffscope-verify          # 345 checks, exit 1 on failure
+swift run diffscope-verify          # 855 checks over 32 fixtures, exit 1 on failure
+swift run diffscope-verify --write-manifest   # re-record fixture hashes, deliberately
 swift run -c release diffscope-verify --survey ~/YourProjects
 swift run -c release diffscope-verify --budget-survey ~/YourProjects
 swift run -c release diffscope-app  # the application
 ```
 
-`DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits: raw ŻABKA probe → structural render with a formatting-only label → INV-5 mode agreement across the webview → invisible-difference disclosure naming `U+0307` → a relocated block reported as one move → navigation and folds → a formatting-only group with its disclosed count → an anchor surviving an insertion above it. Adding `DIFFSCOPE_SNAPSHOT_DIR=/some/dir` writes `structural.png`, `expanded.png`, `disclosure.png`, `moved.png`, `navigation.png`, `refresh.png` and `anchored.png` of what the webview actually drew — the only way to check legibility, which the probe cannot see.
+`DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits: raw ŻABKA probe → structural render with a formatting-only label → INV-5 mode agreement across the webview → invisible-difference disclosure naming `U+0307` → a relocated block reported as one move → navigation and folds → a formatting-only group with its disclosed count → an anchor surviving an insertion above it → a ranked degradation notice reaching the document. Adding `DIFFSCOPE_SNAPSHOT_DIR=/some/dir` writes `structural.png`, `expanded.png`, `disclosure.png`, `moved.png`, `navigation.png`, `refresh.png`, `anchored.png` and `degraded.png` of what the webview actually drew — the only way to check legibility, which the probe cannot see.
 
 ### What exists in code
 
@@ -102,7 +103,7 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 
 | Gate | Ends when | Announced as |
 |---|---|---|
-| **G1 POC** | the owner has reviewed a real change in their own repositories, and has a written gaps list | **POC READY** + `23a-poc-report.md` |
+| **G1 POC** | the owner has reviewed a real change in their own repositories, and has a written gaps list | **POC READY** — `23a-poc-report.md` written 2026-07-29; awaiting the owner's session |
 | **G2 design intake** | a design can be pasted into one token file without touching behaviour, with the "never hide a difference" rule *checked* | **DESIGN INTAKE READY** + `24-design-contract.md` |
 | **G3 tester build** | an unsigned `.app` zip runs for a stranger with the source tree moved away | **TESTER BUILD READY** + zip and SHA-256 |
 
