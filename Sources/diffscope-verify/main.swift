@@ -11,6 +11,12 @@ if CommandLine.arguments.count > 3, CommandLine.arguments[1] == "--emit-model" {
     exit(0)
 }
 
+if CommandLine.arguments.count > 1, CommandLine.arguments[1] == "--write-manifest" {
+    writeFixtureManifest(root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        .appendingPathComponent("fixtures"))
+    exit(0)
+}
+
 if CommandLine.arguments.count > 2, CommandLine.arguments[1] == "--budget-survey" {
     runBudgetSurvey(root: URL(fileURLWithPath: CommandLine.arguments[2]))
     exit(0)
@@ -245,44 +251,6 @@ do {
            validate(brokenReconstruction).violations.contains { if case .partitionMalformed = $0 { return true }; return false })
 }
 
-print("\n=== fixtures ===")
-let fixtureRoot = URL(fileURLWithPath: FileManager.default.currentDirectoryPath).appendingPathComponent("fixtures")
-var fixtureCount = 0
-if let entries = try? FileManager.default.contentsOfDirectory(at: fixtureRoot, includingPropertiesForKeys: nil) {
-    for dir in entries.sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-        guard (try? dir.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
-        let files = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
-        guard let beforeURL = files.first(where: { $0.lastPathComponent.hasPrefix("before.") }),
-              let afterURL = files.first(where: { $0.lastPathComponent.hasPrefix("after.") }),
-              let beforeData = try? Data(contentsOf: beforeURL),
-              let afterData = try? Data(contentsOf: afterURL)
-        else { continue }
-
-        fixtureCount += 1
-        let name = dir.lastPathComponent
-        let old = [UInt8](beforeData)
-        let new = [UInt8](afterData)
-
-        let model = trivialModel(oldBytes: old, newBytes: new)
-        let result = validate(model)
-        report("\(name): invariants hold", result.passed, result.summary)
-        report("\(name): coverage actually checked", result.coverageChecked || old == new)
-
-        let again = validate(trivialModel(oldBytes: old, newBytes: new))
-        report("\(name): deterministic", result.summary == again.summary)
-
-        let hunksA = canonicalDiff(old: old, new: new)
-        let hunksB = canonicalDiff(old: old, new: new)
-        report("\(name): canonical diff deterministic", hunksA == hunksB)
-
-        if old != new, case let .exact(hs) = hunksA {
-            report("\(name): reports at least one hunk", !hs.isEmpty)
-        }
-    }
-}
-report("fixture directory was found and non-empty", fixtureCount > 0, "found \(fixtureCount)")
-
-
 print("\n=== work budget: pathological input must terminate, not hang ===")
 do {
     var rng = Rng(state: 0xBEEF)
@@ -312,6 +280,7 @@ runMoveChecks { name, ok, detail in report(name, ok, detail) }
 runNavigationChecks { name, ok, detail in report(name, ok, detail) }
 runRefreshChecks { name, ok, detail in report(name, ok, detail) }
 runBudgetChecks { name, ok, detail in report(name, ok, detail) }
+runFixtureChecks { name, ok, detail in report(name, ok, detail) }
 runGitChecks { name, ok, detail in report(name, ok, detail) }
 runDegradationChecks { name, ok, detail in report(name, ok, detail) }
 runBundleFreshnessCheck { name, ok, detail in report(name, ok, detail) }

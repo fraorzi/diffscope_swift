@@ -8,7 +8,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets are measured and enforced, and the degradation model is now ordered, wired and forced. 380/380 checks pass.**
+**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, and the T-series coverage audit have all landed. 855/855 checks pass over 32 fixtures.**
 
 | Milestone | State |
 |---|---|
@@ -20,7 +20,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 | M5 matching and alignment | Complete |
 | **M6 classification, moves, trust surface** | Complete |
 | **M7 refresh, watching, navigation** | **Complete** — navigation, folding, keyboard map, FSEvents watching, debounce, scroll anchoring, formatting-only collapse |
-| M8 hardening and beta | **Started** — DEC-050 budgets and DEC-051 degradation precedence landed; the rest of §"What to do next" remains |
+| M8 hardening and beta | **Started** — DEC-050 budgets, DEC-051 degradation precedence, and the M8-C coverage audit landed; the rest of §"What to do next" remains |
 
 Run everything:
 
@@ -88,12 +88,15 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 - **`cat-file --textconv` is out of the read-only registry**, with `GitOperation.forbiddenArguments` standing guard. R-8 proved it does not *write*; `--textconv` runs a command the *repository* configures, and those are different properties.
 - **F13 reports both its arms**, and building the fixture found an unrelated defect: the editor template was substituted before being split, so a path containing a space became three arguments.
 
+- **The T-series is applied by number to every fixture, on both paths** (M8-C). Before this, every fixture was validated on the **raw** path only — `jsx-wrapper-removal`, the founding case, had never had its structural model checked by the harness. The corpus grew 9 → 32 fixtures; `MANIFEST.json` is now read by a check rather than being dead data (third instance of that defect class); the map is `26-coverage-audit.md`.
+- **T-10 was a documented requirement with no implementation.** `14-…` §4 mandates outward grapheme-cluster snapping and nothing did it, so an emoji-ZWJ insertion cut a cluster in half. `snapToGraphemeBoundaries` runs after syntax snapping — a syntax boundary need not fall on a cluster boundary.
+
 ### What to do next
 
-1. A **T-0…T-11 coverage audit** against every fixture: T-10 (grapheme-cluster alignment) and T-11 (moves carry their delta) have no dedicated checks by those names.
-2. **Definition of done §6** — a 63-file working tree reviewable entirely from the keyboard. The file list still has no keyboard path of its own beyond ⌘[ / ⌘] stepping.
-3. **OQ-046** auto-gc on large repositories, still unverified.
-4. F1 (partial parse error) and F3/F4 (confidence, ambiguity) have ranks but **no producer** — nothing constructs them yet, so the two mildest rows of the order are ranked and unreachable. Either wire them or record why they stay theoretical.
+1. **Definition of done §6** — a 63-file working tree reviewable entirely from the keyboard. The file list still has no keyboard path of its own beyond ⌘[ / ⌘] stepping.
+2. **OQ-046** auto-gc on large repositories, still unverified.
+3. F1 (partial parse error) and F3/F4 (confidence, ambiguity) have ranks but **no producer** — nothing constructs them yet, so the two mildest rows of the order are ranked and unreachable. Either wire them or record why they stay theoretical.
+4. **T-11 is proven on one relocation shape only.** A second shape is worth more than any other addition to the corpus — and read M8-C first, because constructing the first one failed twice for reasons that are findings in themselves.
 
 **Then the three handover gates** (`23-release-gates.md`, added 2026-07-29 at the product owner's request). These are not M-series milestones: each ends when a *person* can do something they could not before, which is a different acceptance test from "the checks pass".
 
@@ -107,7 +110,7 @@ Order is G1 → G2 → G3 and the reasoning is in that document. **No gate may b
 
 **Ambiguity display was withdrawn by DEC-045** — detection stays as a guard against ambiguous anchors, but no indicator is built.
 
-Known weaknesses recorded rather than hidden: anchor selection is greedy by old-side position rather than a longest-increasing-subsequence; moved-and-modified content presents as delete plus add (accepted in DEC-038); the file list has no keyboard path of its own; a reformat that changes line counts is never grouped (DEC-048, the conservative direction); files over 2000 anchored lines are strided, so a refresh lands the reader within a few lines rather than exactly; the mode chip still reads `mode: structural` beside a notice saying structural analysis was unavailable, because the chip reports the reader's *selection* rather than the path taken.
+Known weaknesses recorded rather than hidden: **a relocated line whose leading bytes align with a neighbour's identical prefix is not detected as a move** (measured in M8-C — widening the search would put bytes the canonical diff calls unchanged inside a `moved` range, which is a reopening of DEC-038, not an implementation detail); anchor selection is greedy by old-side position rather than a longest-increasing-subsequence; moved-and-modified content presents as delete plus add (accepted in DEC-038); the file list has no keyboard path of its own; a reformat that changes line counts is never grouped (DEC-048, the conservative direction); files over 2000 anchored lines are strided, so a refresh lands the reader within a few lines rather than exactly; the mode chip still reads `mode: structural` beside a notice saying structural analysis was unavailable, because the chip reports the reader's *selection* rather than the path taken.
 
 **Two things measurement changed in M7 that reasoning had settled the other way.** DEC-034 says "the nearest segment labeled unchanged" — implemented literally, it gives Raw *zero* anchors, because Raw is one fallback segment over the whole file. And per-side formatting runs find nothing for the ordinary reindent, because a reindent is an insertion and the old side has no changed bytes. Both now derive from the canonical diff instead. If you are about to build something on "the unchanged segments", check what Raw actually contains first.
 
@@ -229,6 +232,7 @@ M0 in `19-roadmap.md`: verify #306, measure serialisation, assess Swift binding 
 | `20-implementation-plan.md` | How to start |
 | `22-experiment-log.md` | Spike results with methods |
 | `23-release-gates.md` | **The three handover gates** — POC, design intake, tester build |
+| `26-coverage-audit.md` | Where each T- and R- test is proven, and what could fail it |
 | `research/` | Raw research with citations |
 
 ## 11. Milestone order

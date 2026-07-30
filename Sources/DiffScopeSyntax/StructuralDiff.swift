@@ -242,12 +242,16 @@ public func structuralDiff(
         }
     )
 
-    let oldPartition = snapPresentation(
+    // Syntax snapping first, then grapheme snapping (`14-…` §4). Both only ever widen what is
+    // presented, so the order costs nothing — but grapheme snapping must come last, because a
+    // syntax boundary is not obliged to fall on a cluster boundary and the emoji-ZWJ case proves
+    // it does not.
+    let oldPartition = snapToGraphemeBoundaries(snapPresentation(
         movedOld, boundaries: SyntaxBoundaries(tree: oldTree), budget: settings.boundarySnapBudget
-    )
-    let newPartition = snapPresentation(
+    ), bytes: oldBytes)
+    let newPartition = snapToGraphemeBoundaries(snapPresentation(
         movedNew, boundaries: SyntaxBoundaries(tree: newTree), budget: settings.boundarySnapBudget
-    )
+    ), bytes: newBytes)
 
     unchangedOld = oldPartition.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
     unchangedNew = newPartition.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }

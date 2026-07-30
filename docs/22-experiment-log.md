@@ -1395,3 +1395,63 @@ Both arms of F13 now behave: `/nonexistent/editor` reports `notLaunched`, `/usr/
 - **The snapshot writer reported success it had not achieved.** `try? png.write(to:)` printed the path whether or not the directory existed, so a run with a mistyped `DIFFSCOPE_SNAPSHOT_DIR` looked identical to a successful one. Now reported. Same shape as the `runBundleFreshnessCheck` defect: the failure path was written and never exercised.
 
 380/380 checks pass. The application selftest gained an arm for the disclosure, because the harness can prove the ranking but only the webview can prove the sentence reached the screen — `degraded.png` shows it wrapping to three lines and remaining legible.
+
+---
+
+# M8-C — the first structural run over the fixture corpus
+
+**Date:** 2026-07-29 · **Method:** every fixture through both paths, with the T-series asserted by number; corpus grown from 9 to 32 fixtures; `swift run diffscope-verify`, 380 → 855 checks.
+
+## Three things were not being checked at all
+
+- **Every fixture was validated on the raw path only.** The loop built `trivialModel` — the whole-file fallback partition — so `jsx-wrapper-removal`, the founding case of the product, had never had its structural model checked against the invariants by the fixture harness.
+- **`MANIFEST.json` was read by nothing**, while `21-agent-handoff.md` §9 stated that fixture bytes are verified against recorded hashes. Third instance of this defect class, after `runBundleFreshnessCheck` (M5) and `checkAttr` (M8-B). The check now also fails on a fixture with *no* entry, which is the silent case.
+- **T-8, T-9, T-10 and T-11 had no checks by those names.** T-10's was worth the exercise on its own.
+
+## T-10 was a documented requirement with no implementation
+
+`14-…` §4: *"Presented regions are snapped outward to grapheme-cluster boundaries."* Nothing did it.
+
+`unicode-graphemes` compares `'😀'` with `'😀‍💻'`. The canonical diff is an insertion starting at byte 19 — between the emoji and the zero-width joiner that binds it to the laptop. Correct on bytes and unrenderable on screen: the presented range cut one grapheme cluster in half, so the two panes would mark half a glyph.
+
+`snapToGraphemeBoundaries` runs **after** syntax snapping, and the order is not arbitrary: a syntax boundary is under no obligation to fall on a cluster boundary, and this case is the proof. Both passes only ever widen, so INV-2 survives by the monotonicity argument §4 already gives.
+
+## Constructing a move fixture failed twice, and both failures are findings
+
+`moved-function` was meant to be trivial. It took three attempts.
+
+| Attempt | Fixture | Moves found | Why |
+|---|---|---|---|
+| 1 | Two near-identical 3-line functions swapped | 0 | **At byte level this is not a move.** The minimal diff touches only the names and literals; everything around them is common substring, so there is no deletion and insertion to pair |
+| 2 | A 4-line function and `export const VAT_RATE = 0.23;` swapped | 0 | The relocated line begins with `export `, which the canonical alignment matched against the **function's** `export ` at offset 0. The line is then only partly inside changed content, and the line-based search requires a whole line |
+| 3 | Same, with the line starting `const` | **1** | No shared prefix, so the whole line is changed on both sides |
+
+Attempt 2 is the one worth keeping. Measured segments on the new side:
+
+```
+new 0..<7    unchanged  "export "
+new 7..<31   changed    "const VAT_RATE = 0.23;\n\n"
+new 31..<38  changed    "export "
+new 38..<148 unchanged  "function formatPrice(...)..."
+```
+
+**A relocated line whose leading bytes align with a neighbour's identical prefix is not detected as a move.** This is a genuine limitation of DEC-038 as implemented, not a defect in the fixture, and it is not fixable inside a test-coverage slice: widening the search to lines that are only partly changed would put bytes the canonical diff calls unchanged inside a `moved` range. That is a decision about what a move *is*, and belongs in a reopened DEC-038 rather than in an implementation detail.
+
+It also explains M6-D's 120 of 120: those relocations were whole blocks, where no cross-move byte alignment survives at a line's start.
+
+`moved-function-modified` then earns its place as the negative control — the same relocation with `0.23` → `0.25` produces **zero** moves, so the delta cannot ride along inside one.
+
+## Two checks were written too narrowly and failed correct behaviour
+
+Recorded because in both cases the correction is the interesting part.
+
+- **T-5** asserted that a fallback is marked *per segment*. `binary-file` and `invalid-utf8` have no segments to mark: the payload is `unrenderable` and the notice says so in words (DEC-044). INV-4 asks that a fallback be marked, not that it be marked in one particular place.
+- **T-9** asserted the difference appears on the **new** side. `truncated-file` and `invalid-tsx` are pure deletions, so the new side has no changed bytes at all. Asserted on either side now.
+
+## The corpus
+
+9 → 32 fixtures, covering the degenerate, Unicode, formatting, movement and class/token groups of `15-test-corpus-plan.md` §4. The structural path runs on 28; four are skipped with their reason printed (`binary content`, `not valid UTF-8`, `unsupported language`, `merge conflict marker at byte 0`) because a silent skip and a passing check look identical in a green suite.
+
+Per-fixture structural statistics are printed on every run — hunks, anchors, moves, formatting-only, reordered, invisible — since a T-check that never fires is invisible without them. That is how T-11's silence was noticed.
+
+**Coverage map: `26-coverage-audit.md`.** 855/855 pass.

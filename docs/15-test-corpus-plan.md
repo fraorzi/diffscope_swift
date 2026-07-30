@@ -211,6 +211,12 @@ Fixtures should be drawn from **real code in the actual repositories** wherever 
 
 Sourcing rule: fixtures are copied out of repositories, never referenced in place. The corpus must be stable and self-contained; a fixture that reads live repository state changes meaning as the repository changes.
 
+## 6.5 Where the corpus stands
+
+**32 fixtures as of M8-C** (2026-07-29), up from 9. Every one runs through **both** paths — raw and structural — with T-0…T-11 asserted by number, and every one is recorded in `MANIFEST.json`, which is now read by a check rather than being dead data.
+
+Which test is proven where, and what could fail it: **`26-coverage-audit.md`**. Read it before adding a fixture; the gaps it names are worth more than another instance of a case already covered.
+
 ## 7. What "done" means for the corpus
 
 - Every P0 group has at least one fixture, and every fixture passes T-1 through T-11.

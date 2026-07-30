@@ -39,7 +39,7 @@ In brief: comparison is on **bytes**, normalization is **never** applied anywher
 
 **Planning complete. All phases 0–8 done.** 51 decisions recorded.
 
-**M0 through M7 are complete; M8 is under way (2026-07-29).** M0's gates confirmed DEC-042; M1 delivered the engine skeleton and invariant harness; M2 the Git layer; M3 the raw diff end to end; M4 parsing and partition construction; M5 matching and alignment; M6 classification, moves and the trust surface; M7 refresh, watching and navigation. M8 has landed the structural budgets (DEC-050) and the degradation precedence with F8/F13 wired (DEC-051). **380/380 checks pass.** Details in [22-experiment-log.md](22-experiment-log.md).
+**M0 through M7 are complete; M8 is under way (2026-07-29).** M0's gates confirmed DEC-042; M1 delivered the engine skeleton and invariant harness; M2 the Git layer; M3 the raw diff end to end; M4 parsing and partition construction; M5 matching and alignment; M6 classification, moves and the trust surface; M7 refresh, watching and navigation. M8 has landed the structural budgets (DEC-050), the degradation precedence with F8/F13 wired (DEC-051), and the T-series coverage audit over a 32-fixture corpus (M8-C). **855/855 checks pass.** Details in [22-experiment-log.md](22-experiment-log.md).
 
 **Implementation is under way.** Code lives in `Sources/` and `fixtures/`.
 
@@ -120,6 +120,7 @@ Only documents that exist are authoritative. Planned documents are listed below 
 | `21-agent-handoff.md` | **Exists** | **Start here if you are new** |
 | `22-experiment-log.md` | **Exists** | Authoritative for spike results |
 | `23-release-gates.md` | **Exists** | Authoritative for the three handover gates: POC, design intake, tester build |
+| `26-coverage-audit.md` | **Exists** | Where each named test is proven, and what could fail it |
 | `research/losslessness-invariant.md` | Exists | Corpus measurements behind DEC-021 |
 | `research/domain-existing-tools.md` | Exists | Phase 2 — known failure modes of existing tools |
 | `research/stack-desktop-and-rendering.md` | Exists | Phase 3 — stacks and rendering |

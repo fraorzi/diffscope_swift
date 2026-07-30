@@ -260,3 +260,35 @@ running the application and looking at what it drew — M6-D is the precedent, w
 move reached the renderer unpaired while every harness check passed.
 
 Boxes above mark the gates as *planned and specified*. None has been executed.
+
+## Step 14 — M8 slice three: the T-0…T-11 coverage audit (M8-C)
+
+- [x] `MANIFEST.json` read by a check: hash, length, missing entry, deleted fixture; `--write-manifest` regenerates deliberately and is idempotent
+- [x] `FixtureChecks.swift` — every fixture through raw **and** structural, T-series asserted by number
+- [x] T-8, T-9, T-10, T-11 given checks by those names, each with an input that can fail it
+- [x] `snapToGraphemeBoundaries` — the missing implementation of `14-…` §4
+- [x] Corpus 9 → 32 fixtures across the degenerate, Unicode, formatting, movement and token groups
+- [x] Per-fixture structural statistics printed, since a check that never fires is invisible
+- [x] `26-coverage-audit.md`, M8-C, handoff §0, index, `15-…` §6.5
+
+### Step 14 — done, and the audit paid for itself three times
+
+**Nothing had ever checked a fixture on the structural path.** The loop built `trivialModel` — the
+whole-file fallback — so the founding case of the product, `jsx-wrapper-removal`, had been passing
+invariant checks against a partition with one segment in it.
+
+**T-10 was a documented requirement with no implementation.** `14-…` §4 mandates outward
+grapheme-cluster snapping; nothing did it, so an emoji-ZWJ insertion cut a cluster in half.
+
+**Building a move fixture failed twice**, and both failures are recorded in M8-C rather than
+worked around: swapping two similar functions is a rename at byte level, not a move; and a
+relocated line sharing a prefix with its neighbour is not detected, because the line-based search
+needs the whole line inside changed content. The second is a real limitation of DEC-038 as
+implemented, and fixing it is a decision about what a move *is* — not something to slip into a
+test-coverage slice.
+
+Two of my own checks were written too narrowly and failed correct behaviour: an unrenderable file
+marks its fallback whole rather than per segment, and a pure deletion has no changed bytes on the
+new side. Both corrections are in M8-C.
+
+855/855 checks pass over 32 fixtures.
