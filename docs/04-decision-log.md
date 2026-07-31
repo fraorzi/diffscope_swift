@@ -2109,6 +2109,30 @@ Reopen if a repository on a filesystem with coarse modification timestamps (a ne
 
 ---
 
+### Amendment, 2026-07-31 — the stat bracket needs a second read beside it
+
+**Observed:** the R-9 racing check failed while a release build ran concurrently — **6 blended pins of 20 reads** — then passed six times in a row on an idle machine. A trust guarantee that holds when nobody is looking is not a guarantee, so it was measured rather than retried.
+
+**Ruled out by measurement.** Timestamp granularity: 200 rewrites of a 52 KB file produced **200 distinct modification times**, smallest gap 114 µs. `mtime` moves on every write, so the bracket is not blind to writes in general.
+
+**The actual hole.** A single large `write` stamps `mtime` **once**, when it starts, while the copy continues. Both stats then see the same timestamp and the read in between lands mid-copy. The bracket can establish that no write *started* during the read; it cannot establish that none was already *in flight*. Load widens the window, which is why it appeared under a concurrent build and not on an idle machine.
+
+**Amended decision: the read is bracketed by a stat *and* repeated, and both must agree.**
+
+Each half is insufficient, and each was measured to be insufficient rather than argued about:
+
+| Guard | Measured failure |
+|---|---|
+| Content compared across two reads, alone | 3 blends in 8,095 reads (M7-B) |
+| Stat bracket, alone | 6 blends in 20 reads under load (M8-H) |
+| Both together | 0 blends; the hostile case refuses every read, the realistic one still yields usable pins |
+
+They close each other's hole: the bracket catches a write that starts during the read, the second read catches one already in flight when the first stat ran. Cost is one extra read of the worktree side, on the path that was already reading it.
+
+**The original consequence still stands:** a pair that will not settle is not rendered at all, because a blend shown with a warning is still a blend.
+
+---
+
 ## DEC-050 — Structural budgets: size, node count, and counted matching work
 
 - **Date:** 2026-07-28
