@@ -322,6 +322,60 @@ window.diffscopeAnchorState = function () {
 // The active change stop wins when there is one — a reader who pressed ⌘N is looking at that change,
 // not at the top of the screen. Otherwise it is the first line visible in the new pane. Reported in
 // the **new** side's numbering, because that is the file on disk the editor will open.
+// The G2 rule, asked of the live document rather than of the stylesheet: **a design may restyle any
+// mark and may never hide one.** Parsing CSS text would miss a rule added elsewhere, a cascade that
+// wins, or an inherited `opacity`. Computed style is what the reader actually gets.
+//
+// A mark is "visible" if it takes part in layout and is not transparent, and "distinguishable" if it
+// carries at least one non-colour signal — texture, underline, outline or edge (DEC-035, because
+// colour alone fails in greyscale, in a screenshot and for a colour-blind reader).
+window.diffscopeStyleAudit = function () {
+  const marks = ["ds-changed", "ds-fallback", "ds-moved", "ds-formatting", "ds-behaviour",
+                 "ds-uncertain", "ds-invisible", "ds-fold", "ds-fold-formatting", "ds-badge",
+                 "ds-gutter-changed", "ds-chip"];
+  const probe = document.createElement("span");
+  document.body.appendChild(probe);
+  const report = {};
+  for (const name of marks) {
+    probe.className = name;
+    const style = getComputedStyle(probe);
+    const distinguishing = [
+      style.textDecorationLine !== "none" ? "underline" : null,
+      style.textDecorationStyle !== "solid" ? "decoration-style" : null,
+      style.backgroundImage !== "none" ? "texture" : null,
+      style.outlineStyle !== "none" ? "outline" : null,
+      parseFloat(style.borderRightWidth) > 0 || parseFloat(style.borderTopWidth) > 0 ? "border" : null,
+      style.fontWeight !== "400" && style.fontWeight !== "normal" ? "weight" : null,
+    ].filter(Boolean);
+    report[name] = {
+      hidden: style.display === "none" || style.visibility === "hidden"
+        || parseFloat(style.opacity) === 0,
+      distinguishing,
+    };
+  }
+  probe.remove();
+  const bar = getComputedStyle(document.getElementById("notices"));
+  report["#notices"] = {
+    hidden: bar.display === "none" || bar.visibility === "hidden" || parseFloat(bar.opacity) === 0,
+    distinguishing: ["notice bar"],
+  };
+  return report;
+};
+
+// The negative control for the audit above. A check that cannot fail proves nothing — the lesson
+// M6-B paid for with the boundary-snap budget — so the suite hides a mark on purpose and requires
+// the audit to notice.
+window.diffscopeInjectHostileStyle = function (enable) {
+  const id = "ds-hostile-probe";
+  document.getElementById(id)?.remove();
+  if (!enable) return false;
+  const style = document.createElement("style");
+  style.id = id;
+  style.textContent = ".ds-changed { display: none; }";
+  document.head.appendChild(style);
+  return true;
+};
+
 window.diffscopeSetWrap = function (enabled) {
   for (const view of [left, right]) {
     view.dispatch({ effects: wrapping.reconfigure(enabled ? EditorView.lineWrapping : []) });

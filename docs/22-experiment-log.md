@@ -1584,3 +1584,66 @@ The empty-diff sentence first shipped as `no structural changes; 10 formatting d
 - Unavailable scopes: verified on `carrefour-inapp` (unborn HEAD → all four disabled) and `js-gloves__website__nextjs` (base resolves → all four enabled).
 - The empty-diff sentence reaches the DOM: `no structural changes; 10 formatting differences in 1 group — ⌘E to expand`.
 - Selftest arms: 10, all OK.
+
+---
+
+# M8-H — gate G2: making a design unable to lie
+
+**Date:** 2026-07-31 · **Method:** extracted every visual value into one file, then built the checks that keep it that way and proved they can fail.
+
+## The regression this gate exists to prevent
+
+The engine has an apparatus for proving no difference is hidden — five invariants, an independent canonical diff, 943 checks — and **none of it can see the screen**. `display: none` on `.ds-changed` leaves every check passing and every change invisible. CSS is the one place where the product can be made to lie without anything noticing, and a design is precisely a large change to the CSS.
+
+So the rule — *a design may restyle any mark and may never hide one* — is enforced in two places, because either alone is insufficient:
+
+- **The source.** No rule hides a load-bearing class, every mark carries a non-colour signal (DEC-035), the notice bar is not styled away, and no literal colour, font or size is declared outside `tokens.css` — in the stylesheet **or set from JavaScript**, since a style assigned in code sits outside the token file just as surely.
+- **The live document.** `diffscopeStyleAudit()` reads computed style off real elements. A stylesheet can be read and still be wrong about what the reader gets: a later rule, a cascade, an inherited `opacity`.
+
+## Both have negative controls
+
+The selftest injects `.ds-changed { display: none; }` into the document, re-runs the audit, and **requires it to fail**; the source checks run against a deliberately hostile stylesheet carrying a hex colour, a hidden mark, a colour-only mark and a hidden notice bar.
+
+This is the M6-B lesson applied on purpose rather than after the fact: a check that has only ever seen a passing input is an assumption wearing a check's clothes.
+
+Measured: `audited=13 hidden=[] colour-only=[]` on the real stylesheet, and the control catches the injected rule.
+
+## Two rules that came out of writing the checks rather than the plan
+
+- **A token nobody uses fails the suite.** A value a designer would change to no effect is worse than one not offered at all — they would conclude the token layer does not work.
+- **Comments are stripped before scanning for literals.** A hex code inside a comment explaining hex codes is not a declaration, and failing on it would teach the next reader to work around the check rather than obey it.
+
+## The chrome is two thirds of the window
+
+`Theme.swift` mirrors the token names for the AppKit side — window, both lists, status line, empty state. A design that stopped at the edge of the webview would leave most of the window looking like a different application. The check refuses an inline font size or colour in the application source for the same reason it refuses one in the stylesheet.
+
+Rendering after tokenisation is unchanged, confirmed against the snapshot set: the founding wrapper-removal case still reads with its children intact.
+
+## M8-H addendum — R-9 failed under load, and the reason was not the obvious one
+
+While finishing G2 the racing check failed **once**: `6 blended of 20`, with a release build running
+concurrently. It then passed six times on an idle machine. The tempting reading is "flaky test".
+
+Measured instead. First hypothesis — coarse timestamp granularity letting two writes share an
+`mtime` — is **wrong**: 200 rewrites of a 52 KB file produced 200 distinct modification times, the
+smallest gap 114 µs.
+
+The real mechanism is narrower and worse. A single large `write` stamps `mtime` **once, at the
+start**, and the copy continues afterwards. Both stats in the bracket then see the same timestamp
+while the read between them lands halfway through the copy. The bracket proves no write *started*
+during the read; it cannot prove none was *in flight*. Under load the copy takes longer and the
+window opens.
+
+Fixed by requiring a second read to agree as well (DEC-049 amendment). The two guards fail in
+different places, which is exactly why neither was enough alone:
+
+```
+content comparison alone   3 blends / 8,095 reads   (M7-B)
+stat bracket alone         6 blends / 20 reads      (M8-H, under load)
+both together              0 blends; 16/16 refused under continuous rewrite,
+                           realistic saves still produce usable pins
+```
+
+**Worth carrying forward:** this failure was visible for about one second in a run that was otherwise
+green, during work on an unrelated gate. The instinct to re-run and move on would have buried a real
+hole in the guarantee the product's trust model rests on.

@@ -3,12 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "esbuild src/main.js --bundle --format=iife --outfile=../Sources/diffscope-app/Renderer/renderer.js --minify && cp src/index.html ../Sources/diffscope-app/Renderer/index.html && node hash-sources.mjs"
+    "build": "esbuild src/main.js --bundle --format=iife --outfile=../Sources/diffscope-app/Renderer/renderer.js --minify && cp src/index.html src/tokens.css ../Sources/diffscope-app/Renderer/ && node hash-sources.mjs"
   },
   "dependencies": {
     "@codemirror/lang-javascript": "^6.2.4",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.43.6"
   },
-  "devDependencies": { "esbuild": "^0.25.0" }
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
 }

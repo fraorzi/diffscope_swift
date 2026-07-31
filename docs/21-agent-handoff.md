@@ -8,7 +8,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, the T-series coverage audit, root management, the gutter, the grouped file list and the rest of the interface audit have all landed. 921/921 checks pass over 32 fixtures.**
+**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, the T-series coverage audit, root management, the gutter, the grouped file list and the rest of the interface audit have all landed, and **gate G2 has passed**. 943/943 checks pass over 32 fixtures.**
 
 | Milestone | State |
 |---|---|
@@ -25,7 +25,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 Run everything:
 
 ```
-swift run diffscope-verify          # 921 checks over 32 fixtures, exit 1 on failure
+swift run diffscope-verify          # 943 checks over 32 fixtures, exit 1 on failure
 swift run diffscope-verify --write-manifest   # re-record fixture hashes, deliberately
 swift run -c release diffscope-verify --survey ~/YourProjects
 swift run -c release diffscope-verify --budget-survey ~/YourProjects
@@ -99,6 +99,10 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 3. F1 (partial parse error) and F3/F4 (confidence, ambiguity) have ranks but **no producer** — nothing constructs them yet, so the two mildest rows of the order are ranked and unreachable. Either wire them or record why they stay theoretical.
 4. **T-11 is proven on one relocation shape only.** A second shape is worth more than any other addition to the corpus — and read M8-C first, because constructing the first one failed twice for reasons that are findings in themselves.
 
+**R-9's guard was strengthened** (DEC-049 amendment, M8-H addendum). The stat bracket alone let **6 blended pins through in 20 reads under load** — a single large `write` stamps `mtime` once at its start, so both stats agree while the read lands mid-copy. The read is now bracketed **and** repeated, both must agree, and the two guards close each other's holes (content alone: 3 in 8,095; bracket alone: 6 in 20). Found because a check failed once and was measured instead of re-run.
+
+**G2 passed** (M8-H). Every visual value lives in `Renderer/src/tokens.css`, mirrored for the AppKit chrome in `Theme.swift`. The rule *a design may restyle any mark and may never hide one* is enforced in two places — the source, and the **computed style of the live document** — because a stylesheet can be read and still be wrong about what the reader gets. Both have negative controls: the selftest injects `display: none` on a mark and requires the audit to catch it. Read `24-design-contract.md` before touching anything visual.
+
 **`23b-spec-vs-app-audit.md` §1 is closed except for one item.** Base-branch override (⇧⌘B, stored in the configuration), staleness in words beside scope 4, unavailable scopes disabled with their reason, refresh on window focus, a wrap toggle (⌥⌘W), and the empty-diff sentence all landed on 2026-07-31. **Only the parser-state indicator (§1.10) is left**, deliberately deferred past the design gate. The §2 items — branch shown only in a tooltip, the uncommitted-count convention unstated, the mode pill reporting selection rather than path — all remain.
 
 **The file list groups** (DEC-033 amended). Measured first: 12 repositories contain a `pnpm-workspace.yaml` and **none declares `packages:`**, so the specified per-package grouping would have put one meaningless header above every list. Groups are declared packages where they exist and parent directories otherwise; headers are suppressed when grouping buys nothing; grouped rows show the path relative to their group. Per-file badges (`raw`, `bin`, `big`) come from the extension, a `stat` and a 4 KB probe — **the list says only what is cheap to know**, and anything needing a full read stays in the diff view.
@@ -116,7 +120,7 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 | Gate | Ends when | Announced as |
 |---|---|---|
 | **G1 POC** | the owner has reviewed a real change in their own repositories, and has a written gaps list | **POC READY** — `23a-poc-report.md` written 2026-07-29; awaiting the owner's session |
-| **G2 design intake** | a design can be pasted into one token file without touching behaviour, with the "never hide a difference" rule *checked* | **DESIGN INTAKE READY** + `24-design-contract.md` |
+| ~~**G2 design intake**~~ | **PASSED 2026-07-31.** `Renderer/src/tokens.css` is the file; `24-design-contract.md` is the contract | **DESIGN INTAKE READY** |
 | **G3 tester build** | an unsigned `.app` zip runs for a stranger with the source tree moved away | **TESTER BUILD READY** + zip and SHA-256 |
 
 Order is G1 → G2 → G3 and the reasoning is in that document. **No gate may be announced from checks alone** — each requires running the application and looking at what it drew, which is the lesson M6-D paid for.
@@ -245,6 +249,7 @@ M0 in `19-roadmap.md`: verify #306, measure serialisation, assess Swift binding 
 | `20-implementation-plan.md` | How to start |
 | `22-experiment-log.md` | Spike results with methods |
 | `23-release-gates.md` | **The three handover gates** — POC, design intake, tester build |
+| `24-design-contract.md` | **What a design may change, and the two rules it may not break** |
 | `26-coverage-audit.md` | Where each T- and R- test is proven, and what could fail it |
 | `research/` | Raw research with citations |
 

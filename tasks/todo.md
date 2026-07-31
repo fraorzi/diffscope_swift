@@ -397,3 +397,28 @@ The pluraliser was caught by reading the rendered notice, not by a check — "in
 §1.10 (parser-state indicator) is the only §1 item left, deliberately after the design gate.
 
 921/921 checks pass.
+
+## Step 19 — gate G2: design intake
+
+- [x] `Renderer/src/tokens.css` holds every colour, font, size, spacing, radius and border
+- [x] `index.html` declares none of its own; the build copies tokens into the app bundle
+- [x] `Theme.swift` mirrors the token names for the AppKit chrome
+- [x] Source checks: no literals outside tokens, no dangling `var()`, no unused token,
+      no hidden load-bearing class, no colour-only mark, notice bar intact
+- [x] Live-document audit via computed style, run by the application selftest
+- [x] Negative controls for both: an injected `display: none`, and a hostile stylesheet
+- [x] `24-design-contract.md` — every emitted class, what is load-bearing, the paste-in procedure
+- [x] Snapshot set regenerated and compared; rendering unchanged
+
+### Step 19 — done
+
+The gate is not the token file, it is the two checks around it. The engine cannot see the screen, so
+a stylesheet is the one way to make this product lie while everything stays green — which is exactly
+what a design is.
+
+Both checks have negative controls, because a check that has only ever seen a passing input proves
+nothing. The selftest hides a mark on purpose and requires the audit to notice.
+
+**DESIGN INTAKE READY** — paste into `Renderer/src/tokens.css`.
+
+943/943 checks pass.

@@ -108,7 +108,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
     private func buildWindow() {
         window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 1400, height: 860),
+            contentRect: NSRect(x: 0, y: 0, width: Theme.windowWidth, height: Theme.windowHeight),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered, defer: false
         )
@@ -131,8 +131,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         modeControl.selectedSegment = PresentationMode.allCases.firstIndex(of: state.mode) ?? 0
 
         statusLabel = NSTextField(labelWithString: "scanning…")
-        statusLabel.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.font = Theme.font(Theme.textSizeSmall)
+        statusLabel.textColor = Theme.inkQuiet
         statusLabel.lineBreakMode = .byTruncatingMiddle
 
         webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
@@ -143,16 +143,16 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
         let controls = NSStackView(views: [scopeControl, modeControl])
         controls.orientation = .horizontal
-        controls.spacing = 12
+        controls.spacing = Theme.space6 - Theme.space2
 
-        let rightStack = NSStackView(frame: NSRect(x: 0, y: 0, width: 840, height: 800))
+        let rightStack = NSStackView(frame: NSRect(x: 0, y: 0, width: Theme.windowWidth - Theme.repositoryPaneWidth - Theme.filePaneWidth, height: Theme.windowHeight))
         rightStack.setViews([controls, statusLabel, webView], in: .leading)
         rightStack.orientation = .vertical
         rightStack.alignment = .leading
-        rightStack.spacing = 6
-        rightStack.edgeInsets = NSEdgeInsets(top: 8, left: 8, bottom: 0, right: 8)
+        rightStack.spacing = Theme.space3
+        rightStack.edgeInsets = NSEdgeInsets(top: Theme.space4, left: Theme.space4, bottom: 0, right: Theme.space4)
         webView.translatesAutoresizingMaskIntoConstraints = false
-        webView.widthAnchor.constraint(equalTo: rightStack.widthAnchor, constant: -16).isActive = true
+        webView.widthAnchor.constraint(equalTo: rightStack.widthAnchor, constant: -2 * Theme.space4).isActive = true
 
         let split = NSSplitView()
         splitView = split
@@ -166,15 +166,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // preserving existing proportions, and every pane started at zero — so the tables were
         // populated, correct, and drawn at zero width. Width constraints at a priority below
         // `defaultHigh` keep the dividers draggable.
-        for (pane, width) in [(leftScroll, 280.0), (middleScroll, 320.0)] {
+        for (pane, width) in [(leftScroll, Theme.repositoryPaneWidth), (middleScroll, Theme.filePaneWidth)] {
             pane.translatesAutoresizingMaskIntoConstraints = false
             let constraint = pane.widthAnchor.constraint(equalToConstant: width)
             constraint.priority = NSLayoutConstraint.Priority(600)
             constraint.isActive = true
-            pane.widthAnchor.constraint(greaterThanOrEqualToConstant: 140).isActive = true
+            pane.widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.paneMinimumWidth).isActive = true
         }
         rightStack.translatesAutoresizingMaskIntoConstraints = false
-        rightStack.widthAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true
+        rightStack.widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.diffPaneMinimumWidth).isActive = true
 
         buildEmptyState()
         let container = NSView()
@@ -205,10 +205,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     private func makeTable(identifier: String) -> NSTableView {
         let table = NSTableView()
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
-        column.width = 260
+        column.width = Theme.repositoryPaneWidth - 2 * Theme.space6 + Theme.space4
         table.addTableColumn(column)
         table.headerView = nil
-        table.rowHeight = 20
+        table.rowHeight = Theme.rowHeight
         table.dataSource = self
         table.delegate = self
         table.identifier = NSUserInterfaceItemIdentifier(identifier)
@@ -220,7 +220,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // A non-zero starting frame matters: NSSplitView distributes space by *preserving the
         // proportions of the frames it already has*, so panes that begin at zero width stay at
         // zero width no matter how wide the split becomes.
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 280, height: 800))
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: Theme.repositoryPaneWidth, height: Theme.windowHeight))
         scroll.documentView = view
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -452,7 +452,46 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 let ok = numbered && marked && reported >= 1
                 FileHandle.standardError.write(
                     Data("SELFTEST gutter=\(ok ? "OK" : "MISMATCH") line=\(reported) \(text.suffix(120))\n".utf8))
-                self.snapshot(named: "gutter") { exit(ok ? 0 : 23) }
+                self.snapshot(named: "gutter") {
+                    if ok { self.runStyleAuditSelftest() } else { exit(23) }
+                }
+            }
+        }
+    }
+
+    /// G2 (`23-release-gates.md`): a design may restyle any mark and may never hide one. Asked of
+    /// the live document, because a stylesheet can be read and still be wrong about what the reader
+    /// gets — a later rule, a cascade, an inherited opacity.
+    private func runStyleAuditSelftest() {
+        webView.evaluateJavaScript("JSON.stringify(window.diffscopeStyleAudit())") { value, _ in
+            let text = (value as? String) ?? "nil"
+            let data = Data(text.utf8)
+            let audit = (try? JSONSerialization.jsonObject(with: data)) as? [String: [String: Any]] ?? [:]
+            var hidden: [String] = []
+            var colourOnly: [String] = []
+            for (name, entry) in audit {
+                if entry["hidden"] as? Bool == true { hidden.append(name) }
+                if (entry["distinguishing"] as? [String])?.isEmpty ?? true { colourOnly.append(name) }
+            }
+            let ok = !audit.isEmpty && hidden.isEmpty && colourOnly.isEmpty
+            let line = "SELFTEST style=\(ok ? "OK" : "MISMATCH") audited=\(audit.count)"
+                + " hidden=\(hidden.sorted()) colour-only=\(colourOnly.sorted())\n"
+            FileHandle.standardError.write(Data(line.utf8))
+            guard ok else { exit(24) }
+
+            // Negative control: hide a mark deliberately and require the audit to catch it. An
+            // audit that passes on a hidden mark would pass on a design that hid one.
+            self.webView.evaluateJavaScript("window.diffscopeInjectHostileStyle(true)") { _, _ in
+                self.webView.evaluateJavaScript("JSON.stringify(window.diffscopeStyleAudit())") { hostile, _ in
+                    let text = (hostile as? String) ?? ""
+                    let caught = text.contains("\"ds-changed\":{\"hidden\":true")
+                        || text.contains("\"hidden\":true,\"distinguishing\"")
+                    FileHandle.standardError.write(Data(
+                        "SELFTEST style-control=\(caught ? "OK" : "MISMATCH") the audit catches a hidden mark\n".utf8))
+                    self.webView.evaluateJavaScript("window.diffscopeInjectHostileStyle(false)") { _, _ in
+                        exit(caught ? 0 : 25)
+                    }
+                }
             }
         }
     }
@@ -568,15 +607,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// the amendment rejected both that and auto-detection, in favour of predictability.
     private func buildEmptyState() {
         let title = NSTextField(labelWithString: "No folders chosen yet")
-        title.font = .systemFont(ofSize: 20, weight: .medium)
+        title.font = Theme.prose(Theme.emptyStateTitleSize, weight: .medium)
 
         emptyStateDetail = NSTextField(wrappingLabelWithString:
             "Choose a folder and DiffScope will look inside it for Git repositories. "
             + "You can add as many folders as you like, and add single repositories from anywhere.")
-        emptyStateDetail.font = .systemFont(ofSize: 12)
-        emptyStateDetail.textColor = .secondaryLabelColor
+        emptyStateDetail.font = Theme.prose(Theme.textSize)
+        emptyStateDetail.textColor = Theme.inkQuiet
         emptyStateDetail.alignment = .center
-        emptyStateDetail.preferredMaxLayoutWidth = 420
+        emptyStateDetail.preferredMaxLayoutWidth = Theme.emptyStateMaximumWidth - 2 * Theme.space6 - Theme.space4
 
         let chooseFolder = NSButton(title: "Choose a Folder…", target: self,
                                     action: #selector(addRootFolder))
@@ -585,12 +624,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                         action: #selector(addRepository))
         let buttons = NSStackView(views: [chooseFolder, chooseRepository])
         buttons.orientation = .horizontal
-        buttons.spacing = 12
+        buttons.spacing = Theme.space6 - Theme.space2
 
         let stack = NSStackView(views: [title, emptyStateDetail, buttons])
         stack.orientation = .vertical
         stack.alignment = .centerX
-        stack.spacing = 16
+        stack.spacing = Theme.space6
 
         emptyState = NSView()
         emptyState.addSubview(stack)
@@ -598,7 +637,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         NSLayoutConstraint.activate([
             stack.centerXAnchor.constraint(equalTo: emptyState.centerXAnchor),
             stack.centerYAnchor.constraint(equalTo: emptyState.centerYAnchor),
-            stack.widthAnchor.constraint(lessThanOrEqualToConstant: 460),
+            stack.widthAnchor.constraint(lessThanOrEqualToConstant: Theme.emptyStateMaximumWidth),
         ])
         emptyState.isHidden = true
     }
@@ -722,7 +761,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         alert.messageText = "Base branch for \(repository.displayName)"
         alert.informativeText = "Detected: \(repository.baseRefUsed ?? "none — detection did not resolve"). "
             + "Leave empty to go back to detection."
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: Theme.filePaneWidth - 2 * Theme.space6 - 2 * Theme.space4, height: Theme.space6 + Theme.space4))
         field.stringValue = state.configuration.baseOverrides[key] ?? ""
         field.placeholderString = "origin/main"
         alert.accessoryView = field
@@ -1195,14 +1234,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let cell = NSTableCellView()
         let text = NSTextField(labelWithString: "")
-        text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
+        text.font = Theme.font(Theme.textSizeSmall)
         text.lineBreakMode = .byTruncatingMiddle
         text.translatesAutoresizingMaskIntoConstraints = false
         cell.addSubview(text)
         cell.textField = text
         NSLayoutConstraint.activate([
-            text.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
-            text.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+            text.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: Theme.space2),
+            text.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -Theme.space2),
             text.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
         ])
         if tableView === repoTable {
@@ -1215,8 +1254,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             switch state.fileRows[row] {
             case let .header(title):
                 text.stringValue = title
-                text.textColor = .secondaryLabelColor
-                text.font = .monospacedSystemFont(ofSize: 10, weight: .semibold)
+                text.textColor = Theme.inkQuiet
+                text.font = Theme.font(Theme.textSizeTiny, weight: .semibold)
                 text.lineBreakMode = .byTruncatingHead
                 text.toolTip = title
             case let .file(file, display):

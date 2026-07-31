@@ -13,7 +13,7 @@ A gate is not passed by an agent's opinion. Each one ends with a **report writte
 | Gate | Report | The sentence that announces it |
 |---|---|---|
 | G1 | `docs/23a-poc-report.md` | **POC READY** — with the walkthrough log and the known-gaps list *(written 2026-07-29)* |
-| G2 | `docs/24-design-contract.md` | **DESIGN INTAKE READY** — naming the one file to paste into |
+| G2 | `docs/24-design-contract.md` | **DESIGN INTAKE READY** — naming the one file to paste into *(passed 2026-07-31)* |
 | G3 | `docs/25-tester-packet.md` | **TESTER BUILD READY** — naming the `.zip` and its checksum |
 
 **A gate is never announced from checks alone.** Every one of them requires the agent to have run the application and looked at what it drew. The suite proves the model; it has never been able to see the screen — the reason the selftest snapshots exist at all (M6-D, where a verified move reached the renderer unpaired while every harness check passed).
@@ -55,17 +55,17 @@ A short launch section in the report — the two commands, the environment varia
 
 ### Exit criteria
 
-- [ ] **One token file.** Every colour, font, size, spacing, radius and border in `Renderer/src/` lives in `tokens.css` as a custom property. Nothing else declares one.
-- [ ] **A check enforces it**, in `diffscope-verify`: a literal colour, font stack or hard-coded size outside the token file fails the suite. Without the check the boundary lasts until the next edit.
-- [ ] **The AppKit chrome has the same treatment** — window, lists, status line and controls read their values from one Swift constant table mirroring the token names, so a design does not stop at the edge of the webview.
-- [ ] **`24-design-contract.md` exists**, naming every class the renderer emits, what it means, and which ones are load-bearing: `ds-changed`, `ds-fallback`, `ds-moved`, `ds-formatting`, `ds-behaviour`, `ds-uncertain`, `ds-invisible`, `ds-fold`, `ds-fold-formatting`, `ds-badge`, `ds-chip`.
-- [ ] **The rules a design may not break are stated and checked**, not merely written:
+- [x] **One token file.** Every colour, font, size, spacing, radius and border in `Renderer/src/` lives in `tokens.css` as a custom property. Nothing else declares one.
+- [x] **A check enforces it**, in `diffscope-verify`: a literal colour, font stack or hard-coded size outside the token file fails the suite. Without the check the boundary lasts until the next edit.
+- [x] **The AppKit chrome has the same treatment** — window, lists, status line and controls read their values from one Swift constant table mirroring the token names, so a design does not stop at the edge of the webview.
+- [x] **`24-design-contract.md` exists**, naming every class the renderer emits, what it means, and which ones are load-bearing: `ds-changed`, `ds-fallback`, `ds-moved`, `ds-formatting`, `ds-behaviour`, `ds-uncertain`, `ds-invisible`, `ds-fold`, `ds-fold-formatting`, `ds-badge`, `ds-chip`.
+- [x] **The rules a design may not break are stated and checked**, not merely written:
       - a change mark may be restyled but never hidden — no `display: none`, no zero-opacity, no colour equal to its background, on any `ds-` class carrying a difference;
       - meaning is carried by **texture, not colour** (DEC-035), because colour alone fails for a colour-blind reader and in a screenshot;
       - a disclosed count stays visible wherever grouping quietens something (DEC-017);
       - the notice bar cannot be styled away — INV-4 is a promise about what is *seen*.
-- [ ] **The paste-in procedure is one paragraph**: replace the token file (or drop the prototype's CSS in beside it), `npm run build` in `Renderer/`, `swift run diffscope-verify`, then the selftest with `DIFFSCOPE_SNAPSHOT_DIR` to look at every state.
-- [ ] The selftest snapshot set covers every visual state a design would want to see: structural, expanded, disclosure, moved, navigation, refresh, anchored, degraded.
+- [x] **The paste-in procedure is one paragraph**: replace the token file (or drop the prototype's CSS in beside it), `npm run build` in `Renderer/`, `swift run diffscope-verify`, then the selftest with `DIFFSCOPE_SNAPSHOT_DIR` to look at every state.
+- [x] The selftest snapshot set covers every visual state a design would want to see: structural, expanded, disclosure, moved, navigation, refresh, anchored, degraded.
 
 ### Why the checks and not just the document
 

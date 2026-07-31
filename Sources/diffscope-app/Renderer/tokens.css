@@ -1,0 +1,67 @@
+/* Design tokens — the one file a design replaces.
+ *
+ * Everything visual lives here. `index.html` declares no colour, no font, no size and no radius of
+ * its own; it only references these names. A check in `diffscope-verify` enforces that, because a
+ * boundary nobody verifies lasts until the next edit.
+ *
+ * Read `docs/24-design-contract.md` before changing these. The short version: **a design may
+ * restyle any mark and may never hide one.** The renderer draws differences the engine found, and
+ * CSS is the one place where a difference can be made invisible while every engine check still
+ * passes — so the rules against that are checked, not merely written down.
+ *
+ * Values below default to the system's own palette (`Canvas`, `CanvasText`) so the application
+ * follows light and dark mode with no work. A design is free to replace them with literal colours;
+ * the checks care about *where* values are declared, not what they are.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  /* ---- Surfaces and ink ------------------------------------------------- */
+  --ds-surface: Canvas;
+  --ds-ink: CanvasText;
+  /* Hairlines, fills and quiet text are all stated as a percentage of the ink over the surface, so
+   * a design that changes the two colours above gets a coherent set for free. */
+  --ds-hairline: color-mix(in srgb, var(--ds-ink) 18%, transparent);
+  --ds-hairline-strong: color-mix(in srgb, var(--ds-ink) 30%, transparent);
+  --ds-ink-quiet: color-mix(in srgb, var(--ds-ink) 45%, transparent);
+  --ds-fill-quiet: color-mix(in srgb, var(--ds-ink) 4%, transparent);
+  --ds-fill: color-mix(in srgb, var(--ds-ink) 7%, transparent);
+
+  /* ---- Typography ------------------------------------------------------- */
+  --ds-font: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --ds-text-size: 12px;
+  --ds-text-size-small: 11px;
+  --ds-text-size-tiny: 10px;
+  --ds-weight-emphasis: 600;
+
+  /* ---- Spacing and shape ------------------------------------------------ */
+  --ds-space-1: 2px;
+  --ds-space-2: 4px;
+  --ds-space-3: 6px;
+  --ds-space-4: 8px;
+  --ds-space-6: 16px;
+  --ds-radius-chip: 10px;
+  --ds-radius-badge: 6px;
+  --ds-border: 1px;
+
+  /* ---- Change marks ------------------------------------------------------
+   * DEC-035: meaning is carried by **texture and shape, never by colour alone** — it has to survive
+   * greyscale, a screenshot, and a colour-blind reader. Each token below is a shape decision; a
+   * design may change the shapes, and may not reduce a mark to a colour difference. */
+  --ds-hatch-ink: color-mix(in srgb, var(--ds-ink) 10%, transparent);
+  --ds-hatch-ink-quiet: color-mix(in srgb, var(--ds-ink) 8%, transparent);
+  --ds-hatch-angle: -45deg;
+  --ds-hatch-stripe: 3px;
+  --ds-hatch-gap: 6px;
+  --ds-underline-thickness: 2px;
+  --ds-underline-thickness-quiet: 1px;
+  --ds-underline-offset: 2px;
+  --ds-outline-moved: color-mix(in srgb, var(--ds-ink) 45%, transparent);
+  --ds-outline-invisible: color-mix(in srgb, var(--ds-ink) 55%, transparent);
+  --ds-fold-border: color-mix(in srgb, var(--ds-ink) 25%, transparent);
+  --ds-fold-fill: color-mix(in srgb, var(--ds-ink) 5%, transparent);
+  /* The gutter edge, third carrier of change meaning beside the underline and the texture. */
+  --ds-gutter-edge-width: 3px;
+  --ds-gutter-edge: var(--ds-ink);
+}
