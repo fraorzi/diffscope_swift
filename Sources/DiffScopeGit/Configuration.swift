@@ -120,6 +120,23 @@ public func baseSummary(ref: String?, chosenByUser: Bool, committerDate: String?
     return "base \(ref)\(chosenByUser ? " (yours)" : "")\(age)"
 }
 
+/// What the empty state says when the reader has chosen folders and nothing was found in them (G3).
+///
+/// This is the first thing a stranger meets if they pick the wrong directory. Three empty panes
+/// would leave them unable to tell a broken application from an empty folder, so the sentence names
+/// the folders it looked in, states the depth limit that is the usual reason a repository was
+/// missed, and points at the way round it.
+///
+/// Composed here rather than in the view for the reason `baseSummary` is: a sentence the interface
+/// assembles cannot be checked, and this one cannot be reached by clicking either — a screenshot
+/// needs a state that only a particular configuration produces.
+public func noRepositoriesFoundMessage(paths: [String], depth: Int) -> String {
+    "No Git repositories were found in:\n\n"
+        + paths.joined(separator: "\n")
+        + "\n\nDiffScope looks \(depth) folders deep and stops at the first repository it finds. "
+        + "If your repository sits deeper than that, add it directly with Sources ▸ Add Repository."
+}
+
 public enum ConfigurationLoad: Sendable, Equatable {
     /// No file yet. First run — not an error, and not something to report at the user.
     case firstRun

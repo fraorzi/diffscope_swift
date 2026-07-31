@@ -306,6 +306,19 @@ func runScopeChecks(_ reportRaw: (String, Bool, String) -> Void) {
                detected?.baseRefUsed ?? "nil")
     }
 
+    print("\n=== a stranger's first run explains itself (G3) ===")
+    do {
+        let message = noRepositoriesFoundMessage(paths: ["/Users/x/Documents"], depth: 2)
+        report("the folders that were searched are named", message.contains("/Users/x/Documents"))
+        // The likeliest reason a repository is missing, stated where it is discovered rather than
+        // left in a document the tester does not have open.
+        report("the depth limit is stated, since it is the usual reason nothing was found",
+               message.contains("2 folders deep"), message)
+        report("and the way round it is offered", message.contains("Add Repository"))
+        report("the depth quoted is the one actually used, not a number typed into a sentence",
+               noRepositoriesFoundMessage(paths: [], depth: 3).contains("3 folders deep"))
+    }
+
     print("\n=== staleness is stated in words, not in a date (DEC-010, DEC-011) ===")
     do {
         let now = Date()

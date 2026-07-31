@@ -287,6 +287,7 @@ runGutterChecks { name, ok, detail in report(name, ok, detail) }
 runFileListChecks { name, ok, detail in report(name, ok, detail) }
 runScopeChecks { name, ok, detail in report(name, ok, detail) }
 runDesignChecks { name, ok, detail in report(name, ok, detail) }
+runTesterPacketChecks { name, ok, detail in report(name, ok, detail) }
 runDegradationChecks { name, ok, detail in report(name, ok, detail) }
 runBundleFreshnessCheck { name, ok, detail in report(name, ok, detail) }
 

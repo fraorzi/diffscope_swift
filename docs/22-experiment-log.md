@@ -1647,3 +1647,33 @@ both together              0 blends; 16/16 refused under continuous rewrite,
 **Worth carrying forward:** this failure was visible for about one second in a run that was otherwise
 green, during work on an unrelated gate. The instinct to re-run and move on would have buried a real
 hole in the guarantee the product's trust model rests on.
+
+---
+
+# M8-I — gate G3: a build for somebody else's machine
+
+**Date:** 2026-07-31 · **Method:** packaged the application, then made the package prove the claims made about it.
+
+## The failure this gate is really about
+
+A macOS application bundle that quietly reads from the checkout works **perfectly on the machine that built it**. It fails only on the tester's, hours later, with an error they cannot interpret and we cannot reproduce.
+
+So `Scripts/package.sh` does not assert independence, it demonstrates it: the assembled bundle is copied to a temporary directory and launched **from `/`, with a configuration path outside the repository**, running the full headless selftest. All 12 arms pass there or the script exits non-zero and produces no zip.
+
+`Bundle.module` resolves against the main bundle's resources first and the executable's directory second, and the two rules can be reached differently depending on how the process was started — so the resource bundle is placed in **both**, rather than picking whichever happened to work today.
+
+## The privacy paragraph is checked, not merely written
+
+The tester packet tells a stranger the application never connects to the internet. That is the one claim in the document they cannot verify for themselves, so the suite verifies it against the source: no `URLSession`, `NWConnection`, `CFNetwork` or `getaddrinfo` in any shipped file, and no `fetch`, `XMLHttpRequest`, `WebSocket` or `sendBeacon` in the renderer — the webview being the one component that could reach the network with no Swift involved.
+
+The packet's other load-bearing sentences are checked too: that it names the single file the application writes, that it tells the tester to **keep** a file that diffs wrongly, and that it explains the right-click-to-open step, which is where an unsigned build loses people who then report "it doesn't open".
+
+## The icon is drawn, not shipped
+
+`Scripts/make-icon.swift` renders it: two panes, and one line hatched. The product's own vocabulary, and no colour carrying meaning (DEC-035) in the icon any more than in the diff. It lives in the repository as something readable and reviewable rather than as an opaque asset.
+
+## One behaviour this gate added
+
+A chosen folder containing no repositories used to produce three empty panes and a status line saying `0 repositories`. For a stranger that is indistinguishable from a broken application. It now says which folders were searched, states the two-folder depth limit — the usual reason a repository is missed — and points at Sources ▸ Add Repository.
+
+Composed by a checked function rather than assembled in the view, for the reason that keeps recurring: **the state cannot be reached by clicking**, so it cannot be photographed, so the sentence has to be assertable somewhere else.

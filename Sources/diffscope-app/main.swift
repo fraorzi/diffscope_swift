@@ -674,6 +674,22 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let unusable = inspected.filter { $0.state != .present }
         state.sourceProblems = unusable
 
+        // A folder the reader chose that holds no repositories has to say so. Showing three empty
+        // panes leaves them wondering whether the application is broken or their folder is empty —
+        // the first thing a stranger meets if they pick the wrong directory (G3).
+        func explainEmptyResult(_ count: Int) -> Bool {
+            guard count == 0, !sources.isEmpty, unusable.count < sources.count else { return false }
+            self.state.repositories = []
+            self.repoTable.reloadData()
+            self.emptyStateDetail.stringValue =
+                noRepositoriesFoundMessage(paths: sources.map(\.path),
+                                           depth: self.discovery.maximumDepth)
+            self.emptyState.isHidden = false
+            self.splitView.isHidden = true
+            self.statusLabel.stringValue = "no repositories found"
+            return true
+        }
+
         guard !sources.isEmpty, unusable.count < sources.count else {
             // Nothing configured, or nothing that still exists. Either way the reader needs the
             // picker rather than an empty table with no explanation (DEC-036, `12-…` §7.5).
@@ -692,6 +708,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                     baseOverrides: self.state.configuration.baseOverrides)
             let labels = disambiguatedNames(for: outcome.snapshots.map(\.url.path))
             DispatchQueue.main.async {
+                guard !explainEmptyResult(outcome.snapshots.count) else { return }
                 self.state.repositories = outcome.snapshots
                 self.state.repositoryLabels = labels
                 self.hideEmptyState()

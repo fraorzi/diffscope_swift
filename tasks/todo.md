@@ -422,3 +422,23 @@ nothing. The selftest hides a mark on purpose and requires the audit to notice.
 **DESIGN INTAKE READY** — paste into `Renderer/src/tokens.css`.
 
 943/943 checks pass.
+
+## Step 20 — gate G3: tester build
+
+- [x] `Scripts/package.sh`: release build, Info.plist, drawn icon, resource bundle in both lookup
+      locations, zip with a recorded SHA-256
+- [x] The script **proves** the bundle runs from a temporary directory with cwd `/`
+- [x] A folder with no repositories explains itself instead of showing three empty panes
+- [x] `25-tester-packet.md` — install, Gatekeeper, what to try, known missing, how to report, privacy
+- [x] The privacy claims checked against the source, not just written
+- [x] The packet's load-bearing sentences checked: the settings file, "keep the file", right-click ▸ Open
+
+### Step 20 — done
+
+**TESTER BUILD READY.** `dist/DiffScope-<rev>.zip` plus `docs/25-tester-packet.md`.
+
+The gate is the proof, not the zip: a bundle reading from the checkout works on the machine that
+built it and nowhere else, so the script copies it away and runs the whole selftest from `/` before
+it will produce an archive.
+
+958/958 checks pass.

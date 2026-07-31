@@ -177,3 +177,74 @@ private extension String {
             .map { text.substring(with: $0.range) }
     }
 }
+
+/// G3 of `23-release-gates.md`: the claims made to a third-party tester in `25-tester-packet.md`.
+///
+/// The privacy paragraph is the part of that document a stranger has to take on trust, so it is the
+/// part that gets checked. "No network code" is a statement about the source; this is the source
+/// being asked.
+func runTesterPacketChecks(_ reportRaw: (String, Bool, String) -> Void) {
+    func report(_ name: String, _ ok: Bool, _ detail: String = "") { reportRaw(name, ok, detail) }
+
+    let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+    let fm = FileManager.default
+
+    print("\n=== the privacy statement given to a tester is true of the source (G3) ===")
+    do {
+        // Every Swift file that ships inside the application, which is all of them except the
+        // check suite itself.
+        var shipped: [String] = []
+        for module in ["DiffScopeEngine", "DiffScopeGit", "DiffScopeSyntax", "diffscope-app"] {
+            let dir = root.appendingPathComponent("Sources/\(module)")
+            guard let walker = fm.enumerator(at: dir, includingPropertiesForKeys: nil) else { continue }
+            for case let url as URL in walker where url.pathExtension == "swift" {
+                shipped.append((try? String(contentsOf: url, encoding: .utf8)) ?? "")
+            }
+        }
+        report("the application's own sources were found", shipped.count > 10, "\(shipped.count) files")
+
+        // Named individually rather than as one pattern, so a failure says which capability appeared.
+        let networkAPIs = ["URLSession", "NWConnection", "NWBrowser", "CFNetwork",
+                           "getaddrinfo", "Network.framework"]
+        var found: [String] = []
+        for api in networkAPIs where shipped.contains(where: { $0.contains(api) }) { found.append(api) }
+        report("no network API appears anywhere in the shipped sources",
+               found.isEmpty, found.joined(separator: ", "))
+
+        let renderer = (try? String(contentsOf: root.appendingPathComponent("Renderer/src/main.js"),
+                                    encoding: .utf8)) ?? ""
+        // The renderer runs in a webview, which is the one component that *could* reach the network
+        // without any Swift being involved.
+        let browserAPIs = ["fetch(", "XMLHttpRequest", "new WebSocket", "navigator.sendBeacon"]
+        let inRenderer = browserAPIs.filter { renderer.contains($0) }
+        report("the renderer makes no requests of its own", inRenderer.isEmpty,
+               inRenderer.joined(separator: ", "))
+
+        // The packet tells a tester that deleting one file makes the application forget everything.
+        let packet = (try? String(contentsOf: root.appendingPathComponent("docs/25-tester-packet.md"),
+                                  encoding: .utf8)) ?? ""
+        report("the tester packet exists", !packet.isEmpty)
+        report("and names the only file the application writes",
+               packet.contains("Application Support/DiffScope/config.json"))
+        report("and tells the tester to keep a file that diffs wrongly",
+               packet.lowercased().contains("keep the file"))
+        report("and explains the Gatekeeper step, which is where an unsigned build loses people",
+               packet.contains("Right-click") && packet.contains("Open"))
+    }
+
+    print("\n=== the packaging script produces something a stranger can run (G3) ===")
+    do {
+        let script = (try? String(contentsOf: root.appendingPathComponent("Scripts/package.sh"),
+                                  encoding: .utf8)) ?? ""
+        report("Scripts/package.sh exists", !script.isEmpty)
+        // The classic way this step fails: a bundle that reads from the checkout works on the
+        // machine that built it and nowhere else. The script proves independence rather than
+        // assuming it, and that proof is part of the script rather than a thing someone remembers.
+        report("it proves the bundle runs away from the source tree",
+               script.contains("proving it runs with nothing from the source tree")
+                   && script.contains("mktemp -d"))
+        report("it records a checksum beside the zip", script.contains("shasum -a 256"))
+        report("the resource bundle is placed where both lookup rules find it",
+               script.contains("Contents/Resources/") && script.contains("Contents/MacOS/"))
+    }
+}

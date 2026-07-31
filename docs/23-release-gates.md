@@ -14,7 +14,7 @@ A gate is not passed by an agent's opinion. Each one ends with a **report writte
 |---|---|---|
 | G1 | `docs/23a-poc-report.md` | **POC READY** — with the walkthrough log and the known-gaps list *(written 2026-07-29)* |
 | G2 | `docs/24-design-contract.md` | **DESIGN INTAKE READY** — naming the one file to paste into *(passed 2026-07-31)* |
-| G3 | `docs/25-tester-packet.md` | **TESTER BUILD READY** — naming the `.zip` and its checksum |
+| G3 | `docs/25-tester-packet.md` | **TESTER BUILD READY** — naming the `.zip` and its checksum *(passed 2026-07-31)* |
 
 **A gate is never announced from checks alone.** Every one of them requires the agent to have run the application and looked at what it drew. The suite proves the model; it has never been able to see the screen — the reason the selftest snapshots exist at all (M6-D, where a verified move reached the renderer unpaired while every harness check passed).
 
@@ -81,14 +81,14 @@ A design that hides a change mark would violate the core invariant through CSS w
 
 ### Exit criteria
 
-- [ ] `Scripts/package.sh` produces `DiffScope.app` from a release build: `Info.plist`, an icon, the renderer bundle inside the app's resources, and a zip with a recorded SHA-256
-- [ ] **The bundle runs with the source tree deleted or moved.** A build that quietly reads from the checkout is the classic way this fails, and it fails only on the tester's machine
-- [ ] **First run by a stranger works**: no default path is assumed (DEC-036/DEC-037), a missing or empty root shows the picker rather than an error or a blank window, and choosing a directory with no repositories says so
-- [ ] Launched with **no Git repositories anywhere**, and on a machine with **no WebStorm**, neither path crashes and both explain themselves
-- [ ] `DIFFSCOPE_EDITOR` is documented for testers who use a different editor, and the default's failure is visible rather than silent
-- [ ] **`25-tester-packet.md`** contains: what the application does, the Gatekeeper instructions, three or four concrete things to try, what is *known* missing so nobody reports it twice, how to report an observation, and the privacy statement
-- [ ] The privacy statement is one paragraph and is **true and demonstrable**: reads only, never writes to a repository (R-8 snapshots `.git` before and after every Git operation), never sends anything anywhere, no telemetry, no AI at runtime
-- [ ] The packet says what to do about a diff that looks wrong: **keep the file**, because the pair is what makes it reproducible
+- [x] `Scripts/package.sh` produces `DiffScope.app` from a release build: `Info.plist`, an icon, the renderer bundle inside the app's resources, and a zip with a recorded SHA-256
+- [x] **The bundle runs with the source tree deleted or moved.** A build that quietly reads from the checkout is the classic way this fails, and it fails only on the tester's machine
+- [x] **First run by a stranger works**: no default path is assumed (DEC-036/DEC-037), a missing or empty root shows the picker rather than an error or a blank window, and choosing a directory with no repositories says so
+- [x] Launched with **no Git repositories anywhere**, and on a machine with **no WebStorm**, neither path crashes and both explain themselves
+- [x] `DIFFSCOPE_EDITOR` is documented for testers who use a different editor, and the default's failure is visible rather than silent
+- [x] **`25-tester-packet.md`** contains: what the application does, the Gatekeeper instructions, three or four concrete things to try, what is *known* missing so nobody reports it twice, how to report an observation, and the privacy statement
+- [x] The privacy statement is one paragraph and is **true and demonstrable**: reads only, never writes to a repository (R-8 snapshots `.git` before and after every Git operation), never sends anything anywhere, no telemetry, no AI at runtime
+- [x] The packet says what to do about a diff that looks wrong: **keep the file**, because the pair is what makes it reproducible
 
 ### What the tester is asked for
 
