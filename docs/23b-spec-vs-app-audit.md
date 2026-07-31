@@ -38,18 +38,18 @@ Specified: *"disabled with a stated reason, never hidden. Hiding them would make
 
 Built: the scope control stays fully enabled; selecting an impossible scope empties the file list and writes the reason in the status line. The reason is stated, so the trust rule holds — but you can still click into a dead end, and the control lies about what is available.
 
-### 1.5 The file list is missing three of its four specified features (DEC-033)
+### 1.5 ~~The file list is missing three of its four specified features~~ — **built 2026-07-31**
 
 `12-…` §4 asks for group headers per workspace package, middle-elided paths, per-file change kind, and per-file degradation state.
 
 | Asked for | Built |
 |---|---|
-| Group headers per workspace package | **No.** Flat list, no grouping |
-| Middle-elided paths | Yes |
+| Group headers per workspace package | **Yes, amended** — by directory where no workspace is declared, which is every repository in this corpus. See the DEC-033 amendment |
+| Middle-elided paths | Yes, and grouped rows now show the path relative to their group |
 | Change kind per file | Yes (`mod`, `add`, `del`, `ren`, `unt`) |
-| Degradation state per file | **No.** You learn a file is binary or unsupported only after opening it |
+| Degradation state per file | **Yes, within what is cheap** — `raw`, `bin`, `big` from the extension, a `stat` and a 4 KB probe. Anything needing a full read stays in the diff view rather than being guessed at |
 
-In a monorepo with 44 changed files across packages — `mailingi-2025` — the flat list is the difference between scanning and hunting.
+Headers are labels, not focus stops: ⌘] and ⌘[ step past them, so grouping did not make navigation longer.
 
 ### 1.6 ~~No gutter, no line numbers~~ — **built 2026-07-31**
 
@@ -112,7 +112,7 @@ Recorded here rather than dismissed, with what it would actually mean, in `05-op
 
 1. ~~Root management~~ — **done**, 2026-07-31.
 2. ~~Gutter and line numbers~~ — **done**, 2026-07-31.
-3. **File-list depth** (§1.5) — grouping and per-file degradation, worth most on the repositories with the most files.
+3. ~~File-list depth~~ — **done**, 2026-07-31.
 4. **Base override and staleness wording** (§1.2, §1.3) — small, and they make scope 4 trustworthy.
 5. **Scope disabling, focus refresh, wrap toggle, empty-diff wording** (§1.4, §1.7–1.9) — an afternoon between them.
 6. Parser-state indicator (§1.10) — after the design gate, since it is one more thing on screen.

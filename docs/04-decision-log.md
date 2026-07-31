@@ -1524,6 +1524,27 @@ Reopen the budget if X-1 or X-2 produces a result that invalidates a candidate c
 
 **Revisit trigger.** Reopen if a repository appears with enough packages that group headers themselves become the navigation problem.
 
+### Amendment, 2026-07-31 — group by directory, because no repository here declares packages
+
+Measured at implementation time, against the corpus this decision was written for:
+
+| Measured | Result |
+|---|---|
+| Repositories containing `pnpm-workspace.yaml` | **12** |
+| …of those, declaring a `packages:` key | **0** |
+| `package.json` files declaring a `workspaces` key | **0** |
+
+The planning-time claim "12 of 21 repositories are pnpm monorepos" was drawn from the *presence of the file*. Every one of those files declares only `onlyBuiltDependencies`. Grouping by workspace package would therefore have produced a **single header above the whole list, in every repository the product owner has** — a label saying what the repository name already said.
+
+**Amended decision: the group is the declared workspace package where one exists, and the file's parent directory otherwise.** The workspace mechanism is kept, because it is right where it applies and costs nothing where it does not.
+
+Two consequences the original wording did not anticipate:
+
+- **Headers are suppressed when grouping buys nothing.** One group per file doubles the list and separates nothing; one group in total says nothing. Both fall back to a flat list, at a stated threshold rather than by taste.
+- **A grouped row shows its path relative to its group.** DEC-033 asked for middle elision so that "the start identifies the package, the end identifies the file" — but under a header the start is already on screen one row above, and repeating it spends the width elision existed to save. `src/components/…ExpandedSection1.tsx` becomes `ExpandedSection1.tsx` under its directory header, with the full path on hover.
+
+Measured on `philips__signify-wiz-euro__preact`: 20 changed files, 8 directory groups, every row a filename.
+
 ---
 
 ## DEC-034 — Scroll anchoring on refresh

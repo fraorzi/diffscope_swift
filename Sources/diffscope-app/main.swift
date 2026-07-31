@@ -28,6 +28,11 @@ final class AppState {
     var sourceProblems: [InspectedSource] = []
     /// Path → label, qualified only where two repositories share a folder name (DEC-037).
     var repositoryLabels: [String: String] = [:]
+    /// The file list as drawn: headers and files interleaved (DEC-033 as amended).
+    var fileRows: [FileListRow] = []
+    /// Path → what the list can say about the file cheaply. Filled in by a background pass, so a
+    /// large working tree lists immediately and gains its badges a moment later.
+    var annotations: [String: FileAnnotation] = [:]
 }
 
 final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, WKNavigationDelegate {
@@ -641,6 +646,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 self.state.repositoryLabels = labels
                 self.hideEmptyState()
                 self.repoTable.reloadData()
+                // Opening onto three empty panes makes the reader click before the application has
+                // said anything. If a scan found repositories and none is selected, take the first.
+                if self.state.selectedRepository == nil, !outcome.snapshots.isEmpty {
+                    self.repoTable.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+                }
                 var summary = String(format: "%d repositories from %d sources · swept in %.0f ms",
                                      outcome.snapshots.count, sources.count - unusable.count,
                                      outcome.elapsedSeconds * 1000)
@@ -814,13 +824,46 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     private func step(_ table: NSTableView, by delta: Int) {
         let count = numberOfRows(in: table)
         guard count > 0 else { return }
-        let next = max(0, min(count - 1, (table.selectedRow < 0 ? 0 : table.selectedRow + delta)))
+        let raw = max(0, min(count - 1, (table.selectedRow < 0 ? 0 : table.selectedRow + delta)))
+        guard let next = nextSelectableRow(in: table, from: raw, delta: delta) else { return }
         table.selectRowIndexes(IndexSet(integer: next), byExtendingSelection: false)
         table.scrollRowToVisible(next)
     }
 
+    /// Off the main thread, because it stats and reads a few kilobytes per file and the list is
+    /// already on screen by then. Only the repository still selected gets its badges applied.
+    private func annotateFiles(of repository: RepositorySnapshot) {
+        let files = state.files
+        DispatchQueue.global(qos: .utility).async {
+            var found: [String: FileAnnotation] = [:]
+            for file in files {
+                if let annotation = annotate(path: file.path, in: repository.url,
+                                             sizeLimit: structuralSizeLimit) {
+                    found[file.path] = annotation
+                }
+            }
+            DispatchQueue.main.async {
+                guard self.state.selectedRepository?.url == repository.url else { return }
+                self.state.annotations = found
+                self.fileTable.reloadData()
+            }
+        }
+    }
+
     @objc private func nextFile() { step(fileTable, by: 1) }
     @objc private func previousFile() { step(fileTable, by: -1) }
+
+    /// DEC-033: group headers are labels, not focus stops. Stepping past them keeps next/previous
+    /// file one keystroke per *file* — otherwise grouping would silently make navigation longer.
+    private func nextSelectableRow(in table: NSTableView, from row: Int, delta: Int) -> Int? {
+        guard table === fileTable else { return row }
+        var candidate = row
+        while candidate >= 0 && candidate < state.fileRows.count {
+            if state.fileRows[candidate].file != nil { return candidate }
+            candidate += delta
+        }
+        return nil
+    }
     @objc private func nextRepository() { step(repoTable, by: 1) }
     @objc private func previousRepository() { step(repoTable, by: -1) }
     @objc private func focusRepositories() { window.makeFirstResponder(repoTable) }
@@ -877,12 +920,17 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let availability = scopes.availability(of: state.scope, head: repository.head, base: repository.base)
         if case let .unavailable(reason) = availability {
             state.files = []
+            state.fileRows = []
             fileTable.reloadData()
             statusLabel.stringValue = "\(state.scope.title) unavailable — \(reason)"
             return
         }
         state.files = (try? scopes.changedFiles(scope: state.scope, in: repository.url, baseRef: baseRef)) ?? []
+        state.fileRows = fileListRows(state.files,
+                                      workspacePackages: declaredWorkspacePackages(in: repository.url))
+        state.annotations = [:]
         fileTable.reloadData()
+        annotateFiles(of: repository)
         let ageText = repository.baseRefCommitterDate.map { " · base \(repository.baseRefUsed ?? "?") tip \($0.prefix(10))" } ?? ""
         statusLabel.stringValue = "\(state.files.count) files · \(state.scope.title)\(ageText)"
     }
@@ -964,8 +1012,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             let selected = state.selectedFile
             reloadFiles()
             // Selection survives where the file is still in scope, and says so where it is not.
+            // Against the drawn rows, not the flat file array: with headers interleaved the two
+            // indices differ, and restoring the flat index would land the reader on a neighbour.
             if let selected, state.files.contains(where: { $0.path == selected.path }) {
-                if let row = state.files.firstIndex(where: { $0.path == selected.path }) {
+                if let row = state.fileRows.firstIndex(where: { $0.file?.path == selected.path }) {
                     fileTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 }
                 refreshCurrentFile()
@@ -1051,7 +1101,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {
-        tableView === repoTable ? state.repositories.count : state.files.count
+        tableView === repoTable ? state.repositories.count : state.fileRows.count
     }
 
     /// Returns a cell view with the label constrained inside it.
@@ -1081,9 +1131,21 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             text.stringValue = "\(label)  ·  \(snapshot.uncommittedCount)△ \(ahead)"
             text.toolTip = "\(snapshot.url.path)\n\(snapshot.head.displayText)\n\(snapshot.baseRefUsed ?? "base: prompt")"
         } else {
-            let file = state.files[row]
-            text.stringValue = "\(file.kind.rawValue.prefix(3))  \(file.path)"
-            text.toolTip = file.path
+            switch state.fileRows[row] {
+            case let .header(title):
+                text.stringValue = title
+                text.textColor = .secondaryLabelColor
+                text.font = .monospacedSystemFont(ofSize: 10, weight: .semibold)
+                text.lineBreakMode = .byTruncatingHead
+                text.toolTip = title
+            case let .file(file, display):
+                // The badge says what the list could work out cheaply; the diff view says the rest
+                // (`12-…` §4 asks the list to carry degradation state).
+                let badge = state.annotations[file.path].map { " · \($0.badge)" } ?? ""
+                text.stringValue = "\(file.kind.rawValue.prefix(3))  \(display)\(badge)"
+                // The full path stays one hover away, since the row no longer shows all of it.
+                text.toolTip = file.path
+            }
         }
         return cell
     }
@@ -1097,8 +1159,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             startWatching(repository)
             reloadFiles()
         } else {
-            guard table.selectedRow >= 0, table.selectedRow < state.files.count else { return }
-            showDiff(for: state.files[table.selectedRow])
+            guard table.selectedRow >= 0, table.selectedRow < state.fileRows.count,
+                  let file = state.fileRows[table.selectedRow].file else { return }
+            showDiff(for: file)
         }
     }
 }

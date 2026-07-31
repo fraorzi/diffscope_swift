@@ -1516,3 +1516,42 @@ Twelve lines, one edit on line 7 (`7` → `77`). The snapshot (`gutter.png`) sho
 It had been a literal `1` since DEC-015 was implemented: correct in the sense that the file opened, useless on the 900-line file whose change is at the bottom.
 
 **A caveat that belongs on record:** the default template `/usr/bin/open -a WebStorm {file}` contains no `{line}`, so the default still cannot jump. A template that includes `{line}` now receives a real one.
+
+---
+
+# M8-F — the file list, and a decision the corpus contradicted
+
+**Date:** 2026-07-31 · **Method:** measured the repositories before writing the grouping, then photographed the result.
+
+## The measurement that changed the design
+
+DEC-033 specified **group headers per workspace package**, resting on the planning-time observation that "12 of 21 repositories are pnpm monorepos". Checked before implementing:
+
+```
+repositories containing pnpm-workspace.yaml   12
+…of those, declaring a packages: key           0
+package.json files declaring workspaces        0
+```
+
+Every one of those twelve files declares only `onlyBuiltDependencies`. The planning claim came from the *presence of the file*, not from its contents.
+
+Built as specified, the feature would have drawn **one header above the whole list in every repository the product owner has** — a label repeating the repository name. So the rule became: the declared workspace package where one exists, the parent directory otherwise. The workspace mechanism is kept because it is right where it applies; it simply never applies here.
+
+Measured on `philips__signify-wiz-euro__preact`: 20 changed files, **8 directory groups**.
+
+## What the picture changed after the checks passed
+
+The first working version was correct and still hard to read: under the header `src/components/features/Boxes/Expanded`, every row repeated `src/components/…ExpandedSection1.tsx`. Middle elision exists to protect the width of the row, and the header had already spent it.
+
+Grouped rows now show the path **relative to their group**, so the same rows read `ExpandedSection1.tsx`, with the full path on hover. DEC-033's sentence — *"the start identifies the package, the end identifies the file"* — is satisfied by the header and the row together rather than by every row on its own.
+
+Two further rules, stated so a later reader can check them rather than judge them:
+
+- **Headers are suppressed when grouping buys nothing.** One group per file doubles the list length and separates nothing; one group in total says nothing. Both fall back to flat, at a threshold.
+- **The list says only what is cheap to know.** `raw` from the extension, `big` from a `stat`, `bin` from a NUL in the first 4 KB — a NUL being the one content test that needs no context and so survives a partial read. Invalid UTF-8 is deliberately absent: ruling it out needs the whole file, and a list that guessed would be worse than one that stays quiet.
+
+## Incidental
+
+The application opened onto three empty panes and waited for a click before saying anything. It now selects the first repository after a scan when nothing is selected.
+
+Also recorded: **GUI automation is unavailable on this machine** — `osascript` has no accessibility permission (`-25211`), so driving the interface to reach a state for a screenshot does not work. Reaching a state has to be done by the application itself, which is why the auto-selection above was worth having twice over.

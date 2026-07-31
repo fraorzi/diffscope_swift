@@ -129,3 +129,129 @@ func runConfigurationChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("every path gets a label", deeper.count == 2 && labels.count == 3)
     }
 }
+
+/// DEC-033 as amended (2026-07-31): the file list groups by workspace package where one is
+/// declared, and by parent directory otherwise — because **no repository in this corpus declares
+/// one**, so the specified grouping would have produced a single meaningless header.
+func runFileListChecks(_ reportRaw: (String, Bool, String) -> Void) {
+    func report(_ name: String, _ ok: Bool, _ detail: String = "") { reportRaw(name, ok, detail) }
+
+    func file(_ path: String) -> ChangedFile {
+        ChangedFile(path: path, originalPath: nil, kind: .modified)
+    }
+
+    print("\n=== the file list groups by what actually groups it (DEC-033) ===")
+    do {
+        // The shape measured in `philips__signify-wiz-euro__preact`: twenty files under a handful
+        // of directories, no workspace packages anywhere in sight.
+        let files = [
+            "src/components/features/Boxes/Expanded/ExpandedSection1.tsx",
+            "src/components/features/Boxes/Expanded/ExpandedSection2.tsx",
+            "src/components/features/Boxes/Expanded/ExpandedSection3.tsx",
+            "src/scripts/boxes.ts", "src/scripts/header.ts", "src/scripts/video.ts",
+        ].map(file)
+        let rows = fileListRows(files)
+        let headers = rows.compactMap { if case let .header(h) = $0 { return h } else { return nil } }
+        report("directories become the groups when no workspace is declared",
+               headers == ["src/components/features/Boxes/Expanded", "src/scripts"],
+               headers.joined(separator: " | "))
+        report("every file still appears exactly once",
+               rows.compactMap(\.file).count == files.count)
+        report("headers are not files, so navigation can skip them",
+               rows.filter { $0.file == nil }.count == 2)
+        // The header already says the directory; repeating it on every row spends the width that
+        // middle elision existed to save.
+        report("a grouped row shows the path relative to its group",
+               rows.compactMap { if case let .file(_, display) = $0 { return display } else { return nil } }
+                   .contains("ExpandedSection1.tsx"),
+               rows.compactMap { if case let .file(_, d) = $0 { return d } else { return nil } }.joined(separator: " "))
+        report("an ungrouped row still shows its whole path",
+               fileListRows(["a/one.ts", "b/two.ts", "c/three.ts"].map(file))
+                   .allSatisfy { $0.display.contains("/") })
+    }
+
+    print("\n=== grouping that would not group is not applied ===")
+    do {
+        // One file per directory: headers would double the list and separate nothing.
+        let scattered = ["a/one.ts", "b/two.ts", "c/three.ts"].map(file)
+        report("a list with one file per directory stays flat",
+               fileListRows(scattered).allSatisfy { $0.file != nil })
+
+        // Everything in one directory: a single header says nothing the repository name did not.
+        let together = ["src/a.ts", "src/b.ts", "src/c.ts"].map(file)
+        report("a list with a single group stays flat",
+               fileListRows(together).allSatisfy { $0.file != nil })
+
+        report("an empty list produces no rows", fileListRows([]).isEmpty)
+    }
+
+    print("\n=== a declared workspace package wins over the directory ===")
+    do {
+        let files = ["packages/ui/src/Button.tsx", "packages/ui/src/Card.tsx",
+                     "packages/api/index.ts", "packages/api/routes.ts"].map(file)
+        let rows = fileListRows(files, workspacePackages: ["packages/ui", "packages/api"])
+        let headers = rows.compactMap { if case let .header(h) = $0 { return h } else { return nil } }
+        report("files group under their package, not their directory",
+               headers == ["packages/api", "packages/ui"], headers.joined(separator: " | "))
+        report("the deepest matching package wins",
+               groupKey(for: "packages/ui/nested/x.ts",
+                        workspacePackages: ["packages", "packages/ui"]) == "packages/ui")
+        report("a file at the repository root gets a named bucket, not an empty one",
+               groupKey(for: "README.md", workspacePackages: []) == "(repository root)")
+    }
+
+    print("\n=== pnpm-workspace.yaml is read for packages, and nothing else ===")
+    do {
+        let fm = FileManager.default
+        let scratch = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("diffscope-ws-\(UUID().uuidString)")
+        try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: scratch) }
+
+        // Exactly the file every repository in this corpus has: no `packages:` key at all.
+        try? "onlyBuiltDependencies:\n  - '@tailwindcss/oxide'\n  - esbuild\n"
+            .write(to: scratch.appendingPathComponent("pnpm-workspace.yaml"),
+                   atomically: true, encoding: .utf8)
+        report("build-tool entries are never mistaken for packages",
+               declaredWorkspacePackages(in: scratch).isEmpty,
+               declaredWorkspacePackages(in: scratch).joined(separator: ", "))
+
+        try? "packages:\n  - 'packages/*'\n  - 'apps/**'\nonlyBuiltDependencies:\n  - esbuild\n"
+            .write(to: scratch.appendingPathComponent("pnpm-workspace.yaml"),
+                   atomically: true, encoding: .utf8)
+        report("declared packages are read, and the key after them ends the list",
+               declaredWorkspacePackages(in: scratch) == ["apps", "packages"],
+               declaredWorkspacePackages(in: scratch).joined(separator: ", "))
+
+        try? #"{"workspaces":["libs/*"]}"#
+            .write(to: scratch.appendingPathComponent("package.json"), atomically: true, encoding: .utf8)
+        report("npm-style workspaces in package.json are read too",
+               declaredWorkspacePackages(in: scratch).contains("libs"))
+    }
+
+    print("\n=== the list says only what it can know cheaply (12-… §4) ===")
+    do {
+        let fm = FileManager.default
+        let scratch = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("diffscope-annot-\(UUID().uuidString)")
+        try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: scratch) }
+
+        try? "const a = 1;\n".write(to: scratch.appendingPathComponent("a.ts"),
+                                    atomically: true, encoding: .utf8)
+        try? ".a { color: red }\n".write(to: scratch.appendingPathComponent("a.css"),
+                                         atomically: true, encoding: .utf8)
+        try? Data([0x89, 0x50, 0x00, 0x4E]).write(to: scratch.appendingPathComponent("logo.ts"))
+        try? Data(repeating: 0x61, count: 64).write(to: scratch.appendingPathComponent("big.ts"))
+
+        report("an ordinary source file gets no badge",
+               annotate(path: "a.ts", in: scratch, sizeLimit: 1024) == nil)
+        report("an unsupported extension is named", annotate(path: "a.css", in: scratch, sizeLimit: 1024) == .unsupported)
+        report("a NUL in the first bytes is decisive, so it can be read from a prefix",
+               annotate(path: "logo.ts", in: scratch, sizeLimit: 1024) == .binary)
+        report("size comes from a stat, not a read",
+               annotate(path: "big.ts", in: scratch, sizeLimit: 32) == .oversized)
+        report("a file that no longer exists is not invented into a badge",
+               annotate(path: "gone.ts", in: scratch, sizeLimit: 1024) == nil)
+    }
+}

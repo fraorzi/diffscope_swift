@@ -100,7 +100,30 @@ It is a **second product inside the first**, and it does not touch the invariant
 
 Two smaller things would deliver part of the value at a fraction of the cost, and both belong to the existing scope: "Open in Terminal here" for the selected repository (one `open -a Terminal <path>`, in the same family as DEC-015's editor template), and copying a file's path or a ready-made `git` command to the clipboard. Neither executes anything.
 
+**The interaction with OQ-056 matters more than the feature does.** A terminal inside the application lets the user run `git commit` inside a product that promises it never writes to a repository. That is not a violation — the user is doing it, deliberately, in a shell — but it dissolves the sentence "this application cannot modify your repositories" into something that needs a paragraph of explanation. If Git write operations are taken up under OQ-056 the tension disappears; if they are not, a terminal quietly grants the same power without any of OQ-056's questions being answered.
+
 **Revisit** if the product ever moves from *reviewing* changes to *acting* on them — which is the read-only decision (DEC-003), not a UI question.
+
+**OQ-056 — Git write operations: stage, unstage, commit, pull.** Status: Open. Raised by the product owner, 2026-07-31.
+
+Asked for directly, and **this is the one decision the product cannot drift into** — it reopens DEC-003, which made version one *strictly* read-only.
+
+**DEC-003 anticipated it.** Its consequences say: *"Staging is positioned as a natural version-two capability. It requires a correct and trusted hunk model, which is precisely what version one establishes. Sequencing is therefore favorable rather than merely cautious."* So this is the planned next product, not a contradiction of the last one — provided the sequencing is honoured rather than skipped.
+
+**What version one buys that makes this safe later.** Staging a hunk means writing exactly the bytes the interface claimed were in that hunk. The whole invariant apparatus — INV-1 reconstruction, INV-2 containment, the byte partition, the independent canonical diff — is what makes "these bytes and no others" a checkable claim rather than a hope. Staging built on an unproven hunk model is how a diff tool corrupts someone's work.
+
+**What changes, and none of it is small:**
+
+- **The read-only proof (R-8) stops being a blanket claim.** Today every registered Git operation is proven to leave `.git` byte-identical. With writes there are two registries — operations that must not write, and operations that write deliberately — and the second needs a different proof: that it wrote *what was shown* and nothing else.
+- **Index-lock races with WebStorm and the terminal become real.** DEC-003 avoided them entirely by not writing. A concurrent `git add` from another tool while this one stages is a first-order concern, not an edge case.
+- **`--no-optional-locks` and `GIT_OPTIONAL_LOCKS=0` are read-path settings.** A write path needs the opposite and needs to handle lock contention explicitly.
+- **Pull is a different animal from stage and commit.** It touches the network, can rewrite the working tree under a reader, and can conflict. DEC-011 forbids automatic fetch for staleness reasons; a *user-initiated* pull is a separate question from an automatic one, and should be decided separately.
+- **The pinned pair (DEC-049) becomes mutable under the reader.** Refresh currently assumes changes come from outside; after a write it also comes from inside, and the anchor machinery has to survive both.
+- **Undo.** A tool that can stage must answer what happens when the user regrets it. `git reset` is easy; the trust story around it is not.
+
+**Recommended sequencing if it is taken up:** unstage before stage (it destroys nothing), stage-whole-file before stage-hunk, commit after both, pull last and never automatic. Each step gets its own decision entry, and R-8 is re-specified before the first write ships — not after.
+
+**Revisit:** this is a version-two scope decision, and taking it up means reopening DEC-003 explicitly with a new decision entry, per the rule in `21-agent-handoff.md` §6 that read-only must not be silently re-decided. See also [[OQ-055]], since a built-in terminal would grant the same power sideways without any of the above being answered.
 
 **OQ-048 — Confirm `--no-optional-locks` coverage.** Status: Open.
 Verified for `status`. It is a top-level Git option so it should apply generally, but every command the application issues must be confirmed rather than assumed, and the read-only proof in the test plan must enforce this.

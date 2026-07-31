@@ -350,3 +350,27 @@ Still open, and now recorded in the POC report rather than discovered by the rea
 is now known.
 
 884/884 checks pass.
+
+## Step 17 — the grouped file list (audit §1.5, DEC-033 amended)
+
+- [x] Measured first: 12 repositories with `pnpm-workspace.yaml`, **zero** declaring `packages:`
+- [x] Groups: declared workspace package, else parent directory
+- [x] Headers suppressed when grouping buys nothing (one group, or one group per file)
+- [x] Headers are labels — ⌘] / ⌘[ step past them
+- [x] Grouped rows show the path relative to their group; full path on hover
+- [x] Per-file badges `raw` / `bin` / `big` from extension, `stat` and a 4 KB probe
+- [x] Selection restore after refresh indexes the drawn rows, not the flat file array
+- [x] Checks incl. the real philips shape, the corpus's actual pnpm file, and the annotation rules
+- [x] DEC-033 amendment, M8-F, audit §1.5 closed, handoff
+
+### Step 17 — done, after the corpus contradicted the decision
+
+The specified grouping would have produced one meaningless header per repository, because no
+repository here declares workspace packages. Measured before writing any of it, amended in the
+decision log rather than worked around in code.
+
+The first correct version was still unreadable: every row repeated the directory its header had
+just stated. Relative display fixed it — visible only by looking at the window, not from the checks,
+which passed either way.
+
+903/903 checks pass.
