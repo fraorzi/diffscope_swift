@@ -374,3 +374,26 @@ just stated. Relative display fixed it — visible only by looking at the window
 which passed either way.
 
 903/903 checks pass.
+
+## Step 18 — the rest of the interface audit (23b §1.2–1.9)
+
+- [x] §1.2 base-branch override, ⇧⌘B, stored in configuration, never in the repository
+- [x] §1.3 staleness in words beside scope 4, via a checked function
+- [x] §1.4 unavailable scopes disabled, reason in the tooltip
+- [x] §1.7 empty-diff sentence, and "no changes" only when byte-equal
+- [x] §1.8 refresh on window focus (DEC-006)
+- [x] §1.9 wrap toggle, ⌥⌘W, default on
+- [x] Configuration decodes files written before `baseOverrides` existed
+- [x] Auto-selection moved after the sweep summary so a scope reason is not overwritten
+
+### Step 18 — done
+
+The specification's own example caught a boundary: 63 days is "9 weeks old" in `12-…` §3, and the
+obvious banding renders it "2 months old". Only assertable because the line was extracted out of the
+view into a function.
+
+The pluraliser was caught by reading the rendered notice, not by a check — "in 1 groups".
+
+§1.10 (parser-state indicator) is the only §1 item left, deliberately after the design gate.
+
+921/921 checks pass.

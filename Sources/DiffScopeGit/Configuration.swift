@@ -51,12 +51,73 @@ public struct InspectedSource: Sendable, Equatable {
 
 public struct Configuration: Sendable, Equatable, Codable {
     public var sources: [ConfiguredSource]
+    /// Repository path → the base ref the user chose for it (DEC-009: *"the detected base branch is
+    /// shown and is overridable per repository"*, and overrides live in application configuration,
+    /// never in the repository).
+    ///
+    /// Keyed by absolute path, which DEC-037 flagged as fragile once the same repository can be
+    /// reached through more than one configured source. Accepted for now and recorded rather than
+    /// solved: the alternative — keying by first-commit hash — costs a Git call per repository at
+    /// startup, and the failure mode here is a forgotten override, not a wrong diff.
+    public var baseOverrides: [String: String]
 
-    public init(sources: [ConfiguredSource] = []) {
+    public init(sources: [ConfiguredSource] = [], baseOverrides: [String: String] = [:]) {
         self.sources = sources
+        self.baseOverrides = baseOverrides
     }
 
     public var isEmpty: Bool { sources.isEmpty }
+
+    // Decoded explicitly so a configuration written before overrides existed still loads. A missing
+    // key is an older file, not a corrupt one, and must not cost the user their roots.
+    private enum CodingKeys: String, CodingKey { case sources, baseOverrides }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        sources = try container.decodeIfPresent([ConfiguredSource].self, forKey: .sources) ?? []
+        baseOverrides = try container.decodeIfPresent([String: String].self, forKey: .baseOverrides) ?? [:]
+    }
+}
+
+/// How stale the base ref is, in words (DEC-010, DEC-011).
+///
+/// `12-…` §3 calls this *"a correctness requirement, not decoration: it is the sole staleness
+/// signal, because the application never fetches"*. A date is not that signal — it makes the reader
+/// do the subtraction, which is the work the signal exists to remove.
+public func stalenessDescription(of iso8601: String?, now: Date = Date()) -> String? {
+    guard let iso8601 else { return nil }
+    let formatter = ISO8601DateFormatter()
+    formatter.formatOptions = [.withInternetDateTime]
+    guard let date = formatter.date(from: iso8601) else { return nil }
+
+    let seconds = now.timeIntervalSince(date)
+    guard seconds >= 0 else { return "dated in the future" }
+    let days = Int(seconds / 86_400)
+    switch days {
+    case 0: return "today"
+    case 1: return "1 day old"
+    case 2...13: return "\(days) days old"
+    // Weeks run to three months, because `12-…` §3's own example — "origin/master · 9 weeks old" —
+    // is 63 days, and a boundary that turned it into "2 months old" would fail the specification
+    // while looking reasonable.
+    case 14...89: return "\(days / 7) weeks old"
+    case 90...364: return "\(days / 30) months old"
+    default:
+        let years = days / 365
+        return years == 1 ? "1 year old" : "\(years) years old"
+    }
+}
+
+/// The line `12-…` §3 requires beside scope 4: which ref was used, whether the user chose it, and
+/// how old it is. Composed here rather than in the application so it can be checked — the same
+/// reason `changedLines` lives in the engine.
+public func baseSummary(ref: String?, chosenByUser: Bool, committerDate: String?,
+                        now: Date = Date()) -> String {
+    guard let ref else { return "base: not determined — choose one with ⇧⌘B" }
+    let age = stalenessDescription(of: committerDate, now: now).map { " · \($0)" }
+        // Unknown is said, never guessed at: a missing date is not a fresh one.
+        ?? " · age unknown"
+    return "base \(ref)\(chosenByUser ? " (yours)" : "")\(age)"
 }
 
 public enum ConfigurationLoad: Sendable, Equatable {

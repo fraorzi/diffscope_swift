@@ -63,6 +63,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// Held so the empty state can *replace* the three panes rather than float over them: an
     /// overlay leaves the tables visible behind it and still reachable by keyboard.
     var splitView: NSSplitView!
+    var wrapMenuItem: NSMenuItem?
+    var wrapEnabled = true
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
@@ -95,6 +97,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+
+    /// DEC-006: the repository list is refreshed on window focus. The FSEvents watcher covers the
+    /// repository being *looked at*; everything else goes stale while the reader is in their editor,
+    /// and coming back to counts that are minutes old is the case this closes.
+    func applicationDidBecomeActive(_ notification: Notification) {
+        guard !state.repositories.isEmpty else { return }
+        rescan()
+    }
 
     private func buildWindow() {
         window = NSWindow(
@@ -639,18 +649,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         DispatchQueue.global(qos: .userInitiated).async {
             let found = self.discovery.discover(sources: sources.map(\.discoverySource))
             let sweep = RepositorySweep(reader: self.reader)
-            let outcome = sweep.run(over: found.repositories.map(\.url))
+            let outcome = sweep.run(over: found.repositories.map(\.url),
+                                    baseOverrides: self.state.configuration.baseOverrides)
             let labels = disambiguatedNames(for: outcome.snapshots.map(\.url.path))
             DispatchQueue.main.async {
                 self.state.repositories = outcome.snapshots
                 self.state.repositoryLabels = labels
                 self.hideEmptyState()
                 self.repoTable.reloadData()
-                // Opening onto three empty panes makes the reader click before the application has
-                // said anything. If a scan found repositories and none is selected, take the first.
-                if self.state.selectedRepository == nil, !outcome.snapshots.isEmpty {
-                    self.repoTable.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
-                }
                 var summary = String(format: "%d repositories from %d sources · swept in %.0f ms",
                                      outcome.snapshots.count, sources.count - unusable.count,
                                      outcome.elapsedSeconds * 1000)
@@ -661,6 +667,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                         .joined(separator: ", ")
                 }
                 self.statusLabel.stringValue = summary
+                // Opening onto three empty panes makes the reader click before the application has
+                // said anything. Selecting after the summary, not before, so that whatever the
+                // selection has to say — an unavailable scope, for instance — is what stays on
+                // screen rather than being overwritten by the sweep's own line.
+                if self.state.selectedRepository == nil, !outcome.snapshots.isEmpty {
+                    self.repoTable.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+                }
             }
         }
     }
@@ -695,6 +708,47 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             statusLabel.stringValue = problem
         }
         rescan()
+    }
+
+    /// DEC-009: the detected base is overridable per repository, and the override is stored in
+    /// application configuration — never written into the repository.
+    @objc private func setBaseBranch() {
+        guard let repository = state.selectedRepository else {
+            statusLabel.stringValue = "select a repository first"
+            return
+        }
+        let key = repository.url.standardizedFileURL.path
+        let alert = NSAlert()
+        alert.messageText = "Base branch for \(repository.displayName)"
+        alert.informativeText = "Detected: \(repository.baseRefUsed ?? "none — detection did not resolve"). "
+            + "Leave empty to go back to detection."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        field.stringValue = state.configuration.baseOverrides[key] ?? ""
+        field.placeholderString = "origin/main"
+        alert.accessoryView = field
+        alert.addButton(withTitle: "Use This")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        let entered = field.stringValue.trimmingCharacters(in: .whitespaces)
+        if entered.isEmpty {
+            state.configuration.baseOverrides.removeValue(forKey: key)
+        } else {
+            state.configuration.baseOverrides[key] = entered
+        }
+        if let problem = configStore.save(state.configuration) { statusLabel.stringValue = problem }
+        // Re-swept rather than patched: the merge-base and the ahead count both depend on the ref,
+        // and recomputing them is the only way to keep the row honest.
+        rescan()
+    }
+
+    /// `12-…` §5.4: wrapping is *available*, not compulsory. Forced wrapping pushes the two panes
+    /// out of vertical alignment on exactly the minified files that section was written about.
+    @objc private func toggleWrap() {
+        wrapEnabled.toggle()
+        wrapMenuItem?.state = wrapEnabled ? .on : .off
+        webView.evaluateJavaScript("window.diffscopeSetWrap(\(wrapEnabled))") { _, _ in }
+        statusLabel.stringValue = wrapEnabled ? "long lines wrap" : "long lines scroll horizontally"
     }
 
     @objc private func addRootFolder() { add(kind: .root) }
@@ -749,6 +803,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             item.tag = index
             item.target = self
         }
+        let wrap = view.addItem(withTitle: "Wrap Long Lines", action: #selector(toggleWrap), keyEquivalent: "w")
+        wrap.keyEquivalentModifierMask = [.command, .option]
+        wrap.target = self
+        wrap.state = .on
+        wrapMenuItem = wrap
         view.addItem(.separator())
         for (index, title) in ["All local", "Unstaged", "Staged", "vs base"].enumerated() {
             let item = view.addItem(withTitle: "Scope: \(title)", action: #selector(selectScope(_:)),
@@ -766,6 +825,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             ("Add Root Folder…", #selector(addRootFolder), "O"),
             ("Add Repository…", #selector(addRepository), "R"),
             ("Remove Source", #selector(removeSource), ""),
+            ("Set Base Branch…", #selector(setBaseBranch), "B"),
         ] as [(String, Selector, String)] {
             let item = sources.addItem(withTitle: title, action: action, keyEquivalent: key)
             item.keyEquivalentModifierMask = [.command, .shift]
@@ -917,6 +977,19 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 state.mergeBaseRev = result.trimmedOutput
             }
         }
+        // `12-…` §3: scopes that cannot work are **disabled with a stated reason, never hidden**.
+        // Leaving them enabled lets the reader click into a dead end and makes the control lie
+        // about what is available.
+        for (index, scope) in ComparisonScope.allCases.enumerated() {
+            let state = scopes.availability(of: scope, head: repository.head, base: repository.base)
+            scopeControl.setEnabled(state == .available, forSegment: index)
+            if case let .unavailable(reason) = state {
+                scopeControl.setToolTip("\(scope.title) — \(reason)", forSegment: index)
+            } else {
+                scopeControl.setToolTip(scope.title, forSegment: index)
+            }
+        }
+
         let availability = scopes.availability(of: state.scope, head: repository.head, base: repository.base)
         if case let .unavailable(reason) = availability {
             state.files = []
@@ -931,7 +1004,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         state.annotations = [:]
         fileTable.reloadData()
         annotateFiles(of: repository)
-        let ageText = repository.baseRefCommitterDate.map { " · base \(repository.baseRefUsed ?? "?") tip \($0.prefix(10))" } ?? ""
+        // DEC-010/DEC-011: the age is the signal, not the date. The application never fetches, so
+        // this line is the only thing telling the reader how old the comparison actually is.
+        var ageText = ""
+        if state.scope == .branchVsMergeBase {
+            ageText = " · " + baseSummary(
+                ref: repository.baseRefUsed,
+                chosenByUser: state.configuration.baseOverrides[repository.url.standardizedFileURL.path] != nil,
+                committerDate: repository.baseRefCommitterDate)
+        }
         statusLabel.stringValue = "\(state.files.count) files · \(state.scope.title)\(ageText)"
     }
 

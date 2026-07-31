@@ -1,5 +1,5 @@
 import { EditorView, Decoration, WidgetType, lineNumbers, gutterLineClass, GutterMarker } from "@codemirror/view";
-import { EditorState, RangeSetBuilder, StateField, StateEffect } from "@codemirror/state";
+import { EditorState, RangeSetBuilder, StateField, StateEffect, Compartment } from "@codemirror/state";
 import { javascript } from "@codemirror/lang-javascript";
 import { syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
 
@@ -195,7 +195,7 @@ function makePane(parent, side) {
         javascript({ typescript: true, jsx: true }),
         syntaxHighlighting(defaultHighlightStyle),
         EditorView.editable.of(false),
-        EditorView.lineWrapping,
+        wrapping.of(EditorView.lineWrapping),
         lineNumbers(),
         changedLineField,
         gutterLineClass.compute([changedLineField], state => {
@@ -218,6 +218,11 @@ function makePane(parent, side) {
 }
 
 const setSegments = StateEffect.define();
+
+// `12-…` §5.4: wrapping is *available*, not compulsory. Forced wrapping pushes the two panes out of
+// vertical alignment on exactly the minified files that section was written about, because a line
+// that wraps to three rows on one side and one on the other stops the panes lining up.
+const wrapping = new Compartment();
 
 // `12-…` §5.1 names the gutter as one of three carriers of change meaning, beside the underline and
 // the background texture. The two others were built; this is the third.
@@ -317,6 +322,13 @@ window.diffscopeAnchorState = function () {
 // The active change stop wins when there is one — a reader who pressed ⌘N is looking at that change,
 // not at the top of the screen. Otherwise it is the first line visible in the new pane. Reported in
 // the **new** side's numbering, because that is the file on disk the editor will open.
+window.diffscopeSetWrap = function (enabled) {
+  for (const view of [left, right]) {
+    view.dispatch({ effects: wrapping.reconfigure(enabled ? EditorView.lineWrapping : []) });
+  }
+  return enabled;
+};
+
 window.diffscopeCurrentLine = function () {
   const doc = right.state.doc;
   if (stopIndex >= 0 && stopIndex < stops.length) {
@@ -371,11 +383,36 @@ function groupCounts(model) {
   return counts;
 }
 
+function emptyDiffState(model) {
+  if (model.payload.kind !== "text") return null;
+  const changed = seg => seg.label === "changed" || seg.label === "moved" || seg.label === "fallback";
+  const marks = [...model.payload.old.segments, ...model.payload.new.segments].filter(changed);
+  if (!marks.length) {
+    // Byte-equal is the only case this may be said in, and the engine has already established it:
+    // every segment is unchanged exactly when the sides are identical.
+    return "no changes — the two sides are byte-for-byte identical";
+  }
+  const formattingOnly = marks.every(seg => seg.group === "formatting-only");
+  if (!formattingOnly) return null;
+  const groups = model.formattingCollapses.length;
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  return groups
+    ? `no structural changes; ${plural(marks.length, "formatting difference")} in `
+      + `${plural(groups, "group")} — \u2318E to expand`
+    : `no structural changes; ${plural(marks.length, "formatting difference")}`;
+}
+
 function renderNotices(model) {
   const bar = document.getElementById("notices");
   bar.innerHTML = "";
   const items = [...model.notices];
   if (!model.coverageVerified) items.push("coverage not verified");
+  // `12-…` §5.3: the empty-diff state reads as "no structural changes; N formatting differences",
+  // and a bare "no changes" is permitted **only** when the two sides are byte-equal (INV-3). Without
+  // this sentence a file whose every change is formatting looks, at a glance, like a file with
+  // nothing in it.
+  const state = emptyDiffState(model);
+  if (state) items.push(state);
   // Disclosed counts (DEC-017): grouping is only permissible while it says how much it grouped.
   for (const [group, count] of [...groupCounts(model)].sort()) {
     items.push(`${group}: ${count} shown`);

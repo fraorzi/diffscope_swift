@@ -285,6 +285,7 @@ runGitChecks { name, ok, detail in report(name, ok, detail) }
 runConfigurationChecks { name, ok, detail in report(name, ok, detail) }
 runGutterChecks { name, ok, detail in report(name, ok, detail) }
 runFileListChecks { name, ok, detail in report(name, ok, detail) }
+runScopeChecks { name, ok, detail in report(name, ok, detail) }
 runDegradationChecks { name, ok, detail in report(name, ok, detail) }
 runBundleFreshnessCheck { name, ok, detail in report(name, ok, detail) }
 

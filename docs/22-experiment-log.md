@@ -1555,3 +1555,32 @@ Two further rules, stated so a later reader can check them rather than judge the
 The application opened onto three empty panes and waited for a click before saying anything. It now selects the first repository after a scan when nothing is selected.
 
 Also recorded: **GUI automation is unavailable on this machine** — `osascript` has no accessibility permission (`-25211`), so driving the interface to reach a state for a screenshot does not work. Reaching a state has to be done by the application itself, which is why the auto-selection above was worth having twice over.
+
+---
+
+# M8-G — the rest of the interface audit
+
+**Date:** 2026-07-31 · **Method:** implemented `23b-…` §1.2–1.9, extracting each piece of composed text into a function the suite can assert on.
+
+## What the checks caught that reading would not have
+
+`12-…` §3 gives one worked example of the staleness line: `origin/master · 9 weeks old`. Written the obvious way — days, then weeks up to two months, then months — 63 days renders as **"2 months old"**. Correct arithmetic, wrong answer against the specification's own example. Weeks now run to three months.
+
+That check exists because the line was extracted into `baseSummary(ref:chosenByUser:committerDate:)` rather than assembled inside the view. The same move made three more properties assertable: a ref the user chose says `(yours)`, an unreadable date says `age unknown` rather than passing for fresh, and an unresolved base points at the shortcut that fixes it.
+
+## Where the pluraliser earned its keep
+
+The empty-diff sentence first shipped as `no structural changes; 10 formatting differences in 1 groups`. Visible only by reading the rendered notice — the checks asserted the sentence appeared, not that it was grammatical.
+
+## GUI automation is unavailable here
+
+`osascript` has no accessibility permission on this machine (`-25211`), so the interface cannot be driven to reach a state for a screenshot. Two consequences worth carrying forward:
+
+- **States have to be reachable by configuration**, not by clicking. Pointing `DIFFSCOPE_CONFIG` at a repository with an unborn HEAD is how the disabled scopes were photographed — all four greyed on `carrefour-inapp`.
+- **Anything that needs a click to reach cannot be photographed at all.** The scope-4 line is one of those, which is why it was extracted and checked rather than trusted.
+
+## Measured
+
+- Unavailable scopes: verified on `carrefour-inapp` (unborn HEAD → all four disabled) and `js-gloves__website__nextjs` (base resolves → all four enabled).
+- The empty-diff sentence reaches the DOM: `no structural changes; 10 formatting differences in 1 group — ⌘E to expand`.
+- Selftest arms: 10, all OK.

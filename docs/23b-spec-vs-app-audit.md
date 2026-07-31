@@ -20,23 +20,25 @@ Now: sources are stored in a JSON file the user can read (DEC-052), any number o
 
 Implementing it exposed a defect nothing else could have: **every row of both lists had been rendering blank**. See `22-experiment-log.md` → M8-D.
 
-### 1.2 The base branch cannot be overridden (DEC-009)
+### 1.2 ~~The base branch cannot be overridden~~ — **built 2026-07-31**
 
 `12-…` §3: *"The detected base branch is shown and is overridable per repository."*
 
-Built: `resolveBaseBranch(in:override:)` accepts an override and **nothing ever passes one**. There is no UI and no configuration file. When detection lands on the wrong branch — or on `PROMPT`, as it does for `carrefour-inapp` — scope 4 is simply unusable for that repository.
+Was: `resolveBaseBranch(in:override:)` accepted an override and nothing ever passed one. Now ⇧⌘B sets one per repository, stored in the configuration file beside the sources (DEC-052) and never written into the repository; emptying the field returns to detection. The row and the scope line both say when the ref is the user's choice rather than a detected one.
 
-### 1.3 Scope 4 does not show how stale it is (DEC-010, DEC-011)
+**Recorded rather than solved:** overrides are keyed by absolute path, which DEC-037 flagged as fragile once the same repository is reachable through two sources. The failure mode is a forgotten override, not a wrong diff.
+
+### 1.3 ~~Scope 4 does not show how stale it is~~ — **built 2026-07-31**
 
 `12-…` §3 calls this *"a correctness requirement, not decoration: it is the sole staleness signal, because the application never fetches"*. The specified form is `origin/master · 9 weeks old`.
 
-Built: the status line shows the base ref and the tip **date** (`base origin/master tip 2026-05-21`). The information is present; the thing that makes it a signal — the age, in words, next to the scope — is not. A date requires the reader to do the subtraction, which is exactly the work a staleness signal exists to remove.
+Was: the tip **date**, leaving the subtraction to the reader. Now the age in words — `base origin/master · 9 weeks old` — composed by a checked function rather than assembled in the interface, with `age unknown` said outright when the date cannot be read. The nine-week example from the specification is asserted directly, which caught a boundary that would have rendered it as "2 months old".
 
-### 1.4 Unavailable scopes are not disabled (`12-…` §3)
+### 1.4 ~~Unavailable scopes are not disabled~~ — **built 2026-07-31**
 
 Specified: *"disabled with a stated reason, never hidden. Hiding them would make the interface silently disagree with itself between repositories."*
 
-Built: the scope control stays fully enabled; selecting an impossible scope empties the file list and writes the reason in the status line. The reason is stated, so the trust rule holds — but you can still click into a dead end, and the control lies about what is available.
+Was: fully enabled, with the reason arriving only after clicking into the dead end. Now each segment is enabled or disabled per repository, carrying the reason as its tooltip. Verified on `carrefour-inapp`, whose unborn HEAD greys all four.
 
 ### 1.5 ~~The file list is missing three of its four specified features~~ — **built 2026-07-31**
 
@@ -59,19 +61,19 @@ Now: line numbers in both panes and a gutter marking every line that carries a d
 
 **Still open:** the default editor template has no `{line}`, so the default cannot jump to a line. A template that includes one now receives a real line.
 
-### 1.7 The empty-diff state does not use its specified wording (`12-…` §5.3)
+### 1.7 ~~The empty-diff state does not use its specified wording~~ — **built 2026-07-31**
 
 Specified: *"no structural changes; N formatting differences (expand)"* — never a bare "no changes" unless the sides are byte-equal.
 
-Built: nothing at all. A file whose changes are entirely formatting shows a grouped band; a file with no changes shows two identical panes and no statement either way. The invariant is not violated — nothing false is displayed — but the sentence the spec wrote to make the distinction visible was never written into the renderer.
+Was: nothing at all. Now the notice bar says `no structural changes; 10 formatting differences in 1 group — ⌘E to expand`, and a byte-equal pair says so explicitly rather than merely showing two identical panes.
 
-### 1.8 No refresh on window focus (DEC-006)
+### 1.8 ~~No refresh on window focus~~ — **built 2026-07-31**
 
-`12-…` §2: the repository list is *"refreshed on window focus"*. Built: the FSEvents watcher covers the **open** repository only. Switch to WebStorm, commit in a different repository, come back — the counts for that other repository are stale until you reselect it.
+`12-…` §2: the repository list is *"refreshed on window focus"*. Now implemented — the watcher still covers the open repository, and returning to the window re-sweeps every configured one.
 
-### 1.9 Wrapping is forced, not offered (`12-…` §5.4)
+### 1.9 ~~Wrapping is forced, not offered~~ — **built 2026-07-31**
 
-Specified: *"Horizontal scrolling is linked between panes; wrapping is available."* Built: `EditorView.lineWrapping` is always on, with no toggle. Long lines therefore never scroll horizontally — they wrap, which makes the two panes drift out of vertical alignment on exactly the minified files §5.4 was written about. Vertical scroll linking is bidirectional and correct.
+Was: `EditorView.lineWrapping` always on, with no toggle. Now ⌥⌘W switches it, defaulting to on. Vertical scroll linking was already bidirectional and correct.
 
 ### 1.10 Two required indicators are not surfaced (`12-…` §5.2)
 
@@ -113,6 +115,8 @@ Recorded here rather than dismissed, with what it would actually mean, in `05-op
 1. ~~Root management~~ — **done**, 2026-07-31.
 2. ~~Gutter and line numbers~~ — **done**, 2026-07-31.
 3. ~~File-list depth~~ — **done**, 2026-07-31.
-4. **Base override and staleness wording** (§1.2, §1.3) — small, and they make scope 4 trustworthy.
-5. **Scope disabling, focus refresh, wrap toggle, empty-diff wording** (§1.4, §1.7–1.9) — an afternoon between them.
-6. Parser-state indicator (§1.10) — after the design gate, since it is one more thing on screen.
+4. ~~Base override and staleness wording~~ — **done**, 2026-07-31.
+5. ~~Scope disabling, focus refresh, wrap toggle, empty-diff wording~~ — **done**, 2026-07-31.
+6. Parser-state indicator (§1.10) — **the only §1 item left**, deliberately after the design gate, since it is one more thing on screen.
+
+Everything in §2 remains: the branch is in a tooltip rather than displayed, the uncommitted-count convention is not stated on screen, and the mode pill still reports the selection rather than the path taken.

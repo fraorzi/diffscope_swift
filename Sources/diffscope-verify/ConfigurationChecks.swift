@@ -255,3 +255,93 @@ func runFileListChecks(_ reportRaw: (String, Bool, String) -> Void) {
                annotate(path: "gone.ts", in: scratch, sizeLimit: 1024) == nil)
     }
 }
+
+/// The remaining items of `23b-spec-vs-app-audit.md` §1: the base-branch override (DEC-009), the
+/// staleness wording (DEC-010/DEC-011), and configuration that predates a field.
+func runScopeChecks(_ reportRaw: (String, Bool, String) -> Void) {
+    func report(_ name: String, _ ok: Bool, _ detail: String = "") { reportRaw(name, ok, detail) }
+
+    print("\n=== the base branch is overridable, and the override survives (DEC-009) ===")
+    do {
+        let fm = FileManager.default
+        let scratch = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("diffscope-base-\(UUID().uuidString)")
+        try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: scratch) }
+
+        let store = ConfigurationStore(url: scratch.appendingPathComponent("config.json"))
+        var configuration = Configuration(sources: [ConfiguredSource(kind: .root, path: "/tmp/x")])
+        configuration.baseOverrides["/tmp/x/repo"] = "origin/develop"
+        store.save(configuration)
+        report("an override is written and read back",
+               store.load().configuration.baseOverrides["/tmp/x/repo"] == "origin/develop")
+        report("and it travels beside the sources rather than instead of them",
+               store.load().configuration.sources.count == 1)
+
+        // A configuration written before overrides existed must still load. Losing the user's roots
+        // to a schema change would be the same defect as losing them to a corrupt file.
+        try? #"{"sources":[{"kind":"root","path":"/tmp/y"}]}"#
+            .write(to: store.url, atomically: true, encoding: .utf8)
+        let old = store.load()
+        report("a configuration file without the overrides key still loads",
+               old.problem == nil && old.configuration.sources.count == 1,
+               String(describing: old))
+        report("and gets an empty override table rather than a failure",
+               old.configuration.baseOverrides.isEmpty)
+
+        // The override the repository layer already accepted, now actually reachable.
+        let runner = GitRunner()
+        let repo = makeRepository("based", in: scratch)
+        try? "x\n".write(to: repo.appendingPathComponent("a.txt"), atomically: true, encoding: .utf8)
+        shell(["add", "-A"], in: repo)
+        shell(["commit", "-qm", "c1"], in: repo)
+        shell(["branch", "release"], in: repo)
+        let reader = RepositoryReader(runner: runner)
+        let overridden = try? reader.snapshot(of: repo, baseOverride: "release")
+        report("a snapshot taken with an override reports that ref",
+               overridden?.baseRefUsed == "release", overridden?.baseRefUsed ?? "nil")
+        let detected = try? reader.snapshot(of: repo)
+        report("and without one it goes back to detection",
+               detected?.baseRefUsed != "release" || detected?.base.ref == nil,
+               detected?.baseRefUsed ?? "nil")
+    }
+
+    print("\n=== staleness is stated in words, not in a date (DEC-010, DEC-011) ===")
+    do {
+        let now = Date()
+        func ago(_ days: Int) -> String {
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime]
+            return formatter.string(from: now.addingTimeInterval(-Double(days) * 86_400))
+        }
+        report("today reads as today", stalenessDescription(of: ago(0), now: now) == "today")
+        report("one day is singular", stalenessDescription(of: ago(1), now: now) == "1 day old")
+        report("under a fortnight counts days", stalenessDescription(of: ago(5), now: now) == "5 days old")
+        // The figure `12-…` §3 uses as its example.
+        report("nine weeks reads as weeks", stalenessDescription(of: ago(63), now: now) == "9 weeks old",
+               stalenessDescription(of: ago(63), now: now) ?? "nil")
+        report("months for a stale branch", stalenessDescription(of: ago(200), now: now) == "6 months old",
+               stalenessDescription(of: ago(200), now: now) ?? "nil")
+        report("years for an abandoned one", stalenessDescription(of: ago(800), now: now) == "2 years old",
+               stalenessDescription(of: ago(800), now: now) ?? "nil")
+        report("an unknown date says nothing rather than guessing",
+               stalenessDescription(of: nil) == nil && stalenessDescription(of: "not a date") == nil)
+        report("a clock skew is stated, not shown as negative",
+               stalenessDescription(of: ago(-3), now: now) == "dated in the future")
+
+        report("the scope-4 line names the ref and its age",
+               baseSummary(ref: "origin/master", chosenByUser: false, committerDate: ago(63), now: now)
+                   == "base origin/master · 9 weeks old",
+               baseSummary(ref: "origin/master", chosenByUser: false, committerDate: ago(63), now: now))
+        report("a ref the user chose says so",
+               baseSummary(ref: "release", chosenByUser: true, committerDate: ago(1), now: now)
+                   == "base release (yours) · 1 day old")
+        // DEC-013's rule reaching one more corner: unknown is said, never substituted.
+        report("an unknown age is said, not passed off as fresh",
+               baseSummary(ref: "origin/main", chosenByUser: false, committerDate: nil, now: now)
+                   == "base origin/main · age unknown")
+        report("an unresolved base points at the way to fix it",
+               baseSummary(ref: nil, chosenByUser: false, committerDate: nil, now: now)
+                   .contains("choose one"))
+    }
+}
