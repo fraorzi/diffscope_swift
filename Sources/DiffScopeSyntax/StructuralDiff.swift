@@ -221,22 +221,22 @@ public func structuralDiff(
     let reconciledOld = reconcile(oldSegments, against: oldChangedMask, applied: coverageKnown)
     let reconciledNew = reconcile(newSegments, against: newChangedMask, applied: coverageKnown)
 
-    unchangedOld = reconciledOld.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
-    unchangedNew = reconciledNew.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
+    unchangedOld = reconciledOld.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
+    unchangedNew = reconciledNew.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
 
     // A move regroups what is presented; it never removes it. Searched on the reconciled
     // labels, so the candidates are exactly the content the byte diff already calls changed.
-    let search = findMoves(oldBytes: oldBytes, oldSegments: reconciledOld.segments,
-                           newBytes: newBytes, newSegments: reconciledNew.segments,
+    let search = findMoves(oldBytes: oldBytes, oldSegments: reconciledOld,
+                           newBytes: newBytes, newSegments: reconciledNew,
                            floor: settings.moveContentFloor)
     let movedOld = applyMoves(
-        Partition(totalLength: oldBytes.count, segments: reconciledOld.segments),
+        Partition(totalLength: oldBytes.count, segments: reconciledOld),
         ranges: search.moves.enumerated().flatMap { index, move in
             move.oldRanges.map { (start: $0.lowerBound, end: $0.upperBound, link: index) }
         }
     )
     let movedNew = applyMoves(
-        Partition(totalLength: newBytes.count, segments: reconciledNew.segments),
+        Partition(totalLength: newBytes.count, segments: reconciledNew),
         ranges: search.moves.enumerated().flatMap { index, move in
             move.newRanges.map { (start: $0.lowerBound, end: $0.upperBound, link: index) }
         }
@@ -279,15 +279,19 @@ public func structuralDiff(
     )
 }
 
+/// Splits labelled segments against the canonical diff's changed mask.
+///
+/// The return type used to carry a `moved` count that nothing incremented and nothing read — the
+/// residue of the reconciliation-derived `moved` label removed in M6-D. A counter stuck at zero is
+/// worse than no counter, because it reads as a measurement.
 func reconcile(
     _ segments: [Segment],
     against mask: [(start: Int, end: Int)],
     applied: Bool
-) -> (segments: [Segment], moved: Int) {
-    guard applied else { return (segments, 0) }
+) -> [Segment] {
+    guard applied else { return segments }
     let sorted = mask.sorted { $0.start < $1.start }
     var out: [Segment] = []
-    var moved = 0
 
     for segment in segments {
         if segment.label == .changed {
@@ -345,5 +349,5 @@ func reconcile(
                                classification: segment.classification, confidence: segment.confidence))
         }
     }
-    return (out, moved)
+    return out
 }

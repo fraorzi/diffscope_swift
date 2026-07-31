@@ -120,6 +120,8 @@ Only documents that exist are authoritative. Planned documents are listed below 
 | `21-agent-handoff.md` | **Exists** | **Start here if you are new** |
 | `22-experiment-log.md` | **Exists** | Authoritative for spike results |
 | `23-release-gates.md` | **Exists** | Authoritative for the three handover gates: POC, design intake, tester build |
+| `23a-poc-report.md` | **Exists** | How to run and test the application, in plain language |
+| `23b-spec-vs-app-audit.md` | **Exists** | What the specification requires and the application does not do |
 | `26-coverage-audit.md` | **Exists** | Where each named test is proven, and what could fail it |
 | `research/losslessness-invariant.md` | Exists | Corpus measurements behind DEC-021 |
 | `research/domain-existing-tools.md` | Exists | Phase 2 — known failure modes of existing tools |

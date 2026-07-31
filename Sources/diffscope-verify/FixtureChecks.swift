@@ -89,12 +89,14 @@ func runFixtureChecks(_ reportRaw: (String, Bool, String) -> Void) {
         let raw = (try? Data(contentsOf: manifestURL)) ?? Data()
         let manifest = (try? JSONSerialization.jsonObject(with: raw)) as? [String: [String: [String: Any]]]
         report("MANIFEST.json parses", manifest != nil)
-        guard let manifest else { return }
 
         var mismatches: [String] = []
         var unrecorded: [String] = []
-        for fixture in fixtures {
-            guard let entry = manifest[fixture.name] else { unrecorded.append(fixture.name); continue }
+        // A malformed manifest used to `return` out of the whole function, taking every T-series
+        // check with it — the suite would have gone green on a corpus it never looked at. The
+        // manifest failing is a manifest failure, not a reason to stop checking fixtures.
+        for fixture in fixtures where manifest != nil {
+            guard let entry = manifest?[fixture.name] else { unrecorded.append(fixture.name); continue }
             for (side, bytes) in [("before", fixture.old), ("after", fixture.new)] {
                 guard let recorded = entry[side] else { unrecorded.append("\(fixture.name)/\(side)"); continue }
                 if (recorded["sha256"] as? String) != sha256(bytes) {
@@ -110,7 +112,7 @@ func runFixtureChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // The silent case is the new fixture nobody recorded, which would otherwise be exempt from
         // the check for as long as it existed.
         report("every fixture has a manifest entry", unrecorded.isEmpty, unrecorded.joined(separator: ", "))
-        let recordedNames = Set(manifest.keys)
+        let recordedNames = Set(manifest?.keys ?? [:].keys)
         let presentNames = Set(fixtures.map(\.name))
         report("the manifest records no fixture that has been deleted",
                recordedNames.subtracting(presentNames).isEmpty,

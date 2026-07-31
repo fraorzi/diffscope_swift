@@ -88,6 +88,20 @@ Measured: status reports ` M` while diff reports zero lines, persisting after an
 **OQ-054 — Case-folding and normalization in path matching.** Status: Open. Raised by measurement.
 Measured: writing via `src/foo.ts` when disk holds `src/Foo.TS` makes FSEvents report the **on-disk** case. Git is case-sensitive, macOS's default filesystem is case-insensitive but case-preserving, so a mismatch means auto-refresh (DEC-007) silently stops updating that file. Path matching needs case-folded **and** NFC-normalized comparison — the latter realistic given Polish filenames and the NFD content already measured in this corpus.
 
+**OQ-055 — A built-in terminal.** Status: Open. Raised by the product owner, 2026-07-29.
+
+Asked for directly: a terminal inside the application that handles text editing in the input line the way Warp does — Option+←/→ by word, Cmd+←/→ to line ends, Option+Delete by word — which ordinary terminal emulators handle poorly because they pass keys through a line discipline instead of editing a real text field.
+
+**Nothing in the planning set covers this.** Every existing mention of "terminal" refers to the user's *external* one. `00-index.md` states the product is not a Git client; `18-version-one-scope.md` admits no command execution at all; DEC-028 rejects executing even repository-configured filter commands, on the grounds that content would decide what runs.
+
+What it would actually require, so the size is on record rather than guessed at: a pseudo-terminal, an ANSI/VT escape parser, a scrollback buffer, shell integration for prompt boundaries, and — the part being asked for — an input line that is a real editable text control with the standard macOS motion bindings, reconciled with the shell's own line editor. Warp's advantage comes from replacing the line discipline, not from adding key bindings to it.
+
+It is a **second product inside the first**, and it does not touch the invariant the rest of the application exists to protect. It should not enter version one.
+
+Two smaller things would deliver part of the value at a fraction of the cost, and both belong to the existing scope: "Open in Terminal here" for the selected repository (one `open -a Terminal <path>`, in the same family as DEC-015's editor template), and copying a file's path or a ready-made `git` command to the clipboard. Neither executes anything.
+
+**Revisit** if the product ever moves from *reviewing* changes to *acting* on them — which is the read-only decision (DEC-003), not a UI question.
+
 **OQ-048 — Confirm `--no-optional-locks` coverage.** Status: Open.
 Verified for `status`. It is a top-level Git option so it should apply generally, but every command the application issues must be confirmed rather than assumed, and the read-only proof in the test plan must enforce this.
 

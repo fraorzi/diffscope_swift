@@ -99,6 +99,8 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 3. F1 (partial parse error) and F3/F4 (confidence, ambiguity) have ranks but **no producer** — nothing constructs them yet, so the two mildest rows of the order are ranked and unreachable. Either wire them or record why they stay theoretical.
 4. **T-11 is proven on one relocation shape only.** A second shape is worth more than any other addition to the corpus — and read M8-C first, because constructing the first one failed twice for reasons that are findings in themselves.
 
+**A spec-versus-application audit exists** (`23b-spec-vs-app-audit.md`, 2026-07-29). Ten accepted requirements are written down and not built, all of them in the shell rather than the engine — root management with its picker (DEC-036/037, which **blocks G3** and leaves the WebStorm-specific default the project decided against), the gutter and line numbers, file-list grouping and per-file degradation state, base-branch override, scope-4 staleness wording, scope disabling, focus refresh, the wrap toggle, and the empty-diff sentence. Suggested order is in §6 of that document.
+
 **Then the three handover gates** (`23-release-gates.md`, added 2026-07-29 at the product owner's request). These are not M-series milestones: each ends when a *person* can do something they could not before, which is a different acceptance test from "the checks pass".
 
 | Gate | Ends when | Announced as |
