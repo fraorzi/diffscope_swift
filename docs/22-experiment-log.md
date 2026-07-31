@@ -1712,3 +1712,24 @@ Neither is missing a producer:
 - **F4** is counted and shown nowhere, by DEC-045. The detection remains as a guard — ambiguous nodes are never used as anchors — and the indicator was withdrawn deliberately.
 
 A file-level notice for either would overstate a local doubt. The vocabulary now records this at the case itself, so the next reader does not wire a notice that DEC-045 already refused. A check asserts no ambiguity indicator reaches the contract, which makes adding one a deliberate act against a recorded decision rather than a drift.
+
+---
+
+# T0-probe — can the application tell when the shell is at a prompt?
+
+**Date:** 2026-07-31 · **Method:** `forkpty` from Swift against this machine's zsh 5.9, driven by writing to the PTY as if typed.
+
+The built-in terminal turns on exactly one question. Warp's input line works because it knows when the shell is sitting at a prompt: only then can a keystroke be safely edited locally instead of passed raw to whatever is running. Measured before planning anything else.
+
+```
+prompt mark (OSC 133;A)   seen
+command mark (OSC 133;C)  seen
+command output            round-trips
+the user's own prompt     survived the injection
+```
+
+**The first probe was a false negative and worth recording as such.** It used `zsh -i -c "…"`, which runs a command and exits without ever entering the prompt loop, so `precmd` and `preexec` never fire. It reported "no marks" for a shell that emits them perfectly well. Anything measuring this has to drive a genuinely interactive shell.
+
+**The hazard the probe found.** `~/.zshrc:16` defines `precmd() { vcs_info }` as a plain function. An integration that installs its own `precmd` replaces it, and the product owner's prompt silently loses its git information — a terminal that breaks the setup it was meant to live in. `add-zsh-hook` appends, and was verified to leave the existing hook working.
+
+Full plan, cost and gate: `26-terminal-plan.md`.

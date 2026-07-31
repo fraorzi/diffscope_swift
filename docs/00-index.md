@@ -39,7 +39,7 @@ In brief: comparison is on **bytes**, normalization is **never** applied anywher
 
 **Planning complete. All phases 0–8 done.** 51 decisions recorded.
 
-**M0 through M7 are complete; M8 is under way (2026-07-29).** M0's gates confirmed DEC-042; M1 delivered the engine skeleton and invariant harness; M2 the Git layer; M3 the raw diff end to end; M4 parsing and partition construction; M5 matching and alignment; M6 classification, moves and the trust surface; M7 refresh, watching and navigation. M8 has landed the structural budgets (DEC-050), the degradation precedence with F8/F13 wired (DEC-051), and the T-series coverage audit over a 32-fixture corpus (M8-C). **958/958 checks pass.** All three handover gates have passed. Details in [22-experiment-log.md](22-experiment-log.md).
+**M0 through M7 are complete; M8 is under way (2026-07-31).** M0's gates confirmed DEC-042; M1 delivered the engine skeleton and invariant harness; M2 the Git layer; M3 the raw diff end to end; M4 parsing and partition construction; M5 matching and alignment; M6 classification, moves and the trust surface; M7 refresh, watching and navigation. M8 has landed the structural budgets (DEC-050), the degradation precedence with F8/F13 wired (DEC-051), and the T-series coverage audit over a 32-fixture corpus (M8-C). **973/973 checks pass.** All three handover gates have passed. Details in [22-experiment-log.md](22-experiment-log.md).
 
 **Implementation is under way.** Code lives in `Sources/` and `fixtures/`.
 
@@ -66,7 +66,7 @@ Prove the whole native pipeline headlessly, writing a snapshot of each state it 
 DIFFSCOPE_SELFTEST=1 DIFFSCOPE_SNAPSHOT_DIR=/tmp/shots swift run -c release diffscope-app
 ```
 
-Next: the rest of **M8 — hardening**, then the three **handover gates** in [23-release-gates.md](23-release-gates.md) — a proof of concept the product owner can use, a design-intake boundary, and an unsigned `.app` a third-party tester can run. See [19-roadmap.md](19-roadmap.md). A new agent should start at [21-agent-handoff.md](21-agent-handoff.md).
+Next: the **built-in terminal**, which the product owner put at the front of the queue on 2026-07-31 — see [26-terminal-plan.md](26-terminal-plan.md) and start at its **gate T0**. All three handover gates in [23-release-gates.md](23-release-gates.md) have passed. A new agent should start at [21-agent-handoff.md](21-agent-handoff.md).
 
 **The stack is now chosen** (DEC-042, after five spikes): **Swift shell and engine, tree-sitter via its C API, CodeMirror 6 in a `WKWebView`, Git through the CLI.** See [09-recommended-architecture.md](09-recommended-architecture.md).
 
@@ -124,6 +124,7 @@ Only documents that exist are authoritative. Planned documents are listed below 
 | `23b-spec-vs-app-audit.md` | **Exists** | What the specification requires and the application does not do |
 | `24-design-contract.md` | **Exists** | Authoritative for what a design may change and what it may not |
 | `25-tester-packet.md` | **Exists** | The document a third-party tester receives with the build |
+| `26-terminal-plan.md` | **Exists** | Authoritative for the terminal's scope, cost and T0 gate |
 | `26-coverage-audit.md` | **Exists** | Where each named test is proven, and what could fail it |
 | `research/losslessness-invariant.md` | Exists | Corpus measurements behind DEC-021 |
 | `research/domain-existing-tools.md` | Exists | Phase 2 — known failure modes of existing tools |

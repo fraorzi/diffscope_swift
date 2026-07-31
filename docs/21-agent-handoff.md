@@ -95,6 +95,9 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 
 ### What to do next
 
+**The product owner has put the built-in terminal first** (2026-07-31, resolving OQ-055). Everything below it in this list was the audit's ordering, not theirs. Start at [`26-terminal-plan.md`](26-terminal-plan.md) and its **gate T0** — the pivotal unknown is already measured (prompt-mark detection works on this machine's zsh; the user's own `precmd` must not be clobbered), and the cost to the product's read-only story is recorded there rather than left to be discovered.
+
+
 1. **Definition of done §6** — a 63-file working tree reviewable entirely from the keyboard. The file list still has no keyboard path of its own beyond ⌘[ / ⌘] stepping.
 2. **OQ-046** auto-gc on large repositories, still unverified.
 3. F1 (partial parse error) and F3/F4 (confidence, ambiguity) have ranks but **no producer** — nothing constructs them yet, so the two mildest rows of the order are ranked and unreachable. Either wire them or record why they stay theoretical.
@@ -254,6 +257,7 @@ M0 in `19-roadmap.md`: verify #306, measure serialisation, assess Swift binding 
 | `23-release-gates.md` | **The three handover gates** — POC, design intake, tester build |
 | `24-design-contract.md` | **What a design may change, and the two rules it may not break** |
 | `25-tester-packet.md` | **Hand to a third-party tester with the zip. Nothing else needed** |
+| `26-terminal-plan.md` | **The terminal: what was measured, what it costs, and gate T0** |
 | `26-coverage-audit.md` | Where each T- and R- test is proven, and what could fail it |
 | `research/` | Raw research with citations |
 
