@@ -1455,3 +1455,38 @@ Recorded because in both cases the correction is the interesting part.
 Per-fixture structural statistics are printed on every run — hunks, anchors, moves, formatting-only, reordered, invisible — since a T-check that never fires is invisible without them. That is how T-11's silence was noticed.
 
 **Coverage map: `26-coverage-audit.md`.** 855/855 pass.
+
+---
+
+# M8-D — root management, and a window that had never been looked at
+
+**Date:** 2026-07-31 · **Method:** implementing `23b-…` §1.1, then running the application against real configurations and **screenshotting the window** rather than the webview.
+
+## The interface had been blank all along
+
+The repository and file lists rendered **empty rows**. Not truncated, not mis-styled — no text at all, in a window that otherwise looked like a working application: the title bar, the scope and mode controls, and a status line correctly reading `23 repositories from 2 sources · swept in 512 ms`.
+
+It survived every previous session because nothing about it fails. No crash, no exception, no failing check — and the check suite cannot see the screen. The selftest snapshots that exist (`structural.png` and the rest) capture **the webview only**, so the AppKit shell around it had never been photographed.
+
+Two causes, found by measuring rather than reading:
+
+1. **The panes had zero width.** `NSSplitView` distributes space by preserving the proportions of the frames its arranged subviews already have. All three started at zero, so all three stayed at zero however wide the window was. The tables were built, populated and correct, at zero width. Setting the divider positions on the next run-loop pass looked like it addressed this and did not — the split's own frame is still zero until layout runs, so the positions clamped to zero.
+2. **The cell views were never sized.** A bare `NSTextField` was returned from `tableView(_:viewFor:row:)`; with a middle-truncating line break mode, a zero-width label truncates the whole string away.
+
+Fixed with width constraints inside the split at priority 600 — below `defaultHigh`, so the dividers stay draggable — and an `NSTableCellView` with the label constrained to its edges. Measured after the fix: `ROWVIEW frame=(0, 10, 140, 20)`, `CELL (16, 0, 108, 20)`, and the list reads.
+
+**The lesson is the one this project keeps relearning, in a new place.** Every previous instance was a check that was never run (`runBundleFreshnessCheck`, `checkAttr`, `MANIFEST.json`, the `return` inside the fixture block). This one is a *surface* that was never looked at. `21-agent-handoff.md` said the native window "has now been looked at" — it had been looked at in a session, by eye, and never since, and nothing in the suite would notice it going blank.
+
+## What the configuration work produced
+
+Measured against three configured sources — the real projects folder, a scratch folder holding a repository deliberately named `diffscope`, and a path that does not exist:
+
+```
+23 repositories from 2 sources · swept in 512 ms · …/scratchpad/gone-forever missing
+```
+
+- Both live roots merged; the missing one is **named in the status line rather than dropped**.
+- The two repositories called `diffscope` were labelled `WebstormProjects/…ffscope` and `extra/diffscope` — the shortest parent qualification that separates them, applied only to the colliding pair (DEC-037).
+- With no configuration and no `DIFFSCOPE_ROOT`, the empty state appears with its two buttons and no suggested path (DEC-036 as amended).
+
+One further defect the screenshots caught: the empty state was drawn as an **overlay**, so the tables showed through behind it and stayed reachable by keyboard. It now replaces the split rather than covering it.

@@ -292,3 +292,36 @@ marks its fallback whole rather than per segment, and a pure deletion has no cha
 new side. Both corrections are in M8-C.
 
 855/855 checks pass over 32 fixtures.
+
+## Step 15 — root management (DEC-052, audit §1.1)
+
+- [x] `Configuration` + `ConfigurationStore`: JSON, injectable path, `DIFFSCOPE_CONFIG` override
+- [x] Missing file is first run; a corrupt file is reported and left on disk untouched
+- [x] Sources inspected, not filtered — a moved root is reported missing
+- [x] Discovery over every configured source; depth per root; individual repos bypass scanning
+- [x] Colliding repository names qualified by the shortest parent that separates them
+- [x] Empty state with a picker, no suggested path, no auto-detection; replaces the split rather than overlaying it
+- [x] Sources menu: add root, add repository, remove source
+- [x] `~/WebstormProjects` default removed; `DIFFSCOPE_ROOT` demoted to a testing hook
+- [x] Checks: round trip, corrupt preserved, per-root depth, individual repo, collisions, missing source
+- [x] DEC-052, M8-D, audit §1.1 closed, handoff, POC report
+
+### Step 15 — done, and the window had never been looked at
+
+The feature itself went in as planned. What it exposed did not: **both lists had been rendering
+completely blank rows**, in a window that otherwise looked healthy — correct title, correct
+controls, and a status line reading `23 repositories from 2 sources · swept in 512 ms`.
+
+Two causes. `NSSplitView` distributes space by preserving the proportions of the frames its panes
+already have, and all three started at zero, so all three stayed at zero; setting divider positions
+on the next run-loop pass looks like it fixes that and does not, because the split's own frame is
+still zero until layout runs. And a bare `NSTextField` returned from `viewFor` was never sized, so a
+middle-truncating label truncated the entire string away.
+
+Every previous instance of this defect class in the project was a **check that was never run**. This
+one is a **surface that was never looked at** — the selftest snapshots photograph the webview only,
+so nothing in the suite would notice the shell going blank. Fixed with width constraints at priority
+600 inside the split and an `NSTableCellView` with the label constrained to its edges; verified by
+screenshotting the window, which is the only thing that could have verified it.
+
+872/872 checks pass.

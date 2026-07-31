@@ -8,7 +8,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, and the T-series coverage audit have all landed. 855/855 checks pass over 32 fixtures.**
+**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, the T-series coverage audit and root management have all landed. 872/872 checks pass over 32 fixtures.**
 
 | Milestone | State |
 |---|---|
@@ -20,12 +20,12 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 | M5 matching and alignment | Complete |
 | **M6 classification, moves, trust surface** | Complete |
 | **M7 refresh, watching, navigation** | **Complete** — navigation, folding, keyboard map, FSEvents watching, debounce, scroll anchoring, formatting-only collapse |
-| M8 hardening and beta | **Started** — DEC-050 budgets, DEC-051 degradation precedence, and the M8-C coverage audit landed; the rest of §"What to do next" remains |
+| M8 hardening and beta | **Started** — DEC-050 budgets, DEC-051 degradation precedence, the M8-C coverage audit and DEC-052 root management landed; the rest of §"What to do next" remains |
 
 Run everything:
 
 ```
-swift run diffscope-verify          # 855 checks over 32 fixtures, exit 1 on failure
+swift run diffscope-verify          # 872 checks over 32 fixtures, exit 1 on failure
 swift run diffscope-verify --write-manifest   # re-record fixture hashes, deliberately
 swift run -c release diffscope-verify --survey ~/YourProjects
 swift run -c release diffscope-verify --budget-survey ~/YourProjects
@@ -98,6 +98,10 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 2. **OQ-046** auto-gc on large repositories, still unverified.
 3. F1 (partial parse error) and F3/F4 (confidence, ambiguity) have ranks but **no producer** — nothing constructs them yet, so the two mildest rows of the order are ranked and unreachable. Either wire them or record why they stay theoretical.
 4. **T-11 is proven on one relocation shape only.** A second shape is worth more than any other addition to the corpus — and read M8-C first, because constructing the first one failed twice for reasons that are findings in themselves.
+
+**Root management landed** (DEC-052, M8-D): configuration is a JSON file the user can read, any number of roots plus individual repositories, an empty-state picker with no suggested path, missing sources named rather than dropped. **The `~/WebstormProjects` default is gone.**
+
+**Read M8-D before touching the AppKit shell.** Both lists had been rendering **completely blank rows** — panes at zero width because `NSSplitView` preserves the proportions of frames that all started at zero, and cell views never sized because a bare `NSTextField` was returned from `viewFor`. Nothing failed: no crash, no exception, and the status line was correct throughout. Every earlier instance of this defect class in the project was *a check that was never run*; this one is **a surface that was never looked at**, and the selftest snapshots photograph the webview only, so nothing would catch it going blank again.
 
 **A spec-versus-application audit exists** (`23b-spec-vs-app-audit.md`, 2026-07-29). Ten accepted requirements are written down and not built, all of them in the shell rather than the engine — root management with its picker (DEC-036/037, which **blocks G3** and leaves the WebStorm-specific default the project decided against), the gutter and line numbers, file-list grouping and per-file degradation state, base-branch override, scope-4 staleness wording, scope disabling, focus refresh, the wrap toggle, and the empty-diff sentence. Suggested order is in §6 of that document.
 

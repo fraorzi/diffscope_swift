@@ -10,13 +10,15 @@ The suite is not the measure here. 855 checks pass and every item in §1 below i
 
 Ordered by what it costs the user, not by effort.
 
-### 1.1 There is no way to choose what to look at (DEC-036, DEC-037) — **blocks G3**
+### 1.1 ~~There is no way to choose what to look at~~ — **built 2026-07-31, DEC-052**
 
 `12-…` §2 says repositories come from *"any number of user-added root directories … plus individually added repositories located anywhere"*, and §7.5 requires a **picker screen** when no root is configured or a configured root is missing.
 
-Built: one root, from `DIFFSCOPE_ROOT` or a hardcoded `~/WebstormProjects` default. No picker, no add, no remove, no persistence. `NSOpenPanel` appears nowhere in the source.
+Was: one root, from `DIFFSCOPE_ROOT` or a hardcoded `~/WebstormProjects` default, with no picker and no persistence.
 
-For you this is an environment variable. For a stranger with no `~/WebstormProjects` it is an empty window with no way forward, so **G3 cannot pass until this exists**. It is also the one place where the shipped default contradicts a decision the project made deliberately — DEC-037 rejected a WebStorm-specific default path, and the code still has one.
+Now: sources are stored in a JSON file the user can read (DEC-052), any number of roots plus individual repositories, an empty state with a picker and **no suggested path**, missing sources named rather than dropped, and colliding repository names qualified by parent. The hardcoded default is gone; `DIFFSCOPE_ROOT` survives only as a testing hook that adds a root for one launch.
+
+Implementing it exposed a defect nothing else could have: **every row of both lists had been rendering blank**. See `22-experiment-log.md` → M8-D.
 
 ### 1.2 The base branch cannot be overridden (DEC-009)
 
@@ -106,7 +108,7 @@ Recorded here rather than dismissed, with what it would actually mean, in `05-op
 
 ## 6. Suggested order
 
-1. **Root management** (§1.1) — blocks G3, and removes the last WebStorm-specific default the project decided against.
+1. ~~Root management~~ — **done**, 2026-07-31.
 2. **Gutter and line numbers** (§1.6) — the largest everyday gap, and it makes ⌘O land on the right line.
 3. **File-list depth** (§1.5) — grouping and per-file degradation, worth most on the repositories with the most files.
 4. **Base override and staleness wording** (§1.2, §1.3) — small, and they make scope 4 trustworthy.

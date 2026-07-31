@@ -22,6 +22,12 @@ final class AppState {
     var mergeBaseRev: String?
     var mode: PresentationMode = .structural
     var selectedFile: ChangedFile?
+    var configuration = Configuration()
+    /// Sources that are configured and unusable. Kept rather than filtered, so the interface can
+    /// say which ones and offer to remove them (DEC-036).
+    var sourceProblems: [InspectedSource] = []
+    /// Path → label, qualified only where two repositories share a folder name (DEC-037).
+    var repositoryLabels: [String: String] = [:]
 }
 
 final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, WKNavigationDelegate {
@@ -33,6 +39,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// the diff view, and a sweep over 63 files would pay 63 `git check-attr` invocations for an
     /// answer nobody is looking at yet (DEC-051).
     let filters = FilterCheck(runner: GitRunner())
+    let configStore = ConfigurationStore()
 
     let parser = TSXParser()
 
@@ -46,14 +53,40 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var rendererReady = false
     var pendingModel: String?
     var watcher: RepositoryWatcher?
+    var emptyState: NSView!
+    var emptyStateDetail: NSTextField!
+    /// Held so the empty state can *replace* the three panes rather than float over them: an
+    /// overlay leaves the tables visible behind it and still reachable by keyboard.
+    var splitView: NSSplitView!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
         buildWindow()
         loadRenderer()
-        let root = ProcessInfo.processInfo.environment["DIFFSCOPE_ROOT"]
-            ?? FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("WebstormProjects").path
-        scanRoot(URL(fileURLWithPath: root))
+        loadConfiguredSources()
+    }
+
+    /// DEC-036 as amended: **no suggested path and no auto-detection**. The hardcoded
+    /// `~/WebstormProjects` that used to live here was the very string the amendment removed —
+    /// a WebStorm-specific name in a product that depends on WebStorm for nothing.
+    ///
+    /// `DIFFSCOPE_ROOT` survives as a testing hook that *adds* a root for this launch only. It is
+    /// never written to the configuration, so it cannot quietly become a default again.
+    private func loadConfiguredSources() {
+        let load = configStore.load()
+        state.configuration = load.configuration
+        if let problem = load.problem {
+            // The file is left on disk exactly as it was. Reporting and continuing beats
+            // overwriting a configuration the user may be able to repair by hand.
+            statusLabel.stringValue = "\(problem) — starting with no sources, the file was left untouched"
+        }
+
+        var sources = state.configuration.sources
+        if let hook = ProcessInfo.processInfo.environment["DIFFSCOPE_ROOT"],
+           !sources.contains(where: { $0.path == hook }) {
+            sources.append(ConfiguredSource(kind: .root, path: hook))
+        }
+        scan(sources: sources)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -97,7 +130,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         controls.orientation = .horizontal
         controls.spacing = 12
 
-        let rightStack = NSStackView(views: [controls, statusLabel, webView])
+        let rightStack = NSStackView(frame: NSRect(x: 0, y: 0, width: 840, height: 800))
+        rightStack.setViews([controls, statusLabel, webView], in: .leading)
         rightStack.orientation = .vertical
         rightStack.alignment = .leading
         rightStack.spacing = 6
@@ -106,18 +140,51 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         webView.widthAnchor.constraint(equalTo: rightStack.widthAnchor, constant: -16).isActive = true
 
         let split = NSSplitView()
+        splitView = split
         split.isVertical = true
         split.dividerStyle = .thin
         split.addArrangedSubview(leftScroll)
         split.addArrangedSubview(middleScroll)
         split.addArrangedSubview(rightStack)
 
-        window.contentView = split
-        window.makeKeyAndOrderFront(nil)
-        DispatchQueue.main.async {
-            split.setPosition(280, ofDividerAt: 0)
-            split.setPosition(620, ofDividerAt: 1)
+        // Auto layout inside the split, rather than frame proportions. NSSplitView distributes by
+        // preserving existing proportions, and every pane started at zero — so the tables were
+        // populated, correct, and drawn at zero width. Width constraints at a priority below
+        // `defaultHigh` keep the dividers draggable.
+        for (pane, width) in [(leftScroll, 280.0), (middleScroll, 320.0)] {
+            pane.translatesAutoresizingMaskIntoConstraints = false
+            let constraint = pane.widthAnchor.constraint(equalToConstant: width)
+            constraint.priority = NSLayoutConstraint.Priority(600)
+            constraint.isActive = true
+            pane.widthAnchor.constraint(greaterThanOrEqualToConstant: 140).isActive = true
         }
+        rightStack.translatesAutoresizingMaskIntoConstraints = false
+        rightStack.widthAnchor.constraint(greaterThanOrEqualToConstant: 300).isActive = true
+
+        buildEmptyState()
+        let container = NSView()
+        container.addSubview(split)
+        container.addSubview(emptyState)
+        split.translatesAutoresizingMaskIntoConstraints = false
+        emptyState.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            split.topAnchor.constraint(equalTo: container.topAnchor),
+            split.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            split.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            split.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            emptyState.topAnchor.constraint(equalTo: container.topAnchor),
+            emptyState.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            emptyState.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            emptyState.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        ])
+
+        window.contentView = container
+        window.makeKeyAndOrderFront(nil)
+        // The divider positions have to be set *after* the split has a width of its own. Setting
+        // them on the next run-loop pass looks like it does that and does not: the split is inside
+        // a constrained container, so its frame is still zero until layout runs, and every pane
+        // collapsed to zero width. The tables were built, populated and invisible.
+        container.layoutSubtreeIfNeeded()
     }
 
     private func makeTable(identifier: String) -> NSTableView {
@@ -135,7 +202,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     }
 
     private func scrollWrapping(_ view: NSView) -> NSScrollView {
-        let scroll = NSScrollView()
+        // A non-zero starting frame matters: NSSplitView distributes space by *preserving the
+        // proportions of the frames it already has*, so panes that begin at zero width stay at
+        // zero width no matter how wide the split becomes.
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 280, height: 800))
         scroll.documentView = view
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -448,20 +518,170 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
-    private func scanRoot(_ root: URL) {
+    /// DEC-036: one screen serves both first run and a root that has been moved, so there is no
+    /// state in which the window is empty with nothing to act on. No suggested path appears here —
+    /// the amendment rejected both that and auto-detection, in favour of predictability.
+    private func buildEmptyState() {
+        let title = NSTextField(labelWithString: "No folders chosen yet")
+        title.font = .systemFont(ofSize: 20, weight: .medium)
+
+        emptyStateDetail = NSTextField(wrappingLabelWithString:
+            "Choose a folder and DiffScope will look inside it for Git repositories. "
+            + "You can add as many folders as you like, and add single repositories from anywhere.")
+        emptyStateDetail.font = .systemFont(ofSize: 12)
+        emptyStateDetail.textColor = .secondaryLabelColor
+        emptyStateDetail.alignment = .center
+        emptyStateDetail.preferredMaxLayoutWidth = 420
+
+        let chooseFolder = NSButton(title: "Choose a Folder…", target: self,
+                                    action: #selector(addRootFolder))
+        chooseFolder.keyEquivalent = "\r"
+        let chooseRepository = NSButton(title: "Add a Single Repository…", target: self,
+                                        action: #selector(addRepository))
+        let buttons = NSStackView(views: [chooseFolder, chooseRepository])
+        buttons.orientation = .horizontal
+        buttons.spacing = 12
+
+        let stack = NSStackView(views: [title, emptyStateDetail, buttons])
+        stack.orientation = .vertical
+        stack.alignment = .centerX
+        stack.spacing = 16
+
+        emptyState = NSView()
+        emptyState.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: emptyState.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: emptyState.centerYAnchor),
+            stack.widthAnchor.constraint(lessThanOrEqualToConstant: 460),
+        ])
+        emptyState.isHidden = true
+    }
+
+    private func showEmptyState(problems: [InspectedSource]) {
+        if problems.isEmpty {
+            emptyStateDetail.stringValue =
+                "Choose a folder and DiffScope will look inside it for Git repositories. "
+                + "You can add as many folders as you like, and add single repositories from anywhere."
+        } else {
+            // Named rather than quietly forgotten: the user is the only one who can tell a moved
+            // folder from one they no longer want.
+            let list = problems.map { "\($0.source.path) — \($0.state.rawValue)" }.joined(separator: "\n")
+            emptyStateDetail.stringValue =
+                "Everything you have added is currently unreachable, so there is nothing to show:\n\n"
+                + list + "\n\nThey are still configured. Choose them again if they moved, "
+                + "or use Sources ▸ Remove Source."
+        }
+        emptyState.isHidden = false
+        splitView.isHidden = true
+        statusLabel.stringValue = problems.isEmpty ? "no folders chosen" : "no reachable sources"
+    }
+
+    private func hideEmptyState() {
+        emptyState.isHidden = true
+        splitView.isHidden = false
+    }
+
+    /// DEC-037: every configured source, merged into one list. Depth 2 applies per root (DEC-018);
+    /// individually added repositories bypass scanning, which is also the answer for a repository
+    /// nested deeper than the limit would ever reach.
+    private func scan(sources: [ConfiguredSource]) {
+        let inspected = configStore.inspect(Configuration(sources: sources))
+        let unusable = inspected.filter { $0.state != .present }
+        state.sourceProblems = unusable
+
+        guard !sources.isEmpty, unusable.count < sources.count else {
+            // Nothing configured, or nothing that still exists. Either way the reader needs the
+            // picker rather than an empty table with no explanation (DEC-036, `12-…` §7.5).
+            DispatchQueue.main.async {
+                self.state.repositories = []
+                self.repoTable.reloadData()
+                self.showEmptyState(problems: unusable)
+            }
+            return
+        }
+
         DispatchQueue.global(qos: .userInitiated).async {
-            let found = self.discovery.discover(sources: [DiscoverySource(url: root, kind: .root)])
+            let found = self.discovery.discover(sources: sources.map(\.discoverySource))
             let sweep = RepositorySweep(reader: self.reader)
             let outcome = sweep.run(over: found.repositories.map(\.url))
+            let labels = disambiguatedNames(for: outcome.snapshots.map(\.url.path))
             DispatchQueue.main.async {
                 self.state.repositories = outcome.snapshots
+                self.state.repositoryLabels = labels
+                self.hideEmptyState()
                 self.repoTable.reloadData()
-                self.statusLabel.stringValue = String(
-                    format: "%d repositories · swept in %.0f ms",
-                    outcome.snapshots.count, outcome.elapsedSeconds * 1000
-                )
+                var summary = String(format: "%d repositories from %d sources · swept in %.0f ms",
+                                     outcome.snapshots.count, sources.count - unusable.count,
+                                     outcome.elapsedSeconds * 1000)
+                // A missing root is named, not dropped: a source that vanishes from the list looks
+                // exactly like one that was never added.
+                if !unusable.isEmpty {
+                    summary += " · " + unusable.map { "\($0.source.path) \($0.state.rawValue)" }
+                        .joined(separator: ", ")
+                }
+                self.statusLabel.stringValue = summary
             }
         }
+    }
+
+    private func rescan() {
+        var sources = state.configuration.sources
+        if let hook = ProcessInfo.processInfo.environment["DIFFSCOPE_ROOT"],
+           !sources.contains(where: { $0.path == hook }) {
+            sources.append(ConfiguredSource(kind: .root, path: hook))
+        }
+        scan(sources: sources)
+    }
+
+    private func add(kind: ConfiguredSource.Kind) {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = kind == .root
+        panel.prompt = kind == .root ? "Add Root Folder" : "Add Repository"
+        panel.message = kind == .root
+            ? "Choose a folder to scan for Git repositories."
+            : "Choose a Git repository."
+        // No default directory is offered. DEC-036's amendment rejected both a suggested path and
+        // auto-detection, in favour of predictability over convenience.
+        guard panel.runModal() == .OK else { return }
+        for url in panel.urls {
+            let source = ConfiguredSource(kind: kind, path: url.standardizedFileURL.path)
+            guard !state.configuration.sources.contains(source) else { continue }
+            state.configuration.sources.append(source)
+        }
+        if let problem = configStore.save(state.configuration) {
+            statusLabel.stringValue = problem
+        }
+        rescan()
+    }
+
+    @objc private func addRootFolder() { add(kind: .root) }
+    @objc private func addRepository() { add(kind: .repository) }
+
+    /// Removes whichever source the selected repository came from, or the selected missing source
+    /// when the empty state is showing.
+    @objc private func removeSource() {
+        let selectedPath = state.selectedRepository?.url.path
+        let match = state.configuration.sources.first { source in
+            guard let selectedPath else { return false }
+            return selectedPath == source.path || selectedPath.hasPrefix(source.path + "/")
+        } ?? state.sourceProblems.first?.source
+
+        guard let match else {
+            statusLabel.stringValue = "select a repository to remove the source it came from"
+            return
+        }
+        state.configuration.sources.removeAll { $0 == match }
+        if let problem = configStore.save(state.configuration) {
+            statusLabel.stringValue = problem
+        }
+        state.selectedRepository = nil
+        state.selectedFile = nil
+        watcher?.stop()
+        rescan()
+        statusLabel.stringValue = "removed \(match.path)"
     }
 
     @objc private func scopeChanged() {
@@ -499,6 +719,20 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
         viewItem.submenu = view
         main.addItem(viewItem)
+
+        let sourcesItem = NSMenuItem()
+        let sources = NSMenu(title: "Sources")
+        for (title, action, key) in [
+            ("Add Root Folder…", #selector(addRootFolder), "O"),
+            ("Add Repository…", #selector(addRepository), "R"),
+            ("Remove Source", #selector(removeSource), ""),
+        ] as [(String, Selector, String)] {
+            let item = sources.addItem(withTitle: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = [.command, .shift]
+            item.target = self
+        }
+        sourcesItem.submenu = sources
+        main.addItem(sourcesItem)
 
         let navigateItem = NSMenuItem()
         let navigate = NSMenu(title: "Navigate")
@@ -783,21 +1017,38 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         tableView === repoTable ? state.repositories.count : state.files.count
     }
 
+    /// Returns a cell view with the label constrained inside it.
+    ///
+    /// A bare `NSTextField` was returned here before, and **every row rendered blank** — the label
+    /// was left at zero width, so a middle-truncating label truncated the whole string away. The
+    /// window looked like a working application with an empty repository list, which is why it
+    /// survived: nothing crashed, the counts in the status line were right, and the check suite
+    /// cannot see the screen.
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        let cell = NSTableCellView()
         let text = NSTextField(labelWithString: "")
         text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
         text.lineBreakMode = .byTruncatingMiddle
+        text.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(text)
+        cell.textField = text
+        NSLayoutConstraint.activate([
+            text.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 4),
+            text.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -4),
+            text.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
         if tableView === repoTable {
             let snapshot = state.repositories[row]
             let ahead = snapshot.aheadCount.map { "↑\($0)" } ?? "↑?"
-            text.stringValue = "\(snapshot.displayName)  ·  \(snapshot.uncommittedCount)△ \(ahead)"
-            text.toolTip = "\(snapshot.head.displayText)\n\(snapshot.baseRefUsed ?? "base: prompt")"
+            let label = state.repositoryLabels[snapshot.url.path] ?? snapshot.displayName
+            text.stringValue = "\(label)  ·  \(snapshot.uncommittedCount)△ \(ahead)"
+            text.toolTip = "\(snapshot.url.path)\n\(snapshot.head.displayText)\n\(snapshot.baseRefUsed ?? "base: prompt")"
         } else {
             let file = state.files[row]
             text.stringValue = "\(file.kind.rawValue.prefix(3))  \(file.path)"
             text.toolTip = file.path
         }
-        return text
+        return cell
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {

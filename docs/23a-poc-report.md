@@ -1,6 +1,6 @@
 # 23a — POC report: how to run it, what every part does, what to look for
 
-**Gate:** G1 of `23-release-gates.md`. **Date:** 2026-07-29. **Build:** 855/855 checks pass, 32 fixtures.
+**Gate:** G1 of `23-release-gates.md`. **Date:** 2026-07-29, revised 2026-07-31 for root management (DEC-052). **Build:** 872/872 checks pass, 32 fixtures.
 
 This is written for someone who has never seen the code. No internals — only what appears on screen, what it means, and how to tell whether it is lying to you.
 
@@ -10,18 +10,21 @@ This is written for someone who has never seen the code. No internals — only w
 
 ```bash
 cd ~/WebstormProjects/diffscope
-DIFFSCOPE_ROOT=$HOME/WebstormProjects swift run -c release diffscope-app
+swift run -c release diffscope-app
 ```
 
 First run compiles for a minute or two. After that it starts in a few seconds. Quit with **⌘Q**.
 
-Verified before writing this: 22 repositories are found under that path in 403 ms, and the window comes up and stays up.
+**On first launch it asks you to choose a folder** — there is no assumed path. Pick `~/WebstormProjects` and it will find your repositories; the choice is remembered. You can add more folders, or single repositories from anywhere, from the **Sources** menu (⇧⌘O and ⇧⌘R).
+
+Verified before writing this: 23 repositories across two folders are found in 512 ms, a folder that no longer exists is named rather than dropped, and two repositories sharing a name are labelled by their parent folder.
 
 Optional settings, both read once at launch:
 
 | Variable | What it does | Default |
 |---|---|---|
-| `DIFFSCOPE_ROOT` | Where to look for repositories | `~/WebstormProjects` |
+| `DIFFSCOPE_ROOT` | Adds a folder for this launch only, without saving it | none |
+| `DIFFSCOPE_CONFIG` | Use a different settings file, for trying things out | `~/Library/Application Support/DiffScope/config.json` |
 | `DIFFSCOPE_EDITOR` | Command for "Open in Editor". `{file}` and `{line}` get filled in | `/usr/bin/open -a WebStorm {file}` |
 
 If your editor is not WebStorm:
@@ -38,7 +41,7 @@ DIFFSCOPE_EDITOR="/usr/bin/open -a Visual\ Studio\ Code {file}" swift run -c rel
 
 Three columns and a status line.
 
-**Left — repositories.** Every Git repository found under your root. Each row shows the name, then `3△` = three changed files, then `↑5` = five commits ahead of the base branch. `↑?` means the ahead count could not be worked out — that is deliberate, the app never invents a number. Hover a row for the branch and the base it is comparing against.
+**Left — repositories.** Every Git repository found in the folders you added. If two of them share a name, the row shows enough of the parent folder to tell them apart. Each row shows the name, then `3△` = three changed files, then `↑5` = five commits ahead of the base branch. `↑?` means the ahead count could not be worked out — that is deliberate, the app never invents a number. Hover a row for the branch and the base it is comparing against.
 
 **Middle — files.** The changed files in the selected repository, for the selected scope. The prefix is the kind of change: `mod` modified, `add` added, `del` deleted, `ren` renamed, `unt` untracked.
 
@@ -162,6 +165,7 @@ All of these are already recorded. Reporting them costs you time and tells me no
 
 **Interface**
 
+- There is still no per-repository way to override the base branch, so the "vs base" scope is unusable where detection lands on the wrong branch (`carrefour-inapp`).
 - The file list has **no keyboard navigation of its own**. You can step through files with ⌘[ / ⌘], but you cannot arrow through the list and there is no type-to-find.
 - **No gutter and no line numbers** in the diff panes.
 - The mode pill can say `mode: structural` next to a notice saying structural analysis was unavailable. The pill reports what *you* selected, not which path ran. Confusing, known, unfixed.
@@ -200,6 +204,7 @@ In priority order. The first line is worth more than everything below it combine
 
 | Symptom | Cause |
 |---|---|
+| Window shows only "No folders chosen yet" | Nothing configured yet — that is the normal first run. Choose a folder |
 | `error: no such module` or a compiler error | The build is out of date: `swift build` first, then try again |
 | Window opens, repository list empty | No Git repositories under `DIFFSCOPE_ROOT`. Check the path |
 | Diff pane blank, notice bar empty | The renderer bundle is stale: `cd Renderer && npm run build` |

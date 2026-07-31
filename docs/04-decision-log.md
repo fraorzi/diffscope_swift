@@ -2184,3 +2184,42 @@ Three mappings the code needs and §2 does not supply, recorded rather than inve
 ### Revisit trigger
 
 Reopen if a new failure condition does not fit any existing row — the mapping table above is the precedent for adding one, not for stretching an existing row to cover it. Reopen the F8 cost decision if per-file `check-attr` becomes visible in interaction latency.
+
+---
+
+## DEC-052 — Application configuration is a JSON file the user can read
+
+- **Date:** 2026-07-31 · **Topic:** Where the application's own settings live. Required by DEC-036, DEC-037 and DEC-009, none of which said · **Status:** Accepted
+- **Discovered by:** implementing root management
+
+### Context
+
+Three accepted decisions depend on persisted settings — configured roots and individually added repositories (DEC-037), the empty state that appears when none exist (DEC-036), and per-repository base-branch overrides (DEC-009). `12-…` §3 says overrides are "stored in application configuration". **No document said what that is**, so the first feature to need it had to settle it.
+
+### Options considered
+
+1. **A JSON file at `~/Library/Application Support/DiffScope/config.json`**, with an injectable path.
+2. **`UserDefaults`.** The macOS default, one line per setting, no file handling.
+3. **A file inside each repository.** Rejected immediately: DEC-003 forbids writing to repositories, and this would make the application's settings travel in the user's commits.
+
+### Final decision
+
+**Option 1.** A plain JSON file, path injectable, overridable for a whole process through `DIFFSCOPE_CONFIG`.
+
+Behaviour, following the trust rules the rest of the product already follows:
+
+- **Missing file → first run.** A state, not an error, and nothing is reported at the user.
+- **Corrupt file → reported, and left exactly as it is.** The application starts with no sources and says so.
+- **Writes are atomic**, so an interrupted write cannot leave half a configuration.
+- Configured sources are **inspected, never filtered**: a root that has been moved appears as *missing*, because a source that silently disappears from the list is indistinguishable from one the user never added.
+
+### Consequences
+
+- **`UserDefaults` was rejected on two grounds.** It is global mutable state on the machine, so the check suite would either pollute the user's real preferences or need a parallel suite name that no longer tests the shipping path. And a configuration the user cannot open and read sits badly with a product whose entire claim is that it hides nothing.
+- The file is outside every repository, so DEC-003 is untouched.
+- `DIFFSCOPE_CONFIG` and `DIFFSCOPE_ROOT` are **testing hooks, not settings**. `DIFFSCOPE_ROOT` adds a root for one launch and is never written to the file, so it cannot quietly become a default again — which is exactly what the hardcoded `~/WebstormProjects` had become.
+- Base-branch overrides (DEC-009) now have a home. The storage-key fragility DEC-037 warned about — the same repository reachable by more than one path — remains unsolved and is deferred with the override UI itself.
+
+### Revisit trigger
+
+Reopen if the application is ever sandboxed: OQ-035 notes that each root would then need a security-scoped bookmark persisted alongside its path, which changes what the file holds but not where it lives.
