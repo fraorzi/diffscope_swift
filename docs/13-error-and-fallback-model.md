@@ -15,10 +15,10 @@
 
 | # | Failure | Detection | Response | Visible as |
 |---|---|---|---|---|
-| F1 | Parse error in part of a file | Parser reports error region | Structural for clean regions, raw for the rest | Fallback region marking |
+| F1 | Parse error in part of a file | `parseErrorRegions` over `ERROR`/missing nodes | Structural for clean regions; **changed** bytes inside an error region relabelled fallback | Fallback region marking + a notice naming the regions and bytes |
 | F2 | Parse failure of whole file | No usable tree | Whole-file raw | File-level fallback marking |
-| F3 | Low match confidence | Matcher confidence below threshold | Raw for affected region | Confidence indicator + fallback |
-| F4 | Ambiguous match | Matcher's ambiguous set non-empty | Present ambiguity; do not resolve arbitrarily | Ambiguity indicator (DEC-031) |
+| F3 | Low match confidence | Matcher confidence below threshold | Per-segment confidence, `uncertain` computed against `confidenceFloor` | Dashed underline on the segment — **region-level, not a file notice** |
+| F4 | Ambiguous match | Matcher's ambiguous set non-empty | Counted; ambiguous nodes are never used as anchors | **Nothing — withdrawn by DEC-045.** Detection is a guard, not a display |
 | F5 | Invariant violation at runtime | INV checks fail (DEC-022) | Discard structural result, whole-file raw | Fallback + reason |
 | F6 | File above validation threshold | Size check | Structural allowed, checks skipped | **"Unverified"** label |
 | F7 | Unsupported language | Extension / content classification | Raw diff | Ordinary labelled state, not an error |

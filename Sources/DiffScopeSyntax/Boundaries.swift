@@ -165,3 +165,33 @@ public func snapPresentation(
     }
     return Partition(totalLength: partition.totalLength, segments: out)
 }
+
+/// The byte ranges tree-sitter could not parse (F1 of `13-error-and-fallback-model.md` §2).
+///
+/// F1 is *"parse error in part of a file: structural for clean regions, raw for the rest"*. Until
+/// now nothing produced it: `anchors` skips `ERROR` nodes, so their bytes fell into the ordinary
+/// gap comparison and the file was presented as a completely understood structural result. The
+/// corpus shows why that matters — `invalid-tsx` and `truncated-file` both produce a confident
+/// twelve- and twenty-anchor result with no hint that a region was never parsed at all.
+///
+/// Top-most errors only. A malformed construct produces a nest of `ERROR` nodes, and reporting each
+/// one would turn a single broken tag into a dozen claims.
+public func parseErrorRegions(tree: SyntaxTree) -> [(start: Int, end: Int)] {
+    var regions: [(start: Int, end: Int)] = []
+    var stack = [0]
+    while let id = stack.popLast() {
+        guard id < tree.nodes.count else { continue }
+        let node = tree.node(id)
+        if node.isError, node.end > node.start {
+            regions.append((node.start, node.end))
+            continue                       // its children are the same failure, said again
+        }
+        stack.append(contentsOf: node.children)
+    }
+    return regions.sorted { $0.start < $1.start }
+}
+
+/// Whether a byte offset falls inside any region, for callers walking segments.
+func region(containing offset: Int, in regions: [(start: Int, end: Int)]) -> (start: Int, end: Int)? {
+    regions.first { offset >= $0.start && offset < $0.end }
+}

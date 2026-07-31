@@ -46,8 +46,24 @@ public enum Degradation: Sendable, Equatable {
     /// **unverified**, which is not the same as suspect.
     case unverified(reason: String)
     /// F3/F4 — confidence below the floor, or a match the matcher will not resolve arbitrarily.
+    ///
+    /// **Nothing constructs this case, deliberately.** Both conditions are produced, and both are
+    /// produced *per region* rather than per file, which is the right shape — the rest of the file
+    /// is sound, and a file-level notice would overstate a local doubt:
+    ///
+    /// - **F3** rides on the segment: `reconcile` lowers confidence where the byte diff contradicts
+    ///   an anchor, the contract carries a computed `uncertain` flag against `confidenceFloor`, and
+    ///   the renderer draws a dashed underline.
+    /// - **F4** is counted (`StructuralStats.ambiguities`) and **shown nowhere**, by DEC-045. The
+    ///   detection stays as a guard against ambiguous anchors; the indicator was withdrawn.
+    ///
+    /// The case exists so the ranking in §5 is complete. Wiring it to a notice would need DEC-045
+    /// reopened, not an implementation.
     case lowConfidence(reason: String)
     /// F1 — a parse error in part of a file; the clean regions stay structural.
+    ///
+    /// Produced by `parseErrorRegions`. The structural result stands for the rest of the file and
+    /// `usedFallback` stays false: F1 degrades part of a file, not the file.
     case partialParseError(reason: String)
 
     public var code: String {

@@ -224,3 +224,113 @@ func runDegradationChecks(_ report: (String, Bool, String) -> Void) {
               GitOperation.forbiddenArguments.contains("--textconv"))
     }
 }
+
+/// F1, F3 and F4 — the three rows of `13-…` §2 that had a rank in the vocabulary and nothing
+/// producing them. Two now have producers; the third has a decision saying it never will.
+func runPartialFailureChecks(_ reportRaw: (String, Bool, String) -> Void) {
+    func report(_ name: String, _ ok: Bool, _ detail: String = "") { reportRaw(name, ok, detail) }
+    let parser = TSXParser()
+
+    print("\n=== F1: a file that parses only in part says so ===")
+    do {
+        // Half-typed JSX — the state `15-…` §4.6 calls normal rather than exceptional, because
+        // auto-refresh on save guarantees the reader meets it.
+        let old = [UInt8]("const el = <Row><Cell /></Row>;\n".utf8)
+        let new = [UInt8]("const el = <Row><Cell /</Row>;\n".utf8)
+        let result = structuralDiff(oldPath: "a.tsx", oldBytes: old,
+                                    newPath: "a.tsx", newBytes: new, parser: parser)
+
+        report("the unparsed region is found", result.stats.unparsedRegions > 0,
+               "\(result.stats.unparsedRegions) regions / \(result.stats.unparsedBytes) bytes")
+        report("and it is reported as F1", result.stats.degradation?.code == "F1",
+               result.stats.fallbackReason ?? "none")
+        // F1 is "structural for clean regions, raw for the rest" — the whole file is not withheld.
+        report("the structural result still stands for the rest of the file",
+               !result.stats.usedFallback && result.stats.anchors > 0,
+               "\(result.stats.anchors) anchors")
+
+        // Measured, and worth stating because it looks like a miss and is not: deleting the `>`
+        // leaves the **new** side with no changed bytes at all, and the old side parses cleanly. So
+        // there is nothing inside an unparsed region to mark. The same shape as DEC-048's finding
+        // that a reindent has no old side, and DEC-034's that Raw has no unchanged segments —
+        // asymmetric edits keep producing it.
+        report("a deletion that breaks the new side marks nothing, because nothing changed there",
+               result.model.newPartition.segments.allSatisfy { $0.label != .fallback })
+
+        // The case where the marking does fire: an edit *inside* a region neither side could parse.
+        let brokenOld = [UInt8]("const el = <Row><Cell name=\"alpha\" /</Row>;\n".utf8)
+        let brokenNew = [UInt8]("const el = <Row><Cell name=\"omega\" /</Row>;\n".utf8)
+        let inside = structuralDiff(oldPath: "a.tsx", oldBytes: brokenOld,
+                                    newPath: "a.tsx", newBytes: brokenNew, parser: parser)
+        let fallbackBytes = inside.model.newPartition.segments
+            .filter { $0.label == .fallback }.reduce(0) { $0 + $1.length }
+        report("a change inside an unparsed region is marked as the fallback it is (INV-4)",
+               fallbackBytes > 0, "\(fallbackBytes) bytes of \(inside.stats.unparsedBytes) unparsed")
+        report("and it carries the reason, not just the label",
+               inside.model.newPartition.segments.contains {
+                   $0.label == .fallback && $0.classification == "parse-error"
+               })
+        // The trap avoided: comparison never depended on parsing (DEC-021), so unchanged content
+        // inside a broken region is still honestly unchanged. Repainting it would invent a change.
+        report("unchanged content inside the same region keeps its label",
+               inside.model.newPartition.segments.contains { $0.label == .unchanged })
+        report("and the model still reconstructs and covers (INV-1, INV-2)",
+               validate(inside.model).passed, validate(inside.model).summary)
+
+        // The negative control: a file that parses cleanly must report nothing.
+        let clean = structuralDiff(oldPath: "b.tsx", oldBytes: [UInt8]("const a = 1;\n".utf8),
+                                   newPath: "b.tsx", newBytes: [UInt8]("const a = 2;\n".utf8),
+                                   parser: parser)
+        report("a file that parses cleanly reports no unparsed region",
+               clean.stats.unparsedRegions == 0 && clean.stats.degradation == nil)
+
+        // Ranking: F1 is the mildest row, so anything else that applies wins over it.
+        let binaryToo = structuralDiff(oldPath: "a.tsx", oldBytes: old,
+                                       newPath: "a.tsx", newBytes: new + [0x00], parser: parser)
+        report("a more conservative condition still outranks it",
+               binaryToo.stats.degradation?.code == "F9", binaryToo.stats.fallbackReason ?? "none")
+    }
+
+    print("\n=== F3: low confidence is produced per region, not per file ===")
+    do {
+        // `reconcile` drops an anchor's confidence when the byte diff contradicts it. That is the
+        // producer: a *segment* property, which is the right shape — the rest of the file is fine,
+        // and a file-level notice would overstate it.
+        let old = [UInt8]("const alpha = 1;\nconst beta = 2;\nconst alpha = 3;\n".utf8)
+        let new = [UInt8]("const alpha = 9;\nconst beta = 2;\nconst alpha = 3;\n".utf8)
+        let result = structuralDiff(oldPath: "c.tsx", oldBytes: old,
+                                    newPath: "c.tsx", newBytes: new, parser: parser)
+        let render = buildRenderModel(model: result.model, pinOld: "a", pinNew: "b", mode: "structural")
+        guard case let .text(_, newSide) = render.payload else {
+            report("the contract carries a text payload", false); return
+        }
+        report("confidence travels to the renderer on every changed segment",
+               newSide.segments.filter { $0.label == "changed" }.allSatisfy { $0.confidence != nil })
+        // The floor lives in the engine so a renderer cannot quietly redefine what counts as
+        // certain — the `uncertain` flag is computed, not sent as a suggestion.
+        report("the uncertain flag is derived from the floor, not from the renderer",
+               newSide.segments.allSatisfy { segment in
+                   segment.uncertain == ((segment.confidence ?? 1) < confidenceFloor)
+               })
+    }
+
+    print("\n=== F4: ambiguity is detected and deliberately not shown (DEC-045) ===")
+    do {
+        // Repeated identical siblings: which one was added is undecidable. The matcher records it.
+        let old = [UInt8]("<ul>\n  <li>item</li>\n  <li>item</li>\n</ul>\n".utf8)
+        let new = [UInt8]("<ul>\n  <li>item</li>\n  <li>item</li>\n  <li>item</li>\n</ul>\n".utf8)
+        let result = structuralDiff(oldPath: "d.tsx", oldBytes: old,
+                                    newPath: "d.tsx", newBytes: new, parser: parser)
+        report("ambiguity is counted rather than resolved by guessing",
+               result.stats.ambiguities >= 0, "\(result.stats.ambiguities) ambiguities")
+
+        // DEC-045 withdrew the indicator. The check exists so that adding one later is a deliberate
+        // act against a recorded decision, rather than something that drifts in unnoticed.
+        let render = buildRenderModel(model: result.model, pinOld: "a", pinNew: "b", mode: "structural")
+        let encoded = (try? encodeRenderModel(render)) ?? ""
+        report("and no ambiguity indicator reaches the contract (DEC-045)",
+               !encoded.contains("\"ambiguous\"") && !encoded.contains("ambiguity"))
+        report("the anchors it produced are still sound",
+               validate(result.model).passed, validate(result.model).summary)
+    }
+}

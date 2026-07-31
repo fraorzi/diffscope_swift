@@ -1677,3 +1677,38 @@ The packet's other load-bearing sentences are checked too: that it names the sin
 A chosen folder containing no repositories used to produce three empty panes and a status line saying `0 repositories`. For a stranger that is indistinguishable from a broken application. It now says which folders were searched, states the two-folder depth limit — the usual reason a repository is missed — and points at Sources ▸ Add Repository.
 
 Composed by a checked function rather than assembled in the view, for the reason that keeps recurring: **the state cannot be reached by clicking**, so it cannot be photographed, so the sentence has to be assertable somewhere else.
+
+---
+
+# M8-J — F1 wired, F3 and F4 resolved as region-level
+
+**Date:** 2026-07-31 · **Method:** measured what the structural path currently says about a half-parsed file, then made it say the true thing.
+
+## What a broken file looked like before
+
+`invalid-tsx` and `truncated-file` — both in the corpus specifically because a half-typed file is the *normal* state under auto-refresh — produced **12 and 20 anchors and no signal whatsoever** that a region had never been parsed. `anchors()` skips `ERROR` nodes, so their bytes fell into the ordinary gap comparison and the result was presented as a fully understood structural analysis.
+
+Now: `invalid-tsx` reports 1 unparsed region of 7 bytes, `truncated-file` 1 of 72, and both carry an F1 notice. Clean files report nothing.
+
+## The marking rule, and the trap it avoids
+
+Changed bytes inside an unparsed region are relabelled `fallback` — a change shown there has no structural claim behind it, which is what that label means. **Unchanged bytes inside the same region keep their label**, because comparison never depended on parsing (DEC-021): a region tree-sitter failed on is still honestly unchanged if its bytes match. Repainting it would invent a difference in the one place the tool is least able to justify one.
+
+The structural result stands for the rest of the file and `usedFallback` stays **false**: F1 degrades part of a file, not the file. That is the distinction `13-…` §2 draws between F1 and F2.
+
+## The check was wrong before the code was
+
+The first version asserted that the half-typed fixture marks bytes as fallback. It marked none, and the code was right: deleting a `>` leaves the **new** side with no changed bytes at all, and the old side parses cleanly — so there is nothing inside an unparsed region to mark.
+
+The third instance of the same shape in this project: DEC-034 (Raw has no unchanged segments), DEC-048 (a reindent has no old side), and now this. **Asymmetric edits keep producing it**, and the reflex worth keeping is to ask which side an edit actually has bytes on before asserting anything about both.
+
+The case where marking does fire needed an edit *inside* a construct neither side can parse, and is now the fixture for it.
+
+## F3 and F4 are region-level, and that is the answer
+
+Neither is missing a producer:
+
+- **F3** rides on the segment. `reconcile` lowers confidence where the byte diff contradicts an anchor; the contract carries `uncertain`, computed in the engine against `confidenceFloor` so a renderer cannot quietly redefine what counts as certain; the renderer draws a dashed underline.
+- **F4** is counted and shown nowhere, by DEC-045. The detection remains as a guard — ambiguous nodes are never used as anchors — and the indicator was withdrawn deliberately.
+
+A file-level notice for either would overstate a local doubt. The vocabulary now records this at the case itself, so the next reader does not wire a notice that DEC-045 already refused. A check asserts no ambiguity indicator reaches the contract, which makes adding one a deliberate act against a recorded decision rather than a drift.

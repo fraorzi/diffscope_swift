@@ -17,11 +17,16 @@ public struct StructuralStats: Sendable, Equatable {
     public let invisibleSegments: Int
     public let movesFound: Int
     public let movesBelowFloor: Int
+    /// F1: byte ranges the parser could not read, and the changed segments inside them that are
+    /// therefore shown without any structural claim.
+    public let unparsedRegions: Int
+    public let unparsedBytes: Int
 
     public init(anchors: Int, ambiguities: Int, unchangedBytesOld: Int, unchangedBytesNew: Int,
                 usedFallback: Bool, degradation: Degradation?, movedSegments: Int = 0,
                 formattingOnlySegments: Int = 0, behaviorAffectingSegments: Int = 0,
-                invisibleSegments: Int = 0, movesFound: Int = 0, movesBelowFloor: Int = 0) {
+                invisibleSegments: Int = 0, movesFound: Int = 0, movesBelowFloor: Int = 0,
+                unparsedRegions: Int = 0, unparsedBytes: Int = 0) {
         self.anchors = anchors
         self.ambiguities = ambiguities
         self.unchangedBytesOld = unchangedBytesOld
@@ -34,6 +39,8 @@ public struct StructuralStats: Sendable, Equatable {
         self.invisibleSegments = invisibleSegments
         self.movesFound = movesFound
         self.movesBelowFloor = movesBelowFloor
+        self.unparsedRegions = unparsedRegions
+        self.unparsedBytes = unparsedBytes
     }
 }
 
@@ -246,6 +253,17 @@ public func structuralDiff(
     // presented, so the order costs nothing — but grapheme snapping must come last, because a
     // syntax boundary is not obliged to fall on a cluster boundary and the emoji-ZWJ case proves
     // it does not.
+    // F1 (`13-…` §2): the regions the parser could not read. The structural result stands for the
+    // rest of the file — that is what F1 asks for — but a change shown inside an unparsed region is
+    // shown *without* a structural claim behind it, so it is labelled as the fallback it is.
+    //
+    // Only **changed** segments are relabelled. Repainting byte-equal content as fallback would
+    // suggest something happened there; the byte comparison is still perfectly valid inside a
+    // region tree-sitter failed on, because comparison never depended on parsing (DEC-021).
+    let oldErrors = parseErrorRegions(tree: oldTree)
+    let newErrors = parseErrorRegions(tree: newTree)
+    let unparsedBytes = (oldErrors + newErrors).reduce(0) { $0 + ($1.end - $1.start) }
+
     let oldPartition = snapToGraphemeBoundaries(snapPresentation(
         movedOld, boundaries: SyntaxBoundaries(tree: oldTree), budget: settings.boundarySnapBudget
     ), bytes: oldBytes)
@@ -253,28 +271,38 @@ public func structuralDiff(
         movedNew, boundaries: SyntaxBoundaries(tree: newTree), budget: settings.boundarySnapBudget
     ), bytes: newBytes)
 
-    unchangedOld = oldPartition.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
-    unchangedNew = newPartition.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
+    let oldMarked = markUnparsed(oldPartition, regions: oldErrors)
+    let newMarked = markUnparsed(newPartition, regions: newErrors)
+
+    unchangedOld = oldMarked.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
+    unchangedNew = newMarked.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
 
     return StructuralResult(
         model: DiffModel(
             oldBytes: oldBytes, newBytes: newBytes,
-            oldPartition: oldPartition, newPartition: newPartition
+            oldPartition: oldMarked, newPartition: newMarked
         ),
         stats: StructuralStats(
             anchors: found.count, ambiguities: mapping.ambiguities.count,
             unchangedBytesOld: unchangedOld, unchangedBytesNew: unchangedNew,
-            usedFallback: false, degradation: nil,
+            usedFallback: false,
+            // The structural result stands and still carries its condition: F1 degrades part of a
+            // file, not the file. `usedFallback` stays false because the analysis was not withheld.
+            degradation: (oldErrors.isEmpty && newErrors.isEmpty) ? nil : .partialParseError(
+                reason: "\(oldErrors.count + newErrors.count) region(s) of this file did not parse"
+                    + " (\(unparsedBytes) bytes); changes inside them are shown without a structural claim"),
             movedSegments: search.moves.count,
-            formattingOnlySegments: segmentCount(in: oldPartition, group: .formattingOnly)
-                + segmentCount(in: newPartition, group: .formattingOnly),
-            behaviorAffectingSegments: segmentCount(in: oldPartition, group: .potentiallyBehaviorAffecting)
-                + segmentCount(in: newPartition, group: .potentiallyBehaviorAffecting),
-            invisibleSegments: [oldPartition, newPartition].reduce(0) { total, partition in
+            formattingOnlySegments: segmentCount(in: oldMarked, group: .formattingOnly)
+                + segmentCount(in: newMarked, group: .formattingOnly),
+            behaviorAffectingSegments: segmentCount(in: oldMarked, group: .potentiallyBehaviorAffecting)
+                + segmentCount(in: newMarked, group: .potentiallyBehaviorAffecting),
+            invisibleSegments: [oldMarked, newMarked].reduce(0) { total, partition in
                 total + partition.segments.filter { $0.disclosure != nil }.count
             },
             movesFound: search.moves.count,
-            movesBelowFloor: search.belowFloor
+            movesBelowFloor: search.belowFloor,
+            unparsedRegions: oldErrors.count + newErrors.count,
+            unparsedBytes: unparsedBytes
         )
     )
 }
@@ -350,4 +378,42 @@ func reconcile(
         }
     }
     return out
+}
+
+
+/// Relabels **changed** segments that fall inside a region the parser could not read, so a change
+/// shown there is marked as raw rather than presented as understood (F1, INV-4).
+///
+/// Splits a segment that straddles a region boundary rather than relabelling the whole of it: the
+/// clean half is still a structural claim the layer can make.
+func markUnparsed(_ partition: Partition, regions: [(start: Int, end: Int)]) -> Partition {
+    guard !regions.isEmpty else { return partition }
+    var out: [Segment] = []
+    for segment in partition.segments {
+        guard segment.label == .changed else { out.append(segment); continue }
+        var cursor = segment.start
+        for region in regions where region.end > segment.start && region.start < segment.end {
+            let start = max(region.start, cursor)
+            let end = min(region.end, segment.end)
+            guard end > start else { continue }
+            if start > cursor {
+                out.append(Segment(start: cursor, end: start, label: .changed,
+                                   classification: segment.classification,
+                                   disclosure: segment.disclosure,
+                                   confidence: segment.confidence, link: segment.link))
+            }
+            out.append(Segment(start: start, end: end, label: .fallback,
+                               classification: "parse-error",
+                               disclosure: segment.disclosure,
+                               confidence: 0, link: segment.link))
+            cursor = end
+        }
+        if cursor < segment.end {
+            out.append(Segment(start: cursor, end: segment.end, label: segment.label,
+                               classification: segment.classification,
+                               disclosure: segment.disclosure,
+                               confidence: segment.confidence, link: segment.link))
+        }
+    }
+    return Partition(totalLength: partition.totalLength, segments: out)
 }

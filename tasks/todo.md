@@ -442,3 +442,24 @@ built it and nowhere else, so the script copies it away and runs the whole selft
 it will produce an archive.
 
 958/958 checks pass.
+
+## Step 21 — F1, F3 and F4: the ranked rows with no producer
+
+- [x] `parseErrorRegions` over top-most `ERROR`/missing nodes
+- [x] F1 reported with region and byte counts; the structural result still stands (`usedFallback` false)
+- [x] Changed bytes inside an unparsed region relabelled `fallback` with `parse-error`
+- [x] Unchanged bytes inside the same region keep their label — comparison never needed the parser
+- [x] Negative control: a clean file reports nothing; a more conservative row still outranks F1
+- [x] F3/F4 recorded as region-level in the vocabulary, with a check that no ambiguity
+      indicator reaches the contract (DEC-045 stays a decision, not a drift)
+
+### Step 21 — done
+
+Before this, `invalid-tsx` and `truncated-file` produced twelve and twenty anchors and **no hint**
+that part of the file was never parsed.
+
+The check was wrong before the code was: the half-typed fixture marks nothing, and correctly so —
+deleting a `>` leaves the new side with no changed bytes and the old side parsing cleanly. Third
+instance of the asymmetric-edit shape, after DEC-034 and DEC-048.
+
+973/973 checks pass.

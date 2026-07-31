@@ -152,6 +152,8 @@ func runFixtureChecks(_ reportRaw: (String, Bool, String) -> Void) {
         print("      \(fixture.name): \(hunks) hunks/\(hunkBytes)B, \(stats.anchors) anchors, \(stats.movesFound) moves"
             + " (\(stats.movesBelowFloor) below floor), \(stats.formattingOnlySegments) formatting-only,"
             + " \(stats.behaviorAffectingSegments) reordered, \(stats.invisibleSegments) invisible"
+            + (stats.unparsedRegions > 0
+               ? ", \(stats.unparsedRegions) UNPARSED region(s)/\(stats.unparsedBytes)B" : "")
             + (stats.usedFallback ? " — FELL BACK: \(stats.fallbackReason ?? "")" : ""))
         // `DIFFSCOPE_SEGMENTS=<fixture> swift run diffscope-verify` prints one fixture's reconciled
         // segments with their text. Kept because the counts above say *that* something did not
