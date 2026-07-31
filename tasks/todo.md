@@ -325,3 +325,28 @@ so nothing in the suite would notice the shell going blank. Fixed with width con
 screenshotting the window, which is the only thing that could have verified it.
 
 872/872 checks pass.
+
+## Step 16 — the gutter and line numbers (audit §1.6)
+
+- [x] `changedLines` computed in the engine, carried per side on the contract
+- [x] Counted on bytes, splitting on 0x0A only, so a `\r` belongs to the line it terminates
+- [x] `lineNumbers()` in both panes; `gutterLineClass` marking changed lines by shape, not colour
+- [x] `diffscopeCurrentLine()` — active change stop, else first visible line, in the new side's numbering
+- [x] ⌘O substitutes it into `{line}` instead of a literal 1
+- [x] Checks: single-line, spanning, ending on a newline, last line, empty segment, CRLF, INV-5
+- [x] Selftest arm + `gutter.png`
+
+### Step 16 — done
+
+The two off-by-ones worth naming are both checked: a segment ending exactly on a newline must not
+claim the next line, and a `\r` belongs to the line it terminates rather than the one after.
+
+The snapshot showed something the checks could not: on `7` → `77` only the **new** pane is marked,
+because an insertion has no old-side bytes to attribute. Correct, and the same shape as DEC-048's
+finding that a reindent has no old side.
+
+Still open, and now recorded in the POC report rather than discovered by the reader: the default
+`open -a WebStorm {file}` template has no `{line}`, so the default cannot jump even though the line
+is now known.
+
+884/884 checks pass.

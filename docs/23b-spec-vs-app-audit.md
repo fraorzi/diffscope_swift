@@ -51,11 +51,13 @@ Built: the scope control stays fully enabled; selecting an impossible scope empt
 
 In a monorepo with 44 changed files across packages — `mailingi-2025` — the flat list is the difference between scanning and hunting.
 
-### 1.6 No gutter, no line numbers (`12-…` §5.1)
+### 1.6 ~~No gutter, no line numbers~~ — **built 2026-07-31**
 
-The spec names the gutter as one of **three** carriers of change meaning: *"gutter, underline, and background texture"*. Two of the three are built. There is no gutter at all, and no line numbers in either pane.
+Was: two of the three carriers built, no gutter and no line numbers in either pane, and ⌘O always opening at line 1.
 
-This also weakens ⌘O: the editor opens at line 1 because there is no notion of "the line you were looking at" to hand over.
+Now: line numbers in both panes and a gutter marking every line that carries a difference, computed in the engine and carried on the contract so it is checkable headlessly. ⌘O asks the renderer which line the reader is on — the active change stop, or the first visible line. See `22-experiment-log.md` → M8-E.
+
+**Still open:** the default editor template has no `{line}`, so the default cannot jump to a line. A template that includes one now receives a real line.
 
 ### 1.7 The empty-diff state does not use its specified wording (`12-…` §5.3)
 
@@ -109,7 +111,7 @@ Recorded here rather than dismissed, with what it would actually mean, in `05-op
 ## 6. Suggested order
 
 1. ~~Root management~~ — **done**, 2026-07-31.
-2. **Gutter and line numbers** (§1.6) — the largest everyday gap, and it makes ⌘O land on the right line.
+2. ~~Gutter and line numbers~~ — **done**, 2026-07-31.
 3. **File-list depth** (§1.5) — grouping and per-file degradation, worth most on the repositories with the most files.
 4. **Base override and staleness wording** (§1.2, §1.3) — small, and they make scope 4 trustworthy.
 5. **Scope disabling, focus refresh, wrap toggle, empty-diff wording** (§1.4, §1.7–1.9) — an afternoon between them.

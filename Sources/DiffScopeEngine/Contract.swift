@@ -21,6 +21,9 @@ public struct RenderSide: Codable, Sendable, Equatable {
     public let text: String
     public let utf16Length: Int
     public let segments: [RenderSegment]
+    /// One-based line numbers that carry a difference. The gutter paints these; it does not decide
+    /// them (`12-…` §5.1).
+    public let changedLines: [Int]
 }
 
 public enum RenderPayload: Codable, Sendable, Equatable {
@@ -198,8 +201,50 @@ func renderSide(bytes: [UInt8], partition: Partition) throws -> RenderSide {
     return RenderSide(
         text: text,
         utf16Length: mapping[bytes.count] ?? 0,
-        segments: segments
+        segments: segments,
+        changedLines: changedLines(bytes: bytes, partition: partition)
     )
+}
+
+/// One-based line numbers carrying a difference, for the gutter.
+///
+/// `12-desktop-ux-specification.md` §5.1 names three carriers of change meaning — *"gutter,
+/// underline, and background texture"* — and the gutter was the missing one.
+///
+/// Computed here rather than derived in the renderer from the segments, for the same reason
+/// navigation stops and folds are (M7-A): a fact about the model belongs to the model, and a fact
+/// the renderer derives on its own cannot be checked without a webview. It is a small array of
+/// integers next to a document, so carrying it costs nothing worth measuring.
+///
+/// Lines are counted on **bytes**, splitting on `0x0A` only. A `\r` therefore belongs to the line it
+/// terminates, which is what makes a CRLF-only change land on the line it actually changed.
+public func changedLines(bytes: [UInt8], partition: Partition) -> [Int] {
+    guard !bytes.isEmpty else { return [] }
+    var lineStarts: [Int] = [0]
+    for (offset, byte) in bytes.enumerated() where byte == 0x0A && offset + 1 < bytes.count {
+        lineStarts.append(offset + 1)
+    }
+
+    func line(containing offset: Int) -> Int {
+        var low = 0
+        var high = lineStarts.count - 1
+        while low < high {
+            let middle = (low + high + 1) / 2
+            if lineStarts[middle] <= offset { low = middle } else { high = middle - 1 }
+        }
+        return low + 1
+    }
+
+    var lines = Set<Int>()
+    for segment in partition.segments where segment.label != .unchanged {
+        // An empty segment cannot mark a line, and a segment ending exactly on a newline should
+        // not claim the line after it.
+        guard segment.end > segment.start else { continue }
+        let first = line(containing: segment.start)
+        let last = line(containing: segment.end - 1)
+        for number in first...last { lines.insert(number) }
+    }
+    return lines.sorted()
 }
 
 public func encodeRenderModel(_ model: RenderModel) throws -> String {

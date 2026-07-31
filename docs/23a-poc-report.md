@@ -1,6 +1,6 @@
 # 23a — POC report: how to run it, what every part does, what to look for
 
-**Gate:** G1 of `23-release-gates.md`. **Date:** 2026-07-29, revised 2026-07-31 for root management (DEC-052). **Build:** 872/872 checks pass, 32 fixtures.
+**Gate:** G1 of `23-release-gates.md`. **Date:** 2026-07-29, revised 2026-07-31 for root management (DEC-052). **Build:** 884/884 checks pass, 32 fixtures.
 
 This is written for someone who has never seen the code. No internals — only what appears on screen, what it means, and how to tell whether it is lying to you.
 
@@ -93,7 +93,7 @@ Everything is also in the menu bar, so you never have to remember these.
 | **⌘] / ⌘[** | Next / previous file |
 | **⇧⌘] / ⇧⌘[** | Next / previous repository |
 | **⌥⌘1 / ⌥⌘2 / ⌥⌘3** | Move focus to repositories / files / diff |
-| **⌘O** | Open the current file in your editor |
+| **⌘O** | Open the current file in your editor, **at the line you are reading** — the change you jumped to with ⌘N, or the first line on screen |
 | **⌘1–3**, **⇧⌘1–4** | Modes and scopes, as above |
 
 ---
@@ -110,6 +110,7 @@ Nothing here uses colour to carry meaning — deliberately, so it still works in
 | Dashed outline around a block | **Moved.** The identical text appears somewhere else on the other side |
 | Dashed underline instead of solid | **Uncertain.** The alignment here is a best guess, not a confirmed match |
 | Dotted outline + a small badge | **An invisible difference.** The two sides look identical on screen and differ in bytes — a non-breaking space, a zero-width character, an invisible control. The badge names it; Expanded mode spells out the codepoint |
+| A marked line number, with a solid edge beside it | **This line carries a difference.** The gutter is the quickest way to scan a long file. A line changed on one side only — an insertion, say — is marked on that side only |
 | A grey band saying `16 unchanged lines — ⌘E, or click, to expand` | Identical content on both sides, folded away. Click it or press ⌘E |
 | A grey band saying `4 formatting-only changes over 4 lines — ⌘E, or click, to expand` | Real changes, grouped because they are only formatting. **The count is always shown** — the app is not allowed to group something without telling you how much it grouped |
 
@@ -167,7 +168,7 @@ All of these are already recorded. Reporting them costs you time and tells me no
 
 - There is still no per-repository way to override the base branch, so the "vs base" scope is unusable where detection lands on the wrong branch (`carrefour-inapp`).
 - The file list has **no keyboard navigation of its own**. You can step through files with ⌘[ / ⌘], but you cannot arrow through the list and there is no type-to-find.
-- **No gutter and no line numbers** in the diff panes.
+- The default editor command (`open -a WebStorm`) cannot jump to a line, so ⌘O opens the file at the top even though the right line is now known. Set `DIFFSCOPE_EDITOR` to a template containing `{line}` to use it.
 - The mode pill can say `mode: structural` next to a notice saying structural analysis was unavailable. The pill reports what *you* selected, not which path ran. Confusing, known, unfixed.
 - There is no picker for arbitrary branches or commits — the four scopes are all there is in this version.
 

@@ -8,7 +8,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, the T-series coverage audit and root management have all landed. 872/872 checks pass over 32 fixtures.**
+**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, the T-series coverage audit, root management and the gutter have all landed. 884/884 checks pass over 32 fixtures.**
 
 | Milestone | State |
 |---|---|
@@ -25,14 +25,14 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 Run everything:
 
 ```
-swift run diffscope-verify          # 872 checks over 32 fixtures, exit 1 on failure
+swift run diffscope-verify          # 884 checks over 32 fixtures, exit 1 on failure
 swift run diffscope-verify --write-manifest   # re-record fixture hashes, deliberately
 swift run -c release diffscope-verify --survey ~/YourProjects
 swift run -c release diffscope-verify --budget-survey ~/YourProjects
 swift run -c release diffscope-app  # the application
 ```
 
-`DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits: raw ŻABKA probe → structural render with a formatting-only label → INV-5 mode agreement across the webview → invisible-difference disclosure naming `U+0307` → a relocated block reported as one move → navigation and folds → a formatting-only group with its disclosed count → an anchor surviving an insertion above it → a ranked degradation notice reaching the document. Adding `DIFFSCOPE_SNAPSHOT_DIR=/some/dir` writes `structural.png`, `expanded.png`, `disclosure.png`, `moved.png`, `navigation.png`, `refresh.png`, `anchored.png` and `degraded.png` of what the webview actually drew — the only way to check legibility, which the probe cannot see.
+`DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits: raw ŻABKA probe → structural render with a formatting-only label → INV-5 mode agreement across the webview → invisible-difference disclosure naming `U+0307` → a relocated block reported as one move → navigation and folds → a formatting-only group with its disclosed count → an anchor surviving an insertion above it → a ranked degradation notice reaching the document. Adding `DIFFSCOPE_SNAPSHOT_DIR=/some/dir` writes `structural.png`, `expanded.png`, `disclosure.png`, `moved.png`, `navigation.png`, `refresh.png`, `anchored.png`, `degraded.png` and `gutter.png` of what the webview actually drew — the only way to check legibility, which the probe cannot see.
 
 ### What exists in code
 
@@ -98,6 +98,8 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 2. **OQ-046** auto-gc on large repositories, still unverified.
 3. F1 (partial parse error) and F3/F4 (confidence, ambiguity) have ranks but **no producer** — nothing constructs them yet, so the two mildest rows of the order are ranked and unreachable. Either wire them or record why they stay theoretical.
 4. **T-11 is proven on one relocation shape only.** A second shape is worth more than any other addition to the corpus — and read M8-C first, because constructing the first one failed twice for reasons that are findings in themselves.
+
+**The gutter landed** (M8-E): line numbers in both panes, a mark on every line carrying a difference, `changedLines` computed in the engine and carried on the contract, and ⌘O opening at the line the reader is on rather than at a literal 1.
 
 **Root management landed** (DEC-052, M8-D): configuration is a JSON file the user can read, any number of roots plus individual repositories, an empty-state picker with no suggested path, missing sources named rather than dropped. **The `~/WebstormProjects` default is gone.**
 

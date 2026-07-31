@@ -408,7 +408,37 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 && text.contains("All textual differences are shown")
             FileHandle.standardError.write(
                 Data("SELFTEST degradation=\(ok ? "OK" : "MISMATCH") \(outcome.summary.prefix(80))\n".utf8))
-            self.snapshot(named: "degraded") { exit(ok ? 0 : 21) }
+            self.snapshot(named: "degraded") {
+                if ok { self.runGutterSelftest() } else { exit(21) }
+            }
+        }
+    }
+
+    /// `12-…` §5.1: the gutter is the third carrier of change meaning. The harness proves which
+    /// lines the engine marks; only the webview proves the numbers and the marks were drawn, and
+    /// only the snapshot shows whether they are legible beside the code.
+    private func runGutterSelftest() {
+        let lines = (1...12).map { "const value\($0) = \($0);\n" }.joined()
+        let old = [UInt8](lines.utf8)
+        let new = [UInt8](lines.replacingOccurrences(of: "value7 = 7", with: "value7 = 77").utf8)
+        let outcome = buildModel(path: "selftest.tsx", old: old, new: new, mode: .structural)
+        let render = buildRenderModel(model: outcome.model, pinOld: "pinQ", pinNew: "pinR",
+                                      mode: "structural", validation: outcome.validation,
+                                      notices: outcome.notices)
+        guard let json = try? encodeRenderModel(render) else { exit(22) }
+        push(json)
+        webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
+            let text = (value as? String) ?? "nil"
+            let numbered = !text.contains("\"lineNumbers\":0")
+            let marked = !text.contains("\"gutterChanged\":0")
+            self.webView.evaluateJavaScript("window.diffscopeCurrentLine()") { line, _ in
+                let reported = (line as? Int) ?? (line as? NSNumber)?.intValue ?? -1
+                // ⌘O used to hand the editor a literal 1 whatever the reader was looking at.
+                let ok = numbered && marked && reported >= 1
+                FileHandle.standardError.write(
+                    Data("SELFTEST gutter=\(ok ? "OK" : "MISMATCH") line=\(reported) \(text.suffix(120))\n".utf8))
+                self.snapshot(named: "gutter") { exit(ok ? 0 : 23) }
+            }
         }
     }
 
@@ -807,16 +837,23 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let template = ProcessInfo.processInfo.environment["DIFFSCOPE_EDITOR"]
             ?? EditorCommand.defaultTemplate
         let path = repository.url.appendingPathComponent(file.path).path
-        guard let command = EditorCommand(template: template, file: path, line: 1) else {
-            statusLabel.stringValue = "open in editor failed — the editor template is empty"
-            return
-        }
-        // Waiting for the exit status is the point (F13), so it happens off the main thread: a
-        // template that takes a second to return must not take the interface with it.
-        statusLabel.stringValue = "opening \(file.path)…"
-        DispatchQueue.global(qos: .userInitiated).async {
-            let outcome = launchEditor(command, file: file.path)
-            DispatchQueue.main.async { self.statusLabel.stringValue = outcome.message }
+
+        // The line comes from the renderer, which is the only side that knows where the reader is
+        // looking. It used to be a literal 1 — correct in the sense that it opened the file, and
+        // useless on the 900-line file where the change is at the bottom.
+        webView.evaluateJavaScript("window.diffscopeCurrentLine()") { value, _ in
+            let line = (value as? Int) ?? (value as? NSNumber)?.intValue ?? 1
+            guard let command = EditorCommand(template: template, file: path, line: max(1, line)) else {
+                self.statusLabel.stringValue = "open in editor failed — the editor template is empty"
+                return
+            }
+            // Waiting for the exit status is the point (F13), so it happens off the main thread: a
+            // template that takes a second to return must not take the interface with it.
+            self.statusLabel.stringValue = "opening \(file.path):\(line)…"
+            DispatchQueue.global(qos: .userInitiated).async {
+                let outcome = launchEditor(command, file: "\(file.path):\(line)")
+                DispatchQueue.main.async { self.statusLabel.stringValue = outcome.message }
+            }
         }
     }
 

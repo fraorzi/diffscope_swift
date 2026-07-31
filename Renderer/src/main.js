@@ -1,4 +1,4 @@
-import { EditorView, Decoration, WidgetType } from "@codemirror/view";
+import { EditorView, Decoration, WidgetType, lineNumbers, gutterLineClass, GutterMarker } from "@codemirror/view";
 import { EditorState, RangeSetBuilder, StateField, StateEffect } from "@codemirror/state";
 import { javascript } from "@codemirror/lang-javascript";
 import { syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
@@ -180,6 +180,13 @@ function makePane(parent, side) {
     },
     provide: f => EditorView.decorations.from(f),
   });
+  const changedLineField = StateField.define({
+    create: () => [],
+    update: (value, tr) => {
+      for (const effect of tr.effects) if (effect.is(setChangedLines)) return effect.value;
+      return value;
+    },
+  });
   const view = new EditorView({
     parent,
     state: EditorState.create({
@@ -189,16 +196,40 @@ function makePane(parent, side) {
         syntaxHighlighting(defaultHighlightStyle),
         EditorView.editable.of(false),
         EditorView.lineWrapping,
+        lineNumbers(),
+        changedLineField,
+        gutterLineClass.compute([changedLineField], state => {
+          const lines = state.field(changedLineField);
+          const builder = new RangeSetBuilder();
+          for (const number of lines) {
+            if (number < 1 || number > state.doc.lines) continue;
+            builder.add(state.doc.line(number).from, state.doc.line(number).from, changedLineMarker);
+          }
+          return builder.finish();
+        }),
         field,
       ],
     }),
   });
+  view.__changedLineField = changedLineField;
   view.__segmentField = field;
   view.__side = side;
   return view;
 }
 
 const setSegments = StateEffect.define();
+
+// `12-…` §5.1 names the gutter as one of three carriers of change meaning, beside the underline and
+// the background texture. The two others were built; this is the third.
+//
+// Which lines carry a difference is decided by the engine and arrives on the contract
+// (`changedLines`), for the same reason navigation stops and folds do: a fact about the model
+// belongs to the model, and one the renderer worked out for itself cannot be checked headlessly.
+const setChangedLines = StateEffect.define();
+const changedLineMarker = new (class extends GutterMarker {
+  elementClass = "ds-gutter-changed";
+})();
+
 
 const left = makePane(document.getElementById("left"), "old");
 const right = makePane(document.getElementById("right"), "new");
@@ -223,7 +254,9 @@ function applySide(view, side) {
     changes: { from: 0, to: view.state.doc.length, insert: side.text },
   });
   view.__segments = side.segments;
-  view.dispatch({ effects: setSegments.of(side.segments) });
+  view.__changedLines = side.changedLines || [];
+  view.dispatch({ effects: [setSegments.of(side.segments),
+                            setChangedLines.of(side.changedLines || [])] });
 }
 
 function refreshDecorations() {
@@ -276,6 +309,23 @@ window.diffscopeAnchorState = function () {
     if (offset <= top) current = anchor; else break;
   }
   return current;
+};
+
+// DEC-015: "open this line" needs a line, and the application used to hand the editor a literal 1
+// because nothing on this side could say what the reader was looking at.
+//
+// The active change stop wins when there is one — a reader who pressed ⌘N is looking at that change,
+// not at the top of the screen. Otherwise it is the first line visible in the new pane. Reported in
+// the **new** side's numbering, because that is the file on disk the editor will open.
+window.diffscopeCurrentLine = function () {
+  const doc = right.state.doc;
+  if (stopIndex >= 0 && stopIndex < stops.length) {
+    const position = Math.max(0, Math.min(stops[stopIndex].newStart, doc.length));
+    return doc.lineAt(position).number;
+  }
+  const top = right.scrollDOM.scrollTop;
+  const block = right.lineBlockAtHeight(top);
+  return doc.lineAt(Math.max(0, Math.min(block.from, doc.length))).number;
 };
 
 // Instant, never animated: DEC-016's reduced-motion commitment is met by construction here
@@ -410,6 +460,8 @@ window.diffscopeProbe = function () {
     // Asked from the document rather than from the model: INV-4 is a promise about what the reader
     // can see, and a notice that never reached the DOM is not visible however well it was computed.
     notices: [...document.querySelectorAll("#notices .ds-chip")].map(el => el.textContent),
+    lineNumbers: document.querySelectorAll(".cm-lineNumbers .cm-gutterElement").length,
+    gutterChanged: document.querySelectorAll(".ds-gutter-changed").length,
     uncertainMarks: document.querySelectorAll(".ds-uncertain").length,
   };
 };

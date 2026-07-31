@@ -283,6 +283,7 @@ runBudgetChecks { name, ok, detail in report(name, ok, detail) }
 runFixtureChecks { name, ok, detail in report(name, ok, detail) }
 runGitChecks { name, ok, detail in report(name, ok, detail) }
 runConfigurationChecks { name, ok, detail in report(name, ok, detail) }
+runGutterChecks { name, ok, detail in report(name, ok, detail) }
 runDegradationChecks { name, ok, detail in report(name, ok, detail) }
 runBundleFreshnessCheck { name, ok, detail in report(name, ok, detail) }
 

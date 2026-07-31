@@ -1490,3 +1490,29 @@ Measured against three configured sources — the real projects folder, a scratc
 - With no configuration and no `DIFFSCOPE_ROOT`, the empty state appears with its two buttons and no suggested path (DEC-036 as amended).
 
 One further defect the screenshots caught: the empty state was drawn as an **overlay**, so the tables showed through behind it and stayed reachable by keyboard. It now replaces the split rather than covering it.
+
+---
+
+# M8-E — the gutter, and the line the reader is on
+
+**Date:** 2026-07-31 · **Method:** implemented `23b-…` §1.6, checked the line arithmetic headlessly, then photographed the result.
+
+## Where the decision lives
+
+`12-…` §5.1 names three carriers of change meaning: *"gutter, underline, and background texture"*. Two were built. The third is now, and **which lines carry a difference is computed in the engine** and carried on the contract as `changedLines`, for the same reason navigation stops and folds are (M7-A): a fact about the model belongs to the model, and one the renderer works out for itself cannot be checked without a webview.
+
+Lines are counted on **bytes**, splitting on `0x0A` only. That makes a `\r` belong to the line it terminates, so a CRLF-only change marks the line whose ending changed rather than the one after it — asserted directly, since it is the arithmetic most likely to be off by one. The other off-by-one worth naming: a segment ending *exactly* on a newline must not claim the following line.
+
+## What the picture shows that the checks cannot
+
+Twelve lines, one edit on line 7 (`7` → `77`). The snapshot (`gutter.png`) shows numbers in both panes, line 7 marked on the right by a solid edge and a brighter number, and the changed characters underlined.
+
+**The old pane carries no mark, and that is correct.** `7` → `77` is an insertion, so the old side has no changed bytes to attribute to a line. It is the same shape as DEC-048's finding that a reindent has no old side, appearing again in a different place.
+
+## ⌘O now opens where you are looking
+
+`window.diffscopeCurrentLine()` reports the active change stop when there is one — a reader who pressed ⌘N is looking at that change, not at the top of the screen — and otherwise the first line visible in the new pane. In the new side's numbering, because that is the file on disk the editor opens.
+
+It had been a literal `1` since DEC-015 was implemented: correct in the sense that the file opened, useless on the 900-line file whose change is at the bottom.
+
+**A caveat that belongs on record:** the default template `/usr/bin/open -a WebStorm {file}` contains no `{line}`, so the default still cannot jump. A template that includes `{line}` now receives a real one.
