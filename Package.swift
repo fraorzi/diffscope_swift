@@ -10,6 +10,7 @@ let package = Package(
         .library(name: "DiffScopeSyntax", targets: ["DiffScopeSyntax"]),
         .executable(name: "diffscope-verify", targets: ["diffscope-verify"]),
         .executable(name: "diffscope-app", targets: ["diffscope-app"]),
+        .executable(name: "diffscope-t0", targets: ["diffscope-t0"]),
     ],
     targets: [
         .target(
@@ -41,5 +42,8 @@ let package = Package(
             dependencies: ["DiffScopeEngine", "DiffScopeGit", "DiffScopeSyntax"],
             resources: [.copy("Renderer")]
         ),
+        // Gate T0 of docs/26-terminal-plan.md: throwaway measurement code, deliberately outside
+        // diffscope-verify's check suite. T1 replaces it.
+        .executableTarget(name: "diffscope-t0"),
     ]
 )

@@ -463,3 +463,33 @@ deleting a `>` leaves the new side with no changed bytes and the old side parsin
 instance of the asymmetric-edit shape, after DEC-034 and DEC-048.
 
 973/973 checks pass.
+
+## Step 22 — gate T0: the terminal's four unknowns, before any terminal
+
+- [x] `Sources/diffscope-t0`, a throwaway target outside the check suite: `forkpty`, an incremental
+      OSC 133 / `?1049` scanner, a generated `ZDOTDIR`, answers to the queries vim asks
+- [x] S1–S5 prompt-mark reliability: five fresh shells, `echo`, `false`, an unknown command,
+      `clear`, a resize at the prompt and a resize while a program runs
+- [x] S6 the user's `vcs_info` survives the integration — and S6b the naive `precmd` assignment
+      shown destroying it, rather than warned about
+- [x] S0 the control: an unmodified shell emits zero marks, so the marks are demonstrably ours
+- [x] S7 vim in and out of the alternate screen, shell usable afterwards
+- [x] S8 the six macOS motions measured with real key events in `NSTextView` **and** in a
+      `WKWebView` text field
+- [x] S9 `~/.zshrc` and `~/.zprofile` hashed before and after, verified independently of the probe
+- [x] `22-experiment-log.md` → T0, `26-terminal-plan.md` §3 marked passed, DEC-053, handoff §0
+
+### Step 22 — done
+
+17/17 scenarios, 973/973 checks unchanged — T0 adds no checks and removes none.
+
+The two negative controls are the entry: without S0 every other result would hold just as well if
+something in the user's setup were already emitting OSC 133.
+
+Two harness defects found by disbelieving a clean run: the web caret was seeded before the responder
+change, so the first reading said "web fields get the motions wrong" when the probe had simply
+measured from the wrong position; and a wait matched the echo of a typed command rather than its
+output, which leaked exactly one `ssh-agent` per run until the process count was checked by hand.
+
+T0 also killed an assumption in the plan: the macOS motions are not an AppKit property. A DOM text
+field gets all six, so T2's input line need not be overlaid on the grid.

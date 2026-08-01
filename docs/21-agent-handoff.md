@@ -31,6 +31,7 @@ swift run diffscope-verify --write-manifest   # re-record fixture hashes, delibe
 swift run -c release diffscope-verify --survey ~/YourProjects
 swift run -c release diffscope-verify --budget-survey ~/YourProjects
 swift run -c release diffscope-app  # the application
+swift run diffscope-t0              # gate T0 of the terminal plan, 17 scenarios over real PTYs
 ```
 
 `DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits: raw ŻABKA probe → structural render with a formatting-only label → INV-5 mode agreement across the webview → invisible-difference disclosure naming `U+0307` → a relocated block reported as one move → navigation and folds → a formatting-only group with its disclosed count → an anchor surviving an insertion above it → a ranked degradation notice reaching the document. Adding `DIFFSCOPE_SNAPSHOT_DIR=/some/dir` writes `structural.png`, `expanded.png`, `disclosure.png`, `moved.png`, `navigation.png`, `refresh.png`, `anchored.png`, `degraded.png` and `gutter.png` of what the webview actually drew — the only way to check legibility, which the probe cannot see.
@@ -45,6 +46,7 @@ swift run -c release diffscope-app  # the application
 | `CTreeSitter`, `CTreeSitterTSX` | Vendored C, MIT |
 | `diffscope-verify` | The whole check suite, headless |
 | `diffscope-app` | AppKit shell + `WKWebView` |
+| `diffscope-t0` | Gate T0 of the terminal plan: `forkpty`, an OSC 133 scanner, a generated `ZDOTDIR`, and the macOS motions measured in both surfaces. **Throwaway — T1 replaces it**, and it is deliberately outside the check suite |
 | `Renderer/src` | CodeMirror renderer; build with `npm run build` in `Renderer/` |
 
 ### What M6 landed
@@ -95,7 +97,15 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 
 ### What to do next
 
-**The product owner has put the built-in terminal first** (2026-07-31, resolving OQ-055). Everything below it in this list was the audit's ordering, not theirs. Start at [`26-terminal-plan.md`](26-terminal-plan.md) and its **gate T0** — the pivotal unknown is already measured (prompt-mark detection works on this machine's zsh; the user's own `precmd` must not be clobbered), and the cost to the product's read-only story is recorded there rather than left to be discovered.
+**The product owner has put the built-in terminal first** (2026-07-31, resolving OQ-055). Everything below it in this list was the audit's ordering, not theirs. The plan is [`26-terminal-plan.md`](26-terminal-plan.md).
+
+**Gate T0 passed on 2026-08-01** — all four unknowns hold: prompt-mark detection across fresh shells, resizes, `clear` and failing commands; the macOS text motions; `vim` in and out of the alternate screen; and the user's rc files byte-identical afterwards. `Sources/diffscope-t0` is the throwaway target that measured it, `swift run diffscope-t0` runs it, and `22-experiment-log.md` → **T0** carries the numbers. **DEC-053** records the terminal entering scope and what it costs the read-only sentence. **Next is T1** — PTY lifecycle and the output grid — in `26-terminal-plan.md` §5.
+
+Three things from T0 that change the work rather than merely clearing it:
+
+- **The macOS motions are not an AppKit property.** A `<textarea>` in a `WKWebView` performs all six identically to `NSTextView`, so T2's input line may live in the same webview as the grid. §4 of the plan assumed otherwise.
+- **A shell costs ~340 ms and one `ssh-agent`.** The user's rc runs nvm, `compinit` and `ssh-agent -s`; 363 agents were already running when T0 measured. Spawning must stay off the interface's critical path.
+- **Two harness defects, both false negatives about the thing being measured** — a caret seeded before the responder change, and a wait that matched the echo of a typed command rather than its output. Same family as `zsh -i -c` in the first probe. When a terminal measurement disagrees with expectation, suspect the driver first.
 
 
 1. **Definition of done §6** — a 63-file working tree reviewable entirely from the keyboard. The file list still has no keyboard path of its own beyond ⌘[ / ⌘] stepping.

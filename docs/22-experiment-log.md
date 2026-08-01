@@ -1733,3 +1733,70 @@ the user's own prompt     survived the injection
 **The hazard the probe found.** `~/.zshrc:16` defines `precmd() { vcs_info }` as a plain function. An integration that installs its own `precmd` replaces it, and the product owner's prompt silently loses its git information — a terminal that breaks the setup it was meant to live in. `add-zsh-hook` appends, and was verified to leave the existing hook working.
 
 Full plan, cost and gate: `26-terminal-plan.md`.
+
+---
+
+# T0 — the gate: the four unknowns, measured in app-shaped code
+
+**Date:** 2026-08-01 · **Method:** `swift run diffscope-t0` — a throwaway target that spawns `/bin/zsh -i` on a real `forkpty` PTY, ten shells per run, and drives them by writing to the PTY as if typed. Seventeen scenarios, each with its own deadline. The generated shell integration lives in a temporary directory; nothing of the user's is ever written.
+
+`26-terminal-plan.md` §3 named four things. All four hold.
+
+```
+S0   an unmodified shell emits no marks at all              0 marks
+S1   a prompt mark in five of five fresh shells             335–343 ms to the first mark (median 339)
+S2   echo: C, output round-trips, D;0, then another A       exit 0
+S3   false → D;1 · unknown command → D;127                  prompt detected after both
+S4   clear: screen wiped, prompt still detected             erase sequence seen
+S5   resize at the prompt, and while a program runs         COLUMNS follows: 100, then 120
+S6   the user's vcs_info still reaches the prompt           prompt contains (main); the B mark rides on it
+S6b  the same shell with a naive precmd assignment          marks arrive, the branch is gone
+S7   vim enters the alternate screen, :q leaves it          shell usable afterwards
+S8   the macOS motions, NSTextView and WKWebView            6/6 and 6/6
+S9   ~/.zshrc and ~/.zprofile SHA-256 before and after      identical
+```
+
+## The two negative controls are what make the rest mean anything
+
+**S0.** A shell with no integration reaches its prompt and emits **zero** OSC 133 marks. Without this, every result above would hold just as well if something already in the user's setup were emitting them, and nothing here would have measured the integration at all. Same shape as the `display: none` control in G2.
+
+**S6b.** The hazard the first probe *described* is now **demonstrated**: the probe installs the wrong integration on purpose — `precmd() { … }` as a plain assignment — and watches `(main)` disappear from the prompt while the marks arrive perfectly. Both halves matter: the naive version works, which is exactly why it would have shipped.
+
+## What the caret actually does
+
+The same six keystrokes, delivered as real `NSEvent`s with real modifier flags, into `NSTextView` through `interpretKeyEvents` and into a `<textarea>` inside a `WKWebView` through `keyDown`. Sample text is two lines: `git commit -m "fix the thing"` / `git push --force-with-lease`.
+
+| Motion | From | To | AppKit | WebKit |
+|---|---|---|---|---|
+| Option+← | 29 | 23 (start of `thing`) | ✓ | ✓ |
+| Option+← | 23 | 19 (start of `the`) | ✓ | ✓ |
+| Option+→ | 0 | 3 | ✓ | ✓ |
+| Cmd+← | 35 | 30 (**line** start, not document) | ✓ | ✓ |
+| Cmd+→ | 35 | 57 (line end) | ✓ | ✓ |
+| Option+Delete | 29 | 23 | ✓ | ✓ |
+
+**A DOM text field reproduces every one of them.** `26-terminal-plan.md` §4 assumed the motions are what an AppKit control buys — they are not; they are what *macOS text input* buys, and WebKit participates in it. That widens T2's options from "AppKit control overlaid on the grid" to "the input line can live in the same webview as the grid", which is a materially simpler window. The choice is T2's to make and is not made here.
+
+**Option+Delete removes `thing"` — the word *and* the trailing quote.** That is native word semantics, and it is *not* what a shell's own `^W` does (whitespace-delimited, so it would stop at the quote). Replacing the line editor means inheriting the platform's definition of a word, and the two will not agree. Worth stating before someone reports it as a bug.
+
+## What vim needed
+
+`DA2` and `DSR-cursor`, answered by hand in the probe. A terminal that answers nothing looks broken to a full-screen program: it asks who it is talking to and waits. xterm.js answers these properly in T1 — this is recorded so that a stall there is recognised rather than re-diagnosed.
+
+## Findings that were not on the list
+
+- **The prompt costs ~340 ms.** `~/.zshrc` runs `nvm`, `compinit` and `ssh-agent` before the first prompt appears, so opening a terminal in the application will never be instant. It must not be on any path that blocks the interface.
+- **Every interactive shell leaks an `ssh-agent`.** `~/.zshrc:7-8` does `eval "$(ssh-agent -s)"` and `ssh-add`, and the agent daemonises away from its parent. Ten shells, ten agents — and **363 were already running on this machine** before the probe started. A terminal that opens a shell per repository multiplies this quietly. Not our defect, but our feature makes it worse, and the user should know before it is theirs to notice. The probe reaps exactly the pids its own shells report and nothing else.
+- **`local status=$?` must not be written.** In zsh `$status` is a synonym for `$?`; the integration uses `__ds_status`.
+- **The B mark must be wrapped in `%{ %}`.** Without it zsh counts the escape as visible width and its own line editing goes wrong on a full line.
+- **`.zshenv` must *not* restore the user's `ZDOTDIR`.** zsh re-reads the variable before each startup file, so restoring it there sends zsh to the user's `.zshrc` instead of the generated one and the integration silently does nothing. The restore belongs in `.zshrc`, after ours has loaded.
+
+## Two harness defects, in the project's habit of recording them
+
+**The web caret was seeded before the responder change.** Making the `WKWebView` first responder re-focuses the field and puts the caret at the end, so the first run measured Option+← from position 57 and reported 52 where 23 was expected. Read carelessly, that is "web text fields get the motions wrong" — a false negative about the surface, produced entirely by the measuring code, and the same shape as `zsh -i -c` in the first probe. The probe now reports the position it actually started from, so a seed that fails is visible instead of silent.
+
+**A wait matched the echo of a typed command rather than its output.** The S0 control shell has no integration and so cannot report its agent on the side channel; asked directly with `echo T0-AGENT=$SSH_AGENT_PID`, the wait for `T0-AGENT=` succeeded against the *echoed input*, where the text is still `$SSH_AGENT_PID`. The parse then ran before the answer existed, silently, and that shell leaked exactly one agent per run — found by counting processes afterwards rather than by trusting the probe's own "9 reaped". The wait is now on the parse succeeding.
+
+## What T0 did not prove
+
+zsh 5.9 on this machine only. Bash's `--rcfile` path is designed and untested. No `ssh` password prompt, no `sudo`, no long-running interactive program other than vim. The escape hatch of §4 — forcing raw mode when detection is wrong — is not exercised, because nothing here has an input line yet. Detection being reliable in seventeen scenarios is not detection being reliable, and the escape hatch stays mandatory in T2 for that reason.

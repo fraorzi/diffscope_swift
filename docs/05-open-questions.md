@@ -88,7 +88,7 @@ Measured: status reports ` M` while diff reports zero lines, persisting after an
 **OQ-054 — Case-folding and normalization in path matching.** Status: Open. Raised by measurement.
 Measured: writing via `src/foo.ts` when disk holds `src/Foo.TS` makes FSEvents report the **on-disk** case. Git is case-sensitive, macOS's default filesystem is case-insensitive but case-preserving, so a mismatch means auto-refresh (DEC-007) silently stops updating that file. Path matching needs case-folded **and** NFC-normalized comparison — the latter realistic given Polish filenames and the NFD content already measured in this corpus.
 
-**OQ-055 — A built-in terminal.** Status: **Resolved 2026-07-31 — build it.** The product owner put it at the front of the queue. Plan, measurement and the T0 gate are in [26-terminal-plan.md](26-terminal-plan.md); the analysis below is kept because its cost estimate is what the plan is built on.
+**OQ-055 — A built-in terminal.** Status: **Resolved 2026-07-31 — build it**, recorded as **DEC-053** on 2026-08-01 once gate T0 had passed. The product owner put it at the front of the queue. Plan and gate: [26-terminal-plan.md](26-terminal-plan.md); measurement: `22-experiment-log.md` → T0. The analysis below is kept because its cost estimate is what the plan is built on.
 
 Asked for directly: a terminal inside the application that handles text editing in the input line the way Warp does — Option+←/→ by word, Cmd+←/→ to line ends, Option+Delete by word — which ordinary terminal emulators handle poorly because they pass keys through a line discipline instead of editing a real text field.
 

@@ -38,16 +38,27 @@ A decision entry records all of this **before the first line of terminal code**,
 
 ---
 
-## 3. Gate T0 — before building anything
+## 3. Gate T0 — **PASSED 2026-08-01**
 
-The project's own habit: M0 gated DEC-042 by settling what could invalidate it. This does the same.
+The project's own habit: M0 gated DEC-042 by settling what could invalidate it. This did the same.
 
-1. **Prompt-mark detection is reliable in the real application**, not only in a probe — across new shells, window resizes, `clear`, and a command that fails.
-2. **The macOS text motions work in the chosen input surface**: Option+←/→ by word, Cmd+←/→ to line ends, Option+Delete by word. Measured, because this *is* the feature being asked for.
-3. **A full-screen program works**: `vim`, then `:q`. Alternate screen buffer, raw passthrough, clean return to the prompt.
-4. **Shell integration touches nothing permanent** — hash `~/.zshrc` and `~/.zprofile` before and after a session and require them identical, in the spirit of R-8.
+`swift run diffscope-t0`, seventeen scenarios over ten real interactive shells. Method, numbers and every correction the measuring forced: `22-experiment-log.md` → **T0**.
 
-**If (1) proves unreliable, the Warp-style input line is not deliverable.** The honest outcome is then a plain terminal with the reason recorded. Stated now so it is not a disappointment later.
+| | Required | Result |
+|---|---|---|
+| 1 | Prompt-mark detection reliable across new shells, resizes, `clear`, a failing command | **holds** — five of five fresh shells, both resize cases, `D;1` and `D;127` both reported |
+| 2 | The macOS text motions in the chosen input surface | **holds** — 6/6 in `NSTextView`, and 6/6 in a `WKWebView` text field |
+| 3 | A full-screen program: `vim`, then `:q` | **holds** — alternate screen entered and left, shell usable after |
+| 4 | Shell integration touches nothing permanent | **holds** — `~/.zshrc` and `~/.zprofile` byte-identical, verified independently of the probe |
+
+Two negative controls carry the weight: an unmodified shell emits **zero** marks (so the marks are ours), and the naive `precmd` assignment is shown **destroying** the user's `vcs_info` rather than merely warned about.
+
+**If (1) had proved unreliable, the Warp-style input line would not have been deliverable** and the honest outcome would have been a plain terminal with the reason recorded. It did not, so T1 proceeds. Nothing here promises detection is reliable *in general* — seventeen scenarios on one zsh 5.9 is what it is, which is why §4's escape hatch stays mandatory.
+
+Two results change the work below rather than merely clearing it:
+
+- **The motions are not an AppKit property.** A DOM text field gets all six, so §4's input line may live in the same webview as the grid. T2 decides; T0 only removed the assumption.
+- **The prompt costs ~340 ms** on this machine (nvm, `compinit`, `ssh-agent` in the user's rc), and each interactive shell leaks an `ssh-agent` — 363 were already running before the probe. Spawning must be off the interface's critical path, and the multiplication is worth telling the user about before they find it.
 
 ---
 
@@ -57,7 +68,7 @@ The project's own habit: M0 gated DEC-042 by settling what could invalidate it. 
 
 **The input line is the part no library provides**, because it means *replacing* the shell's line editor rather than decorating it:
 
-- **At a prompt** → keystrokes go to a real editable text control, which is where the macOS word and line motions come from for free.
+- **At a prompt** → keystrokes go to a real editable text control, which is where the macOS word and line motions come from for free. **Measured in T0: "real editable text control" does not mean "AppKit".** A `<textarea>` in a `WKWebView` performs all six motions identically to `NSTextView`, so the control may sit in the same webview as the grid instead of being overlaid on it. T2 chooses; T0 only established that both are open.
 - **While a program runs** → raw passthrough to the PTY, byte for byte.
 - **An explicit escape hatch** to force raw mode. Detection will be wrong sometimes, and being unable to type into an ssh password prompt would be worse than never having the feature at all.
 
@@ -69,7 +80,7 @@ The project's own habit: M0 gated DEC-042 by settling what could invalidate it. 
 
 | | |
 |---|---|
-| **T0** | The gate above. Throwaway code; results to `22-experiment-log.md` |
+| ~~**T0**~~ | **Done 2026-08-01.** `Sources/diffscope-t0`, results in `22-experiment-log.md` → T0. Throwaway: T1 replaces it |
 | **T1** | PTY lifecycle and output grid: spawn, resize (`TIOCSWINSZ`), read loop, scrollback, alternate screen, clean teardown |
 | **T2** | The input line: mode switching on prompt marks, the editable control, the escape hatch, history |
 | **T3** | Belonging to this product: opens in the selected repository's directory, follows the selection, and the existing watcher refreshes the diff when a command changes the working tree |

@@ -2268,3 +2268,44 @@ Behaviour, following the trust rules the rest of the product already follows:
 ### Revisit trigger
 
 Reopen if the application is ever sandboxed: OQ-035 notes that each root would then need a security-scoped bookmark persisted alongside its path, which changes what the file holds but not where it lives.
+
+---
+
+## DEC-053 — The built-in terminal enters version one, and what it costs the read-only sentence
+
+- **Date:** 2026-08-01 · **Topic:** Resolves OQ-055 in favour of building; amends DEC-003 and `18-version-one-scope.md`; leaves DEC-028 untouched · **Status:** Accepted
+- **Decided by:** the product owner, 2026-07-31. Gated on T0, measured 2026-08-01.
+
+### Context
+
+DEC-003 made version one **strictly read-only**, `18-version-one-scope.md` admits no command execution at all, and `21-agent-handoff.md` §6 lists read-only among the questions that must not be silently re-decided. A terminal inside the application runs whatever the user types, including `git commit`. That is the feature, not a defect — but it cannot arrive as an implementation detail of a UI, because it changes a sentence the product has been making everywhere.
+
+The feature turns on one question, which is why T0 came before any of it: **can the application know when the shell is sitting at a prompt?** Without that, a keystroke cannot be routed between a local editor and a running program, and the Warp-style input line — the thing actually asked for — is not deliverable.
+
+### Options considered
+
+1. **Build it, with shell integration and a prompt-aware input line.** Requires OSC 133 marks from the user's shell, which requires touching their shell startup — the part that can go wrong invisibly.
+2. **A plain terminal with no prompt detection.** Everything raw, no local editing. Cheap, and it is not what was asked for; it was the recorded fallback if T0 failed on (1).
+3. **Do not build it.** "Open in Terminal here" plus clipboard commands, both already in scope and neither executing anything. This was the recommendation OQ-055 carried, and the product owner overrode it. Their call.
+4. **Build it and forbid Git commands.** Rejected outright: a terminal that inspects what the user types in order to refuse it is both defeatable and dishonest about what it is.
+
+### Final decision
+
+**Option 1**, with the boundaries stated before the code rather than after:
+
+- **The terminal runs what the user types, and nothing else.** No repository script is run, no command line is prefilled from repository content, nothing auto-executes. **DEC-028 survives intact** and is now the entire safety story: once a shell exists inside the application, *content never decides what runs* is the only line that still holds.
+- **R-8 continues to mean what it meant.** It proves the **application's own** Git usage writes nothing. The terminal is the user's. No document may conflate the two.
+- **Shell integration never writes to the user's files.** A generated `ZDOTDIR` sources their real startup files and appends hooks with `add-zsh-hook`; bash gets `--rcfile`. Verified in T0 by hashing `~/.zshrc` and `~/.zprofile` before and after — R-8's pattern pointed at the home directory.
+- **The escape hatch is mandatory, not optional.** Detection will be wrong sometimes, and being unable to type into an `ssh` password prompt would be worse than never having the feature.
+
+### Consequences
+
+- **The product can no longer say "it cannot change your repositories."** It can say the application itself never writes to one, and that anything else happened because the user typed it. `25-tester-packet.md` promises the older sentence today and **must be rewritten in T4**; a check should hold that file to whatever the sentence becomes.
+- **`18-version-one-scope.md` and DEC-003 are amended, not overridden.** Read-only remains true of the engine, the Git layer and every automatic path. The terminal is a user-driven surface bolted beside them, and the distinction has to survive in the wording or it will not survive in the code.
+- **OQ-056 is not answered by this.** A terminal grants the same power sideways; staging and committing *as product features* still require reopening DEC-003 properly, with the hunk model DEC-003's own sequencing argument depends on.
+- **The input surface is open.** T0 measured all six macOS motions working identically in `NSTextView` and in a `WKWebView` text field, so the input line need not be AppKit overlaid on the grid.
+- **Spawning is not free.** ~340 ms to the first prompt on this machine, and every interactive shell leaves an `ssh-agent` behind because the user's rc starts one — 363 were already running when T0 measured. Shell startup must stay off the interface's critical path.
+
+### Revisit trigger
+
+Reopen if prompt-mark detection proves unreliable in real use rather than in seventeen scenarios — the fallback is Option 2, a plain terminal, with the reason recorded. Reopen separately if the product ever wants to *act* on repositories itself, which is OQ-056 and DEC-003, not this entry.
