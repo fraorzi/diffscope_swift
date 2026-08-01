@@ -1,0 +1,19 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="terminal.css">
+<style>
+  /* Like `index.html`, this file declares no colour, no font and no size of its own — every value
+     comes from `tokens.css`. The rules here are layout only. */
+  html, body { margin: 0; height: 100%; background: var(--ds-term-surface); }
+  #grid { position: absolute; inset: 0; padding: var(--ds-space-2); }
+  .xterm .xterm-viewport { overflow-y: auto; }
+</style>
+</head>
+<body>
+<div id="grid"></div>
+<script src="terminal.js"></script>
+</body>
+</html>

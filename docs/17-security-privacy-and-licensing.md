@@ -65,6 +65,8 @@ DEC-020 leaves distribution undecided, so every dependency is evaluated **agains
 | tree-sitter (C API) | MIT | Clean |
 | tree-sitter-typescript grammar | MIT | Clean — but **stale**, see §4.3 |
 | CodeMirror 6 | MIT | Clean |
+| xterm.js 6.0.0 (`@xterm/xterm`) | MIT | Clean — the terminal's output grid, DEC-054. Pinned exactly, bundled, checked for network APIs |
+| `@xterm/addon-fit` 0.11.0 | MIT | Clean — sizes the grid to the pane |
 | Swift / AppKit / WebKit | Apple platform | Clean, first-party |
 | Git CLI | GPL-2.0, invoked as a **subprocess** | Clean — separate process, no linking |
 

@@ -8,6 +8,7 @@ let package = Package(
         .library(name: "DiffScopeEngine", targets: ["DiffScopeEngine"]),
         .library(name: "DiffScopeGit", targets: ["DiffScopeGit"]),
         .library(name: "DiffScopeSyntax", targets: ["DiffScopeSyntax"]),
+        .library(name: "DiffScopeTerminal", targets: ["DiffScopeTerminal"]),
         .executable(name: "diffscope-verify", targets: ["diffscope-verify"]),
         .executable(name: "diffscope-app", targets: ["diffscope-app"]),
         .executable(name: "diffscope-t0", targets: ["diffscope-t0"]),
@@ -33,17 +34,18 @@ let package = Package(
             name: "DiffScopeSyntax",
             dependencies: ["DiffScopeEngine", "CTreeSitter", "CTreeSitterTSX"]
         ),
+        .target(name: "DiffScopeTerminal"),
         .executableTarget(
             name: "diffscope-verify",
-            dependencies: ["DiffScopeEngine", "DiffScopeGit", "DiffScopeSyntax"]
+            dependencies: ["DiffScopeEngine", "DiffScopeGit", "DiffScopeSyntax", "DiffScopeTerminal"]
         ),
         .executableTarget(
             name: "diffscope-app",
-            dependencies: ["DiffScopeEngine", "DiffScopeGit", "DiffScopeSyntax"],
+            dependencies: ["DiffScopeEngine", "DiffScopeGit", "DiffScopeSyntax", "DiffScopeTerminal"],
             resources: [.copy("Renderer")]
         ),
-        // Gate T0 of docs/26-terminal-plan.md: throwaway measurement code, deliberately outside
-        // diffscope-verify's check suite. T1 replaces it.
-        .executableTarget(name: "diffscope-t0"),
+        // Gate T0 of docs/26-terminal-plan.md, kept runnable and pointed at the shipping module —
+        // a gate that measures a copy of the code measures the wrong thing.
+        .executableTarget(name: "diffscope-t0", dependencies: ["DiffScopeTerminal"]),
     ]
 )

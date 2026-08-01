@@ -1,10 +1,13 @@
 import AppKit
 import CryptoKit
+import DiffScopeTerminal
 import Darwin
 import Foundation
 
-// Gate T0 of docs/26-terminal-plan.md §3. Throwaway: this target answers four questions and is
-// replaced by T1's real PTY layer. Nothing here is wired into diffscope-verify.
+// Gate T0 of docs/26-terminal-plan.md §3, kept runnable after T1 and pointed at the shipping
+// `DiffScopeTerminal` module. Deliberately outside diffscope-verify: it drives ten real interactive
+// shells and depends on this machine's own ~/.zshrc, which is not a property a check suite should
+// have.
 
 let repositoryRoot = FileManager.default.currentDirectoryPath
 let home = NSHomeDirectory()
@@ -39,7 +42,7 @@ let rcBefore = hashes(of: rcFiles)
 
 let integration: ShellIntegration
 do {
-    integration = try ShellIntegration.generate()
+    integration = try ShellIntegration.generate(for: .zsh)
 } catch {
     print("could not generate the shell integration: \(error)")
     exit(1)
@@ -50,7 +53,8 @@ var spawnedAgents: Set<pid_t> = []
 func makeShell(columns: UInt16 = 80, rows: UInt16 = 24) -> Shell? {
     Shell(command: "/bin/zsh",
           arguments: ["-i"],
-          environment: integration.environment(userZdotdir: userZdotdir),
+          environment: integration.environment(base: ProcessInfo.processInfo.environment,
+                                               userZdotdir: userZdotdir),
           workingDirectory: repositoryRoot,
           columns: columns,
           rows: rows)
@@ -217,10 +221,11 @@ if let shell = makeShell() {
 
 // ------------------------ S6b: the same shell with the wrong integration, to show what it costs
 
-if let naive = try? ShellIntegration.generate(style: .naivePrecmdAssignment) {
+if let naive = try? ShellIntegration.generate(for: .zsh, style: .naiveAssignmentControl) {
     if let shell = Shell(command: "/bin/zsh",
                          arguments: ["-i"],
-                         environment: naive.environment(userZdotdir: userZdotdir),
+                         environment: naive.environment(base: ProcessInfo.processInfo.environment,
+                                                        userZdotdir: userZdotdir),
                          workingDirectory: repositoryRoot) {
         let prompted = shell.waitForEvent(isPromptStart, timeout: 15)
         let branchSurvived = shell.waitForText("(main)", timeout: 3)

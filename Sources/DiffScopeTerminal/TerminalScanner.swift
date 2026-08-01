@@ -1,29 +1,38 @@
 import Foundation
 
 /// What the application needs to read out of the byte stream to know where it stands.
-enum TerminalEvent {
+public enum TerminalEvent {
     case promptStart          // OSC 133;A
     case promptEnd            // OSC 133;B
     case commandStart         // OSC 133;C
     case commandEnd(Int?)     // OSC 133;D;<exit>
-    case note(String)         // OSC 133;X;… — this probe's own side channel
+    case note(String)         // OSC 133;X;… — the integration's own side channel
     case alternateScreen(Bool)
     case query(String)
 }
 
-struct TimedEvent {
-    let event: TerminalEvent
-    let at: Date
+public struct TimedEvent {
+    public let event: TerminalEvent
+    public let at: Date
+
+    public init(event: TerminalEvent, at: Date) {
+        self.event = event
+        self.at = at
+    }
 }
 
 /// A terminal that answers nothing looks broken to a full-screen program: `vim` asks who it is
-/// talking to and waits. T1 gets these for free from xterm.js; T0 answers the minimum by hand so
-/// that a stall in S7 means something about the shell rather than about the probe.
+/// talking to and waits. Gate T0 measured this with no emulator behind it and had to answer by
+/// hand, which is what `onReply` is for.
+///
+/// **In the application `onReply` stays nil.** xterm.js is a real emulator and answers these
+/// itself, through the same keystroke path as the user; a second answer from here would put
+/// duplicate replies on the wire and the program would read the extra one as input.
 private let deviceAttributes1 = "\u{1b}[?1;2c"
 private let deviceAttributes2 = "\u{1b}[>1;95;0c"
 
 /// Incremental, because a mark can and does arrive split across two `read` calls.
-final class VTScanner {
+public final class TerminalScanner {
     private enum State { case ground, escape, csi, string, stringEscape }
     private enum StringKind { case osc, dcs }
 
@@ -31,10 +40,13 @@ final class VTScanner {
     private var stringKind: StringKind = .osc
     private var collected: [UInt8] = []
 
-    var onEvent: ((TerminalEvent) -> Void)?
-    var onReply: ((String) -> Void)?
+    public var onEvent: ((TerminalEvent) -> Void)?
+    /// Only for a scanner with no emulator behind it. See the note above.
+    public var onReply: ((String) -> Void)?
 
-    func feed(_ bytes: ArraySlice<UInt8>) {
+    public init() {}
+
+    public func feed(_ bytes: ArraySlice<UInt8>) {
         for byte in bytes { step(byte) }
     }
 
@@ -107,7 +119,7 @@ final class VTScanner {
             onReply?("\u{1b}[?0u")
         case (">0", "q"), (">", "q"):
             onEvent?(.query("XTVERSION"))
-            onReply?("\u{1b}P>|diffscope-t0\u{1b}\\")
+            onReply?("\u{1b}P>|diffscope\u{1b}\\")
         default:
             break
         }
@@ -138,27 +150,27 @@ final class VTScanner {
 }
 
 extension Array where Element == TimedEvent {
-    func contains(_ match: (TerminalEvent) -> Bool) -> Bool {
+    public func contains(_ match: (TerminalEvent) -> Bool) -> Bool {
         contains { match($0.event) }
     }
 
     /// Everything after the last event satisfying `match` — how a scenario asks "and *then*".
-    func after(_ match: (TerminalEvent) -> Bool) -> [TimedEvent] {
+    public func after(_ match: (TerminalEvent) -> Bool) -> [TimedEvent] {
         guard let index = lastIndex(where: { match($0.event) }) else { return [] }
         return Array(self[(index + 1)...])
     }
 
-    var queries: [String] {
+    public var queries: [String] {
         compactMap { if case let .query(name) = $0.event { return name } else { return nil } }
     }
 }
 
-func isPromptStart(_ event: TerminalEvent) -> Bool { if case .promptStart = event { return true }; return false }
-func isPromptEnd(_ event: TerminalEvent) -> Bool { if case .promptEnd = event { return true }; return false }
-func isCommandStart(_ event: TerminalEvent) -> Bool { if case .commandStart = event { return true }; return false }
-func isCommandEnd(_ event: TerminalEvent) -> Bool { if case .commandEnd = event { return true }; return false }
+public func isPromptStart(_ event: TerminalEvent) -> Bool { if case .promptStart = event { return true }; return false }
+public func isPromptEnd(_ event: TerminalEvent) -> Bool { if case .promptEnd = event { return true }; return false }
+public func isCommandStart(_ event: TerminalEvent) -> Bool { if case .commandStart = event { return true }; return false }
+public func isCommandEnd(_ event: TerminalEvent) -> Bool { if case .commandEnd = event { return true }; return false }
 
-func commandEnded(with code: Int) -> (TerminalEvent) -> Bool {
+public func commandEnded(with code: Int) -> (TerminalEvent) -> Bool {
     { event in
         if case let .commandEnd(reported) = event { return reported == code }
         return false

@@ -65,6 +65,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var splitView: NSSplitView!
     var wrapMenuItem: NSMenuItem?
     var wrapEnabled = true
+    /// The terminal (DEC-054). Built with the window, loaded with the window, and **not started
+    /// until it is first shown** — a shell costs ~340 ms and one `ssh-agent` here (T0).
+    let terminal = TerminalPane()
+    var terminalSplit: NSSplitView!
+    var terminalMenuItem: NSMenuItem?
+    var terminalVisible = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
@@ -154,13 +160,30 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         webView.translatesAutoresizingMaskIntoConstraints = false
         webView.widthAnchor.constraint(equalTo: rightStack.widthAnchor, constant: -2 * Theme.space4).isActive = true
 
+        // The terminal sits under the diff rather than under the whole window: the lists stay
+        // visible while a command runs, which is the arrangement T3 depends on — a command changes
+        // the working tree and the diff beside it refreshes.
+        let terminalHost = terminal.webView!
+        terminalHost.isHidden = true
+        let vertical = NSSplitView(frame: rightStack.frame)
+        terminalSplit = vertical
+        vertical.isVertical = false
+        vertical.dividerStyle = .thin
+        vertical.addArrangedSubview(rightStack)
+        vertical.addArrangedSubview(terminalHost)
+        terminalHost.translatesAutoresizingMaskIntoConstraints = false
+        let terminalHeight = terminalHost.heightAnchor.constraint(equalToConstant: Theme.terminalPaneHeight)
+        terminalHeight.priority = NSLayoutConstraint.Priority(600)
+        terminalHeight.isActive = true
+        terminalHost.heightAnchor.constraint(greaterThanOrEqualToConstant: Theme.terminalPaneMinimumHeight).isActive = true
+
         let split = NSSplitView()
         splitView = split
         split.isVertical = true
         split.dividerStyle = .thin
         split.addArrangedSubview(leftScroll)
         split.addArrangedSubview(middleScroll)
-        split.addArrangedSubview(rightStack)
+        split.addArrangedSubview(vertical)
 
         // Auto layout inside the split, rather than frame proportions. NSSplitView distributes by
         // preserving existing proportions, and every pane started at zero — so the tables were
@@ -174,7 +197,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             pane.widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.paneMinimumWidth).isActive = true
         }
         rightStack.translatesAutoresizingMaskIntoConstraints = false
-        rightStack.widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.diffPaneMinimumWidth).isActive = true
+        vertical.translatesAutoresizingMaskIntoConstraints = false
+        vertical.widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.diffPaneMinimumWidth).isActive = true
 
         buildEmptyState()
         let container = NSView()
@@ -236,6 +260,46 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
         FileHandle.standardError.write(Data("SELFTEST renderer=\(html.lastPathComponent)\n".utf8))
         webView.loadFileURL(html, allowingReadAccessTo: html.deletingLastPathComponent())
+        terminal.load()
+    }
+
+    /// ⌥⌘T. The pane is built with the window and hidden; the *shell* starts here, the first time
+    /// the reader asks for it.
+    @objc func toggleTerminal() {
+        setTerminalVisible(!terminalVisible, startingShell: true)
+    }
+
+    /// Showing the pane and starting a shell are separate acts. They were one, and the selftest —
+    /// which has its own deterministic command to run — silently got the user's `$SHELL` instead,
+    /// then reported on a buffer holding somebody's prompt.
+    func setTerminalVisible(_ visible: Bool, startingShell: Bool) {
+        terminalVisible = visible
+        terminal.webView.isHidden = !visible
+        terminalMenuItem?.state = visible ? .on : .off
+        terminalSplit.adjustSubviews()
+        guard visible else { return }
+        terminalSplit.setPosition(terminalSplit.bounds.height - Theme.terminalPaneHeight,
+                                  ofDividerAt: 0)
+        terminal.webView.needsDisplay = true
+        window.displayIfNeeded()
+        if startingShell { startTerminalIfNeeded() }
+        terminal.focus()
+    }
+
+    @discardableResult
+    func startTerminalIfNeeded() -> Bool {
+        guard !terminal.started else { return true }
+        // The reader's selection decides where the shell opens. *Following* the selection as it
+        // changes belongs to T3; this is the one line that makes the pane useful before then.
+        let directory = state.selectedRepository?.url.path ?? NSHomeDirectory()
+        let started = terminal.start(workingDirectory: directory)
+        if !started { statusLabel.stringValue = "the terminal could not start a shell" }
+        terminal.onSessionExit = { [weak self] in
+            guard let self else { return }
+            self.terminal.stop()
+            if self.terminalVisible { self.setTerminalVisible(false, startingShell: false) }
+        }
+        return started
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -489,10 +553,142 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                     FileHandle.standardError.write(Data(
                         "SELFTEST style-control=\(caught ? "OK" : "MISMATCH") the audit catches a hidden mark\n".utf8))
                     self.webView.evaluateJavaScript("window.diffscopeInjectHostileStyle(false)") { _, _ in
-                        exit(caught ? 0 : 25)
+                        guard caught else { exit(25) }
+                        self.runTerminalSelftest()
                     }
                 }
             }
+        }
+    }
+
+    /// T1 (DEC-054): a command run through a real PTY, its output reaching the grid, and the
+    /// alternate screen entered and reported.
+    ///
+    /// The command is `/bin/sh -c`, not the user's shell: G3 runs this selftest from `/` on a
+    /// stranger's machine, where `$SHELL` and `~/.zshrc` are somebody else's. Prompt marks are
+    /// covered headlessly in `TerminalChecks` and against a real interactive zsh by gate T0.
+    private func runTerminalSelftest() {
+        setTerminalVisible(true, startingShell: false)
+        // The grid is the first surface in this product that paints on `requestAnimationFrame`, and
+        // WebKit suspends those while the window is **occluded** — which a window launched behind a
+        // terminal always is. The buffer then fills while the screen stays empty, and every other
+        // signal looks healthy: this is M8-D's defect class arriving through a different door.
+        //
+        // So the selftest brings its own window to the front and requires that painting resumes.
+        // Without this the arm below could only ever assert what the buffer holds.
+        window.level = .floating
+        window.orderFrontRegardless()
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        let script = "printf 'DIFFSCOPE-TERMINAL-OK\\n'; sleep 1;"
+            + " printf '\\033[?1049hALTERNATE-OK'; sleep 3"
+        guard terminal.start(workingDirectory: NSHomeDirectory(),
+                             command: "/bin/sh",
+                             arguments: ["-c", script]) else {
+            FileHandle.standardError.write(Data("SELFTEST terminal=MISMATCH no shell\n".utf8))
+            exit(26)
+        }
+
+        // A pane drawn at zero size reports a size and no error anywhere else — M8-D, where two
+        // lists rendered completely blank and nothing failed. The grid's own pixel size is part of
+        // what is asserted, not just the text in its buffer.
+        pollTerminal(until: { probe in
+            probe.contains("DIFFSCOPE-TERMINAL-OK") && !probe.contains("\"pixelWidth\":0")
+        }, timeout: 6) { reached, probe in
+            let sized = !probe.contains("\"pixelWidth\":0") && !probe.contains("\"pixelHeight\":0")
+            let tokensPresent = probe.contains("\"missingTokens\":[]")
+            let ok = reached && sized && tokensPresent
+            let line = "SELFTEST terminal=\(ok ? "OK" : "MISMATCH") output reached the grid; "
+                + "\(probe.prefix(700))\n"
+            FileHandle.standardError.write(Data(line.utf8))
+            guard ok else { exit(27) }
+
+            self.pollTerminal(until: {
+                $0.contains("\"alternateScreen\":true") && $0.contains("ALTERNATE-OK")
+            }, timeout: 8) { entered, alternate in
+                let line = "SELFTEST terminal-alternate=\(entered ? "OK" : "MISMATCH") "
+                    + "\(alternate.prefix(700))\n"
+                FileHandle.standardError.write(Data(line.utf8))
+                guard entered else { exit(28) }
+                self.assertTerminalPainted {
+                    self.snapshotTerminal { self.terminal.stop(); exit(0) }
+                }
+            }
+        }
+    }
+
+    /// What the buffer holds and what the screen shows are different claims, and only the second is
+    /// what the reader gets — M8-D was a surface that drew nothing while every check passed.
+    ///
+    /// The grid paints on `requestAnimationFrame`, and WebKit suspends those while the window is
+    /// occluded: `document.visibilityState` goes to `hidden` and the DOM rows are never written. A
+    /// selftest launched from a terminal is usually behind that terminal, so this arm **waits for a
+    /// genuinely visible window** and says plainly when it never got one, rather than asserting on
+    /// pixels that were never asked for.
+    private func assertTerminalPainted(then next: @escaping () -> Void) {
+        var attempts = 0
+        func check() {
+            terminal.webView.evaluateJavaScript("document.visibilityState") { value, _ in
+                attempts += 1
+                if (value as? String) != "visible", attempts < 30 {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { check() }
+                    return
+                }
+                guard (value as? String) == "visible" else {
+                    FileHandle.standardError.write(Data(
+                        ("SELFTEST terminal-paint=SKIPPED the window stayed occluded for 3 s, so "
+                            + "WebKit suspended animation frames and the grid was never asked to "
+                            + "paint. Run with DiffScope in front to assert drawn glyphs.\n").utf8))
+                    next()
+                    return
+                }
+                self.pollTerminal(until: { $0.contains("\"renderedText\":\"ALTERNATE-OK") },
+                                  timeout: 4) { painted, probe in
+                    let frames = probe.contains("\"framesSinceLastProbe\":0") ? "none" : "arriving"
+                    let line = "SELFTEST terminal-paint=\(painted ? "OK" : "MISMATCH") "
+                        + "glyphs on screen, frames \(frames)\n"
+                    FileHandle.standardError.write(Data(line.utf8))
+                    guard painted else { exit(29) }
+                    next()
+                }
+            }
+        }
+        check()
+    }
+
+    /// Polling rather than a fixed delay: the grid is driven by a real process, and a selftest that
+    /// waits a chosen number of milliseconds passes or fails by machine load.
+    private func pollTerminal(until condition: @escaping (String) -> Bool,
+                              timeout: TimeInterval,
+                              deadline: Date? = nil,
+                              then completion: @escaping (Bool, String) -> Void) {
+        let limit = deadline ?? Date().addingTimeInterval(timeout)
+        terminal.probe { probe in
+            if condition(probe) { completion(true, probe); return }
+            if Date() >= limit { completion(false, probe); return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                self.pollTerminal(until: condition, timeout: timeout, deadline: limit, then: completion)
+            }
+        }
+    }
+
+    private func snapshotTerminal(then next: @escaping () -> Void) {
+        guard let dir = ProcessInfo.processInfo.environment["DIFFSCOPE_SNAPSHOT_DIR"] else {
+            next(); return
+        }
+        terminal.webView.takeSnapshot(with: nil) { image, _ in
+            if let image, let tiff = image.tiffRepresentation,
+               let rep = NSBitmapImageRep(data: tiff),
+               let png = rep.representation(using: .png, properties: [:]) {
+                let url = URL(fileURLWithPath: dir).appendingPathComponent("terminal.png")
+                do {
+                    try png.write(to: url)
+                    FileHandle.standardError.write(Data("SELFTEST snapshot=\(url.path)\n".utf8))
+                } catch {
+                    FileHandle.standardError.write(
+                        Data("SELFTEST snapshot=FAILED \(url.path) — \(error)\n".utf8))
+                }
+            }
+            next()
         }
     }
 
@@ -859,6 +1055,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             item.tag = index
             item.target = self
         }
+        let terminalItem = view.addItem(withTitle: "Terminal", action: #selector(toggleTerminal), keyEquivalent: "t")
+        terminalItem.keyEquivalentModifierMask = [.command, .option]
+        terminalItem.target = self
+        terminalItem.state = .off
+        terminalMenuItem = terminalItem
+
         let wrap = view.addItem(withTitle: "Wrap Long Lines", action: #selector(toggleWrap), keyEquivalent: "w")
         wrap.keyEquivalentModifierMask = [.command, .option]
         wrap.target = self

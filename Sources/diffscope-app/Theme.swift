@@ -47,4 +47,8 @@ enum Theme {
     static let windowHeight: CGFloat = 860
     static let emptyStateMaximumWidth: CGFloat = 460
     static let emptyStateTitleSize: CGFloat = 20
+    /// The terminal pane (DEC-054). Starting height and floor, both as constraints so the divider
+    /// stays draggable — `--ds-term-*` covers what is drawn *inside* it.
+    static let terminalPaneHeight: CGFloat = 260
+    static let terminalPaneMinimumHeight: CGFloat = 90
 }

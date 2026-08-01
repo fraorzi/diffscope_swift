@@ -1800,3 +1800,51 @@ The same six keystrokes, delivered as real `NSEvent`s with real modifier flags, 
 ## What T0 did not prove
 
 zsh 5.9 on this machine only. Bash's `--rcfile` path is designed and untested. No `ssh` password prompt, no `sudo`, no long-running interactive program other than vim. The escape hatch of §4 — forcing raw mode when detection is wrong — is not exercised, because nothing here has an input line yet. Detection being reliable in seventeen scenarios is not detection being reliable, and the escape hatch stays mandatory in T2 for that reason.
+
+---
+
+# T1-A — what the grid costs, and the frame that never came
+
+**Date:** 2026-08-01 · **Method:** `npm run build` for the sizes; a throwaway binary linked against `DiffScopeTerminal` for the delivery counts, `cat`-ing 2,666,670 bytes through a real PTY twice — once counting `read` returns, once counting coalesced deliveries.
+
+## The bundle
+
+| | |
+|---|---|
+| `renderer.js` (CodeMirror, the diff) | 380 KB |
+| `terminal.js` (xterm.js + fit addon, the grid) | 348 KB |
+| `terminal.css` | 5 KB |
+
+The grid costs about what the diff editor costs. Worth stating against the number that settled DEC-042: Monaco was rejected at **9.3 MB**, and a hand-written VT parser was rejected at weeks of work. 348 KB for a virtualised, reflowing, attribute-aware grid with scrollback is the same trade the renderer already made once.
+
+## Coalescing output
+
+```
+raw reads        2605 deliveries   2,666,670 bytes
+coalesced 16 ms     9 deliveries   2,666,670 bytes
+```
+
+A PTY hands over about **1 KB per read**, so a 2.7 MB dump is 2,605 crossings into the webview if each read is forwarded on its own — 289× more than the nine a frame-length window produces. Every byte survives both ways; the coalescing buffer concatenates, it does not sample.
+
+The wall clock is 35 ms raw against 351 ms coalesced, and that is the honest cost: delivery is paced at one frame, so a large dump finishes about a third of a second later than the PTY did. Neither number includes `evaluateJavaScript`, which is what the 2,596 avoided crossings would actually have cost.
+
+## The finding that mattered: a grid that draws nothing while every check passes
+
+The first terminal selftest reported **OK on every arm** — output in the buffer, alternate screen entered, the pane sized 798×260, all sixteen palette tokens resolved — and the snapshot was **completely blank**.
+
+xterm's DOM renderer paints inside `requestAnimationFrame`. WebKit stops firing those when the page is not visible, and a `WKWebView` reports `document.visibilityState === "hidden"` whenever its **window is occluded**. A selftest launched from a terminal is behind that terminal, so the buffer filled while the screen stayed empty:
+
+```
+occluded=true   pageVisibility=hidden   framesSinceLastProbe=0   renderedText=""
+```
+
+Once the window was genuinely brought to the front, the same run painted — `renderedText: "DIFFSCOPE-TERMINAL-OK"`, and later `"ALTERNATE-OK"` with the snapshot showing legible glyphs and a cursor block.
+
+**This is M8-D's defect class arriving through a different door.** There it was two lists at zero width; here it is a grid whose renderer was never asked to run. Both report healthy state from every angle except the one that matters — what the reader would see. The probe now reports `renderedText`, `framesSinceLastProbe` and the pane's pixel size, so the difference between *held* and *drawn* is visible to a check rather than only to an eye.
+
+The selftest's paint arm asserts drawn glyphs when the window is visible and prints **SKIPPED with the reason** when it is not. That is deliberately not a silent pass: an arm that quietly asserted nothing would be the third instance of *a check that is not run is not a check*.
+
+## Two harness defects, recorded as usual
+
+- **The selftest started the user's `$SHELL` instead of its own command.** Showing the pane and starting a shell were one act, so `toggleTerminal()` spawned zsh before the arm's `/bin/sh -c` script could, and the arm then reported on a buffer holding somebody's prompt. G3 runs this selftest from `/` on a stranger's machine, where that would have meant running *their* rc files. Showing and starting are now separate.
+- **The frame counter measured nothing after the first suspension.** A self-perpetuating `requestAnimationFrame` chain dies the moment frames stop and never restarts, so it read zero forever afterwards — including while xterm was painting again. It re-arms on each probe, and reports frames *since the last question* rather than a total that cannot recover.

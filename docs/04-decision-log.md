@@ -2309,3 +2309,42 @@ The feature turns on one question, which is why T0 came before any of it: **can 
 ### Revisit trigger
 
 Reopen if prompt-mark detection proves unreliable in real use rather than in seventeen scenarios — the fallback is Option 2, a plain terminal, with the reason recorded. Reopen separately if the product ever wants to *act* on repositories itself, which is OQ-056 and DEC-003, not this entry.
+
+---
+
+## DEC-054 — The output grid is xterm.js, pinned and bundled; the input line is not it
+
+- **Date:** 2026-08-01 · **Topic:** T1 of `26-terminal-plan.md`; adds the first third-party runtime dependency since CodeMirror · **Status:** Accepted
+- **Depends on:** DEC-053 (the terminal is in scope), DEC-042 (why a webview renders text here at all)
+
+### Context
+
+The terminal needs a grid: a virtualised, reflowing, attribute-aware screen with scrollback, an alternate buffer, and answers to the device queries a full-screen program asks. Gate T0 measured what happens without one — `vim` asks who it is talking to and waits, and the probe had to answer `DA2` and `DSR-cursor` by hand to get past it.
+
+### Options considered
+
+1. **xterm.js in a second `WKWebView`.** MIT. The webview plumbing, the renderer build step and the token file all already exist here.
+2. **SwiftTerm.** MIT, Swift-native, no webview. Fewer moving parts, and less battle-tested for reflow — which is the part that is hard and the part a reader notices when it is wrong.
+3. **A hand-written VT parser and grid.** Weeks, for a solved problem, in the milestone whose *point* is that the shell works.
+
+### Final decision
+
+**Option 1**, with the boundaries that make it checkable:
+
+- **Pinned to exact versions** (`@xterm/xterm` 6.0.0, `@xterm/addon-fit` 0.11.0), both MIT, both bundled by the existing esbuild step. A check holds `package.json` to exact versions, because a caret would let the grid change under a build that reports no change at all.
+- **Colours come from `tokens.css`** like every other visual value (G2). Sixteen ANSI names are the only literal colours in that file — a palette is what programs address by index, and `Canvas` cannot express "red". They are written out one by one rather than assembled in a loop, so the existing "every declared token is used" check can see them.
+- **Bytes cross as base64 of the raw PTY output**, never as a decoded string: a UTF-8 sequence splits across reads routinely, and this product's entire claim is that bytes are the source of truth.
+- **Output is coalesced into one frame's worth** before crossing (T1-A: 2,605 reads become 9 deliveries for 2.7 MB, every byte preserved).
+- **The grid is output only.** Keystrokes cross back through one message handler into `TerminalSession.send`, and the Warp-style input line — local editing at a prompt, raw passthrough while a program runs — is T2's, not a property of this choice.
+
+### Consequences
+
+- **The privacy claim now covers code we did not write.** `25-tester-packet.md` says the renderer makes no requests; since T1 the bundle carries xterm.js, so the check that backs that sentence was widened from `main.js` to every renderer source *and* every built bundle. Both are clean today, and a future dependency bump is now answerable rather than assumed.
+- **348 KB** for the grid, beside CodeMirror's 380 KB. The number that made this an easy call is DEC-042's: Monaco was rejected at 9.3 MB.
+- **The grid paints on `requestAnimationFrame`, which WebKit suspends while the window is occluded.** Measured in T1-A: the buffer fills and the screen stays blank, with every other signal healthy. The reader never sees this — an occluded window is one nobody is looking at — but a *selftest* does, so the arm that asserts drawn glyphs states plainly when it could not.
+- **A second webview is a second attack surface and a second thing to keep in step.** It loads a local file, has no network entitlement, and is covered by the same freshness hash as the first.
+- SwiftTerm remains the way out if the webview becomes the wrong host: the module boundary is `TerminalSession`, and nothing above it knows how the grid is drawn.
+
+### Revisit trigger
+
+Reopen if xterm.js goes unmaintained the way `tree-sitter-typescript` did (`17-…` §4.3 records what that looks like), or if the input line T2 builds cannot be made to work inside the same webview — in which case the grid and the input line split hosts and this entry chooses again.

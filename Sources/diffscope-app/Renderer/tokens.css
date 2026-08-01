@@ -64,4 +64,35 @@
   /* The gutter edge, third carrier of change meaning beside the underline and the texture. */
   --ds-gutter-edge-width: 3px;
   --ds-gutter-edge: var(--ds-ink);
+
+  /* ---- Terminal (DEC-054) ------------------------------------------------
+   * The grid is xterm.js, and it takes its colours from here like everything else — `terminal.js`
+   * reads these names and hands xterm the resolved values. A missing name is reported by the
+   * grid's probe rather than silently drawn as black.
+   *
+   * The sixteen below are the only place in this file that has to state literal colours: a
+   * terminal palette is what programs address by index, and `Canvas`/`CanvasText` cannot express
+   * "red". A design may replace all sixteen. */
+  --ds-term-surface: var(--ds-surface);
+  --ds-term-ink: var(--ds-ink);
+  --ds-term-cursor: var(--ds-ink);
+  --ds-term-selection: color-mix(in srgb, var(--ds-ink) 22%, transparent);
+  --ds-term-text-size: 12px;
+
+  --ds-term-black: #2e3436;
+  --ds-term-red: #cc0000;
+  --ds-term-green: #4e9a06;
+  --ds-term-yellow: #c4a000;
+  --ds-term-blue: #3465a4;
+  --ds-term-magenta: #75507b;
+  --ds-term-cyan: #06989a;
+  --ds-term-white: #d3d7cf;
+  --ds-term-bright-black: #555753;
+  --ds-term-bright-red: #ef2929;
+  --ds-term-bright-green: #8ae234;
+  --ds-term-bright-yellow: #fce94f;
+  --ds-term-bright-blue: #729fcf;
+  --ds-term-bright-magenta: #ad7fa8;
+  --ds-term-bright-cyan: #34e2e2;
+  --ds-term-bright-white: #eeeeec;
 }

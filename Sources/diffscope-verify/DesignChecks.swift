@@ -52,9 +52,22 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("main.js sets no style values of its own", scriptStyles.isEmpty,
                scriptStyles.prefix(3).joined(separator: " | "))
 
-        // Every `var(--ds-…)` the stylesheet reaches for must exist, or the design silently loses a
+        // Since T1 there are two surfaces, and the grid takes its colours from the same file
+        // (DEC-054) — so both pages and both scripts count as users of a token.
+        let terminalHTML = (try? String(contentsOf: rendererDir.appendingPathComponent("terminal.html"),
+                                        encoding: .utf8)) ?? ""
+        let terminalScript = (try? String(contentsOf: rendererDir.appendingPathComponent("terminal.js"),
+                                          encoding: .utf8)) ?? ""
+        report("terminal.html exists", !terminalHTML.isEmpty)
+        for (what, pattern) in literals {
+            let hits = stripped(terminalHTML).ranges(of: pattern)
+            report("terminal.html declares no \(what) of its own", hits.isEmpty,
+                   hits.prefix(3).joined(separator: " | "))
+        }
+
+        // Every `var(--ds-…)` a surface reaches for must exist, or the design silently loses a
         // property and the mark quietly falls back to nothing.
-        let used = Set(html.ranges(of: "--ds-[a-z0-9-]+"))
+        let used = Set((html + terminalHTML + terminalScript).ranges(of: "--ds-[a-z0-9-]+"))
         let missing = used.filter { !tokens.contains("\($0):") }
         report("every token the stylesheet uses is defined", missing.isEmpty,
                missing.sorted().joined(separator: ", "))
@@ -194,7 +207,8 @@ func runTesterPacketChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // Every Swift file that ships inside the application, which is all of them except the
         // check suite itself.
         var shipped: [String] = []
-        for module in ["DiffScopeEngine", "DiffScopeGit", "DiffScopeSyntax", "diffscope-app"] {
+        for module in ["DiffScopeEngine", "DiffScopeGit", "DiffScopeSyntax", "DiffScopeTerminal",
+                       "diffscope-app"] {
             let dir = root.appendingPathComponent("Sources/\(module)")
             guard let walker = fm.enumerator(at: dir, includingPropertiesForKeys: nil) else { continue }
             for case let url as URL in walker where url.pathExtension == "swift" {
@@ -211,14 +225,35 @@ func runTesterPacketChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("no network API appears anywhere in the shipped sources",
                found.isEmpty, found.joined(separator: ", "))
 
-        let renderer = (try? String(contentsOf: root.appendingPathComponent("Renderer/src/main.js"),
-                                    encoding: .utf8)) ?? ""
         // The renderer runs in a webview, which is the one component that *could* reach the network
-        // without any Swift being involved.
+        // without any Swift being involved. Every source is asked, not just the first one written.
         let browserAPIs = ["fetch(", "XMLHttpRequest", "new WebSocket", "navigator.sendBeacon"]
-        let inRenderer = browserAPIs.filter { renderer.contains($0) }
+        var rendererSources: [String: String] = [:]
+        for name in (try? fm.contentsOfDirectory(atPath: root.appendingPathComponent("Renderer/src").path)) ?? []
+            where name.hasSuffix(".js") {
+            rendererSources[name] = (try? String(contentsOf: root.appendingPathComponent("Renderer/src/\(name)"),
+                                                 encoding: .utf8)) ?? ""
+        }
+        report("every renderer source was found", rendererSources.count >= 2,
+               rendererSources.keys.sorted().joined(separator: ", "))
+        let inRenderer = rendererSources.flatMap { name, text in
+            browserAPIs.filter { text.contains($0) }.map { "\(name): \($0)" }
+        }
         report("the renderer makes no requests of its own", inRenderer.isEmpty,
                inRenderer.joined(separator: ", "))
+
+        // Since T1 the bundles carry third-party code (xterm.js, DEC-054). A claim about the
+        // sources we wrote is no longer a claim about what ships, so the built bundles are asked
+        // the same question.
+        var inBundles: [String] = []
+        for name in (try? fm.contentsOfDirectory(atPath: root.appendingPathComponent("Sources/diffscope-app/Renderer").path)) ?? []
+            where name.hasSuffix(".js") {
+            let text = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/Renderer/\(name)"),
+                                    encoding: .utf8)) ?? ""
+            inBundles += browserAPIs.filter { text.contains($0) }.map { "\(name): \($0)" }
+        }
+        report("and neither does anything bundled with it", inBundles.isEmpty,
+               inBundles.joined(separator: ", "))
 
         // The packet tells a tester that deleting one file makes the application forget everything.
         let packet = (try? String(contentsOf: root.appendingPathComponent("docs/25-tester-packet.md"),

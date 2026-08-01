@@ -81,7 +81,7 @@ Two results change the work below rather than merely clearing it:
 | | |
 |---|---|
 | ~~**T0**~~ | **Done 2026-08-01.** `Sources/diffscope-t0`, results in `22-experiment-log.md` → T0. Throwaway: T1 replaces it |
-| **T1** | PTY lifecycle and output grid: spawn, resize (`TIOCSWINSZ`), read loop, scrollback, alternate screen, clean teardown |
+| ~~**T1**~~ | **Done 2026-08-01.** `Sources/DiffScopeTerminal` (PTY, scanner, integration, session) and the grid in a second `WKWebView`; ⌥⌘T opens a pane under the diff. DEC-054, measured in `22-experiment-log.md` → T1-A |
 | **T2** | The input line: mode switching on prompt marks, the editable control, the escape hatch, history |
 | **T3** | Belonging to this product: opens in the selected repository's directory, follows the selection, and the existing watcher refreshes the diff when a command changes the working tree |
 | **T4** | The decision entry, the tests, and the documents that currently say this cannot happen |

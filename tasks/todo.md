@@ -493,3 +493,30 @@ output, which leaked exactly one `ssh-agent` per run until the process count was
 
 T0 also killed an assumption in the plan: the macOS motions are not an AppKit property. A DOM text
 field gets all six, so T2's input line need not be overlaid on the grid.
+
+## Step 23 — T1: the PTY lifecycle and the output grid
+
+- [x] `DiffScopeTerminal`: `PtyProcess`, `TerminalScanner`, `ShellIntegration` (zsh + bash),
+      `TerminalSession` (shell from `$SHELL`, coalesced output, prompt state), `PtyRecorder`
+- [x] Gate T0 repointed at the module, so it measures the shipping code rather than a copy
+- [x] xterm.js 6.0.0 + addon-fit 0.11.0, pinned exactly, second esbuild entry, colours from tokens
+- [x] ⌥⌘T opens a pane under the diff; the shell starts on first open, not at launch
+- [x] Output crosses as base64 of raw bytes; keystrokes cross back through one handler
+- [x] `TerminalChecks`: scanner (torn marks, ST termination, exit codes, alternate screen, a
+      negative control), integration files, PTY round trip with multi-byte UTF-8, resize, teardown,
+      rc files unchanged, the count of places that may write to a PTY, pinned versions
+- [x] Selftest arms: output reaches the grid, the alternate screen, drawn glyphs, `terminal.png`
+- [x] DEC-054, the licence table, T1-A in the experiment log, handoff §0
+
+### Step 23 — done
+
+1031/1031 checks (973 + 58), 17/17 T0 scenarios, `package.sh` green.
+
+The first version of the selftest passed every arm with a **completely blank** grid: xterm paints
+inside `requestAnimationFrame`, and WebKit suspends those while the window is occluded. M8-D again,
+through a different door — so the probe now reports what was *drawn*, not only what the buffer holds,
+and the paint arm says SKIPPED with its reason rather than passing quietly.
+
+Two harness defects on the way: showing the pane also started the user's `$SHELL`, so the arm
+reported on somebody's prompt instead of its own command; and the frame counter, being a
+self-perpetuating rAF chain, died at the first suspension and read zero forever after.
