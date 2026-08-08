@@ -1880,3 +1880,47 @@ The sequencing mistake that exposed the second one is itself the behaviour worki
 The snapshot after the handover showed the input row and its chip drawn correctly — and **the previous session's output still in the grid above it**. Restarting a session had left the old shell's scrollback in place with nothing to mark the boundary, so two shells' output read as one. A new session now resets the grid.
 
 Nothing failed. The buffer was correct, the chip was correct, every arm was green. It is the same lesson as M8-D and T1-A, for the third time: *look at the surface*.
+
+---
+
+# T3-A — what the watcher already sees, and a guard that asked the wrong question
+
+**Date:** 2026-08-01 · **Method:** a throwaway binary linked against `DiffScopeGit`, starting a real `RepositoryWatcher` on a scratch repository and then doing from a shell exactly what a reader does in the terminal. Signals counted, time to the first one measured.
+
+## The premise was wrong
+
+T3 was planned around a sentence that turned out to be false on this machine: *"`git commit` does not touch the working tree, so the file-system watcher will not see it."*
+
+```
+write a tracked file    1 signal   first at 418 ms
+git add                 1 signal   first at 432 ms
+git commit              1 signal   first at 443 ms
+git reset --hard        1 signal   first at 433 ms
+```
+
+**All three are seen, one debounced signal each.** `.git` lives inside the watched root and DEC-027 excludes only `node_modules`, so a commit's index and ref writes are ordinary file-system events. The ~430 ms is the debounce doing its job (DEC-026: 0.4 s quiet period), not latency in the watcher.
+
+So the file list needs nothing from the terminal. What a finished command *is* still used for is the **repository-level** sweep — the uncommitted count and commits-ahead-of-base shown beside every repository — which no file-system event triggers and which otherwise stays stale until the window regains focus (DEC-006). The refresh after a command was narrowed to exactly that, and debounced against the same quiet period so one command cannot produce a cascade.
+
+Had this not been measured, the terminal would have carried a second, redundant refresh path for the file list, and the first person to notice would have been whoever wondered why one edit refreshed twice.
+
+## The guard was asking what the shell is called
+
+The follow-under-guard rule (DEC-056) first read: *send `cd` only if the shell kind marks prompts* — that is, only if `$SHELL` is named `zsh` or `bash`. Five checks failed at once against a fixture that emits prompt marks by hand from `/bin/sh`.
+
+The fixture was right and the guard was wrong. What matters is whether **marks have actually been seen**, not what the binary is called: a shell this product does not recognise may still be marking its prompts through the reader's own integration. The guard now asks `hasSeenPromptMark`, which is the question the behaviour depends on.
+
+Worth noticing as a pattern: the check failed for a reason that looked like a fixture problem, and the fixture was the honest one.
+
+## The quoting is proved against a shell, not against a belief
+
+`shellSingleQuoted` is checked in two directions. The string side asserts every hostile path comes back as one closed single-quoted string. The **positive control** creates each of those directories for real, runs `cd -- <quoted> && pwd` in `/bin/sh`, and requires the shell to land in it:
+
+```
+/tmp/plain   /tmp/with space   /tmp/it's        /tmp/semi;colon
+/tmp/$(id)   /tmp/`id`         /tmp/dollar$HOME /tmp/new\nline
+/tmp/-leading-dash             /tmp/quote"double
+/tmp/ŻABKA   /tmp/back\slash
+```
+
+12 of 12. A string check alone would only ever confirm my idea of quoting; a shell confirms the quoting. The `--` is why the leading-dash case works, and the check would fail without it.

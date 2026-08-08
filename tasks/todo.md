@@ -544,3 +544,26 @@ text" while testing an unrelated counter — it now reads back what `cat` echoed
 
 The snapshot showed what no check did: a restarted session left the previous shell's output in the
 grid with nothing marking the boundary. A new session now resets it.
+
+## Step 25 — T3: the terminal belongs to this product
+
+- [x] OSC 7 in both integrations; the scanner reads `file://host/path` and percent-decoding
+- [x] `TerminalSession.follow` under a three-term guard, with named refusals
+- [x] `ShellQuoting`: one function, `cd -- '<path>'`, proved against a real shell on 12 hostile names
+- [x] ⌥⌘K for when the guard refuses; the pane says when the directories disagree
+- [x] A finished command refreshes the repository sweep, debounced — measured, not assumed
+- [x] Checks: quoting both directions, the guard's three refusals, OSC 7 parsing and splitting,
+      an unrecognised shell never claiming to know where it is
+- [x] Selftest arms: the reported directory, the divergence, the quoted cd arriving; `terminal-follow.png`
+- [x] DEC-056, T3-A, plan §5, handoff §0
+
+### Step 25 — done
+
+1080/1080 checks (1063 + 17) when the machine is idle; 1079/1080 under load, because one budget
+check is wall-clock and four other processes were saturating the CPU. Recorded in the handoff rather
+than fixed by raising the bound.
+
+Two things measurement changed. The plan said FSEvents would not see `git commit` — it does, one
+signal at ~440 ms, so the command mark now refreshes only the repository sweep. And the follow guard
+first asked whether the shell was *named* zsh; five checks failed against a fixture emitting marks
+from `/bin/sh`, and the fixture was right: the guard asks whether marks have been seen.

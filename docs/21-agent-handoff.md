@@ -8,7 +8,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, the T-series coverage audit, root management, the gutter, the grouped file list and the rest of the interface audit have all landed, and **all three handover gates have passed**. 1063/1063 checks pass over 32 fixtures.**
+**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, the T-series coverage audit, root management, the gutter, the grouped file list and the rest of the interface audit have all landed, and **all three handover gates have passed**. 1080/1080 checks pass over 32 fixtures.**
 
 | Milestone | State |
 |---|---|
@@ -25,7 +25,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 Run everything:
 
 ```
-swift run diffscope-verify          # 1063 checks over 32 fixtures, exit 1 on failure
+swift run diffscope-verify          # 1080 checks over 32 fixtures, exit 1 on failure
 ./Scripts/package.sh                # DiffScope.app + zip + SHA-256 for a tester
 swift run diffscope-verify --write-manifest   # re-record fixture hashes, deliberately
 swift run -c release diffscope-verify --survey ~/YourProjects
@@ -34,7 +34,7 @@ swift run -c release diffscope-app  # the application
 swift run diffscope-t0              # gate T0 of the terminal plan, 17 scenarios over real PTYs
 ```
 
-`DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits: raw ŻABKA probe → structural render with a formatting-only label → INV-5 mode agreement across the webview → invisible-difference disclosure naming `U+0307` → a relocated block reported as one move → navigation and folds → a formatting-only group with its disclosed count → an anchor surviving an insertion above it → a ranked degradation notice reaching the document. Adding `DIFFSCOPE_SNAPSHOT_DIR=/some/dir` writes `structural.png`, `expanded.png`, `disclosure.png`, `moved.png`, `navigation.png`, `refresh.png`, `anchored.png`, `degraded.png` and `gutter.png` of what the webview actually drew — the only way to check legibility, which the probe cannot see. Since T1 it also runs a command through a real PTY into the terminal grid and writes `terminal.png`; since T2 it types into the input line, submits, hands over on Tab and forces raw, writing `terminal-input.png`.
+`DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits: raw ŻABKA probe → structural render with a formatting-only label → INV-5 mode agreement across the webview → invisible-difference disclosure naming `U+0307` → a relocated block reported as one move → navigation and folds → a formatting-only group with its disclosed count → an anchor surviving an insertion above it → a ranked degradation notice reaching the document. Adding `DIFFSCOPE_SNAPSHOT_DIR=/some/dir` writes `structural.png`, `expanded.png`, `disclosure.png`, `moved.png`, `navigation.png`, `refresh.png`, `anchored.png`, `degraded.png` and `gutter.png` of what the webview actually drew — the only way to check legibility, which the probe cannot see. Since T1 it also runs a command through a real PTY into the terminal grid and writes `terminal.png`; since T2 it types into the input line, submits, hands over on Tab and forces raw, writing `terminal-input.png`; since T3 it follows a selection into a directory whose name contains a quote and a space, writing `terminal-follow.png`.
 
 ### What exists in code
 
@@ -46,7 +46,7 @@ swift run diffscope-t0              # gate T0 of the terminal plan, 17 scenarios
 | `CTreeSitter`, `CTreeSitterTSX` | Vendored C, MIT |
 | `diffscope-verify` | The whole check suite, headless |
 | `diffscope-app` | AppKit shell + `WKWebView` |
-| `DiffScopeTerminal` | The terminal: `PtyProcess` (forkpty, resize, teardown), `TerminalScanner` (OSC 133 and the alternate screen), `ShellIntegration` (generated `ZDOTDIR` / `--rcfile`), `TerminalSession` (shell choice, coalesced output, prompt state, mode), `InputRouter` (where a keystroke goes, and this session's history) |
+| `DiffScopeTerminal` | The terminal: `PtyProcess` (forkpty, resize, teardown), `TerminalScanner` (OSC 133, OSC 7, the alternate screen), `ShellIntegration` (generated `ZDOTDIR` / `--rcfile`), `TerminalSession` (shell choice, coalesced output, prompt state, mode, following the selection), `InputRouter` (where a keystroke goes, and this session's history), `ShellQuoting` (**the only place the application composes a command**) |
 | `diffscope-t0` | Gate T0 of the terminal plan: `forkpty`, an OSC 133 scanner, a generated `ZDOTDIR`, and the macOS motions measured in both surfaces. Now imports `DiffScopeTerminal`, so the gate measures the shipping code rather than a copy. Deliberately outside the check suite: it drives ten real interactive shells and depends on this machine's `~/.zshrc` |
 | `Renderer/src` | Two surfaces: the CodeMirror diff (`main.js`) and the xterm.js terminal grid (`terminal.js`); build both with `npm run build` in `Renderer/` |
 
@@ -100,6 +100,8 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 
 **The product owner has put the built-in terminal first** (2026-07-31, resolving OQ-055). Everything below it in this list was the audit's ordering, not theirs. The plan is [`26-terminal-plan.md`](26-terminal-plan.md).
 
+**T3 landed on 2026-08-01** — the terminal belongs to the product. It reports where it is (OSC 7) rather than assuming, follows the reader's selection under a three-term guard (a prompt mark actually seen · the input line owns the keyboard · nothing typed), and offers ⌥⌘K when the guard refuses. The path is quoted by one function and proved against a real shell over twelve hostile directory names. **DEC-056**, measured in `22-experiment-log.md` → **T3-A**, where the plan's own premise was measured false: FSEvents *does* see `git commit`, so the command mark refreshes only the repository sweep the watcher cannot know about. **T4 is the last step** — rewriting `25-tester-packet.md` and the documents that still say this product cannot change a repository.
+
 **T2 landed on 2026-08-01** — the terminal now does the thing OQ-055 asked for. At a prompt the keyboard belongs to a real text field, so Option+←/→ and Cmd+←/→ work in a command line; **Tab and ⌃R hand the line to the shell** so zsh's own completion and reverse search behave normally; ↑/↓ walk this session's history; **⌥⌘R forces raw mode** for the cases where prompt detection is wrong, and a chip always says which mode is in force. `InputRouter` in `DiffScopeTerminal` owns every routing decision, so the rules are checked headlessly rather than looked at. **DEC-055**, and `22-experiment-log.md` → **T2-A**. **Next is T3** — the terminal belonging to this product: opening in the selected repository, following the selection, and the watcher refreshing the diff when a command changes the working tree.
 
 **T1 landed on 2026-08-01.** `DiffScopeTerminal` holds the PTY, the OSC 133 scanner, the generated shell integration and the session; the grid is xterm.js in a second `WKWebView` (**DEC-054**); ⌥⌘T opens a pane under the diff, and the shell starts on first open rather than at launch. **Next is T2** — the Warp-style input line — in `26-terminal-plan.md` §5. Sizes and the coalescing measurement are in `22-experiment-log.md` → **T1-A**.
@@ -149,6 +151,8 @@ Three things from T0 that change the work rather than merely clearing it:
 Order is G1 → G2 → G3 and the reasoning is in that document. **No gate may be announced from checks alone** — each requires running the application and looking at what it drew, which is the lesson M6-D paid for.
 
 **Ambiguity display was withdrawn by DEC-045** — detection stays as a guard against ambiguous anchors, but no indicator is built.
+
+**One check is wall-clock and therefore load-sensitive.** `BudgetChecks`' *"a file above the size limit is refused without parsing it"* asserts under 2.0 s in a debug build; with four other processes saturating the machine it measures 2.3 s and the suite reports 1079/1080. The behaviour is right — the file is refused without a parse — and only the timing loses. DEC-050 rejected wall-clock deadlines for *behaviour* on exactly this reasoning; the same shape survives inside a check, and it should be re-expressed against a measured baseline rather than an absolute second.
 
 Known weaknesses recorded rather than hidden: **a relocated line whose leading bytes align with a neighbour's identical prefix is not detected as a move** (measured in M8-C — widening the search would put bytes the canonical diff calls unchanged inside a `moved` range, which is a reopening of DEC-038, not an implementation detail); anchor selection is greedy by old-side position rather than a longest-increasing-subsequence; moved-and-modified content presents as delete plus add (accepted in DEC-038); the file list has no keyboard path of its own; a reformat that changes line counts is never grouped (DEC-048, the conservative direction); files over 2000 anchored lines are strided, so a refresh lands the reader within a few lines rather than exactly; the mode chip still reads `mode: structural` beside a notice saying structural analysis was unavailable, because the chip reports the reader's *selection* rather than the path taken.
 

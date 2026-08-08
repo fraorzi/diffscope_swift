@@ -22,6 +22,14 @@ final class TerminalPane: NSObject, WKNavigationDelegate {
     private(set) var started = false
 
     var onSessionExit: (() -> Void)?
+    /// A command finished in the terminal. The window uses it to refresh the repository beside it —
+    /// `git commit` changes what the lists say without touching a single watched file.
+    var onCommandFinished: ((Int?) -> Void)?
+    /// The directory the shell reports it is in, and the one the reader has selected. When they
+    /// disagree the pane says so rather than implying the terminal is where the diff is.
+    private(set) var selectedDirectory: String?
+
+    var shellDirectory: String? { session?.reportedDirectory }
 
     override init() {
         super.init()
@@ -50,6 +58,7 @@ final class TerminalPane: NSObject, WKNavigationDelegate {
         ready = true
         configureInput()
         publishMode()
+        publishDirectory()
         if !buffered.isEmpty {
             let pending = buffered
             buffered.removeAll()
@@ -82,6 +91,45 @@ final class TerminalPane: NSObject, WKNavigationDelegate {
         session.setForcedRaw(!session.isForcedRaw)
     }
 
+    private func publishDirectory() {
+        let shown = session?.reportedDirectory ?? selectedDirectory
+        let diverged = shown != nil && selectedDirectory != nil && shown != selectedDirectory
+        let name = (shown as NSString?)?.lastPathComponent ?? "unknown"
+        let payload: [String: Any] = ["name": name, "path": shown ?? "", "diverged": diverged,
+                                      "known": session?.reportedDirectory != nil]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript(
+            "window.diffscopeTerminalSetDirectory && window.diffscopeTerminalSetDirectory(\(json))")
+    }
+
+    /// The reader selected a different repository. Under guard: see `TerminalSession.follow`.
+    @discardableResult
+    func follow(directory path: String, force: Bool = false) -> TerminalSession.FollowOutcome? {
+        selectedDirectory = path
+        guard let session else { publishDirectory(); return nil }
+        var typed = ""
+        // The typed line lives in the page, so it has to be read before deciding — asking after
+        // sending would be deciding on a field that no longer says what it said.
+        let semaphore = DispatchSemaphore(value: 0)
+        webView.evaluateJavaScript("document.getElementById('line').value") { value, _ in
+            typed = (value as? String) ?? ""
+            semaphore.signal()
+        }
+        // The main queue drives the webview, so it cannot be blocked waiting for it.
+        if Thread.isMainThread {
+            let deadline = Date().addingTimeInterval(0.3)
+            while semaphore.wait(timeout: .now()) == .timedOut, Date() < deadline {
+                RunLoop.current.run(mode: .default, before: Date().addingTimeInterval(0.005))
+            }
+        } else {
+            _ = semaphore.wait(timeout: .now() + 0.3)
+        }
+        let outcome = session.follow(directory: path, typedLine: typed, force: force)
+        publishDirectory()
+        return outcome
+    }
+
     var isForcedRaw: Bool { session?.isForcedRaw ?? false }
 
     /// `command`/`arguments` exist for the selftest, which must run the same path on a stranger's
@@ -98,6 +146,9 @@ final class TerminalPane: NSObject, WKNavigationDelegate {
         session.onOutput = { [weak self] bytes in self?.deliver(bytes) }
         session.onExit = { [weak self] in self?.onSessionExit?() }
         session.onModeChange = { [weak self] _ in self?.publishMode() }
+        session.onDirectoryChange = { [weak self] _ in self?.publishDirectory() }
+        session.onCommandFinished = { [weak self] code in self?.onCommandFinished?(code) }
+        selectedDirectory = workingDirectory
         self.session = session
         webView.evaluateJavaScript("window.diffscopeTerminalReset && window.diffscopeTerminalReset()")
         publishMode()

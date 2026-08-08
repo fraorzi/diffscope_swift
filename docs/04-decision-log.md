@@ -2392,3 +2392,49 @@ Two things were already measured and decide the shape: a `<textarea>` in a `WKWe
 ### Revisit trigger
 
 Reopen if handover proves annoying in daily use (the tell would be reaching for Tab and losing the line's motions often enough to notice), or if Warp-style blocks are taken up, which would change what the input line is attached to.
+
+---
+
+## DEC-056 — The terminal follows the reader's selection, under guard
+
+- **Date:** 2026-08-01 · **Topic:** T3 of `26-terminal-plan.md`; the one place the application composes a command · **Status:** Accepted
+- **Decided with the product owner**, 2026-08-01
+
+### Context
+
+The terminal sits under the diff so that a command and its consequences are visible together. That only works if it is *in the repository the reader is looking at*. Opening there is easy; the question is what happens when the reader switches repositories while a shell is already running.
+
+This is also the first time the application would **compose a command for the user's shell**, which is a boundary this product has been careful about since DEC-028.
+
+### Options considered
+
+1. **Send `cd` automatically, but only when there is provably nothing to disturb**, and offer an explicit action otherwise.
+2. **Never send anything**; show where the terminal is and let the reader act every time. Purest, and it makes "follows the selection" mean only "opens there".
+3. **Restart the shell in the new directory.** Always consistent, and it discards shell state, history and — worst — whatever program was running. Each restart also costs ~340 ms and another `ssh-agent` (T0).
+
+### Final decision
+
+**Option 1.** The guard is a conjunction, and each term is there for a reason:
+
+| Condition | Why |
+|---|---|
+| a prompt mark has actually been seen | not "the shell is named zsh" — an unrecognised shell may still mark prompts through the reader's own integration (T3-A) |
+| the mode is `local` | a program running, a forced raw mode, or a handed-over line all mean somebody else owns the keyboard |
+| the input field is empty | a `cd` in front of a half-typed command would destroy it |
+
+Otherwise **nothing is sent**: the pane shows that the terminal's directory and the selection disagree, and ⌥⌘K performs it when the reader asks.
+
+**The path is quoted by one function** (`shellSingleQuoted`) and the command is `cd -- <path>`. Single quotes because a POSIX shell expands nothing inside them; `--` because a directory whose name starts with `-` would otherwise be read as options. Both are checked against a **real shell** over twelve hostile names, including `$(id)`, a backtick, a semicolon, a newline and an embedded quote — a string check would only confirm the idea of quoting.
+
+**Where the shell is comes from the shell** (OSC 7), not from where it was started. A shell that reports nothing is shown as *directory unknown* rather than as the directory it was launched in.
+
+### Consequences
+
+- **This is the closest the product has come to running a command.** It composes exactly one, with exactly one argument, through exactly one function, under a three-term guard, with hostile fixtures. DEC-028 is untouched in the sense that matters: nothing here derives from repository *content* — the path is the reader's own selection.
+- **A finished command refreshes the repository sweep, not the file list.** Measured first (T3-A): FSEvents already sees `git commit`, because `.git` is inside the watched root. What it does not see is the uncommitted count and ahead-of-base beside every repository, and that is all the command mark is used for — debounced against the watcher's own quiet period.
+- **A refusal is silent.** The pane already shows the divergence; a status line that announced every refusal would be noise for a condition the reader created deliberately by typing.
+- If prompt detection is ever wrong, the guard's other two terms still hold — which is why it is a conjunction and not a preference.
+
+### Revisit trigger
+
+Reopen if the terminal ever needs to send anything other than `cd` — a second composed command is a different decision, not an extension of this one.

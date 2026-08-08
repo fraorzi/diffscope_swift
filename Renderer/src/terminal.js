@@ -117,6 +117,7 @@ armFrameCounter();
 const row = document.getElementById("input-row");
 const field = document.getElementById("line");
 const modeChip = document.getElementById("mode");
+const cwdChip = document.getElementById("cwd");
 
 let interceptedKeys = [];
 let currentMode = "program";
@@ -137,6 +138,16 @@ window.diffscopeTerminalSetMode = (mode, label) => {
   } else {
     field.focus();
   }
+};
+
+window.diffscopeTerminalSetDirectory = (info) => {
+  // "unknown" is a real answer: a shell with no integration reports nothing, and showing where it
+  // *started* as though it were where it is would be a quiet lie.
+  cwdChip.textContent = info.known
+    ? (info.diverged ? info.name + " — not the selected repository" : info.name)
+    : "directory unknown";
+  cwdChip.title = info.path || "";
+  cwdChip.dataset.diverged = String(Boolean(info.diverged));
 };
 
 window.diffscopeTerminalApply = (outcome) => {
@@ -234,4 +245,6 @@ const probeBody = (framesSinceLastProbe) => ({
   inputFocused: document.activeElement === field,
   line: field.value,
   interceptedKeys,
+  cwd: cwdChip.textContent,
+  cwdDiverged: cwdChip.dataset.diverged === "true",
 });

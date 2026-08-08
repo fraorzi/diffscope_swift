@@ -7,6 +7,9 @@ public enum TerminalEvent {
     case commandStart         // OSC 133;C
     case commandEnd(Int?)     // OSC 133;D;<exit>
     case note(String)         // OSC 133;X;… — the integration's own side channel
+    /// OSC 7 — where the shell says it is. The standard mechanism every terminal uses for this, so
+    /// the product reads a shell's own report rather than guessing from where it was started.
+    case workingDirectory(String)
     case alternateScreen(Bool)
     case query(String)
 }
@@ -134,6 +137,18 @@ public final class TerminalScanner {
                 onReply?("\u{1b}P0+r\u{1b}\\")
             }
         case .osc:
+            // OSC 7 carries `file://host/path`, and some shells omit the host entirely. Anything
+            // that is not a local path is ignored rather than guessed at: a directory the
+            // application cannot reach is not a directory it should claim to be showing.
+            if text.hasPrefix("7;") {
+                let body = String(text.dropFirst(2))
+                guard let range = body.range(of: "file://") else { return }
+                let rest = String(body[range.upperBound...])
+                guard let slash = rest.firstIndex(of: "/") else { return }
+                let encoded = String(rest[slash...])
+                onEvent?(.workingDirectory(encoded.removingPercentEncoding ?? encoded))
+                return
+            }
             guard text.hasPrefix("133;") else { return }
             let body = String(text.dropFirst(4))
             let fields = body.split(separator: ";", omittingEmptySubsequences: false)

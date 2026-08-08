@@ -23,6 +23,13 @@ public final class TerminalSession {
     public var onStateChange: ((State) -> Void)?
     public var onModeChange: ((InputMode) -> Void)?
     public var onExit: (() -> Void)?
+    /// Where the shell says it is (OSC 7). `nil` until it says — a shell with no integration never
+    /// reports, and the pane says it does not know rather than showing where the shell *started*.
+    public private(set) var reportedDirectory: String?
+    public var onDirectoryChange: ((String) -> Void)?
+    /// A command finished (OSC 133;D). This is the one thing the file-system watcher cannot know:
+    /// `git commit` leaves the working tree untouched while the repository's status changes.
+    public var onCommandFinished: ((Int?) -> Void)?
 
     /// Which surface owns the keyboard right now (T2). Raw until a prompt mark says otherwise: a
     /// shell that marks nothing — an unrecognised `$SHELL`, or one whose rc file the integration
@@ -32,6 +39,9 @@ public final class TerminalSession {
     private var history = SessionHistory()
     private var forcedRaw = false
     private var handedOver = false
+    /// Whether this shell has ever marked a prompt. The guard in `follow` asks this rather than
+    /// asking what the shell is called.
+    public private(set) var hasSeenPromptMark = false
 
     private let integration: ShellIntegration
     private let process: PtyProcess
@@ -114,8 +124,21 @@ public final class TerminalSession {
         case .commandEnd: next = .atPrompt
         default: next = nil
         }
+        if case let .workingDirectory(path) = event {
+            DispatchQueue.main.async {
+                guard self.reportedDirectory != path else { return }
+                self.reportedDirectory = path
+                self.onDirectoryChange?(path)
+            }
+            return
+        }
+        if case let .commandEnd(code) = event {
+            DispatchQueue.main.async { self.onCommandFinished?(code) }
+        }
+
         // A prompt mark is what ends a handover: the shell has finished with the line it was given.
         let endsHandover = isPromptStart(event) || isPromptEnd(event)
+        if endsHandover { DispatchQueue.main.async { self.hasSeenPromptMark = true } }
         guard next != nil || endsHandover else { return }
         DispatchQueue.main.async {
             if endsHandover { self.handedOver = false }
@@ -184,6 +207,43 @@ public final class TerminalSession {
     }
 
     public var historyCount: Int { history.count }
+
+    /// Why a `cd` was or was not sent. The refusals are the interesting half: this is the
+    /// application typing into the reader's shell, so it does so only when there is provably
+    /// nothing to disturb (DEC-056).
+    public enum FollowOutcome: Equatable {
+        case sent(String)
+        case alreadyThere
+        /// A program is running, the reader forced raw, or the shell was handed the line — all
+        /// three mean somebody other than the input field owns the keyboard.
+        case refusedNotAtPrompt
+        case refusedLineNotEmpty
+        case refusedNoPromptMarks
+
+        public var wasSent: Bool { if case .sent = self { return true }; return false }
+    }
+
+    /// Follows the reader's selection into the shell — under guard.
+    ///
+    /// `line` is what is currently typed in the input field. The conjunction matters: at a prompt,
+    /// **and** nothing typed, **and** the shell has not been handed the line. If prompt detection is
+    /// ever wrong, this is what stops a `cd` landing in the middle of something.
+    @discardableResult
+    public func follow(directory path: String, typedLine: String, force: Bool = false) -> FollowOutcome {
+        // On marks *seen*, not on what the shell binary is called. A shell this product does not
+        // recognise may still be marking its prompts — the reader's own integration, or a fish
+        // config — and refusing it for its name would be answering a different question. The check
+        // that found this was driving `/bin/sh` emitting marks by hand.
+        guard force || hasSeenPromptMark else { return .refusedNoPromptMarks }
+        if let reportedDirectory, reportedDirectory == path, !force { return .alreadyThere }
+        if !force {
+            guard mode == .local else { return .refusedNotAtPrompt }
+            guard typedLine.isEmpty else { return .refusedLineNotEmpty }
+        }
+        let command = changeDirectoryCommand(to: path)
+        send(command + "\r")
+        return .sent(command)
+    }
 
     /// The user's keystrokes, and nothing else. T2 splits this into a local input line and raw
     /// passthrough; until then every key goes straight through.

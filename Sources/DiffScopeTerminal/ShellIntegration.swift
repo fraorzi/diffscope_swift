@@ -112,6 +112,7 @@ public struct ShellIntegration {
     __diffscope_precmd() {
       local __ds_status=$?
       printf '\\033]133;D;%s\\a\\033]133;A\\a' "$__ds_status"
+      printf '\\033]7;file://%s%s\\a' "$HOST" "$PWD"
     }
 
     __diffscope_preexec() {
@@ -135,6 +136,7 @@ public struct ShellIntegration {
     __diffscope_prompt() {
       local __ds_status=$?
       printf '\\033]133;D;%s\\a\\033]133;A\\a' "$__ds_status"
+      printf '\\033]7;file://%s%s\\a' "$HOSTNAME" "$PWD"
     }
 
     __diffscope_preexec() {

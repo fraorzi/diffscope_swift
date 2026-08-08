@@ -26,6 +26,14 @@
   /* Raw is a different state, not a worse one, so it is marked by shape rather than by colour
      alone (DEC-035). */
   #mode[data-raw="true"] { border-style: dashed; font-weight: var(--ds-weight-emphasis); }
+  /* Where the shell says it is (OSC 7). When it disagrees with the reader's selection the chip
+     says so in words — the pane must never imply the terminal is where the diff is. */
+  #cwd { flex: none; padding: var(--ds-space-1) var(--ds-space-3);
+         font: var(--ds-text-size-small) var(--ds-font); color: var(--ds-ink-quiet);
+         white-space: nowrap; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
+  #cwd[data-diverged="true"] { color: var(--ds-term-ink);
+                               text-decoration: underline dotted;
+                               text-underline-offset: var(--ds-underline-offset); }
   #line { flex: 1; min-width: 0; resize: none; overflow: hidden;
           border: none; outline: none; background: transparent;
           font: var(--ds-term-text-size) var(--ds-font);
@@ -36,8 +44,8 @@
 </head>
 <body>
 <div id="grid"></div>
-<div id="input-row"><span id="mode"></span><textarea id="line" rows="1" spellcheck="false"
-  autocapitalize="off" autocorrect="off" aria-label="Command line"></textarea></div>
+<div id="input-row"><span id="mode"></span><span id="cwd" title=""></span><textarea id="line" rows="1"
+  spellcheck="false" autocapitalize="off" autocorrect="off" aria-label="Command line"></textarea></div>
 <script src="terminal.js"></script>
 </body>
 </html>

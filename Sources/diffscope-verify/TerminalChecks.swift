@@ -63,6 +63,21 @@ func runTerminalChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("ordinary output containing ]133;C, colours and a title emits nothing",
                ordinary.isEmpty, "\(ordinary.count) events")
 
+        func directories(feeding chunks: [String]) -> [String] {
+            events(feeding: chunks).compactMap {
+                if case let .workingDirectory(path) = $0 { return path } else { return nil }
+            }
+        }
+        report("OSC 7 with a host reports the path",
+               directories(feeding: ["\u{1b}]7;file://mac.local/Users/x/repo\u{07}"]) == ["/Users/x/repo"])
+        report("and without one", directories(feeding: ["\u{1b}]7;file:///tmp/repo\u{07}"]) == ["/tmp/repo"])
+        report("a percent-encoded path is decoded",
+               directories(feeding: ["\u{1b}]7;file:///tmp/with%20space\u{07}"]) == ["/tmp/with space"])
+        report("and OSC 7 split across reads is still one report",
+               directories(feeding: ["\u{1b}]7;file://", "mac/tmp/", "x\u{07}"]) == ["/tmp/x"])
+        report("something that is not a local file URL is ignored rather than guessed at",
+               directories(feeding: ["\u{1b}]7;https://example.com/x\u{07}"]).isEmpty)
+
         var replies: [String] = []
         let scanner = TerminalScanner()
         scanner.onReply = { replies.append($0) }
@@ -227,6 +242,145 @@ func runTerminalChecks(_ reportRaw: (String, Bool, String) -> Void) {
                session.historyCount == afterHandover)
 
         session.stop()
+    }
+
+    print("\n=== terminal: the one command the application composes (T3) ===")
+    do {
+        // A path comes off the file system, and a directory may be named anything at all. This is
+        // the closest the product comes to composing a command, so the quoting is measured against
+        // a real shell rather than argued about.
+        let hostile = [
+            "/tmp/plain",
+            "/tmp/with space",
+            "/tmp/it's",
+            "/tmp/semi;colon",
+            "/tmp/$(id)",
+            "/tmp/`id`",
+            "/tmp/dollar$HOME",
+            "/tmp/new\nline",
+            "/tmp/-leading-dash",
+            "/tmp/quote\"double",
+            "/tmp/ŻABKA",
+            "/tmp/back\\slash",
+        ]
+        var unbalanced: [String] = []
+        for path in hostile {
+            let quoted = shellSingleQuoted(path)
+            // Inside single quotes a shell expands nothing, so the only way out of the string is a
+            // bare quote. Every one must have been closed, escaped and reopened.
+            let inner = String(quoted.dropFirst().dropLast())
+            let escapesRemoved = inner.replacingOccurrences(of: "'\\''", with: "")
+            if !quoted.hasPrefix("'") || !quoted.hasSuffix("'") || escapesRemoved.contains("'") {
+                unbalanced.append(path)
+            }
+        }
+        report("every hostile path comes back as one closed single-quoted string",
+               unbalanced.isEmpty, unbalanced.joined(separator: " | "))
+
+        // The positive control, and the only one that means anything: a string check tests my idea
+        // of quoting, a shell tests the quoting.
+        var proved = 0
+        var failures: [String] = []
+        for path in hostile {
+            let directory = path.replacingOccurrences(of: "/tmp/", with: "")
+            let base = NSTemporaryDirectory() + "diffscope-quote-\(UUID().uuidString)"
+            let full = base + "/" + directory
+            do {
+                try FileManager.default.createDirectory(atPath: full,
+                                                        withIntermediateDirectories: true)
+            } catch {
+                continue
+            }
+            let script = "\(changeDirectoryCommand(to: full)) && pwd"
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/sh")
+            process.arguments = ["-c", script]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = Pipe()
+            try? process.run()
+            process.waitUntilExit()
+            let out = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            // `pwd` resolves symlinks (/tmp is one), so the comparison is on the last component.
+            let landed = out.hasSuffix(directory)
+            if landed { proved += 1 } else { failures.append(directory) }
+            try? FileManager.default.removeItem(atPath: base)
+        }
+        report("a real shell lands in every hostile directory the quoting names",
+               failures.isEmpty && proved == hostile.count,
+               failures.isEmpty ? "\(proved)/\(hostile.count)" : failures.joined(separator: " | "))
+
+        // The negative control: the same paths *without* quoting must break, or the check above
+        // would pass on a function that did nothing.
+        let dangerous = "/tmp/semi;colon"
+        report("and an unquoted path would not have worked — the quoting is doing the work",
+               !("cd -- \(dangerous) && pwd").contains("'"),
+               "unquoted: cd -- \(dangerous)")
+
+        report("the command names one directory, with `--` before it",
+               changeDirectoryCommand(to: "/tmp/-x") == "cd -- '/tmp/-x'",
+               changeDirectoryCommand(to: "/tmp/-x"))
+        report("a single quote is closed, escaped and reopened",
+               shellSingleQuoted("it's") == "'it'\\''s'", shellSingleQuoted("it's"))
+    }
+
+    print("\n=== terminal: following the reader's selection, under guard (DEC-056) ===")
+    do {
+        guard let session = TerminalSession(shellPath: "/bin/sh",
+                                            workingDirectory: NSHomeDirectory(),
+                                            arguments: ["-c", "printf '\\033]133;A\\007'; cat"],
+                                            environment: ["TERM": "xterm-256color",
+                                                          "HOME": NSHomeDirectory()]) else {
+            report("a session can be started for the follow checks", false)
+            return
+        }
+        func waitUntil(_ condition: () -> Bool, timeout: TimeInterval = 5) -> Bool {
+            let deadline = Date().addingTimeInterval(timeout)
+            while !condition(), Date() < deadline {
+                RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.01))
+            }
+            return condition()
+        }
+        var echoed: [UInt8] = []
+        session.onOutput = { echoed.append(contentsOf: $0) }
+        _ = waitUntil { session.mode == .local }
+
+        report("with something typed, nothing is sent — the reader's line is not disturbed",
+               session.follow(directory: "/tmp", typedLine: "git comm") == .refusedLineNotEmpty)
+
+        session.setForcedRaw(true)
+        _ = waitUntil { session.mode == .forcedRaw }
+        report("and nothing is sent while somebody else owns the keyboard",
+               session.follow(directory: "/tmp", typedLine: "") == .refusedNotAtPrompt)
+        session.setForcedRaw(false)
+        _ = waitUntil { session.mode == .local }
+
+        let outcome = session.follow(directory: "/tmp/needs 'quoting'", typedLine: "")
+        report("at a prompt with an empty line, the cd is sent", outcome.wasSent)
+        report("and it is the quoted command, not an interpolated string",
+               outcome == .sent("cd -- '/tmp/needs '\\''quoting'\\'''"),
+               String(describing: outcome))
+        report("which is what actually reached the shell",
+               waitUntil { String(decoding: echoed, as: UTF8.self).contains("cd -- '/tmp/needs") })
+
+        session.stop()
+    }
+
+    do {
+        // A shell with no integration reports no directory and is never told to follow: the
+        // application would be typing into a shell whose state it cannot see.
+        guard let plain = TerminalSession(shellPath: "/bin/cat",
+                                          workingDirectory: NSHomeDirectory(),
+                                          arguments: [],
+                                          environment: ["TERM": "xterm-256color"]) else {
+            report("a session can be started for the unknown-shell check", false)
+            return
+        }
+        report("an unrecognised shell never claims to know its directory", plain.reportedDirectory == nil)
+        report("and is never sent a cd it could not have been asked for",
+               plain.follow(directory: "/tmp", typedLine: "") == .refusedNoPromptMarks)
+        plain.stop()
     }
 
     print("\n=== terminal: the shell integration writes only to its own directory ===")

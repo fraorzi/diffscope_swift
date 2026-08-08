@@ -72,6 +72,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var terminalMenuItem: NSMenuItem?
     var terminalRawMenuItem: NSMenuItem?
     var terminalVisible = false
+    var lastCommandRefresh = Date.distantPast
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         buildMenu()
@@ -309,7 +310,45 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             self.terminal.stop()
             if self.terminalVisible { self.setTerminalVisible(false, startingShell: false) }
         }
+        terminal.onCommandFinished = { [weak self] _ in self?.refreshAfterCommand() }
         return started
+    }
+
+    /// What a finished command adds to what the watcher already does.
+    ///
+    /// **Measured before it was written** (T3-A), and the measurement contradicted the reasoning:
+    /// FSEvents *does* see `git commit`, because `.git` lives inside the watched root — one signal
+    /// at ~440 ms, same as a plain edit. So the file list needs nothing from here.
+    ///
+    /// What no file-system event triggers is the **repository-level** sweep: the uncommitted count
+    /// and commits-ahead-of-base beside every repository in the list. Those change the moment a
+    /// commit lands and otherwise stay stale until the window is focused (DEC-006). That, and only
+    /// that, is what a command's end mark is used for.
+    private func refreshAfterCommand() {
+        guard state.selectedRepository != nil else { return }
+        let now = Date()
+        guard now.timeIntervalSince(lastCommandRefresh) > RefreshDebounce.quietPeriod else { return }
+        lastCommandRefresh = now
+        rescan()
+    }
+
+    /// ⌥⌘K. The explicit half of DEC-056: when the guard refused, the reader decides.
+    @objc func followTerminalToSelection() {
+        guard let repository = state.selectedRepository else { return }
+        startTerminalIfNeeded()
+        if !terminalVisible { setTerminalVisible(true, startingShell: true) }
+        let outcome = terminal.follow(directory: repository.url.path, force: true)
+        if case .sent = outcome {
+            statusLabel.stringValue = "terminal followed to \(repository.displayName)"
+        }
+    }
+
+    /// Called when the reader picks a different repository. The refusals are silent by design: the
+    /// pane already shows that the directories disagree, and a status line that shouted every time
+    /// somebody had half a command typed would be noise.
+    private func followTerminalIfPossible(_ repository: RepositorySnapshot) {
+        guard terminal.started else { return }
+        terminal.follow(directory: repository.url.path)
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -754,7 +793,50 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                     FileHandle.standardError.write(Data(line.utf8))
                     guard forced, admitsForced else { exit(34) }
                     self.terminal.toggleForcedRaw()
-                    self.snapshotTerminal(named: "terminal-input") { self.terminal.stop(); exit(0) }
+                    self.snapshotTerminal(named: "terminal-input") { self.runFollowSelftest() }
+                }
+            }
+        }
+    }
+
+    /// T3: the terminal belongs to the product — it reports where it is, and follows the reader's
+    /// selection when there is provably nothing to disturb.
+    ///
+    /// The fixture reports a directory over OSC 7 and then echoes, so the chip, the guard and the
+    /// composed `cd` are all exercised without depending on anybody's shell.
+    private func runFollowSelftest() {
+        terminal.stop()
+        let target = NSTemporaryDirectory() + "diffscope selftest 'dir"
+        try? FileManager.default.createDirectory(atPath: target, withIntermediateDirectories: true)
+        let script = "printf '\\033]7;file:///tmp/reported-by-the-shell\\007'; "
+            + "printf '\\033]133;A\\007'; cat"
+        guard terminal.start(workingDirectory: NSHomeDirectory(),
+                             command: "/bin/sh", arguments: ["-c", script]) else {
+            FileHandle.standardError.write(Data("SELFTEST terminal-follow=MISMATCH no shell\n".utf8))
+            exit(35)
+        }
+
+        pollTerminal(until: { $0.contains("reported-by-the-shell") }, timeout: 6) { reported, probe in
+            let ok = reported && probe.contains("\"cwdDiverged\":true")
+            let line = "SELFTEST terminal-cwd=\(ok ? "OK" : "MISMATCH") the shell reports where it "
+                + "is, and the pane says it is not the selected directory; \(probe.suffix(160))\n"
+            FileHandle.standardError.write(Data(line.utf8))
+            guard ok else { exit(36) }
+
+            // A path with a space and a quote in it, because that is the case that would go wrong.
+            let outcome = self.terminal.follow(directory: target)
+            let sent = outcome?.wasSent ?? false
+            self.pollTerminal(until: { _ in false }, timeout: 0.4) { _, _ in
+                self.terminal.probe { after in
+                    // `cat` echoes, so the composed command is visible in the grid's own buffer.
+                    let arrived = after.contains("cd -- '") && after.contains("selftest ")
+                    let ok = sent && arrived
+                    let line = "SELFTEST terminal-follow=\(ok ? "OK" : "MISMATCH") the quoted cd "
+                        + "reached the shell; \(String(describing: outcome))\n"
+                    FileHandle.standardError.write(Data(line.utf8))
+                    guard ok else { exit(37) }
+                    try? FileManager.default.removeItem(atPath: target)
+                    self.snapshotTerminal(named: "terminal-follow") { self.terminal.stop(); exit(0) }
                 }
             }
         }
@@ -1159,6 +1241,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         rawItem.target = self
         rawItem.state = .off
         terminalRawMenuItem = rawItem
+
+        let followItem = view.addItem(withTitle: "Terminal: Follow Selection",
+                                      action: #selector(followTerminalToSelection), keyEquivalent: "k")
+        followItem.keyEquivalentModifierMask = [.command, .option]
+        followItem.target = self
 
         let wrap = view.addItem(withTitle: "Wrap Long Lines", action: #selector(toggleWrap), keyEquivalent: "w")
         wrap.keyEquivalentModifierMask = [.command, .option]
@@ -1595,6 +1682,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             let repository = state.repositories[table.selectedRow]
             state.selectedRepository = repository
             startWatching(repository)
+            followTerminalIfPossible(repository)
             reloadFiles()
         } else {
             guard table.selectedRow >= 0, table.selectedRow < state.fileRows.count,
