@@ -8,12 +8,36 @@
   /* Like `index.html`, this file declares no colour, no font and no size of its own — every value
      comes from `tokens.css`. The rules here are layout only. */
   html, body { margin: 0; height: 100%; background: var(--ds-term-surface); }
-  #grid { position: absolute; inset: 0; padding: var(--ds-space-2); }
+  body { display: flex; flex-direction: column; }
+  #grid { flex: 1; min-height: 0; padding: var(--ds-space-2); }
   .xterm .xterm-viewport { overflow-y: auto; }
+
+  /* The input line (T2). It is a real text field, which is where the macOS word and line motions
+     come from — measured in T0 before any of this was built. */
+  #input-row { display: flex; align-items: baseline; gap: var(--ds-space-3);
+               padding: var(--ds-space-2) var(--ds-space-3);
+               border-top: var(--ds-border) solid var(--ds-hairline);
+               background: var(--ds-term-input-surface); }
+  #mode { flex: none; padding: var(--ds-space-1) var(--ds-space-3);
+          border: var(--ds-border) solid var(--ds-hairline-strong);
+          border-radius: var(--ds-radius-chip);
+          font: var(--ds-text-size-small) var(--ds-font);
+          color: var(--ds-term-ink); white-space: nowrap; cursor: default; }
+  /* Raw is a different state, not a worse one, so it is marked by shape rather than by colour
+     alone (DEC-035). */
+  #mode[data-raw="true"] { border-style: dashed; font-weight: var(--ds-weight-emphasis); }
+  #line { flex: 1; min-width: 0; resize: none; overflow: hidden;
+          border: none; outline: none; background: transparent;
+          font: var(--ds-term-text-size) var(--ds-font);
+          color: var(--ds-term-ink); }
+  /* Hidden, never removed: a row that leaves the layout takes its own explanation with it. */
+  #input-row[data-hidden="true"] #line { visibility: hidden; }
 </style>
 </head>
 <body>
 <div id="grid"></div>
+<div id="input-row"><span id="mode"></span><textarea id="line" rows="1" spellcheck="false"
+  autocapitalize="off" autocorrect="off" aria-label="Command line"></textarea></div>
 <script src="terminal.js"></script>
 </body>
 </html>

@@ -70,6 +70,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     let terminal = TerminalPane()
     var terminalSplit: NSSplitView!
     var terminalMenuItem: NSMenuItem?
+    var terminalRawMenuItem: NSMenuItem?
     var terminalVisible = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -284,6 +285,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         window.displayIfNeeded()
         if startingShell { startTerminalIfNeeded() }
         terminal.focus()
+    }
+
+    /// ⌥⌘R. Opens the pane first if it is closed, because forcing raw mode on a terminal nobody can
+    /// see would be a setting with no visible effect.
+    @objc func toggleTerminalRawMode() {
+        if !terminalVisible { setTerminalVisible(true, startingShell: true) }
+        startTerminalIfNeeded()
+        terminal.toggleForcedRaw()
+        terminalRawMenuItem?.state = terminal.isForcedRaw ? .on : .off
     }
 
     @discardableResult
@@ -610,7 +620,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 FileHandle.standardError.write(Data(line.utf8))
                 guard entered else { exit(28) }
                 self.assertTerminalPainted {
-                    self.snapshotTerminal { self.terminal.stop(); exit(0) }
+                    self.snapshotTerminal(named: "terminal") { self.runInputLineSelftest() }
                 }
             }
         }
@@ -671,7 +681,86 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
-    private func snapshotTerminal(then next: @escaping () -> Void) {
+    /// T2: the input line, driven the way a reader drives it — a prompt mark, then a typed command,
+    /// then a handover.
+    ///
+    /// The fixture is `printf` of a prompt mark followed by `cat`: real marks over a real PTY, an
+    /// echo to prove the bytes arrived, and no dependence on whose `~/.zshrc` is installed.
+    private func runInputLineSelftest() {
+        terminal.stop()
+        guard terminal.start(workingDirectory: NSHomeDirectory(),
+                            command: "/bin/sh",
+                            arguments: ["-c", "printf '\\033]133;A\\007'; cat"]) else {
+            FileHandle.standardError.write(Data("SELFTEST terminal-input=MISMATCH no shell\n".utf8))
+            exit(30)
+        }
+
+        pollTerminal(until: { $0.contains("\"mode\":\"local\"") }, timeout: 6) { local, probe in
+            let visible = probe.contains("\"inputVisible\":true")
+            let labelled = probe.contains("\"modeLabel\":\"prompt\"")
+            let configured = probe.contains("\"Enter\"") && probe.contains("\"ctrl-r\"")
+            let ok = local && visible && labelled && configured
+            let line = "SELFTEST terminal-input=\(ok ? "OK" : "MISMATCH") a prompt mark opened the "
+                + "input line; \(probe.suffix(220))\n"
+            FileHandle.standardError.write(Data(line.utf8))
+            guard ok else { exit(31) }
+
+            // A real keydown through the page's own handler, not a call into its internals: the
+            // interception, the routing round trip and the write to the PTY are all on the path.
+            let type = """
+            (() => { const f = document.getElementById('line'); f.focus(); f.value = 'typed-into-the-line';
+              f.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true, cancelable: true}));
+              return f.value; })()
+            """
+            self.terminal.webView.evaluateJavaScript(type) { cleared, _ in
+                self.pollTerminal(until: { $0.contains("typed-into-the-line") }, timeout: 6) { echoed, after in
+                    let emptied = (cleared as? String) == "" || after.contains("\"line\":\"\"")
+                    let ok = echoed && emptied
+                    let line = "SELFTEST terminal-submit=\(ok ? "OK" : "MISMATCH") the line reached the "
+                        + "shell and the field cleared\n"
+                    FileHandle.standardError.write(Data(line.utf8))
+                    guard ok else { exit(32) }
+                    self.runHandoverSelftest()
+                }
+            }
+        }
+    }
+
+    /// Tab is the shell's, not ours: the typed text and the key go over, and the mode says who has
+    /// the line. Without this the input line would silently break completion.
+    private func runHandoverSelftest() {
+        let tab = """
+        (() => { const f = document.getElementById('line'); f.focus(); f.value = 'handed-over-text';
+          f.dispatchEvent(new KeyboardEvent('keydown', {key: 'Tab', bubbles: true, cancelable: true}));
+          return true; })()
+        """
+        terminal.webView.evaluateJavaScript(tab) { _, _ in
+            self.pollTerminal(until: {
+                $0.contains("\"mode\":\"handedOver\"") && $0.contains("handed-over-text")
+            }, timeout: 6) { handed, probe in
+                let hidden = probe.contains("\"inputVisible\":false")
+                let admits = probe.contains("shell has the line")
+                let ok = handed && hidden && admits
+                let line = "SELFTEST terminal-handover=\(ok ? "OK" : "MISMATCH") the shell has the "
+                    + "line and the chip says so; \(probe.suffix(200))\n"
+                FileHandle.standardError.write(Data(line.utf8))
+                guard ok else { exit(33) }
+
+                self.terminal.toggleForcedRaw()
+                self.pollTerminal(until: { $0.contains("\"mode\":\"forcedRaw\"") }, timeout: 4) { forced, forcedProbe in
+                    let admitsForced = forcedProbe.contains("forced")
+                    let line = "SELFTEST terminal-escape-hatch=\(forced && admitsForced ? "OK" : "MISMATCH") "
+                        + "⌥⌘R forces raw and the chip admits it\n"
+                    FileHandle.standardError.write(Data(line.utf8))
+                    guard forced, admitsForced else { exit(34) }
+                    self.terminal.toggleForcedRaw()
+                    self.snapshotTerminal(named: "terminal-input") { self.terminal.stop(); exit(0) }
+                }
+            }
+        }
+    }
+
+    private func snapshotTerminal(named name: String, then next: @escaping () -> Void) {
         guard let dir = ProcessInfo.processInfo.environment["DIFFSCOPE_SNAPSHOT_DIR"] else {
             next(); return
         }
@@ -679,7 +768,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             if let image, let tiff = image.tiffRepresentation,
                let rep = NSBitmapImageRep(data: tiff),
                let png = rep.representation(using: .png, properties: [:]) {
-                let url = URL(fileURLWithPath: dir).appendingPathComponent("terminal.png")
+                let url = URL(fileURLWithPath: dir).appendingPathComponent("\(name).png")
                 do {
                     try png.write(to: url)
                     FileHandle.standardError.write(Data("SELFTEST snapshot=\(url.path)\n".utf8))
@@ -1060,6 +1149,16 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         terminalItem.target = self
         terminalItem.state = .off
         terminalMenuItem = terminalItem
+
+        // The escape hatch of `26-terminal-plan.md` §4, in the menu bar because DEC-016 makes the
+        // menu the keyboard map: prompt detection will be wrong sometimes, and a reader who cannot
+        // type into an `ssh` password prompt would rather not have the input line at all.
+        let rawItem = view.addItem(withTitle: "Terminal Raw Mode", action: #selector(toggleTerminalRawMode),
+                                   keyEquivalent: "r")
+        rawItem.keyEquivalentModifierMask = [.command, .option]
+        rawItem.target = self
+        rawItem.state = .off
+        terminalRawMenuItem = rawItem
 
         let wrap = view.addItem(withTitle: "Wrap Long Lines", action: #selector(toggleWrap), keyEquivalent: "w")
         wrap.keyEquivalentModifierMask = [.command, .option]

@@ -8,7 +8,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, the T-series coverage audit, root management, the gutter, the grouped file list and the rest of the interface audit have all landed, and **all three handover gates have passed**. 1031/1031 checks pass over 32 fixtures.**
+**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, the T-series coverage audit, root management, the gutter, the grouped file list and the rest of the interface audit have all landed, and **all three handover gates have passed**. 1063/1063 checks pass over 32 fixtures.**
 
 | Milestone | State |
 |---|---|
@@ -25,7 +25,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 Run everything:
 
 ```
-swift run diffscope-verify          # 1031 checks over 32 fixtures, exit 1 on failure
+swift run diffscope-verify          # 1063 checks over 32 fixtures, exit 1 on failure
 ./Scripts/package.sh                # DiffScope.app + zip + SHA-256 for a tester
 swift run diffscope-verify --write-manifest   # re-record fixture hashes, deliberately
 swift run -c release diffscope-verify --survey ~/YourProjects
@@ -34,7 +34,7 @@ swift run -c release diffscope-app  # the application
 swift run diffscope-t0              # gate T0 of the terminal plan, 17 scenarios over real PTYs
 ```
 
-`DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits: raw ŻABKA probe → structural render with a formatting-only label → INV-5 mode agreement across the webview → invisible-difference disclosure naming `U+0307` → a relocated block reported as one move → navigation and folds → a formatting-only group with its disclosed count → an anchor surviving an insertion above it → a ranked degradation notice reaching the document. Adding `DIFFSCOPE_SNAPSHOT_DIR=/some/dir` writes `structural.png`, `expanded.png`, `disclosure.png`, `moved.png`, `navigation.png`, `refresh.png`, `anchored.png`, `degraded.png` and `gutter.png` of what the webview actually drew — the only way to check legibility, which the probe cannot see. Since T1 it also runs a command through a real PTY into the terminal grid and writes `terminal.png`.
+`DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits: raw ŻABKA probe → structural render with a formatting-only label → INV-5 mode agreement across the webview → invisible-difference disclosure naming `U+0307` → a relocated block reported as one move → navigation and folds → a formatting-only group with its disclosed count → an anchor surviving an insertion above it → a ranked degradation notice reaching the document. Adding `DIFFSCOPE_SNAPSHOT_DIR=/some/dir` writes `structural.png`, `expanded.png`, `disclosure.png`, `moved.png`, `navigation.png`, `refresh.png`, `anchored.png`, `degraded.png` and `gutter.png` of what the webview actually drew — the only way to check legibility, which the probe cannot see. Since T1 it also runs a command through a real PTY into the terminal grid and writes `terminal.png`; since T2 it types into the input line, submits, hands over on Tab and forces raw, writing `terminal-input.png`.
 
 ### What exists in code
 
@@ -46,7 +46,7 @@ swift run diffscope-t0              # gate T0 of the terminal plan, 17 scenarios
 | `CTreeSitter`, `CTreeSitterTSX` | Vendored C, MIT |
 | `diffscope-verify` | The whole check suite, headless |
 | `diffscope-app` | AppKit shell + `WKWebView` |
-| `DiffScopeTerminal` | The terminal: `PtyProcess` (forkpty, resize, teardown), `TerminalScanner` (OSC 133 and the alternate screen), `ShellIntegration` (generated `ZDOTDIR` / `--rcfile`), `TerminalSession` (shell choice, coalesced output, prompt state) |
+| `DiffScopeTerminal` | The terminal: `PtyProcess` (forkpty, resize, teardown), `TerminalScanner` (OSC 133 and the alternate screen), `ShellIntegration` (generated `ZDOTDIR` / `--rcfile`), `TerminalSession` (shell choice, coalesced output, prompt state, mode), `InputRouter` (where a keystroke goes, and this session's history) |
 | `diffscope-t0` | Gate T0 of the terminal plan: `forkpty`, an OSC 133 scanner, a generated `ZDOTDIR`, and the macOS motions measured in both surfaces. Now imports `DiffScopeTerminal`, so the gate measures the shipping code rather than a copy. Deliberately outside the check suite: it drives ten real interactive shells and depends on this machine's `~/.zshrc` |
 | `Renderer/src` | Two surfaces: the CodeMirror diff (`main.js`) and the xterm.js terminal grid (`terminal.js`); build both with `npm run build` in `Renderer/` |
 
@@ -99,6 +99,8 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 ### What to do next
 
 **The product owner has put the built-in terminal first** (2026-07-31, resolving OQ-055). Everything below it in this list was the audit's ordering, not theirs. The plan is [`26-terminal-plan.md`](26-terminal-plan.md).
+
+**T2 landed on 2026-08-01** — the terminal now does the thing OQ-055 asked for. At a prompt the keyboard belongs to a real text field, so Option+←/→ and Cmd+←/→ work in a command line; **Tab and ⌃R hand the line to the shell** so zsh's own completion and reverse search behave normally; ↑/↓ walk this session's history; **⌥⌘R forces raw mode** for the cases where prompt detection is wrong, and a chip always says which mode is in force. `InputRouter` in `DiffScopeTerminal` owns every routing decision, so the rules are checked headlessly rather than looked at. **DEC-055**, and `22-experiment-log.md` → **T2-A**. **Next is T3** — the terminal belonging to this product: opening in the selected repository, following the selection, and the watcher refreshing the diff when a command changes the working tree.
 
 **T1 landed on 2026-08-01.** `DiffScopeTerminal` holds the PTY, the OSC 133 scanner, the generated shell integration and the session; the grid is xterm.js in a second `WKWebView` (**DEC-054**); ⌥⌘T opens a pane under the diff, and the shell starts on first open rather than at launch. **Next is T2** — the Warp-style input line — in `26-terminal-plan.md` §5. Sizes and the coalescing measurement are in `22-experiment-log.md` → **T1-A**.
 

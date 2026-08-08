@@ -2348,3 +2348,47 @@ The terminal needs a grid: a virtualised, reflowing, attribute-aware screen with
 ### Revisit trigger
 
 Reopen if xterm.js goes unmaintained the way `tree-sitter-typescript` did (`17-…` §4.3 records what that looks like), or if the input line T2 builds cannot be made to work inside the same webview — in which case the grid and the input line split hosts and this entry chooses again.
+
+---
+
+## DEC-055 — The input line replaces the shell's line editor, and hands it back on Tab
+
+- **Date:** 2026-08-01 · **Topic:** T2 of `26-terminal-plan.md`; delivers the thing OQ-055 actually asked for · **Status:** Accepted
+- **Decided with the product owner** on the Tab/history question, 2026-08-01
+
+### Context
+
+The terminal was asked for because ordinary emulators pass keys through a line discipline, so **Option+←/→ and Cmd+←/→ do not work in a command line**. T1 produced a working terminal that has exactly that problem. Fixing it means the application, not the shell, owns the line being typed — and owning it means owning everything the shell's line editor used to do: completion, reverse search, history, interrupt, EOF.
+
+Two things were already measured and decide the shape: a `<textarea>` in a `WKWebView` performs all six macOS motions identically to `NSTextView` (T0, S8c), and OSC 133 prompt marks are reliable on this machine's zsh (T0, S1–S6).
+
+### Options considered
+
+1. **Local line at a prompt, handing over to the shell on Tab and ⌃R**, with ↑/↓ walking this session's own history.
+2. **Handing over on ↑/↓ as well**, so history is always the shell's real history. Rejected by the product owner and on merit: the recalled command is then edited in *zsh's* editor, without the motions this feature exists to provide.
+3. **Implementing completion ourselves** — what Warp does. Weeks of work and a second set of rules to keep beside zsh's, which `26-…` §4 already put out of scope.
+4. **No local line at all**, only key bindings layered on the shell. This is the arrangement OQ-055 describes and rejects: bindings cannot give a shell the platform's text engine.
+
+### Final decision
+
+**Option 1.** Concretely:
+
+- **JS owns text editing, Swift owns routing.** Ordinary characters and caret motion never leave the page — that is the whole point, and it costs nothing. Only eight keys are intercepted, once per line, and `InputRouter` decides what each one means. The rules are therefore **checked headlessly** rather than looked at.
+- **The page is told which keys to intercept** (`InputRouter.interceptedKeys`) instead of holding its own list. Two copies of a keyboard map drift, and the drift is invisible.
+- **Tab and ⌃R hand the line over**: the typed text goes first, then the key, and the mode becomes raw until the next prompt mark. The reader's own zsh completion and menu behave exactly as they do in their terminal, because they *are* their zsh.
+- **Raw modes give the keyboard back to xterm**, which already encodes arrows, modifiers and escape sequences correctly. Writing a second encoder would be reimplementing the part of xterm that works.
+- **The mode chip reports the mode the code is in** — `prompt`, `program`, `raw — forced`, `raw — the shell has the line`. Deliberately not the diff's mode chip, which reports the reader's *selection* and is a recorded weakness for exactly that reason.
+- **The escape hatch is a menu item** (⌥⌘R) and a clickable chip. Detection will be wrong sometimes; being unable to type into an `ssh` password prompt would be worse than never having the feature.
+- **History is this session's**, and `~/.zsh_history` is never read. Showing readers what they just typed is not the same act as opening their private history file, and the real history stays one ⌃R away — at the shell. A check greps for both history files, with comments stripped, because the first version of it failed on the sentence saying we do not read them.
+
+### Consequences
+
+- **A key is never swallowed in silence.** Anything not in the intercepted list stays with the field, and the router's default is `editLocally`. The negative control in the suite asserts that an ordinary character and a macOS motion are *not* the router's business.
+- **⌃D over typed text does nothing**, unlike a real shell where it would close the session. Closing a shell under a command the reader has not run yet is a worse surprise than an ignored keystroke.
+- **A restarted session clears the grid.** Two shells' output in one scrollback with nothing between them leaves no way to tell which shell said what — found by looking at a snapshot, not by a check.
+- **The shell is still the authority on what runs.** Nothing in the input line rewrites, completes or interprets a command; it edits text and sends bytes. DEC-028 is untouched.
+- Prompt detection failing now has a visible cost — the input line appears at the wrong moment — which is why the hatch is in the menu bar rather than behind a gesture.
+
+### Revisit trigger
+
+Reopen if handover proves annoying in daily use (the tell would be reaching for Tab and losing the line's motions often enough to notice), or if Warp-style blocks are taken up, which would change what the input line is attached to.

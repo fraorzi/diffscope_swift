@@ -106,6 +106,77 @@ let frames = 0;
 const armFrameCounter = () => requestAnimationFrame(() => frames++);
 armFrameCounter();
 
+// ---- The input line (T2) -------------------------------------------------------------------
+//
+// This field replaces the shell's line editor while the shell is at a prompt, which is the whole
+// feature: a real text control is where Option+←/→ and Cmd+←/→ come from (measured in T0).
+//
+// Routing is *not* decided here. Swift owns it — see InputRouter — and this file asks. Ordinary
+// typing and caret motion never ask anything, which is why the round trip costs nothing.
+
+const row = document.getElementById("input-row");
+const field = document.getElementById("line");
+const modeChip = document.getElementById("mode");
+
+let interceptedKeys = [];
+let currentMode = "program";
+
+// The list comes from Swift rather than being written twice; two copies of a keyboard map drift.
+window.diffscopeTerminalConfigure = (config) => {
+  interceptedKeys = config.interceptedKeys ?? [];
+};
+
+window.diffscopeTerminalSetMode = (mode, label) => {
+  currentMode = mode;
+  modeChip.textContent = label;
+  const raw = mode !== "local";
+  modeChip.dataset.raw = String(raw);
+  row.dataset.hidden = String(raw);
+  if (raw) {
+    term.focus();
+  } else {
+    field.focus();
+  }
+};
+
+window.diffscopeTerminalApply = (outcome) => {
+  if (outcome.clear) field.value = "";
+  if (typeof outcome.line === "string") {
+    field.value = outcome.line;
+    field.setSelectionRange(field.value.length, field.value.length);
+  }
+};
+
+const keyName = (event) => {
+  if (event.ctrlKey && event.key.length === 1) return "ctrl-" + event.key.toLowerCase();
+  return event.key;
+};
+
+field.addEventListener("keydown", (event) => {
+  const name = keyName(event);
+  if (!interceptedKeys.includes(name)) return;
+  event.preventDefault();
+  post({
+    name: "key",
+    key: event.key,
+    control: event.ctrlKey,
+    alt: event.altKey,
+    meta: event.metaKey,
+    shift: event.shiftKey,
+    line: field.value,
+  });
+});
+
+// Escape releases a forced raw mode, and in that mode the grid holds focus — so the release has to
+// be reachable from the document rather than from a field nobody is typing in.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape" || currentMode !== "forcedRaw") return;
+  event.preventDefault();
+  post({ name: "releaseForcedRaw" });
+});
+
+modeChip.addEventListener("click", () => post({ name: "toggleForcedRaw" }));
+
 window.diffscopeTerminalWrite = (base64) => {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
@@ -114,6 +185,13 @@ window.diffscopeTerminalWrite = (base64) => {
 };
 
 window.diffscopeTerminalFocus = () => term.focus();
+
+// A new session starts on a clean grid. Without this the scrollback mixes two shells' output with
+// nothing to say where one ended — and the reader has no way to tell which shell said what.
+window.diffscopeTerminalReset = () => {
+  term.reset();
+  field.value = "";
+};
 
 function bufferText(buffer, limit) {
   const lines = [];
@@ -150,4 +228,10 @@ const probeBody = (framesSinceLastProbe) => ({
   canvases: document.querySelectorAll("#grid canvas").length,
   visibility: document.visibilityState,
   framesSinceLastProbe,
+  mode: currentMode,
+  modeLabel: modeChip.textContent,
+  inputVisible: row.dataset.hidden !== "true",
+  inputFocused: document.activeElement === field,
+  line: field.value,
+  interceptedKeys,
 });

@@ -1,6 +1,6 @@
 # 26 — Built-in terminal, Warp-style
 
-**Status:** Accepted as scope by the product owner, 2026-07-31. Resolves OQ-055 in favour of building it. **Not started** — gate T0 below comes first.
+**Status:** Accepted as scope by the product owner, 2026-07-31 (**DEC-053**). Resolves OQ-055 in favour of building it. **Gate T0 passed and T1–T2 are built** (DEC-054, DEC-055): the terminal runs, and at a prompt the keyboard belongs to a real text field. T3 and T4 remain — see §5.
 
 This document exists because the terminal was deferred twice on my recommendation, and the product owner has now put it at the front of the queue. That is their call; the ordering until then was the audit's framing, not theirs.
 
@@ -82,7 +82,7 @@ Two results change the work below rather than merely clearing it:
 |---|---|
 | ~~**T0**~~ | **Done 2026-08-01.** `Sources/diffscope-t0`, results in `22-experiment-log.md` → T0. Throwaway: T1 replaces it |
 | ~~**T1**~~ | **Done 2026-08-01.** `Sources/DiffScopeTerminal` (PTY, scanner, integration, session) and the grid in a second `WKWebView`; ⌥⌘T opens a pane under the diff. DEC-054, measured in `22-experiment-log.md` → T1-A |
-| **T2** | The input line: mode switching on prompt marks, the editable control, the escape hatch, history |
+| ~~**T2**~~ | **Done 2026-08-01.** `InputRouter` decides where a keystroke goes, the field is a real `<textarea>`, Tab and ⌃R hand the line to the shell, ⌥⌘R forces raw. DEC-055, measured in `22-experiment-log.md` → T2-A |
 | **T3** | Belonging to this product: opens in the selected repository's directory, follows the selection, and the existing watcher refreshes the diff when a command changes the working tree |
 | **T4** | The decision entry, the tests, and the documents that currently say this cannot happen |
 

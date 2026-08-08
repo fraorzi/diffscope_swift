@@ -78,6 +78,157 @@ func runTerminalChecks(_ reportRaw: (String, Bool, String) -> Void) {
                silentReplies == 0)
     }
 
+    print("\n=== terminal: where a keystroke goes (T2) ===")
+    do {
+        let router = InputRouter()
+        func route(_ key: InputKey, _ line: String, _ mode: InputMode) -> InputAction {
+            router.route(key: key, line: line, mode: mode)
+        }
+
+        report("the intercepted keys are named in one place, and the page is told them",
+               Set(InputRouter.interceptedKeys) ==
+                   Set(["Enter", "Tab", "ArrowUp", "ArrowDown", "Escape", "ctrl-c", "ctrl-d", "ctrl-r"]),
+               InputRouter.interceptedKeys.joined(separator: " "))
+
+        report("Enter submits the line", route(InputKey("Enter"), "git status", .local) == .submit("git status"))
+        report("Tab hands the line to the shell, text first and then the key",
+               route(InputKey("Tab"), "git st", .local) == .handOver(text: "git st", key: [0x09]))
+        report("⌃R hands over too, so the shell's own reverse search works",
+               route(InputKey("r", control: true), "", .local) == .handOver(text: "", key: [0x12]))
+        report("↑ and ↓ ask for history", route(InputKey("ArrowUp"), "", .local) == .recall(offset: -1)
+                   && route(InputKey("ArrowDown"), "", .local) == .recall(offset: 1))
+        report("Escape clears the line at a prompt", route(InputKey("Escape"), "half typed", .local) == .clearLine)
+        report("⌃C interrupts and takes the half-typed line with it",
+               route(InputKey("c", control: true), "half typed", .local) == .sendRaw([0x03]))
+        report("⌃D on an empty line is EOF",
+               route(InputKey("d", control: true), "", .local) == .sendRaw([0x04]))
+        report("and ⌃D over typed text does nothing, rather than closing the shell under it",
+               route(InputKey("d", control: true), "rm -rf", .local) == .editLocally)
+
+        // The negative control. A router that claimed everything would satisfy every line above.
+        report("an ordinary character is not the router's business",
+               route(InputKey("a"), "ls", .local) == .editLocally)
+        report("and neither is a macOS motion — which is the entire point of the input line",
+               route(InputKey("ArrowLeft", alt: true), "git status", .local) == .editLocally
+                   && route(InputKey("ArrowLeft", meta: true), "git status", .local) == .editLocally)
+
+        report("while a program runs, every key belongs to it and xterm encodes it",
+               route(InputKey("Enter"), "", .program) == .editLocally
+                   && route(InputKey("Tab"), "", .program) == .editLocally
+                   && route(InputKey("c", control: true), "", .program) == .editLocally)
+        report("Escape releases a forced raw mode, and only a forced one",
+               route(InputKey("Escape"), "", .forcedRaw) == .releaseForcedRaw
+                   && route(InputKey("Escape"), "", .handedOver) == .editLocally)
+
+        report("every mode says what it is, and the raw ones admit to being raw",
+               InputMode.local.label == "prompt" && !InputMode.local.isRaw
+                   && InputMode.program.isRaw && InputMode.forcedRaw.isRaw && InputMode.handedOver.isRaw
+                   && InputMode.forcedRaw.label.contains("forced")
+                   && InputMode.handedOver.label.contains("shell"))
+    }
+
+    print("\n=== terminal: the history is this session's, and nobody's history file ===")
+    do {
+        var history = SessionHistory()
+        report("recall on an empty history returns nothing to show", history.recall(offset: -1) == nil)
+        history.remember("git status")
+        history.remember("git diff")
+        report("the newest entry comes back first", history.recall(offset: -1) == "git diff")
+        report("then the one before it", history.recall(offset: -1) == "git status")
+        report("and walking past the oldest stays there rather than wrapping",
+               history.recall(offset: -1) == "git status")
+        report("walking forward returns", history.recall(offset: 1) == "git diff")
+        report("and past the newest leaves an empty line to type into", history.recall(offset: 1) == "")
+
+        var repeated = SessionHistory()
+        repeated.remember("ls")
+        repeated.remember("ls")
+        report("a command repeated twice in a row is one entry", repeated.count == 1)
+        repeated.remember("   ")
+        report("and whitespace is not a command", repeated.count == 1)
+
+        let sources = ["Sources/DiffScopeTerminal", "Sources/diffscope-app"].flatMap { module -> [String] in
+            let dir = root.appendingPathComponent(module)
+            guard let walker = FileManager.default.enumerator(at: dir, includingPropertiesForKeys: nil) else { return [] }
+            var texts: [String] = []
+            for case let url as URL in walker where url.pathExtension == "swift" {
+                texts.append((try? String(contentsOf: url, encoding: .utf8)) ?? "")
+            }
+            return texts
+        }
+        // Showing a reader what they just typed is not the same act as opening their history file.
+        //
+        // Comments are stripped first: this decision is *documented* in `InputRouter.swift`, so a
+        // plain substring search finds the sentence saying we do not do it and fails on it. Same
+        // shape as the `precmd() {` check above, found the same way.
+        func code(_ text: String) -> String {
+            text.replacingOccurrences(of: "(?m)^\\s*(//|///).*$", with: " ",
+                                      options: [.regularExpression])
+        }
+        let readsHistory = sources.map(code).filter {
+            $0.contains(".zsh_history") || $0.contains(".bash_history") || $0.contains("HISTFILE")
+        }
+        report("no history file is read anywhere", readsHistory.isEmpty, "\(readsHistory.count) files")
+    }
+
+    print("\n=== terminal: the mode follows the marks, and the escape hatch overrides them ===")
+    do {
+        // A shell that emits a prompt mark and then echoes: real marks, real PTY, no dependence on
+        // anybody's rc file.
+        guard let session = TerminalSession(shellPath: "/bin/sh",
+                                            workingDirectory: NSHomeDirectory(),
+                                            arguments: ["-c", "printf '\\033]133;A\\007'; cat"],
+                                            environment: ["TERM": "xterm-256color",
+                                                          "HOME": NSHomeDirectory()]) else {
+            report("a session can be started", false)
+            return
+        }
+        report("before any mark, the mode is raw — a shell that marks nothing behaves like a terminal",
+               session.mode == .program)
+
+        // The session publishes on the main queue, so the check has to let it run.
+        func waitUntil(_ condition: () -> Bool, timeout: TimeInterval = 5) -> Bool {
+            let deadline = Date().addingTimeInterval(timeout)
+            while !condition(), Date() < deadline {
+                RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.01))
+            }
+            return condition()
+        }
+
+        report("a prompt mark puts the reader in the input line",
+               waitUntil { session.mode == .local })
+
+        session.setForcedRaw(true)
+        report("the escape hatch overrides the mark", waitUntil { session.mode == .forcedRaw })
+        session.setForcedRaw(false)
+        report("and releasing it hands the line back", waitUntil { session.mode == .local })
+
+        // What the shell actually received, rather than what the router says it sent. `cat` echoes,
+        // so the bytes come back.
+        var echoed: [UInt8] = []
+        session.onOutput = { echoed.append(contentsOf: $0) }
+
+        session.handle(key: InputKey("Enter"), line: "submitted-line")
+        report("a submitted line is remembered", session.historyCount == 1)
+        report("and reaches the shell with its carriage return",
+               waitUntil { String(decoding: echoed, as: UTF8.self).contains("submitted-line") },
+               String(decoding: echoed.suffix(40), as: UTF8.self))
+
+        session.handle(key: InputKey("Tab"), line: "handed-over")
+        report("a handover leaves the shell holding the line",
+               waitUntil { session.mode == .handedOver })
+        report("and the shell received the typed text as well as the key",
+               waitUntil { String(decoding: echoed, as: UTF8.self).contains("handed-over") })
+
+        // The mode is raw now, so the same Enter belongs to the shell — nothing local happens to it.
+        let afterHandover = session.historyCount
+        session.handle(key: InputKey("Enter"), line: "not-mine")
+        report("while the shell holds the line, Enter is the shell's and is not remembered here",
+               session.historyCount == afterHandover)
+
+        session.stop()
+    }
+
     print("\n=== terminal: the shell integration writes only to its own directory ===")
     do {
         let home = NSHomeDirectory()

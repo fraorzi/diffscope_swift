@@ -520,3 +520,27 @@ and the paint arm says SKIPPED with its reason rather than passing quietly.
 Two harness defects on the way: showing the pane also started the user's `$SHELL`, so the arm
 reported on somebody's prompt instead of its own command; and the frame counter, being a
 self-perpetuating rAF chain, died at the first suspension and read zero forever after.
+
+## Step 24 — T2: the input line
+
+- [x] `InputRouter`: eight intercepted keys, one pure routing function, `SessionHistory`
+- [x] The page is told the key list by Swift instead of carrying its own copy
+- [x] A real `<textarea>` at a prompt; xterm keeps the keyboard in every raw mode
+- [x] Tab and ⌃R hand the line to the shell — text first, then the key — until the next prompt
+- [x] ⌥⌘R and a clickable chip force raw; Escape releases it; the chip names the mode in force
+- [x] ⌃C clears the line, ⌃D only on an empty one, ↑/↓ walk this session's history
+- [x] Checks: the full routing table in both modes, history boundaries and duplicates, the mode
+      machine over a real PTY, and a negative control that ordinary keys are not intercepted
+- [x] Selftest arms: prompt → input line → submit → handover → escape hatch, plus `terminal-input.png`
+- [x] DEC-055, T2-A, plan §5, handoff §0
+
+### Step 24 — done
+
+1063/1063 checks (1031 + 32), 17/17 T0 scenarios, `package.sh` green with 18 selftest arms.
+
+Two checks were wrong before the code was: one grepped for `.zsh_history` and failed on the comment
+saying we do not read it (third instance of that shape), and one claimed "the shell received the
+text" while testing an unrelated counter — it now reads back what `cat` echoed.
+
+The snapshot showed what no check did: a restarted session left the previous shell's output in the
+grid with nothing marking the boundary. A new session now resets it.

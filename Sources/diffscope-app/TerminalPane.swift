@@ -48,12 +48,41 @@ final class TerminalPane: NSObject, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         ready = true
+        configureInput()
+        publishMode()
         if !buffered.isEmpty {
             let pending = buffered
             buffered.removeAll()
             deliver(pending)
         }
     }
+
+    /// The page is told which keys to intercept rather than holding its own list (T2).
+    private func configureInput() {
+        let keys = InputRouter.interceptedKeys.map { "\"\($0)\"" }.joined(separator: ",")
+        webView.evaluateJavaScript("window.diffscopeTerminalConfigure({interceptedKeys:[\(keys)]})")
+    }
+
+    private func publishMode() {
+        let mode = session?.mode ?? .program
+        let name: String
+        switch mode {
+        case .local: name = "local"
+        case .program: name = "program"
+        case .forcedRaw: name = "forcedRaw"
+        case .handedOver: name = "handedOver"
+        }
+        let label = mode.label.replacingOccurrences(of: "\"", with: "")
+        webView.evaluateJavaScript(
+            "window.diffscopeTerminalSetMode && window.diffscopeTerminalSetMode(\"\(name)\", \"\(label)\")")
+    }
+
+    func toggleForcedRaw() {
+        guard let session else { return }
+        session.setForcedRaw(!session.isForcedRaw)
+    }
+
+    var isForcedRaw: Bool { session?.isForcedRaw ?? false }
 
     /// `command`/`arguments` exist for the selftest, which must run the same path on a stranger's
     /// machine where `$SHELL` and `~/.zshrc` are somebody else's. The application itself passes
@@ -68,7 +97,10 @@ final class TerminalPane: NSObject, WKNavigationDelegate {
                                             arguments: arguments) else { return false }
         session.onOutput = { [weak self] bytes in self?.deliver(bytes) }
         session.onExit = { [weak self] in self?.onSessionExit?() }
+        session.onModeChange = { [weak self] _ in self?.publishMode() }
         self.session = session
+        webView.evaluateJavaScript("window.diffscopeTerminalReset && window.diffscopeTerminalReset()")
+        publishMode()
         started = true
         return true
     }
@@ -110,7 +142,39 @@ final class TerminalPane: NSObject, WKNavigationDelegate {
             guard let columns = message["cols"] as? Int, let rows = message["rows"] as? Int,
                   columns > 0, rows > 0 else { return }
             session?.resize(columns: UInt16(columns), rows: UInt16(rows))
+        case "key":
+            guard let session, let name = message["key"] as? String else { return }
+            let key = InputKey(name,
+                               control: message["control"] as? Bool ?? false,
+                               alt: message["alt"] as? Bool ?? false,
+                               meta: message["meta"] as? Bool ?? false,
+                               shift: message["shift"] as? Bool ?? false)
+            apply(session.handle(key: key, line: message["line"] as? String ?? ""))
+        case "releaseForcedRaw":
+            session?.setForcedRaw(false)
+        case "toggleForcedRaw":
+            toggleForcedRaw()
         default:
+            break
+        }
+    }
+
+    /// The field is told what to do about the key; the bytes have already gone to the PTY.
+    private func apply(_ action: InputAction) {
+        switch action {
+        case .submit, .clearLine, .handOver:
+            // A handed-over line belongs to the shell now, and it echoes what it received — leaving
+            // the text here as well would show it twice.
+            webView.evaluateJavaScript("window.diffscopeTerminalApply({clear:true})")
+        case let .setLine(text):
+            guard let encoded = try? JSONSerialization.data(withJSONObject: [text]),
+                  let json = String(data: encoded, encoding: .utf8) else { return }
+            let quoted = json.dropFirst().dropLast()
+            webView.evaluateJavaScript("window.diffscopeTerminalApply({line:\(quoted)})")
+        case .sendRaw(let bytes) where bytes == [0x03]:
+            // ⌃C takes the half-typed line with it, the way it does in a terminal.
+            webView.evaluateJavaScript("window.diffscopeTerminalApply({clear:true})")
+        case .sendRaw, .recall, .releaseForcedRaw, .editLocally:
             break
         }
     }

@@ -21,7 +21,17 @@ public final class TerminalSession {
     /// is decoded on the way.
     public var onOutput: (([UInt8]) -> Void)?
     public var onStateChange: ((State) -> Void)?
+    public var onModeChange: ((InputMode) -> Void)?
     public var onExit: (() -> Void)?
+
+    /// Which surface owns the keyboard right now (T2). Raw until a prompt mark says otherwise: a
+    /// shell that marks nothing — an unrecognised `$SHELL`, or one whose rc file the integration
+    /// could not reach — then behaves like every other terminal instead of pretending.
+    public private(set) var mode: InputMode = .program
+    private let router = InputRouter()
+    private var history = SessionHistory()
+    private var forcedRaw = false
+    private var handedOver = false
 
     private let integration: ShellIntegration
     private let process: PtyProcess
@@ -104,12 +114,76 @@ public final class TerminalSession {
         case .commandEnd: next = .atPrompt
         default: next = nil
         }
-        guard let next, next != state else { return }
+        // A prompt mark is what ends a handover: the shell has finished with the line it was given.
+        let endsHandover = isPromptStart(event) || isPromptEnd(event)
+        guard next != nil || endsHandover else { return }
         DispatchQueue.main.async {
-            self.state = next
-            self.onStateChange?(next)
+            if endsHandover { self.handedOver = false }
+            if let next, next != self.state {
+                self.state = next
+                self.onStateChange?(next)
+            }
+            self.refreshMode()
         }
     }
+
+    /// One place decides the mode, from three inputs: where the shell is, whether the reader forced
+    /// raw, and whether the shell was handed the line.
+    private func refreshMode() {
+        let next: InputMode
+        if forcedRaw {
+            next = .forcedRaw
+        } else if handedOver {
+            next = .handedOver
+        } else {
+            switch state {
+            case .atPrompt: next = .local
+            case .programRunning, .starting: next = .program
+            }
+        }
+        guard next != mode else { return }
+        mode = next
+        onModeChange?(next)
+    }
+
+    /// The escape hatch (`26-terminal-plan.md` §4). Detection will be wrong sometimes, and being
+    /// unable to type into an `ssh` password prompt would be worse than never having the feature.
+    public func setForcedRaw(_ on: Bool) {
+        guard forcedRaw != on else { return }
+        forcedRaw = on
+        refreshMode()
+    }
+
+    public var isForcedRaw: Bool { forcedRaw }
+
+    /// Routes one keystroke and performs whatever it means on the PTY, returning what the input
+    /// field should do about it. `recall` is resolved here, against the history this session holds.
+    @discardableResult
+    public func handle(key: InputKey, line: String) -> InputAction {
+        let action = router.route(key: key, line: line, mode: mode)
+        switch action {
+        case let .submit(text):
+            history.remember(text)
+            send(text + "\r")
+        case let .handOver(text, keyBytes):
+            if !text.isEmpty { send(text) }
+            send(keyBytes)
+            handedOver = true
+            refreshMode()
+        case let .sendRaw(bytes):
+            send(bytes)
+        case let .recall(offset):
+            guard let recalled = history.recall(offset: offset) else { return .editLocally }
+            return .setLine(recalled)
+        case .releaseForcedRaw:
+            setForcedRaw(false)
+        case .setLine, .clearLine, .editLocally:
+            break
+        }
+        return action
+    }
+
+    public var historyCount: Int { history.count }
 
     /// The user's keystrokes, and nothing else. T2 splits this into a local input line and raw
     /// passthrough; until then every key goes straight through.

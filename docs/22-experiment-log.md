@@ -1848,3 +1848,35 @@ The selftest's paint arm asserts drawn glyphs when the window is visible and pri
 
 - **The selftest started the user's `$SHELL` instead of its own command.** Showing the pane and starting a shell were one act, so `toggleTerminal()` spawned zsh before the arm's `/bin/sh -c` script could, and the arm then reported on a buffer holding somebody's prompt. G3 runs this selftest from `/` on a stranger's machine, where that would have meant running *their* rc files. Showing and starting are now separate.
 - **The frame counter measured nothing after the first suspension.** A self-perpetuating `requestAnimationFrame` chain dies the moment frames stop and never restarts, so it read zero forever afterwards — including while xterm was painting again. It re-arms on each probe, and reports frames *since the last question* rather than a total that cannot recover.
+
+---
+
+# T2-A — the input line, and two checks that were wrong before the code was
+
+**Date:** 2026-08-01 · **Method:** `swift run diffscope-verify` for the routing table and the history; a selftest arm driving the real page with real `keydown` events against `/bin/sh -c 'printf "\033]133;A\007"; cat'` — a fixture that emits a prompt mark and then echoes, so the marks, the round trip and the write to the PTY are all on the path without depending on anybody's `~/.zshrc`.
+
+T2 had little to discover — T0 had already measured the two things that could have sunk it (the motions work in a web text field; prompt marks are reliable). What it produced instead is worth recording as method.
+
+## The arms, and what each one would catch
+
+```
+terminal-input         a prompt mark opens the input line, focused, chip reads "prompt"
+terminal-submit        a typed line reaches the shell and the field clears
+terminal-handover      Tab gives the line to the shell; the chip says the shell has it
+terminal-escape-hatch  ⌥⌘R forces raw and the chip admits it
+```
+
+The chip is asserted in every one of them. A mode indicator that can be wrong is worse than none: the reader decides where to type by reading it.
+
+## Two checks that passed or failed for the wrong reason
+
+- **A check greps for `.zsh_history` to prove no history file is read — and failed on the comment saying we do not read it.** Third instance of this exact shape after `precmd() {` in T1's integration check: a substring search over source that *documents* a decision finds the documentation. Comments are stripped first now, in both.
+- **A check asserted "the shell received the text and the key" by testing `historyCount == 0`** — a condition that had nothing to do with the claim and was true regardless. It was replaced by reading back what `cat` echoed, which is the only evidence that bytes actually crossed. **A check whose name and whose condition disagree is worse than a missing check**, because the name is what the next reader believes.
+
+The sequencing mistake that exposed the second one is itself the behaviour working: after a handover the mode is raw, so `Enter` belongs to the shell and is not remembered locally — the suite now asserts that on purpose.
+
+## What the photograph showed that no check did
+
+The snapshot after the handover showed the input row and its chip drawn correctly — and **the previous session's output still in the grid above it**. Restarting a session had left the old shell's scrollback in place with nothing to mark the boundary, so two shells' output read as one. A new session now resets the grid.
+
+Nothing failed. The buffer was correct, the chip was correct, every arm was green. It is the same lesson as M8-D and T1-A, for the third time: *look at the surface*.

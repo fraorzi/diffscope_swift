@@ -78,6 +78,9 @@
   --ds-term-cursor: var(--ds-ink);
   --ds-term-selection: color-mix(in srgb, var(--ds-ink) 22%, transparent);
   --ds-term-text-size: 12px;
+  /* The input line sits slightly off the grid's surface so the boundary between what the reader is
+     typing and what the shell has said is visible without a rule doing the work alone. */
+  --ds-term-input-surface: var(--ds-fill-quiet);
 
   --ds-term-black: #2e3436;
   --ds-term-red: #cc0000;
