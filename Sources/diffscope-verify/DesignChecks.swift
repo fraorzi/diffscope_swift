@@ -265,6 +265,80 @@ func runTesterPacketChecks(_ reportRaw: (String, Bool, String) -> Void) {
                packet.lowercased().contains("keep the file"))
         report("and explains the Gatekeeper step, which is where an unsigned build loses people",
                packet.contains("Right-click") && packet.contains("Open"))
+
+        // T4. The packet used to say the application "cannot commit, stage, push, pull, or change
+        // anything in your repositories". Since DEC-053 that is false, and it is the one document
+        // that goes to a stranger who is about to point this at their own work.
+        report("the packet tells the tester the terminal exists",
+               packet.contains("⌥⌘T") && packet.lowercased().contains("terminal"))
+        report("and that it runs what they type, naming the command that would change things",
+               packet.contains("git commit"))
+        report("and that their shell startup files are not modified",
+               packet.contains("~/.zshrc") && packet.lowercased().contains("never edit"))
+        report("and it no longer claims the application cannot change a repository",
+               !packet.contains("It cannot commit"))
+    }
+
+    // T4: eleven documents promised something that stopped being true when the terminal landed.
+    // The old sentences are cheap to write back in by accident, so the promise is now a check.
+    print("\n=== no document promises what DEC-053 stopped being true ===")
+    do {
+        // Current-state documents. Historical records — the decision log, the experiment log — are
+        // *not* here on purpose: this project records corrections with the correction visible
+        // rather than by editing the past, so DEC-003's own text stays as it was written and
+        // carries an amendment pointer instead.
+        let currentState = [
+            "docs/25-tester-packet.md",
+            "docs/01-product-brief.md",
+            "docs/11-git-behavior-specification.md",
+            "docs/17-security-privacy-and-licensing.md",
+            "docs/18-version-one-scope.md",
+            "docs/23-release-gates.md",
+            // Added after a grep found a retired sentence in this file that the check had missed:
+            // §12's definition of done still said "incapable of modifying a repository". A list of
+            // documents is itself a thing that can be incomplete, so it is worth being generous.
+            "docs/21-agent-handoff.md",
+            "docs/00-index.md",
+            "docs/15-test-corpus-plan.md",
+        ]
+        // Each phrase is an unqualified claim about what the product cannot do. The qualified forms
+        // — "on its own", "on any path of its own" — are the point and are not matched.
+        let retired = ["It cannot commit", "incapable of modifying a repository.",
+                       "It never writes.", "Strictly read-only;"]
+
+        func offences(in text: String) -> [String] { retired.filter { text.contains($0) } }
+
+        var stale: [String] = []
+        var silent: [String] = []
+        for path in currentState {
+            let text = (try? String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)) ?? ""
+            guard !text.isEmpty else { stale.append("\(path): unreadable"); continue }
+            for phrase in offences(in: text) { stale.append("\(path): \(phrase)") }
+            // Removing a false sentence without saying the true thing is the worse defect: the
+            // reader is left with no statement at all about what can change their repository.
+            if !text.lowercased().contains("terminal") { silent.append(path) }
+        }
+        report("no current-state document still makes the unqualified claim", stale.isEmpty,
+               stale.joined(separator: " | "))
+        report("and every one of them says the terminal exists", silent.isEmpty,
+               silent.joined(separator: ", "))
+
+        // The negative control. Without it this whole table could be matching nothing at all and
+        // would read exactly the same.
+        let hostile = "This product is demonstrably incapable of modifying a repository."
+        report("the check catches the retired sentence when it is put back",
+               !offences(in: hostile).isEmpty, hostile)
+
+        // DEC-003 is where a reader lands first, so the amendment has to be on the entry itself.
+        let decisions = (try? String(contentsOf: root.appendingPathComponent("docs/04-decision-log.md"),
+                                     encoding: .utf8)) ?? ""
+        if let range = decisions.range(of: "## DEC-003") {
+            let entry = String(decisions[range.lowerBound...].prefix(900))
+            report("DEC-003 carries its own pointer to the amendment that narrowed it",
+                   entry.contains("DEC-053"))
+        } else {
+            report("DEC-003 exists in the decision log", false)
+        }
     }
 
     print("\n=== the packaging script produces something a stranger can run (G3) ===")

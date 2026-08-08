@@ -116,7 +116,7 @@ Reopen if any of the following occurs: demand appears for Linux or Windows suppo
 
 - **Date:** 2026-07-26
 - **Topic:** Whether version one may modify repository state.
-- **Status:** Accepted
+- **Status:** Accepted — **amended 2026-08-01 by DEC-053**, which admits a built-in terminal. Everything below still holds of the *application's own* operations: no automatic path writes, and R-8 proves it. What changed is that the user can now type `git commit` into a shell the application hosts. The text below is left as it was written; the correction is visible rather than edited in.
 
 ### Context
 

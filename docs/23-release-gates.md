@@ -87,7 +87,7 @@ A design that hides a change mark would violate the core invariant through CSS w
 - [x] Launched with **no Git repositories anywhere**, and on a machine with **no WebStorm**, neither path crashes and both explain themselves
 - [x] `DIFFSCOPE_EDITOR` is documented for testers who use a different editor, and the default's failure is visible rather than silent
 - [x] **`25-tester-packet.md`** contains: what the application does, the Gatekeeper instructions, three or four concrete things to try, what is *known* missing so nobody reports it twice, how to report an observation, and the privacy statement
-- [x] The privacy statement is one paragraph and is **true and demonstrable**: reads only, never writes to a repository (R-8 snapshots `.git` before and after every Git operation), never sends anything anywhere, no telemetry, no AI at runtime
+- [x] The privacy statement is **true and demonstrable**: the application reads only and never writes to a repository on any path of its own (R-8 snapshots `.git` before and after every Git operation), never sends anything anywhere, no telemetry, no AI at runtime. **Rewritten after DEC-053**: the packet now also states plainly that the built-in terminal runs what the tester types, including `git commit`, and that their shell startup files are never modified. A check holds the packet to naming all three
 - [x] The packet says what to do about a diff that looks wrong: **keep the file**, because the pair is what makes it reproducible
 
 ### What the tester is asked for

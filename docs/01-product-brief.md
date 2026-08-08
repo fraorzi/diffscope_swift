@@ -61,7 +61,7 @@ Base branch is detected by cascade — `origin/HEAD`, then a unique local `main`
 
 The application's credibility rests on four commitments:
 
-1. **It never writes.** Not to the working tree, not to the index, not to Git config. Even `git fetch` is excluded, so the claim needs no qualification (DEC-003, DEC-011). Implementation consequence: Git invocations must be audited for incidental writes — plain `git status` can rewrite the index, `git --no-optional-locks status` does not.
+1. **It never writes on its own.** Not to the working tree, not to the index, not to Git config; `git fetch` is excluded too (DEC-003, DEC-011). Implementation consequence: Git invocations must be audited for incidental writes — plain `git status` can rewrite the index, `git --no-optional-locks status` does not. **Since DEC-053 the application also hosts a terminal**, which runs what the user types in it, including `git commit`. The commitment above is about what the application does by itself, and R-8 proves exactly that; the terminal is the user acting in their own shell.
 2. **It never hides.** Formatting-only is a grouping with a disclosed count and immediate expansion, never a filter. "No changes" is displayed only when old and new content are byte-equal.
 3. **It admits uncertainty.** Confidence, parser state, and fallback regions are displayed, not concealed. Low confidence degrades presentation visibly rather than producing a confident wrong answer.
 4. **It always offers the control view.** Raw mode is always available, on the same pinned source pair, so any structural claim can be checked against plain text.
@@ -97,4 +97,4 @@ Measured 2026-07-26 on the product owner's machine. Design target, not hypothesi
 3. Every fixture in the Phase 6 corpus passes reconstruction and coverage checks.
 4. Parser failure on invalid or partially-typed source produces a visible, correct raw fallback rather than a missing change.
 5. Reviewing a 63-file working tree is practical via keyboard navigation.
-6. The application is demonstrably incapable of modifying a repository.
+6. The application is demonstrably incapable of modifying a repository **on any path of its own** — proven by R-8 over the closed set of Git operations it can issue. Commands the user types into the built-in terminal are theirs, and are the one way a repository changes while this application is open (DEC-053).

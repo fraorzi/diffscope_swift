@@ -7,7 +7,11 @@
 
 ## 1. The read-only guarantee
 
-The application never writes to the working tree, the index, or Git configuration (DEC-003). This is the product's central trust claim and is stated without qualification because nothing qualifies it — including `git fetch`, which is excluded entirely (DEC-011).
+The application never writes to the working tree, the index, or Git configuration (DEC-003). This is the product's central trust claim, and it covers **every Git operation the application issues on its own** — including `git fetch`, which is excluded entirely (DEC-011).
+
+**One thing qualifies it, and it is named rather than buried (DEC-053).** Since T1 the application contains a terminal, and a terminal runs whatever the user types into it — `git commit` included. That is the user acting, deliberately, in a shell they opened. The guarantee above is unchanged in what it covers: the engine, the Git layer, the refresh, the watcher, every automatic path. R-8 proves that and proves nothing about the terminal, which is the user's.
+
+The one command the *application* composes is `cd` when the terminal follows the reader's selection, under the guard in DEC-056. It changes no repository state, and it is the only one.
 
 ### 1.1 Read-only is about effects, not command names
 

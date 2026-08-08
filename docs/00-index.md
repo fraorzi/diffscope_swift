@@ -145,7 +145,7 @@ Twenty decisions are accepted. Full records, including options rejected and revi
 |---|---|
 | DEC-001 | Planning process: interleaved phases, spikes at 3.5, corpus before architecture |
 | DEC-002 | Platform: **macOS only, permanently** |
-| DEC-003 | **Strictly read-only** in version one |
+| DEC-003 | **Strictly read-only** in version one — for the application's own operations. Amended by DEC-053, which admits a user-driven terminal |
 | DEC-004 | Structural diff scope: **TS / TSX / JS / JSX only**; all else raw, labeled |
 | DEC-005 | Single window, sidebar + diff pane; last repository remembered |
 | DEC-006 | Eager parallel status sweep at launch, refresh on focus |

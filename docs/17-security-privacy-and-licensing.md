@@ -35,9 +35,17 @@ Reproducing `git diff` exactly for filtered files would require running the repo
 - Parsers process hostile input by design. Parser failure must degrade to raw (F1/F2), never crash the process.
 - Path traversal: scan traversal guards against symlink cycles and symlinks escaping the configured root (DEC-018).
 
-### 2.3 What the application cannot do
+### 2.3 What the application does not do on its own
 
-Because it is strictly read-only (DEC-003), the blast radius of any defect excludes repository damage. It cannot stage, commit, discard, fetch, or modify Git configuration. Verified by test R-8, which snapshots `.git` before and after every operation the application can issue.
+**A defect in the application cannot damage a repository.** Nothing on any automatic path stages, commits, discards, fetches or modifies Git configuration; `GitOperation` is a closed registry with no case for any of them, and R-8 snapshots `.git` before and after every operation the application can issue.
+
+**The terminal is a deliberate exception, and it is the user's** (DEC-053). Since T1 the application hosts a shell, so the blast radius of *the user's own commands* is whatever they type — the same as in any terminal. Three properties keep that from becoming the application's blast radius:
+
+- **Nothing is executed that came from repository content** (DEC-028). No repository script is run, no command line is prefilled from a file, nothing auto-executes. This is the entire safety story now that a shell exists, and it is checked by counting the places that can write to a PTY.
+- **The application composes exactly one command**: `cd -- <path>` when the terminal follows the reader's selection, under a three-term guard, with the path quoted by a single function proved against a real shell over hostile directory names (DEC-056).
+- **The user's shell startup files are never written to.** The integration lives in a generated temporary directory; the rc files are hashed before and after a session, which is R-8's pattern pointed at the home directory.
+
+The distinction to hold on to: *the application does not change your repositories; a terminal changes whatever you tell it to.*
 
 ## 3. Sandboxing
 

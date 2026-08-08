@@ -102,6 +102,8 @@ Two smaller things would deliver part of the value at a fraction of the cost, an
 
 **The interaction with OQ-056 matters more than the feature does.** A terminal inside the application lets the user run `git commit` inside a product that promises it never writes to a repository. That is not a violation — the user is doing it, deliberately, in a shell — but it dissolves the sentence "this application cannot modify your repositories" into something that needs a paragraph of explanation. If Git write operations are taken up under OQ-056 the tension disappears; if they are not, a terminal quietly grants the same power without any of OQ-056's questions being answered.
 
+**What actually happened (T4, 2026-08-01).** The terminal was built, and the paragraph of explanation was written rather than avoided: eleven documents said the application could not change a repository, and each now distinguishes *the application acting on its own* from *the user typing in a shell*. `25-tester-packet.md` says both in plain words, because it goes to a stranger with the zip. A check holds those sentences in place, with a negative control that catches the old wording reappearing. **OQ-056 is untouched by this** — staging and committing as product features still need their own decision, and DEC-053 says so explicitly.
+
 **Revisit** if the product ever moves from *reviewing* changes to *acting* on them — which is the read-only decision (DEC-003), not a UI question.
 
 **OQ-056 — Git write operations: stage, unstage, commit, pull.** Status: Open. Raised by the product owner, 2026-07-31.
@@ -123,7 +125,7 @@ Asked for directly, and **this is the one decision the product cannot drift into
 
 **Recommended sequencing if it is taken up:** unstage before stage (it destroys nothing), stage-whole-file before stage-hunk, commit after both, pull last and never automatic. Each step gets its own decision entry, and R-8 is re-specified before the first write ships — not after.
 
-**Revisit:** this is a version-two scope decision, and taking it up means reopening DEC-003 explicitly with a new decision entry, per the rule in `21-agent-handoff.md` §6 that read-only must not be silently re-decided. See also [[OQ-055]], since a built-in terminal would grant the same power sideways without any of the above being answered.
+**Revisit:** this is a version-two scope decision, and taking it up means reopening DEC-003 explicitly with a new decision entry, per the rule in `21-agent-handoff.md` §6 that read-only must not be silently re-decided. See also [[OQ-055]]: the terminal **has since been built** (DEC-053), so the sideways grant is now real — a user can commit from inside the application today. That does not answer any question below. What it changes is the framing: the argument for staging as a feature is no longer "the product cannot write", it is "a hunk-accurate staging surface is safer and clearer than a command line", which is a better argument and a different one.
 
 **OQ-048 — Confirm `--no-optional-locks` coverage.** Status: Open.
 Verified for `status`. It is a top-level Git option so it should apply generally, but every command the application issues must be confirmed rather than assumed, and the read-only proof in the test plan must enforce this.

@@ -21,7 +21,7 @@ Derived from the decision log; where this document and [04-decision-log.md](04-d
 - All repositories shown, with two independent signals: uncommitted count and commits-ahead-of-base (DEC-012)
 
 ### Git
-- Strictly read-only; `--no-optional-locks` on every invocation (DEC-003)
+- The application's own Git usage is strictly read-only; `--no-optional-locks` on every invocation (DEC-003). **A built-in terminal is in scope since DEC-053** and runs what the user types, including commands that write — see `26-terminal-plan.md`
 - Never fetches (DEC-011)
 - Four scopes: all-local vs `HEAD`, unstaged vs index, staged vs `HEAD`, branch vs merge-base (DEC-008)
 - Base detection cascade with per-repository override (DEC-009)
@@ -99,4 +99,4 @@ Derived from the decision log; where this document and [04-decision-log.md](04-d
 5. Parser failure produces visible raw fallback, never a missing change.
 6. A 63-file working tree is reviewable entirely from the keyboard.
 7. Structural and Expanded produce identical segment sets for every fixture (INV-5).
-8. The application is demonstrably incapable of modifying a repository.
+8. The application is demonstrably incapable of modifying a repository on any path of its own (R-8), and the terminal's one composed command — `cd` under DEC-056's guard — changes no repository state.

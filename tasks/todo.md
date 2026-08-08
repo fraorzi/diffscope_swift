@@ -567,3 +567,29 @@ Two things measurement changed. The plan said FSEvents would not see `git commit
 signal at ~440 ms, so the command mark now refreshes only the repository sweep. And the follow guard
 first asked whether the shell was *named* zsh; five checks failed against a fixture emitting marks
 from `/bin/sh`, and the fixture was right: the guard asks whether marks have been seen.
+
+## Step 26 — T4: the documents that still said this cannot happen
+
+- [x] `25-tester-packet.md` rewritten: what the app does on its own, what the terminal does, and that
+      the tester's shell startup files are never edited — before the install instructions
+- [x] Terminal added to "what to try" and to "known missing", including the escape hatch
+- [x] `01`, `11`, `15`, `17`, `18`, `23`, `00`, `21`, `05` amended with the same distinction
+- [x] DEC-003 carries its own pointer to DEC-053; its original text left as written
+- [x] Checks: the retired sentences as a table over current-state documents, every one of them
+      required to mention the terminal, DEC-003's pointer, and a negative control
+
+### Step 26 — done
+
+1088/1088 checks (1080 + 8). `26-terminal-plan.md` is closed: T0 through T4 all landed on 2026-08-01.
+
+The sentence that had to go was *"It cannot commit, stage, push, pull, or change anything in your
+repositories"* — in the one document that goes to a stranger with the zip. What replaced it is two
+sentences, not one: the app changes nothing by itself, and the terminal does exactly what you type.
+The test applied to every paragraph was whether a tester who commits from the pane would feel warned
+or outsmarted.
+
+**Correction to step 26.** After the checks were green, a plain `grep` over `docs/` found a retired
+sentence the check had missed — §12 of the handoff still read *"demonstrably incapable of modifying a
+repository"*. The check's file list was the defect: it named six current-state documents and the
+handoff was not one of them, though its §4 and §6 had been amended by hand. Sentence fixed, and three
+more files added to the list. A list of documents is itself a thing that can be incomplete.

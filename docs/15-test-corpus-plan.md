@@ -201,6 +201,8 @@ Approach: snapshot the entire repository directory — file contents, mtimes, an
 
 This test should run against **every** Git operation the application can issue, enumerated explicitly, so that adding a new Git call without a corresponding read-only proof fails CI.
 
+**What R-8 does not cover, since DEC-053.** The built-in terminal runs the *user's* commands, and those may write anything at all. R-8 is a claim about the application's own operations and remains exactly as strong as it was; it must never be quoted as though it covered the terminal. The terminal's own proofs are different in kind: the user's shell startup files hashed around a session (unchanged), a count of the places that may write to a PTY (DEC-028), and the single command the application composes checked against a real shell over hostile paths (DEC-056).
+
 ### 5.2 Concurrency
 
 R-9 is a correctness test, not a UI test. Modify a file *while* analysis is in flight and assert the result is either the pre-change pin or the post-change pin, never a blend of the two.

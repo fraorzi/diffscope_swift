@@ -8,7 +8,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, the T-series coverage audit, root management, the gutter, the grouped file list and the rest of the interface audit have all landed, and **all three handover gates have passed**. 1080/1080 checks pass over 32 fixtures.**
+**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, the T-series coverage audit, root management, the gutter, the grouped file list and the rest of the interface audit have all landed, and **all three handover gates have passed**. 1088/1088 checks pass over 32 fixtures.**
 
 | Milestone | State |
 |---|---|
@@ -25,7 +25,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 Run everything:
 
 ```
-swift run diffscope-verify          # 1080 checks over 32 fixtures, exit 1 on failure
+swift run diffscope-verify          # 1088 checks over 32 fixtures, exit 1 on failure
 ./Scripts/package.sh                # DiffScope.app + zip + SHA-256 for a tester
 swift run diffscope-verify --write-manifest   # re-record fixture hashes, deliberately
 swift run -c release diffscope-verify --survey ~/YourProjects
@@ -99,6 +99,10 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 ### What to do next
 
 **The product owner has put the built-in terminal first** (2026-07-31, resolving OQ-055). Everything below it in this list was the audit's ordering, not theirs. The plan is [`26-terminal-plan.md`](26-terminal-plan.md).
+
+**T4 landed on 2026-08-01, and the terminal is complete** (`26-terminal-plan.md` is closed). Eleven documents promised that this product could not change a repository; each now separates **the application acting on its own** — which still writes nothing, proven by R-8 — from **the user typing in a shell it hosts**. `25-tester-packet.md` was rewritten for the person who gets the zip: they are told a shell lives in the window, that it commits if they tell it to, and that their own `~/.zshrc` is never edited, all before the install instructions. DEC-003 now carries its amendment pointer on the entry itself, because that is where a reader lands first. **A check holds this in place** (`DesignChecks`): the retired sentences are a table, every current-state document must also *mention* the terminal — removing a false claim without stating the true one is the worse defect — and a negative control puts the old wording back and requires it to be caught.
+
+**What to do next is no longer the terminal.** The list further down this section — definition of done §6, OQ-046, F1's missing producer, a second move shape — is the audit's ordering and is untouched by any of this.
 
 **T3 landed on 2026-08-01** — the terminal belongs to the product. It reports where it is (OSC 7) rather than assuming, follows the reader's selection under a three-term guard (a prompt mark actually seen · the input line owns the keyboard · nothing typed), and offers ⌥⌘K when the guard refuses. The path is quoted by one function and proved against a real shell over twelve hostile directory names. **DEC-056**, measured in `22-experiment-log.md` → **T3-A**, where the plan's own premise was measured false: FSEvents *does* see `git commit`, so the command mark refreshes only the repository sweep the watcher cannot know about. **T4 is the last step** — rewriting `25-tester-packet.md` and the documents that still say this product cannot change a repository.
 
@@ -198,7 +202,7 @@ Comparison is on **bytes**. **Normalisation is never applied anywhere**, includi
 
 ## 4. Accepted scope
 
-`18-version-one-scope.md` is authoritative. Headlines: macOS only; strictly read-only; never fetches; four comparison scopes; TS/TSX/JS/JSX structural, everything else raw and labelled; side-by-side only; three modes over two code paths; byte-identical moves only; multiple user-chosen roots with no default path.
+`18-version-one-scope.md` is authoritative. Headlines: macOS only; the application's own Git usage strictly read-only, with a built-in terminal the user drives (DEC-053); never fetches; four comparison scopes; TS/TSX/JS/JSX structural, everything else raw and labelled; side-by-side only; three modes over two code paths; byte-identical moves only; multiple user-chosen roots with no default path.
 
 ## 5. Important rejected alternatives, and why
 
@@ -221,7 +225,7 @@ Comparison is on **bytes**. **Normalisation is never applied anywhere**, includi
 Each has a recorded rationale. Reopen explicitly against its revisit trigger, or not at all.
 
 1. **Normalisation** — never, anywhere. Not reopenable; disqualified by measurement.
-2. **Read-only** — no writes, no fetch, no exceptions. `--no-optional-locks` everywhere.
+2. **Read-only for the application itself** — no writes, no fetch, no exceptions, `--no-optional-locks` everywhere. Amended once, deliberately: DEC-053 admits a terminal the *user* drives. The application still writes nothing on its own, and the one command it composes is `cd` under DEC-056's guard. Do not let these two collapse into each other in any document.
 3. **Byte partition as primitive** — the invariants depend on it structurally.
 4. **Matcher output as mapping, not script.**
 5. **Formatting-only is a label, never a filter.**
@@ -290,7 +294,7 @@ M0 verification gates → M1 engine skeleton and invariant harness → M2 Git la
 
 ## 12. Definition of done
 
-`18-version-one-scope.md` §"Definition of done". In short: every P0 fixture passes T-0…T-11; R-8 covers every Git operation; wrapper removal reads correctly; prop reordering never reports "no change"; parser failure degrades visibly; a 63-file working tree is reviewable from the keyboard; the application is demonstrably incapable of modifying a repository.
+`18-version-one-scope.md` §"Definition of done". In short: every P0 fixture passes T-0…T-11; R-8 covers every Git operation; wrapper removal reads correctly; prop reordering never reports "no change"; parser failure degrades visibly; a 63-file working tree is reviewable from the keyboard; the application is demonstrably incapable of modifying a repository on any path of its own, the terminal being the user's (DEC-053).
 
 ## 13. Keeping this synchronised
 

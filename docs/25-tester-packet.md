@@ -12,7 +12,18 @@ A macOS app for looking at what you changed in a Git repository before you commi
 
 Every diff tool does that. The reason this one exists is one specific case it does better: when you delete a wrapper around a block of code — a `<div>` around ten lines of JSX, an `if` around a function body — an ordinary diff shows a big deletion followed by a nearly identical big insertion, and you have to read both halves to work out that almost nothing changed. This one shows it as what it is: the wrapper changed, the contents did not.
 
-It is **read-only**. It cannot commit, stage, push, pull, or change anything in your repositories.
+## What it can and cannot do to your repositories
+
+Two different things, and the difference matters:
+
+- **The app itself never changes anything.** Looking at a diff, switching branches in the list, refreshing — none of it writes to your files, your staging area, or your Git settings. It does not even fetch. This is not a promise about intent; every Git command the app can issue is snapshot-tested to leave the repository byte-identical.
+- **There is a terminal in it, and a terminal runs what you type.** Press ⌥⌘T and a shell opens at the bottom of the window, in the repository you are looking at. If you type `git commit` in it, you commit — the same as in any terminal. That is the point of it, and it is the newest part of the app, so it is the part most worth trying.
+
+So: the app will not touch your work behind your back, and the terminal will do exactly what you tell it to.
+
+**Your shell setup is not modified.** The terminal starts your own shell with your own configuration, but it never edits `~/.zshrc`, `~/.zprofile` or anything else in your home folder. It adds what it needs in a temporary folder that goes away when the app closes, and the app's own tests hash those files before and after a session to prove they are untouched.
+
+If you would rather not have a shell inside the app while you test, just do not open it — nothing starts it for you.
 
 ---
 
@@ -100,6 +111,13 @@ An hour, roughly in this order.
 5. **Walk a long file with ⌘N.** Does it stop at every change, or skip one?
 6. **Open a non-code file** — a `.css`, a `.md`, an image. Each should explain itself rather than looking broken.
 7. **Edit a file in your editor while the app is open on it.** It should update within a second or two, and you should not lose your scroll position.
+8. **Open the terminal with ⌥⌘T** — this is the newest part and the least tested. Things worth trying, roughly in order of how much they would annoy you if they were wrong:
+   - Type a command with a long path or a quoted string and **edit it with the keys you actually use**: Option+←/→ by word, Cmd+←/→ to the ends of the line, Option+Delete to rub out a word. That is the reason the terminal exists.
+   - Press **Tab** in the middle of a path. The shell takes the line back and completes it the way it does in your own terminal; the pill on the left says so while that lasts.
+   - Run something long — `npm install`, a test suite — and check that ⌃C stops it.
+   - Run `vim` or `top`, and leave again.
+   - Change a file from the terminal and watch whether the diff beside it notices.
+   - If a prompt appears that the input line handles badly — an `ssh` password, a `sudo` prompt — **⌥⌘R** hands every key straight to the shell. If you need that, say so: it means we guessed wrong about where the prompt was.
 
 **Using a different editor?** ⌘O defaults to WebStorm. To use another, launch the app from Terminal with your own command:
 
@@ -124,6 +142,8 @@ Already recorded. Reporting them costs you time and tells us nothing new.
 - In files over about 2000 lines, a refresh puts you back within a few lines of where you were, not exactly.
 - ⌘O opens the file but not at the right line unless you set `DIFFSCOPE_EDITOR` to a command containing `{line}`.
 - It looks plain. The visual design is a separate piece of work that has not happened yet.
+- **In the terminal:** ↑ and ↓ walk only the commands you typed in *this* session, not your shell's own history — ⌃R gets you that, from the shell itself. There are no Warp-style command blocks and no completion of our own; Tab hands the line to your shell instead.
+- Opening the terminal takes about a third of a second, because it runs your real shell startup files. Each shell also leaves an `ssh-agent` behind if your configuration starts one — that is your setup doing what it always does, not the app.
 
 ---
 
@@ -143,7 +163,9 @@ In order. The first line is worth more than everything below it put together.
 
 ## Privacy, and what it does to your machine
 
-- It **reads**. It never writes to a repository, never stages, never commits, never pushes, never pulls, never fetches. Every Git command it can run is listed in the source and each one is tested before every release by taking a fingerprint of the repository's internals before and after, and requiring them to be identical.
+- **On its own, it only reads.** Nothing the app does by itself stages, commits, pushes, pulls or fetches. Every Git command it can run is listed in the source, and each one is tested before every release by fingerprinting the repository's internals before and after and requiring them to be identical.
+- **The terminal is yours.** It runs what you type in it, including commands that change your repository. Nothing types into it for you, with one exception worth knowing: when you switch to a different repository and the terminal is sitting at an empty prompt, the app sends a `cd` so the shell follows you. If you have a command half-typed, or something is running, it sends nothing and tells you the directory no longer matches.
+- **It does not touch your shell configuration.** Your `~/.zshrc` and the rest are read, never written; the app's own additions live in a temporary folder. This is tested by hashing those files around a real session.
 - It **never connects to the internet**. There is no network code in it and it asks for no network permission.
 - It sends **no telemetry, no analytics, no crash reports**. Nothing leaves your machine.
 - It uses **no AI** while running.

@@ -1,6 +1,6 @@
 # 26 — Built-in terminal, Warp-style
 
-**Status:** Accepted as scope by the product owner, 2026-07-31 (**DEC-053**). Resolves OQ-055 in favour of building it. **Gate T0 passed and T1–T3 are built** (DEC-054, DEC-055, DEC-056): the terminal runs, at a prompt the keyboard belongs to a real text field, and it follows the repository the reader is looking at. Only T4 remains — see §5.
+**Status:** Accepted as scope by the product owner, 2026-07-31 (**DEC-053**). Resolves OQ-055 in favour of building it. **Complete.** Gate T0 passed and T1–T4 are built (DEC-053 … DEC-056): the terminal runs, at a prompt the keyboard belongs to a real text field, it follows the repository the reader is looking at, and every document that promised the product could not change a repository now says what is true instead.
 
 This document exists because the terminal was deferred twice on my recommendation, and the product owner has now put it at the front of the queue. That is their call; the ordering until then was the audit's framing, not theirs.
 
@@ -35,6 +35,8 @@ Two findings that shape the implementation, both from that probe:
 - **R-8 still applies to the application's own Git usage.** The terminal is the user's. No document may conflate the two.
 
 A decision entry records all of this **before the first line of terminal code**, because DEC-003 and `18-version-one-scope.md` both say the opposite today.
+
+**Settled in T4 (2026-08-01).** All three held. `25-tester-packet.md` was rewritten and now tells a tester, before they install anything, that a shell lives in the window and will commit if they tell it to. DEC-028 survived intact and became the safety story it was promised to be — the places that can write to a PTY are counted by a check. R-8 still means the application's own Git usage, and `15-test-corpus-plan.md` §5.1 now says so in the same breath as the claim, so the two cannot be quoted as one.
 
 ---
 
@@ -84,7 +86,7 @@ Two results change the work below rather than merely clearing it:
 | ~~**T1**~~ | **Done 2026-08-01.** `Sources/DiffScopeTerminal` (PTY, scanner, integration, session) and the grid in a second `WKWebView`; ⌥⌘T opens a pane under the diff. DEC-054, measured in `22-experiment-log.md` → T1-A |
 | ~~**T2**~~ | **Done 2026-08-01.** `InputRouter` decides where a keystroke goes, the field is a real `<textarea>`, Tab and ⌃R hand the line to the shell, ⌥⌘R forces raw. DEC-055, measured in `22-experiment-log.md` → T2-A |
 | ~~**T3**~~ | **Done 2026-08-01.** OSC 7 tells the pane where the shell is, the selection is followed under a three-term guard, and a finished command refreshes the repository sweep. DEC-056, measured in `22-experiment-log.md` → T3-A |
-| **T4** | The decision entry, the tests, and the documents that currently say this cannot happen |
+| ~~**T4**~~ | **Done 2026-08-01.** `25-tester-packet.md` rewritten for a stranger who is about to point this at their own repositories; ten further documents now distinguish the application acting on its own from the user typing in a shell; DEC-003 carries its amendment pointer; a check with a negative control holds the retired sentences out |
 
 ## 6. Verification
 
