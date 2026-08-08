@@ -9,6 +9,7 @@ let package = Package(
         .library(name: "DiffScopeGit", targets: ["DiffScopeGit"]),
         .library(name: "DiffScopeSyntax", targets: ["DiffScopeSyntax"]),
         .library(name: "DiffScopeTerminal", targets: ["DiffScopeTerminal"]),
+        .library(name: "DiffScopeShell", targets: ["DiffScopeShell"]),
         .executable(name: "diffscope-verify", targets: ["diffscope-verify"]),
         .executable(name: "diffscope-app", targets: ["diffscope-app"]),
         .executable(name: "diffscope-t0", targets: ["diffscope-t0"]),
@@ -35,13 +36,18 @@ let package = Package(
             dependencies: ["DiffScopeEngine", "CTreeSitter", "CTreeSitterTSX"]
         ),
         .target(name: "DiffScopeTerminal"),
+        // The keyboard map (DEC-057). AppKit-free on purpose: the application builds its menu bar
+        // from it and the check suite links the same file, so the map cannot drift from the menu.
+        .target(name: "DiffScopeShell"),
         .executableTarget(
             name: "diffscope-verify",
-            dependencies: ["DiffScopeEngine", "DiffScopeGit", "DiffScopeSyntax", "DiffScopeTerminal"]
+            dependencies: ["DiffScopeEngine", "DiffScopeGit", "DiffScopeSyntax", "DiffScopeTerminal",
+                           "DiffScopeShell"]
         ),
         .executableTarget(
             name: "diffscope-app",
-            dependencies: ["DiffScopeEngine", "DiffScopeGit", "DiffScopeSyntax", "DiffScopeTerminal"],
+            dependencies: ["DiffScopeEngine", "DiffScopeGit", "DiffScopeSyntax", "DiffScopeTerminal",
+                           "DiffScopeShell"],
             resources: [.copy("Renderer")]
         ),
         // Gate T0 of docs/26-terminal-plan.md, kept runnable and pointed at the shipping module —

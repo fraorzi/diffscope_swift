@@ -593,3 +593,41 @@ sentence the check had missed — §12 of the handoff still read *"demonstrably 
 repository"*. The check's file list was the defect: it named six current-state documents and the
 handoff was not one of them, though its §4 and §6 had been amended by hand. Sentence fixed, and three
 more files added to the list. A list of documents is itself a thing that can be incomplete.
+
+## Step 27 — M8-J: the keyboard path, and the map behind it (DEC-057)
+
+- [x] `DiffScopeShell/KeyboardMap.swift` — `12-…` §9's coverage table as an enum, the bindings as
+      data, AppKit-free so `diffscope-verify` links the same file the menu is built from
+- [x] `buildMenu` iterates the map; `selector(for:)` is the one place an identifier becomes a method
+- [x] `RowNavigation` beside `FileListRow`, so a 63-file list can be walked without a window
+- [x] `shouldSelectRow` refuses header rows — arrows, clicks and ⌘] finally agree with DEC-033
+- [x] ⌥⌘V *raw for the current region*: the stop recorded, mode switched on the same pinned pair,
+      the stop restored, the second press returning to the mode it left
+- [x] Renderer `currentStop` / `goToStopIndex:`, and a current region for a reader who has not
+      navigated yet (the first change at or below the top of the viewport)
+- [x] Status line says where the reader is — `file 12/63` — and which pane has the keyboard
+- [x] `KeyboardChecks`: coverage, collisions, the 63-row walk both ways, three negative controls
+- [x] `Scripts/keyboard-tree.sh`, and `package.sh` refusing to package a build whose walk was skipped
+- [x] Selftest arms pressing **real key events** through the real menu bar; `keyboard.png` is the
+      first snapshot of the window rather than of the document
+- [x] DEC-057, M8-J, OQ-023 resolved, `12-…` §9 and §12, `18-…` definition of done 6, handoff §0,
+      `23b-…` §3 corrected, tester packet
+
+### Step 27 — done, and the walk found two things the checks could not
+
+**A specified function had never been built.** *Show raw for the current region* is a row of
+`12-…` §9 and had no menu item, no action and no renderer command — through M6, M7 and M8. Fourth
+instance of the shape after `runBundleFreshnessCheck`, `checkAttr` and T-10. The map being data is
+the fix; the feature is a consequence of it.
+
+**Arrow keys stopped on group headers.** DEC-033 has called headers labels since M8-F, and only
+⌘] obeyed. Every check passed in that state, because the suite cannot press a key. With the refusal
+removed as a negative control, the same walk reports 8 blind stops.
+
+**Walking fast crashed the application.** One shared `TSXParser`, renders on the concurrent queue,
+two threads inside `ts_parser_parse_string`, process aborted. Nothing in the suite parses on more
+than one thread, so nothing could have seen it. The parser locks now, renders are serialised, and a
+render whose file is no longer selected is dropped — the second half being its own defect, one
+file's diff under another file's name.
+
+1109/1109 checks (1088 + 21), 24 selftest arms, `package.sh` green with the 63-file walk in it.

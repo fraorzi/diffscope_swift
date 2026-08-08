@@ -91,7 +91,9 @@ Of the seven indicators the spec calls *"not optional features — these are how
 
 ## 3. Correctly built, worth knowing
 
-Checked and sound: the read-only proof over every Git operation; the four scopes; unborn-HEAD handling (`carrefour-inapp` renders); ahead-count showing `↑?` rather than a fabricated zero; bidirectional scroll linking; the full keyboard map in the menu bar; the degradation notices; light and dark themes; the invisible-difference disclosure.
+Checked and sound: the read-only proof over every Git operation; the four scopes; unborn-HEAD handling (`carrefour-inapp` renders); ahead-count showing `↑?` rather than a fabricated zero; bidirectional scroll linking; the degradation notices; light and dark themes; the invisible-difference disclosure.
+
+**Correction, 2026-08-09.** *"The full keyboard map in the menu bar"* was in that list, and it was wrong: `12-…` §9 lists nine functions and one of them — *show raw for the current region* — had no implementation of any kind, while the arrow keys stopped on group headers that DEC-033 calls labels. Both are fixed under DEC-057, and the map is now data the check suite reads, so this line cannot be wrong quietly again. The audit was written by reading the menu, which is exactly the method that misses a row nobody transcribed.
 
 ---
 

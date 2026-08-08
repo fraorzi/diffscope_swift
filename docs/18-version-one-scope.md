@@ -97,6 +97,6 @@ Derived from the decision log; where this document and [04-decision-log.md](04-d
 3. The JSX wrapper-removal case reads as a wrapper change with children preserved.
 4. Prop reordering with unchanged values never reports "no change".
 5. Parser failure produces visible raw fallback, never a missing change.
-6. A 63-file working tree is reviewable entirely from the keyboard.
+6. A 63-file working tree is reviewable entirely from the keyboard. **Met 2026-08-09** (DEC-057), and measured rather than argued: `Scripts/keyboard-tree.sh` builds a tree of that size and the application selftest walks it with real key events — 63 files in 62 keystrokes past nine group headers, none of which takes the selection, on both ⌘] and the arrow keys. `22-experiment-log.md` → **M8-J**.
 7. Structural and Expanded produce identical segment sets for every fixture (INV-5).
 8. The application is demonstrably incapable of modifying a repository on any path of its own (R-8), and the terminal's one composed command — `cd` under DEC-056's guard — changes no repository state.

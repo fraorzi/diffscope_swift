@@ -1924,3 +1924,56 @@ Worth noticing as a pattern: the check failed for a reason that looked like a fi
 ```
 
 12 of 12. A string check alone would only ever confirm my idea of quoting; a shell confirms the quoting. The `--` is why the leading-dash case works, and the check would fail without it.
+
+---
+
+# M8-J — the keyboard path, walked on a 63-file working tree
+
+**Date:** 2026-08-09 · **Method:** the coverage table of `12-…` §9 transcribed into `KeyboardFunction` and checked against `KeyboardMap`; a 63-file repository built by `Scripts/keyboard-tree.sh`; the application selftest walking it with **real `NSEvent` key equivalents** through the real menu bar and real arrow keys through the table.
+
+## The tree had to be built
+
+`mailingi-2025` had 63 changed files on the day DEC-033 was written. It has **3** today, and no repository in the corpus is near that size. The shape the definition of done is stated against no longer exists to point at, so it is constructed — 52 modified, 4 deleted, 4 added, 3 untracked across nine directories five levels deep, which is the corpus's own shape.
+
+The script writes and the application does not. R-8 is a statement about the Git operations `diffscope-app` itself can issue, and a shell script building a fixture leaves it untouched — the same separation DEC-053 draws between the application acting on its own and the user typing in a shell.
+
+## The walk
+
+```
+⌘] through the menu bar    63 of 63 files    62 keystrokes    9 headers passed    0 blind stops
+↓  through the table       63 of 63 files                                        0 blind stops
+```
+
+62 keystrokes for 63 files is the number that matters: grouping added nine headers and **cost nothing**, which is what DEC-033 promised and what only ⌘] delivered before this milestone.
+
+**The arrow keys did not.** With `shouldSelectRow` removed — run deliberately as the negative control — the same walk reports **8 blind stops**: the selection lands on a header, the handler returns without a word, and the diff pane goes on showing the previous file. Every check in the suite passed in that state, because the suite cannot press a key.
+
+## What the coverage check found immediately
+
+*Show raw for the current region* — the last row of `12-…` §9 — **had no implementation at all**. Not a weak one: no menu item, no action, no renderer command, from M6 through M8. The fourth instance in this project of a written requirement that nothing runs, after `runBundleFreshnessCheck`, `checkAttr`/F8, and T-10's grapheme snapping.
+
+It is now ⌥⌘V (DEC-057), and it is cheap because stops come from the canonical diff: stop *n* is the same region in Raw as in Structural, so the shell records the stop, switches mode on the same pinned pair, and jumps back. Measured in the selftest: `mode=raw stop 0 → 0`, and the second press returns to `structural`.
+
+## The crash the walk found, which no check could have
+
+Holding ⌘] through 63 files **aborted the process**:
+
+```
+Assertion failed: ((uint32_t)(version) < (&self->heads)->size),
+  function ts_stack_remove_version, file stack.c, line 660.
+```
+
+One `TSXParser` is shared by the application and every render ran on the concurrent global queue, so two threads entered `ts_parser_parse_string` at once. Nothing in the suite could see it: **every check in this project parses on one thread**, so the shared parser had never been used the way the application uses it.
+
+Two fixes, because they are two different faults:
+
+- `TSXParser` takes a lock around the parse. The object owns the C resource, so it is the only place that can promise anything about it.
+- Renders run on a serial queue, and a result whose file is no longer selected is dropped. The second half is its own defect: before it, a fast walk could push one file's diff under another file's name.
+
+The check that now stands for this — 24 concurrent parses on one shared parser — was run once with the lock taken back out. It does not report a failure; **it aborts the suite**, at `stack.c:464`. That is what the defect does, so that is what the control has to show.
+
+## What the photograph showed
+
+`keyboard.png` is the first snapshot in this project of the **window** rather than of the document — `cacheDisplay` on the content view, which is why the diff pane comes out black (a `WKWebView` renders out of process). That was the point: M8-D's blank rows survived because the one surface nothing photographed was the shell.
+
+It shows the walk landing on `File0.tsx` with the row highlighted, the group headers drawn, the `mod`/`add`/`del`/`unt` badges correct, and the status line reading `file 1/63 · packages/app-0/…`. One cosmetic thing worth recording rather than fixing in a hurry: the repository pane draws empty rounded row backgrounds below its single row, from `usesAlternatingRowBackgroundColors`. With one repository configured it reads as a list still loading.

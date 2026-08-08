@@ -1,6 +1,7 @@
 import AppKit
 import DiffScopeEngine
 import DiffScopeGit
+import DiffScopeShell
 import DiffScopeSyntax
 import WebKit
 
@@ -47,6 +48,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     let configStore = ConfigurationStore()
 
     let parser = TSXParser()
+    /// Renders run here, one at a time. See `render(file:previousAnchor:restoringStop:)`.
+    let renderQueue = DispatchQueue(label: "local.diffscope.render", qos: .userInitiated)
 
     var window: NSWindow!
     var repoTable: NSTableView!
@@ -65,6 +68,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var splitView: NSSplitView!
     var wrapMenuItem: NSMenuItem?
     var wrapEnabled = true
+    /// Every menu item by the identifier of the binding that drew it (DEC-057), so the few items
+    /// that carry state can be reached without searching the menu bar by title.
+    var menuItems: [String: NSMenuItem] = [:]
+    var rawRegionMenuItem: NSMenuItem?
+    /// The mode ⌥⌘V left, and the change stop it left it at. Both are needed: the point of the
+    /// control view is that it returns the reader to *where they were*, not merely to the mode.
+    var rawRegionReturn: (mode: PresentationMode, stop: Int)?
     /// The terminal (DEC-054). Built with the window, loaded with the window, and **not started
     /// until it is first shown** — a shell costs ~340 ms and one `ssh-agent` here (T0).
     let terminal = TerminalPane()
@@ -836,10 +846,172 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                     FileHandle.standardError.write(Data(line.utf8))
                     guard ok else { exit(37) }
                     try? FileManager.default.removeItem(atPath: target)
-                    self.snapshotTerminal(named: "terminal-follow") { self.terminal.stop(); exit(0) }
+                    self.snapshotTerminal(named: "terminal-follow") {
+                        self.terminal.stop()
+                        self.runKeyboardSelftest()
+                    }
                 }
             }
         }
+    }
+
+    /// Definition of done §6: *a 63-file working tree is reviewable entirely from the keyboard*.
+    ///
+    /// The claim is about a person with their hands on the keys, so this arm presses keys — real
+    /// `NSEvent`s through the real menu bar and the real table, not `@objc` methods called directly.
+    /// Calling the methods would prove the methods work and say nothing about whether anything is
+    /// **bound** to them, which is the half DEC-016 is actually about.
+    ///
+    /// The tree comes from `Scripts/keyboard-tree.sh` by way of `DIFFSCOPE_KEYBOARD_TREE`. Without
+    /// it the arm says SKIPPED **with the reason** — the T1-A pattern, after a blank grid passed
+    /// every arm it had.
+    private func runKeyboardSelftest() {
+        guard let tree = ProcessInfo.processInfo.environment["DIFFSCOPE_KEYBOARD_TREE"],
+              FileManager.default.fileExists(atPath: tree + "/.git") else {
+            FileHandle.standardError.write(Data(
+                ("SELFTEST keyboard=SKIPPED no DIFFSCOPE_KEYBOARD_TREE — build one with "
+                    + "Scripts/keyboard-tree.sh and the walk over 63 files is measured\n").utf8))
+            exit(0)
+        }
+        scan(sources: [ConfiguredSource(kind: .repository, path: tree)])
+        // The sweep is off the main thread; the walk needs the list it produces.
+        waitForFiles(attemptsLeft: 40) { files in
+            guard files == 63 else {
+                FileHandle.standardError.write(Data(
+                    "SELFTEST keyboard=MISMATCH the tree has \(files) changed files, not 63\n".utf8))
+                exit(40)
+            }
+            self.walkTheFileList()
+        }
+    }
+
+    private func waitForFiles(attemptsLeft: Int, then next: @escaping (Int) -> Void) {
+        let files = state.fileRows.compactMap { $0.file }.count
+        guard files == 0, attemptsLeft > 0 else { next(files); return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            self.waitForFiles(attemptsLeft: attemptsLeft - 1, then: next)
+        }
+    }
+
+    /// Two walks over the same list: ⌘] through the menu bar, and ↓ through the table itself. They
+    /// disagreed until M8-J — ⌘] stepped past headers and ↓ landed on them — which is why both are
+    /// pressed here rather than one being taken as evidence for the other.
+    private func walkTheFileList() {
+        let headers = state.fileRows.filter { $0.file == nil }.count
+        focusFiles()
+        fileTable.selectRowIndexes(IndexSet(integer: RowNavigation.firstSelectable(in: state.fileRows) ?? 0),
+                                   byExtendingSelection: false)
+
+        var visited: [String] = []
+        var headerStops = 0
+        var keystrokes = 0
+        func record() {
+            let row = fileTable.selectedRow
+            if row >= 0, row < state.fileRows.count {
+                if let file = state.fileRows[row].file { visited.append(file.path) } else { headerStops += 1 }
+            }
+        }
+        record()
+        while keystrokes < 200 {
+            let before = fileTable.selectedRow
+            guard press(key: "]", modifiers: [.command]) else { break }
+            // The end of the list is where the selection stops moving; ⌘] does not wrap, which is
+            // itself the behaviour under test. That last press is a probe for the end rather than a
+            // step, so it is not counted.
+            guard fileTable.selectedRow != before else { break }
+            keystrokes += 1
+            record()
+        }
+        let distinct = Set(visited).count
+        let menuOK = distinct == 63 && headerStops == 0 && keystrokes == 62
+        FileHandle.standardError.write(Data(
+            ("SELFTEST keyboard=\(menuOK ? "OK" : "MISMATCH") ⌘] visited \(distinct) of 63 files in "
+                + "\(keystrokes) keystrokes past \(headers) headers, \(headerStops) blind stops\n").utf8))
+        guard menuOK else { exit(41) }
+
+        // The arrow keys, through the table's own key handling. `shouldSelectRow` is what makes them
+        // agree with ⌘]; before it, ↓ selected headers and the diff pane kept showing the last file.
+        fileTable.selectRowIndexes(IndexSet(integer: RowNavigation.firstSelectable(in: state.fileRows) ?? 0),
+                                   byExtendingSelection: false)
+        var arrowVisited: [String] = []
+        var arrowHeaderStops = 0
+        for _ in 0..<80 {
+            let row = fileTable.selectedRow
+            guard row >= 0, row < state.fileRows.count else { break }
+            if let file = state.fileRows[row].file { arrowVisited.append(file.path) } else { arrowHeaderStops += 1 }
+            sendArrowDown()
+            if fileTable.selectedRow == row { break }
+        }
+        let arrowOK = Set(arrowVisited).count == 63 && arrowHeaderStops == 0
+        FileHandle.standardError.write(Data(
+            ("SELFTEST keyboard-arrows=\(arrowOK ? "OK" : "MISMATCH") ↓ visited "
+                + "\(Set(arrowVisited).count) of 63 files, \(arrowHeaderStops) blind stops\n").utf8))
+        guard arrowOK else { exit(42) }
+
+        rawForCurrentRegionSelftest()
+    }
+
+    /// ⌥⌘V, the row of `12-…` §9 that had no implementation at all before M8-J: the same region,
+    /// shown raw, and the mode it left restored on the second press.
+    private func rawForCurrentRegionSelftest() {
+        guard let modified = state.fileRows.compactMap({ $0.file }).first(where: { $0.kind == .modified }),
+              let row = state.fileRows.firstIndex(where: { $0.file?.path == modified.path }) else {
+            FileHandle.standardError.write(Data("SELFTEST keyboard-raw-region=MISMATCH no modified file\n".utf8))
+            exit(43)
+        }
+        fileTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        fileTable.scrollRowToVisible(row)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            guard self.press(key: "n", modifiers: [.command]) else { exit(43) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                self.webView.evaluateJavaScript("window.diffscopeCommand(\"currentStop\")") { value, _ in
+                    let before = (value as? Int) ?? (value as? NSNumber)?.intValue ?? -1
+                    guard self.press(key: "v", modifiers: [.command, .option]) else { exit(44) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                        self.webView.evaluateJavaScript("window.diffscopeCommand(\"currentStop\")") { raw, _ in
+                            let inRaw = (raw as? Int) ?? (raw as? NSNumber)?.intValue ?? -1
+                            let ok = self.state.mode == .raw && inRaw == before && before >= 0
+                            FileHandle.standardError.write(Data(
+                                ("SELFTEST keyboard-raw-region=\(ok ? "OK" : "MISMATCH") mode="
+                                    + "\(self.state.mode.rawValue) stop \(before) → \(inRaw)\n").utf8))
+                            guard ok else { exit(45) }
+                            guard self.press(key: "v", modifiers: [.command, .option]) else { exit(46) }
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                                let returned = self.state.mode == .structural
+                                FileHandle.standardError.write(Data(
+                                    ("SELFTEST keyboard-return=\(returned ? "OK" : "MISMATCH") the second "
+                                        + "press returns to \(self.state.mode.rawValue)\n").utf8))
+                                guard returned else { exit(47) }
+                                self.windowSnapshot(named: "keyboard") { exit(0) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// A key equivalent, routed the way macOS routes one. `performKeyEquivalent` returning false
+    /// means **nothing is bound** to that keystroke, which is the defect DEC-016 names.
+    @discardableResult
+    private func press(key: String, modifiers: NSEvent.ModifierFlags) -> Bool {
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: key,
+            charactersIgnoringModifiers: key, isARepeat: false, keyCode: 0
+        ) else { return false }
+        return NSApplication.shared.mainMenu?.performKeyEquivalent(with: event) ?? false
+    }
+
+    private func sendArrowDown() {
+        let down = String(UnicodeScalar(NSDownArrowFunctionKey)!)
+        guard let event = NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [.function, .numericPad], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, characters: down,
+            charactersIgnoringModifiers: down, isARepeat: false, keyCode: 125
+        ) else { return }
+        window.sendEvent(event)
     }
 
     private func snapshotTerminal(named name: String, then next: @escaping () -> Void) {
@@ -920,6 +1092,33 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
     /// The rendered result is otherwise only checkable through the probe, which cannot see
     /// whether a mark is legible. `DIFFSCOPE_SNAPSHOT_DIR` writes what the webview drew.
+    /// Photographs the **window**, not the webview.
+    ///
+    /// Every other snapshot in this selftest shows the document only, which is why M8-D's blank
+    /// rows survived: the one surface nothing photographed was the shell. The keyboard walk happens
+    /// in the file list, so this is the arm that has to show it.
+    ///
+    /// The diff pane comes out black here, and that is the method rather than the application:
+    /// `cacheDisplay` copies AppKit's own drawing, and a `WKWebView` renders out of process. The
+    /// document has its own snapshots — this one is of the lists.
+    private func windowSnapshot(named name: String, then next: @escaping () -> Void) {
+        guard let dir = ProcessInfo.processInfo.environment["DIFFSCOPE_SNAPSHOT_DIR"],
+              let view = window.contentView else { next(); return }
+        let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)
+        if let rep {
+            view.cacheDisplay(in: view.bounds, to: rep)
+            let url = URL(fileURLWithPath: dir).appendingPathComponent("\(name).png")
+            do {
+                try rep.representation(using: .png, properties: [:])?.write(to: url)
+                FileHandle.standardError.write(Data("SELFTEST snapshot=\(url.path)\n".utf8))
+            } catch {
+                FileHandle.standardError.write(
+                    Data("SELFTEST snapshot=FAILED \(url.path) — \(error)\n".utf8))
+            }
+        }
+        next()
+    }
+
     private func snapshot(named name: String, then next: @escaping () -> Void) {
         guard let dir = ProcessInfo.processInfo.environment["DIFFSCOPE_SNAPSHOT_DIR"] else {
             next(); return
@@ -1209,99 +1408,87 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// DEC-016 commits to full keyboard operation of *every* function, so this is a map rather
     /// than a shortcut list: anything reachable only by pointer is a defect. The bindings live
     /// in the menu bar so they are discoverable and so macOS routes them regardless of focus.
+    ///
+    /// **The map is `KeyboardMap.bindings`, and this only draws it** (DEC-057). It used to be a
+    /// hand-written list here, with the specification's coverage table in Markdown and nothing
+    /// comparing the two — which is how *show raw for the current region* stayed specified,
+    /// unimplemented and unreported from M6 to M8. A binding that is not in the map is now not in
+    /// the menu, and a specified function with no binding fails the check suite.
     func buildMenu() {
         let main = NSMenu()
 
-        let appItem = NSMenuItem()
-        let appMenu = NSMenu()
-        appMenu.addItem(withTitle: "Quit DiffScope", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-        appItem.submenu = appMenu
-        main.addItem(appItem)
-
-        let viewItem = NSMenuItem()
-        let view = NSMenu(title: "View")
-        for (index, mode) in PresentationMode.allCases.enumerated() {
-            let item = view.addItem(withTitle: mode.title, action: #selector(selectMode(_:)),
-                                    keyEquivalent: String(index + 1))
-            item.tag = index
-            item.target = self
+        for menu in KeyboardMenu.allCases {
+            let hosting = NSMenuItem()
+            let submenu = NSMenu(title: menu.title)
+            for binding in KeyboardMap.bindings(in: menu) {
+                // A separator before the scope block keeps the View menu readable; it is drawn from
+                // the map's own ordering rather than being a row in it, since a separator is not a
+                // function and DEC-016's rule is about functions.
+                if binding.id == "scope.allLocal" { submenu.addItem(.separator()) }
+                let item = submenu.addItem(withTitle: binding.title,
+                                           action: selector(for: binding.id),
+                                           keyEquivalent: binding.key)
+                item.keyEquivalentModifierMask = modifierFlags(binding.modifiers)
+                if binding.id != "quit" { item.target = self }
+                if let tag = binding.tag { item.tag = tag }
+                if binding.isToggle { item.state = initialToggleState(of: binding.id) }
+                menuItems[binding.id] = item
+            }
+            hosting.submenu = submenu
+            main.addItem(hosting)
         }
-        let terminalItem = view.addItem(withTitle: "Terminal", action: #selector(toggleTerminal), keyEquivalent: "t")
-        terminalItem.keyEquivalentModifierMask = [.command, .option]
-        terminalItem.target = self
-        terminalItem.state = .off
-        terminalMenuItem = terminalItem
 
-        // The escape hatch of `26-terminal-plan.md` §4, in the menu bar because DEC-016 makes the
-        // menu the keyboard map: prompt detection will be wrong sometimes, and a reader who cannot
-        // type into an `ssh` password prompt would rather not have the input line at all.
-        let rawItem = view.addItem(withTitle: "Terminal Raw Mode", action: #selector(toggleTerminalRawMode),
-                                   keyEquivalent: "r")
-        rawItem.keyEquivalentModifierMask = [.command, .option]
-        rawItem.target = self
-        rawItem.state = .off
-        terminalRawMenuItem = rawItem
-
-        let followItem = view.addItem(withTitle: "Terminal: Follow Selection",
-                                      action: #selector(followTerminalToSelection), keyEquivalent: "k")
-        followItem.keyEquivalentModifierMask = [.command, .option]
-        followItem.target = self
-
-        let wrap = view.addItem(withTitle: "Wrap Long Lines", action: #selector(toggleWrap), keyEquivalent: "w")
-        wrap.keyEquivalentModifierMask = [.command, .option]
-        wrap.target = self
-        wrap.state = .on
-        wrapMenuItem = wrap
-        view.addItem(.separator())
-        for (index, title) in ["All local", "Unstaged", "Staged", "vs base"].enumerated() {
-            let item = view.addItem(withTitle: "Scope: \(title)", action: #selector(selectScope(_:)),
-                                    keyEquivalent: String(index + 1))
-            item.keyEquivalentModifierMask = [.command, .shift]
-            item.tag = index
-            item.target = self
-        }
-        viewItem.submenu = view
-        main.addItem(viewItem)
-
-        let sourcesItem = NSMenuItem()
-        let sources = NSMenu(title: "Sources")
-        for (title, action, key) in [
-            ("Add Root Folder…", #selector(addRootFolder), "O"),
-            ("Add Repository…", #selector(addRepository), "R"),
-            ("Remove Source", #selector(removeSource), ""),
-            ("Set Base Branch…", #selector(setBaseBranch), "B"),
-        ] as [(String, Selector, String)] {
-            let item = sources.addItem(withTitle: title, action: action, keyEquivalent: key)
-            item.keyEquivalentModifierMask = [.command, .shift]
-            item.target = self
-        }
-        sourcesItem.submenu = sources
-        main.addItem(sourcesItem)
-
-        let navigateItem = NSMenuItem()
-        let navigate = NSMenu(title: "Navigate")
-        let bindings: [(String, Selector, String, NSEvent.ModifierFlags)] = [
-            ("Next Change", #selector(nextChange), "n", [.command]),
-            ("Previous Change", #selector(previousChange), "p", [.command]),
-            ("Expand All Collapsed Ranges", #selector(expandAll), "e", [.command]),
-            ("Next File", #selector(nextFile), "]", [.command]),
-            ("Previous File", #selector(previousFile), "[", [.command]),
-            ("Next Repository", #selector(nextRepository), "]", [.command, .shift]),
-            ("Previous Repository", #selector(previousRepository), "[", [.command, .shift]),
-            ("Focus Repositories", #selector(focusRepositories), "1", [.command, .option]),
-            ("Focus Files", #selector(focusFiles), "2", [.command, .option]),
-            ("Focus Diff", #selector(focusDiff), "3", [.command, .option]),
-            ("Open in Editor", #selector(openInEditor), "o", [.command]),
-        ]
-        for (title, action, key, modifiers) in bindings {
-            let item = navigate.addItem(withTitle: title, action: action, keyEquivalent: key)
-            item.keyEquivalentModifierMask = modifiers
-            item.target = self
-        }
-        navigateItem.submenu = navigate
-        main.addItem(navigateItem)
+        wrapMenuItem = menuItems["wrap"]
+        terminalMenuItem = menuItems["terminal"]
+        terminalRawMenuItem = menuItems["terminal.raw"]
+        rawRegionMenuItem = menuItems["rawRegion"]
 
         NSApplication.shared.mainMenu = main
+    }
+
+    /// The one place an identifier in the map becomes a method here. A binding whose identifier is
+    /// unknown is a programming error rather than a missing feature, and it is loud: the menu item
+    /// is drawn disabled, so it cannot look like a working function that quietly does nothing.
+    private func selector(for id: String) -> Selector? {
+        switch id {
+        case "quit": return #selector(NSApplication.terminate(_:))
+        case "mode.raw", "mode.structural", "mode.expanded": return #selector(selectMode(_:))
+        case "rawRegion": return #selector(toggleRawForCurrentRegion)
+        case "terminal": return #selector(toggleTerminal)
+        case "terminal.raw": return #selector(toggleTerminalRawMode)
+        case "terminal.follow": return #selector(followTerminalToSelection)
+        case "wrap": return #selector(toggleWrap)
+        case "scope.allLocal", "scope.unstaged", "scope.staged", "scope.base":
+            return #selector(selectScope(_:))
+        case "sources.addRoot": return #selector(addRootFolder)
+        case "sources.addRepository": return #selector(addRepository)
+        case "sources.remove": return #selector(removeSource)
+        case "sources.baseBranch": return #selector(setBaseBranch)
+        case "change.next": return #selector(nextChange)
+        case "change.previous": return #selector(previousChange)
+        case "expandAll": return #selector(expandAll)
+        case "file.next": return #selector(nextFile)
+        case "file.previous": return #selector(previousFile)
+        case "repository.next": return #selector(nextRepository)
+        case "repository.previous": return #selector(previousRepository)
+        case "focus.repositories": return #selector(focusRepositories)
+        case "focus.files": return #selector(focusFiles)
+        case "focus.diff": return #selector(focusDiff)
+        case "openInEditor": return #selector(openInEditor)
+        default: return nil
+        }
+    }
+
+    private func modifierFlags(_ modifiers: KeyboardModifiers) -> NSEvent.ModifierFlags {
+        var flags: NSEvent.ModifierFlags = []
+        if modifiers.contains(.command) { flags.insert(.command) }
+        if modifiers.contains(.shift) { flags.insert(.shift) }
+        if modifiers.contains(.option) { flags.insert(.option) }
+        return flags
+    }
+
+    private func initialToggleState(of id: String) -> NSControl.StateValue {
+        id == "wrap" ? .on : .off
     }
 
     @objc private func selectMode(_ sender: NSMenuItem) {
@@ -1328,10 +1515,26 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     private func step(_ table: NSTableView, by delta: Int) {
         let count = numberOfRows(in: table)
         guard count > 0 else { return }
-        let raw = max(0, min(count - 1, (table.selectedRow < 0 ? 0 : table.selectedRow + delta)))
-        guard let next = nextSelectableRow(in: table, from: raw, delta: delta) else { return }
+        guard let next = nextSelectableRow(in: table, from: table.selectedRow, delta: delta) else { return }
         table.selectRowIndexes(IndexSet(integer: next), byExtendingSelection: false)
         table.scrollRowToVisible(next)
+    }
+
+    /// Where the reader is in the list, in the list's own terms.
+    ///
+    /// A 63-file working tree walked by keyboard gives no sense of progress otherwise: the rows
+    /// scroll, and nothing says whether there are two files left or forty. Headers are excluded from
+    /// both numbers, because they are not stops (DEC-033) and counting them would make the total
+    /// disagree with the number of keystrokes it takes to reach the end.
+    func filePositionText() -> String? {
+        let files = state.fileRows.compactMap { $0.file }
+        guard !files.isEmpty else { return nil }
+        let row = fileTable.selectedRow
+        guard row >= 0, row < state.fileRows.count, let selected = state.fileRows[row].file,
+              let index = files.firstIndex(where: { $0.path == selected.path }) else {
+            return "\(files.count) files"
+        }
+        return "file \(index + 1)/\(files.count)"
     }
 
     /// Off the main thread, because it stats and reads a few kilobytes per file and the list is
@@ -1359,20 +1562,72 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
     /// DEC-033: group headers are labels, not focus stops. Stepping past them keeps next/previous
     /// file one keystroke per *file* — otherwise grouping would silently make navigation longer.
+    ///
+    /// The walk itself is `RowNavigation.step`, in `DiffScopeGit` beside the row type, so a 63-file
+    /// list can be walked without a window (M8-J).
     private func nextSelectableRow(in table: NSTableView, from row: Int, delta: Int) -> Int? {
-        guard table === fileTable else { return row }
-        var candidate = row
-        while candidate >= 0 && candidate < state.fileRows.count {
-            if state.fileRows[candidate].file != nil { return candidate }
-            candidate += delta
+        guard table === fileTable else {
+            let count = numberOfRows(in: table)
+            let candidate = row < 0 ? (delta > 0 ? 0 : count - 1) : row + delta
+            guard candidate >= 0, candidate < count else { return nil }
+            return candidate
         }
-        return nil
+        return RowNavigation.step(rows: state.fileRows, from: row < 0 ? nil : row, delta: delta)
     }
     @objc private func nextRepository() { step(repoTable, by: 1) }
     @objc private func previousRepository() { step(repoTable, by: -1) }
-    @objc private func focusRepositories() { window.makeFirstResponder(repoTable) }
-    @objc private func focusFiles() { window.makeFirstResponder(fileTable) }
-    @objc private func focusDiff() { window.makeFirstResponder(webView) }
+    @objc private func focusRepositories() { moveFocus(to: repoTable, named: "repositories") }
+    @objc private func focusFiles() { moveFocus(to: fileTable, named: "files") }
+    @objc private func focusDiff() { moveFocus(to: webView, named: "diff") }
+
+    /// Focus movement says where the keyboard went. Without it the three ⌥⌘ keys are indistinguishable
+    /// from doing nothing, since a table with no selection draws no focus ring worth the name.
+    private func moveFocus(to responder: NSResponder, named name: String) {
+        window.makeFirstResponder(responder)
+        let position = responder === fileTable ? filePositionText().map { " · \($0)" } ?? "" : ""
+        statusLabel.stringValue = "keyboard: \(name)\(position)"
+    }
+
+    /// `12-…` §9: *show raw for the current region* — the last row of the coverage table, and the
+    /// one that had no implementation at all until M8-J.
+    ///
+    /// Not a fourth mode. Change stops come from the **canonical diff** and are therefore the same
+    /// set in every mode, so this switches to Raw on the same pinned pair and jumps back to the stop
+    /// the reader was standing on; pressing it again returns to the mode it left. That is what makes
+    /// it *the control view for this region* rather than a global toggle the reader has to re-navigate
+    /// after using.
+    @objc private func toggleRawForCurrentRegion() {
+        guard state.selectedFile != nil else {
+            statusLabel.stringValue = "raw for current region: no file selected"
+            return
+        }
+        if let previous = rawRegionReturn {
+            rawRegionReturn = nil
+            rawRegionMenuItem?.state = .off
+            apply(mode: previous.mode, restoringStop: previous.stop)
+            return
+        }
+        guard state.mode != .raw else {
+            statusLabel.stringValue = "raw for current region: already raw"
+            return
+        }
+        let leaving = state.mode
+        webView.evaluateJavaScript("window.diffscopeCommand(\"currentStop\")") { value, _ in
+            let stop = (value as? Int) ?? (value as? NSNumber)?.intValue ?? -1
+            self.rawRegionReturn = (mode: leaving, stop: stop)
+            self.rawRegionMenuItem?.state = .on
+            self.apply(mode: .raw, restoringStop: stop)
+        }
+    }
+
+    /// Switches mode and puts the reader back on the same change stop once the new model has been
+    /// rendered. The delay is a render, not a guess: `showDiff` reads the pair off the main thread.
+    private func apply(mode: PresentationMode, restoringStop stop: Int) {
+        state.mode = mode
+        modeControl.selectedSegment = PresentationMode.allCases.firstIndex(of: mode) ?? 0
+        guard let file = state.selectedFile else { return }
+        showDiff(for: file, restoringStop: stop >= 0 ? stop : nil)
+    }
 
     /// DEC-015: a configurable template, never populated from repository content — the template
     /// is user configuration and a repository is untrusted input. Failure is shown, not swallowed.
@@ -1406,6 +1661,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
     @objc private func modeChanged() {
         state.mode = PresentationMode.allCases[modeControl.selectedSegment]
+        // Choosing a mode by hand ends the ⌥⌘V excursion: the reader has said where they want to
+        // be, and a return key that took them somewhere else would be worse than none.
+        rawRegionReturn = nil
+        rawRegionMenuItem?.state = .off
         if let file = state.selectedFile { showDiff(for: file) }
     }
 
@@ -1460,9 +1719,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         statusLabel.stringValue = "\(state.files.count) files · \(state.scope.title)\(ageText)"
     }
 
-    private func showDiff(for file: ChangedFile) {
+    private func showDiff(for file: ChangedFile, restoringStop stop: Int? = nil) {
         state.selectedFile = file
-        render(file: file, previousAnchor: nil)
+        render(file: file, previousAnchor: nil, restoringStop: stop)
     }
 
     /// A refresh asks the renderer where the reader is *before* rebuilding, because the answer is
@@ -1479,10 +1738,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
-    private func render(file: ChangedFile, previousAnchor: RefreshAnchor?) {
+    private func render(file: ChangedFile, previousAnchor: RefreshAnchor?, restoringStop: Int? = nil) {
         guard let repository = state.selectedRepository else { return }
         let mode = state.mode
-        DispatchQueue.global(qos: .userInitiated).async {
+        // One at a time, and the newest wins. Walking a 63-file list at keyboard speed used to start
+        // a render per keystroke on the concurrent queue: they raced inside the shared tree-sitter
+        // parser (fixed in `TSXParser`), and the ones that survived pushed diffs for files the
+        // reader had already walked past. Serialising is also the honest model of the work — only
+        // the file now selected is worth rendering.
+        renderQueue.async {
             guard let pair = try? self.scopes.pinnedPair(
                 for: file, scope: self.state.scope, in: repository.url, mergeBaseRev: self.state.mergeBaseRev
             ) else { return }
@@ -1509,8 +1773,24 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             )
             guard let json = try? encodeRenderModel(render) else { return }
             DispatchQueue.main.async {
-                self.statusLabel.stringValue = "\(file.path) · \(outcome.summary)"
+                // The reader may have moved on while this was being built. Pushing it anyway would
+                // put one file's diff under another file's name.
+                guard self.state.selectedFile?.path == file.path else { return }
+                let position = self.filePositionText().map { "\($0) · " } ?? ""
+                self.statusLabel.stringValue = "\(position)\(file.path) · \(outcome.summary)"
                 if self.rendererReady { self.push(json) } else { self.pendingModel = json }
+                // ⌥⌘V (DEC-057): the stop is restored *after* the new model is in the document,
+                // because the stop list belongs to the model that is on screen.
+                if let stop = restoringStop {
+                    self.webView.evaluateJavaScript(
+                        "JSON.stringify(window.diffscopeCommand(\"goToStopIndex:\(stop)\"))"
+                    ) { value, _ in
+                        guard let text = value as? String, text != "null" else { return }
+                        let where_ = self.rawRegionReturn == nil ? "back to \(mode.rawValue)" : "raw"
+                        self.statusLabel.stringValue =
+                            "\(position)\(file.path) · \(where_) at this region · \(text)"
+                    }
+                }
             }
         }
     }
@@ -1673,6 +1953,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             }
         }
         return cell
+    }
+
+    /// DEC-033 says headers are labels rather than focus stops, and until M8-J only ⌘] / ⌘[ obeyed
+    /// it. An arrow key — the ordinary way anyone walks a 63-file list — landed on a header, where
+    /// the selection handler returned without a word and the diff pane went on showing the previous
+    /// file. Refusing the selection at the source makes every route agree: arrows, clicks, ⌘].
+    func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
+        guard tableView === fileTable else { return true }
+        return RowNavigation.isSelectable(rows: state.fileRows, row: row)
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {

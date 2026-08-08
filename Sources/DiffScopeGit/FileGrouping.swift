@@ -129,6 +129,42 @@ public func fileListRows(
     return rows
 }
 
+/// Where the selection lands when the reader steps through the list.
+///
+/// DEC-033 makes headers labels rather than focus stops, so stepping has to walk past them: the
+/// measured 63-file list sits under nine headers and must still cost 62 keystrokes, not 71. Extracted
+/// out of the table-view delegate so a 63-file list can be walked headlessly — the claim in the
+/// definition of done is about a list of that size, and the check that stands behind it should not
+/// need a window (M8-J).
+///
+/// `nil` means there is nowhere further to go in that direction; the caller leaves the selection
+/// where it is rather than wrapping, because wrapping at the end of a file list reads as a jump to
+/// somewhere else.
+public enum RowNavigation {
+    public static func step(rows: [FileListRow], from current: Int?, delta: Int) -> Int? {
+        guard !rows.isEmpty, delta != 0 else { return nil }
+        var candidate = current.map { $0 + delta } ?? (delta > 0 ? 0 : rows.count - 1)
+        candidate = max(0, min(rows.count - 1, candidate))
+        while candidate >= 0, candidate < rows.count {
+            if rows[candidate].file != nil { return candidate == current ? nil : candidate }
+            candidate += delta
+        }
+        return nil
+    }
+
+    /// The first row that can hold the selection at all — the row an empty selection resolves to,
+    /// and the one a refresh falls back to when the previously selected file is gone.
+    public static func firstSelectable(in rows: [FileListRow]) -> Int? {
+        rows.firstIndex { $0.file != nil }
+    }
+
+    /// Whether a row may be selected. A header is not selectable by *any* route — arrow key, click,
+    /// or ⌘] — because a selection that shows nothing is a dead stop wherever it comes from.
+    public static func isSelectable(rows: [FileListRow], row: Int) -> Bool {
+        row >= 0 && row < rows.count && rows[row].file != nil
+    }
+}
+
 /// What the list can say about a file **without reading all of it** (`12-…` §4, §6).
 ///
 /// The list is drawn for every changed file at once, so anything it shows has to be cheap. These

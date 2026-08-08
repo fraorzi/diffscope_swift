@@ -404,10 +404,37 @@ function restoreAnchor(restore) {
   }
 }
 
+// Jumps to a stop by number rather than by direction, which is what `12-…` §9's "show raw for the
+// current region" needs: stops come from the canonical diff, so stop *n* is the same region in every
+// mode, and the shell can switch modes and put the reader back where they were standing (DEC-057).
+function firstVisibleStop() {
+  if (!stops.length) return -1;
+  const doc = right.state.doc;
+  const block = right.lineBlockAtHeight(right.scrollDOM.scrollTop);
+  const top = Math.max(0, Math.min(block.from, doc.length));
+  const found = stops.findIndex((stop) => stop.newStart >= top);
+  return found >= 0 ? found : stops.length - 1;
+}
+
+function goToStopIndex(index) {
+  if (!stops.length) return null;
+  if (!(index >= 0 && index < stops.length)) return null;
+  stopIndex = index;
+  return goToStop(0);
+}
+
 window.diffscopeCommand = function (name) {
+  if (name.startsWith("goToStopIndex:")) {
+    return goToStopIndex(parseInt(name.slice("goToStopIndex:".length), 10));
+  }
   switch (name) {
     case "nextChange": return goToStop(1);
     case "previousChange": return goToStop(-1);
+    // Reported, never decided here: the shell records it before a mode change and hands it back
+    // afterwards, the same division of labour as the refresh anchor. A reader who has not navigated
+    // yet still has a current region — the first change at or below the top of the viewport —
+    // because otherwise "raw for the current region" would do nothing on the file they just opened.
+    case "currentStop": return stopIndex >= 0 ? stopIndex : firstVisibleStop();
     case "expandAll":
       folds.forEach((_, index) => expanded.add(index));
       refreshDecorations();

@@ -8,7 +8,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, the T-series coverage audit, root management, the gutter, the grouped file list and the rest of the interface audit have all landed, and **all three handover gates have passed**. 1088/1088 checks pass over 32 fixtures.**
+**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, the T-series coverage audit, root management, the gutter, the grouped file list, the rest of the interface audit, the built-in terminal (T0–T4) and the keyboard path (M8-J) have all landed, and **all three handover gates have passed**. 1109/1109 checks pass over 32 fixtures.**
 
 | Milestone | State |
 |---|---|
@@ -25,7 +25,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 Run everything:
 
 ```
-swift run diffscope-verify          # 1088 checks over 32 fixtures, exit 1 on failure
+swift run diffscope-verify          # 1109 checks over 32 fixtures, exit 1 on failure
 ./Scripts/package.sh                # DiffScope.app + zip + SHA-256 for a tester
 swift run diffscope-verify --write-manifest   # re-record fixture hashes, deliberately
 swift run -c release diffscope-verify --survey ~/YourProjects
@@ -34,7 +34,7 @@ swift run -c release diffscope-app  # the application
 swift run diffscope-t0              # gate T0 of the terminal plan, 17 scenarios over real PTYs
 ```
 
-`DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits: raw ŻABKA probe → structural render with a formatting-only label → INV-5 mode agreement across the webview → invisible-difference disclosure naming `U+0307` → a relocated block reported as one move → navigation and folds → a formatting-only group with its disclosed count → an anchor surviving an insertion above it → a ranked degradation notice reaching the document. Adding `DIFFSCOPE_SNAPSHOT_DIR=/some/dir` writes `structural.png`, `expanded.png`, `disclosure.png`, `moved.png`, `navigation.png`, `refresh.png`, `anchored.png`, `degraded.png` and `gutter.png` of what the webview actually drew — the only way to check legibility, which the probe cannot see. Since T1 it also runs a command through a real PTY into the terminal grid and writes `terminal.png`; since T2 it types into the input line, submits, hands over on Tab and forces raw, writing `terminal-input.png`; since T3 it follows a selection into a directory whose name contains a quote and a space, writing `terminal-follow.png`.
+`DIFFSCOPE_SELFTEST=1 swift run -c release diffscope-app` proves the whole native pipeline headlessly and exits: raw ŻABKA probe → structural render with a formatting-only label → INV-5 mode agreement across the webview → invisible-difference disclosure naming `U+0307` → a relocated block reported as one move → navigation and folds → a formatting-only group with its disclosed count → an anchor surviving an insertion above it → a ranked degradation notice reaching the document. Adding `DIFFSCOPE_SNAPSHOT_DIR=/some/dir` writes `structural.png`, `expanded.png`, `disclosure.png`, `moved.png`, `navigation.png`, `refresh.png`, `anchored.png`, `degraded.png` and `gutter.png` of what the webview actually drew — the only way to check legibility, which the probe cannot see. Since T1 it also runs a command through a real PTY into the terminal grid and writes `terminal.png`; since T2 it types into the input line, submits, hands over on Tab and forces raw, writing `terminal-input.png`; since T3 it follows a selection into a directory whose name contains a quote and a space, writing `terminal-follow.png`. Since M8-J, `DIFFSCOPE_KEYBOARD_TREE=<dir built by Scripts/keyboard-tree.sh>` adds the keyboard walk — 63 files pressed through with real key events — and writes `keyboard.png`, the **first snapshot of the window rather than of the document**. Without that variable the arm says SKIPPED with the reason; `./Scripts/package.sh` builds the tree itself and refuses to package a build whose walk was skipped.
 
 ### What exists in code
 
@@ -46,6 +46,7 @@ swift run diffscope-t0              # gate T0 of the terminal plan, 17 scenarios
 | `CTreeSitter`, `CTreeSitterTSX` | Vendored C, MIT |
 | `diffscope-verify` | The whole check suite, headless |
 | `diffscope-app` | AppKit shell + `WKWebView` |
+| `DiffScopeShell` | The keyboard map (DEC-057): `12-…` §9's coverage table as an enum, the bindings as data, AppKit-free so the check suite links the same file the menu bar is built from |
 | `DiffScopeTerminal` | The terminal: `PtyProcess` (forkpty, resize, teardown), `TerminalScanner` (OSC 133, OSC 7, the alternate screen), `ShellIntegration` (generated `ZDOTDIR` / `--rcfile`), `TerminalSession` (shell choice, coalesced output, prompt state, mode, following the selection), `InputRouter` (where a keystroke goes, and this session's history), `ShellQuoting` (**the only place the application composes a command**) |
 | `diffscope-t0` | Gate T0 of the terminal plan: `forkpty`, an OSC 133 scanner, a generated `ZDOTDIR`, and the macOS motions measured in both surfaces. Now imports `DiffScopeTerminal`, so the gate measures the shipping code rather than a copy. Deliberately outside the check suite: it drives ten real interactive shells and depends on this machine's `~/.zshrc` |
 | `Renderer/src` | Two surfaces: the CodeMirror diff (`main.js`) and the xterm.js terminal grid (`terminal.js`); build both with `npm run build` in `Renderer/` |
@@ -102,7 +103,15 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 
 **T4 landed on 2026-08-01, and the terminal is complete** (`26-terminal-plan.md` is closed). Eleven documents promised that this product could not change a repository; each now separates **the application acting on its own** — which still writes nothing, proven by R-8 — from **the user typing in a shell it hosts**. `25-tester-packet.md` was rewritten for the person who gets the zip: they are told a shell lives in the window, that it commits if they tell it to, and that their own `~/.zshrc` is never edited, all before the install instructions. DEC-003 now carries its amendment pointer on the entry itself, because that is where a reader lands first. **A check holds this in place** (`DesignChecks`): the retired sentences are a table, every current-state document must also *mention* the terminal — removing a false claim without stating the true one is the worse defect — and a negative control puts the old wording back and requires it to be caught.
 
-**What to do next is no longer the terminal.** The list further down this section — definition of done §6, OQ-046, F1's missing producer, a second move shape — is the audit's ordering and is untouched by any of this.
+**What to do next is no longer the terminal.** The list further down this section — OQ-046, a second move shape — is the audit's ordering and is untouched by any of this.
+
+**M8-J landed on 2026-08-09, and the definition of done §6 is met** — a 63-file working tree reviewable entirely from the keyboard, measured rather than asserted. **DEC-057**, measured in `22-experiment-log.md` → **M8-J**. Three things in it are worth more than the feature:
+
+- **The keyboard map is data** (`DiffScopeShell/KeyboardMap.swift`), the menu bar is generated from it, and `12-…` §9's coverage table is transcribed into an enum the check suite links. The first thing that check found: *show raw for the current region* — a row of the specification — **had no implementation at all** and had not been noticed for three milestones. It is now ⌥⌘V, which switches to Raw on the same pinned pair and back, keeping the change stop, because stops come from the canonical diff and are the same in every mode.
+- **Headers took the selection under the arrow keys.** DEC-033 has said since M8-F that headers are labels, and only ⌘] / ⌘[ obeyed it; ↓ landed on a header, the handler returned in silence, and the diff pane went on showing the previous file. Refused at the source now (`shouldSelectRow`), so all three routes agree. The negative control is in M8-J: with the refusal removed, the same walk reports 8 blind stops while every check still passes.
+- **Walking fast crashed the application**, and nothing in the suite could have seen it: one shared `TSXParser`, renders on the concurrent queue, two threads inside `ts_parser_parse_string`, process aborted. **Every check in this project parses on one thread.** The parser now locks, renders are serialised, and a render whose file is no longer selected is dropped — that second half was its own defect, one file's diff under another file's name.
+
+**If you are adding a keyboard function, add it to `KeyboardMap.bindings`.** There is nowhere else: `buildMenu` iterates the map, and `selector(for:)` is the single place an identifier becomes a method.
 
 **T3 landed on 2026-08-01** — the terminal belongs to the product. It reports where it is (OSC 7) rather than assuming, follows the reader's selection under a three-term guard (a prompt mark actually seen · the input line owns the keyboard · nothing typed), and offers ⌥⌘K when the guard refuses. The path is quoted by one function and proved against a real shell over twelve hostile directory names. **DEC-056**, measured in `22-experiment-log.md` → **T3-A**, where the plan's own premise was measured false: FSEvents *does* see `git commit`, so the command mark refreshes only the repository sweep the watcher cannot know about. **T4 is the last step** — rewriting `25-tester-packet.md` and the documents that still say this product cannot change a repository.
 
@@ -121,10 +130,11 @@ Three things from T0 that change the work rather than merely clearing it:
 - **Two harness defects, both false negatives about the thing being measured** — a caret seeded before the responder change, and a wait that matched the echo of a typed command rather than its output. Same family as `zsh -i -c` in the first probe. When a terminal measurement disagrees with expectation, suspect the driver first.
 
 
-1. **Definition of done §6** — a 63-file working tree reviewable entirely from the keyboard. The file list still has no keyboard path of its own beyond ⌘[ / ⌘] stepping.
+1. ~~**Definition of done §6**~~ — **done 2026-08-09**, DEC-057 and M8-J above.
 2. **OQ-046** auto-gc on large repositories, still unverified.
-3. F1 (partial parse error) and F3/F4 (confidence, ambiguity) have ranks but **no producer** — nothing constructs them yet, so the two mildest rows of the order are ranked and unreachable. Either wire them or record why they stay theoretical.
+3. ~~F1, F3, F4 with no producer~~ — **done**: `parseErrorRegions` reports F1 with region and byte counts, and F3/F4 are recorded as region-level with a check that no ambiguity indicator reaches the contract (DEC-045 stays a decision rather than drift).
 4. **T-11 is proven on one relocation shape only.** A second shape is worth more than any other addition to the corpus — and read M8-C first, because constructing the first one failed twice for reasons that are findings in themselves.
+5. **The parser-state indicator** (`23b-…` §1.10), the only §1 item left, and the three §2 items — the branch shown only in a tooltip, the uncommitted-count convention unstated on screen, and the mode pill reporting the reader's selection rather than the path taken.
 
 **G3 passed** (M8-I). `Scripts/package.sh` builds an unsigned `DiffScope.app` with a drawn icon, and **proves independence rather than assuming it**: it copies the bundle to a temporary directory and runs the full selftest from `/`, so a build that quietly read from the checkout fails here rather than on the tester's machine. The privacy claims in the packet are checked against the source — no network API in any shipped file, no request in the renderer.
 
@@ -158,7 +168,7 @@ Order is G1 → G2 → G3 and the reasoning is in that document. **No gate may b
 
 **One check is wall-clock and therefore load-sensitive.** `BudgetChecks`' *"a file above the size limit is refused without parsing it"* asserts under 2.0 s in a debug build; with four other processes saturating the machine it measures 2.3 s and the suite reports 1079/1080. The behaviour is right — the file is refused without a parse — and only the timing loses. DEC-050 rejected wall-clock deadlines for *behaviour* on exactly this reasoning; the same shape survives inside a check, and it should be re-expressed against a measured baseline rather than an absolute second.
 
-Known weaknesses recorded rather than hidden: **a relocated line whose leading bytes align with a neighbour's identical prefix is not detected as a move** (measured in M8-C — widening the search would put bytes the canonical diff calls unchanged inside a `moved` range, which is a reopening of DEC-038, not an implementation detail); anchor selection is greedy by old-side position rather than a longest-increasing-subsequence; moved-and-modified content presents as delete plus add (accepted in DEC-038); the file list has no keyboard path of its own; a reformat that changes line counts is never grouped (DEC-048, the conservative direction); files over 2000 anchored lines are strided, so a refresh lands the reader within a few lines rather than exactly; the mode chip still reads `mode: structural` beside a notice saying structural analysis was unavailable, because the chip reports the reader's *selection* rather than the path taken.
+Known weaknesses recorded rather than hidden: **a relocated line whose leading bytes align with a neighbour's identical prefix is not detected as a move** (measured in M8-C — widening the search would put bytes the canonical diff calls unchanged inside a `moved` range, which is a reopening of DEC-038, not an implementation detail); anchor selection is greedy by old-side position rather than a longest-increasing-subsequence; moved-and-modified content presents as delete plus add (accepted in DEC-038); a reformat that changes line counts is never grouped (DEC-048, the conservative direction); files over 2000 anchored lines are strided, so a refresh lands the reader within a few lines rather than exactly; the mode chip still reads `mode: structural` beside a notice saying structural analysis was unavailable, because the chip reports the reader's *selection* rather than the path taken.
 
 **Two things measurement changed in M7 that reasoning had settled the other way.** DEC-034 says "the nearest segment labeled unchanged" — implemented literally, it gives Raw *zero* anchors, because Raw is one fallback segment over the whole file. And per-side formatting runs find nothing for the ordinary reindent, because a reindent is an insertion and the old side has no changed bytes. Both now derive from the canonical diff instead. If you are about to build something on "the unchanged segments", check what Raw actually contains first.
 
@@ -294,7 +304,7 @@ M0 verification gates → M1 engine skeleton and invariant harness → M2 Git la
 
 ## 12. Definition of done
 
-`18-version-one-scope.md` §"Definition of done". In short: every P0 fixture passes T-0…T-11; R-8 covers every Git operation; wrapper removal reads correctly; prop reordering never reports "no change"; parser failure degrades visibly; a 63-file working tree is reviewable from the keyboard; the application is demonstrably incapable of modifying a repository on any path of its own, the terminal being the user's (DEC-053).
+`18-version-one-scope.md` §"Definition of done". In short: every P0 fixture passes T-0…T-11; R-8 covers every Git operation; wrapper removal reads correctly; prop reordering never reports "no change"; parser failure degrades visibly; a 63-file working tree is reviewable from the keyboard (met and measured in M8-J); the application is demonstrably incapable of modifying a repository on any path of its own, the terminal being the user's (DEC-053).
 
 ## 13. Keeping this synchronised
 

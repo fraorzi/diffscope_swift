@@ -178,8 +178,7 @@ Two sub-questions spun out as still open:
 
 ~~**OQ-022 — Accessibility commitments for version one.**~~ **Resolved by DEC-016.** No meaning by color alone; full keyboard operation; respect system contrast and reduced-motion. Screen-reader support deferred with the gap documented honestly.
 
-**OQ-023 — Keyboard map.** Status: Open, and **promoted to required specification work** by DEC-016.
-Because full keyboard operation is now a commitment rather than a feature, Phase 4 must define a complete keyboard map covering repository selection, scope switching, file navigation, change navigation, and mode switching — not a handful of shortcuts.
+~~**OQ-023 — Keyboard map.**~~ **Resolved by DEC-057, 2026-08-09.** Coverage was settled by `12-…` §9; the concrete bindings are now `KeyboardMap.bindings` in `Sources/DiffScopeShell`, which the menu bar is *generated from* and the check suite links directly. A function §9 requires and nothing binds fails `diffscope-verify` by name. Measured in `22-experiment-log.md` → **M8-J**, where the coverage check found that *show raw for the current region* had never been implemented at all.
 
 ~~**OQ-024 — Theming.**~~ **Resolved by DEC-019.** Follow macOS system light/dark with a built-in syntax theme per appearance. Consequence: both variants must independently satisfy the DEC-016 contrast and color-independence commitments, and theme changes must be handled while the application is running.
 

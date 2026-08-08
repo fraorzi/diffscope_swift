@@ -39,7 +39,7 @@ In brief: comparison is on **bytes**, normalization is **never** applied anywher
 
 **Planning complete. All phases 0–8 done.** 51 decisions recorded.
 
-**M0 through M7 are complete; M8 is under way (2026-07-31).** M0's gates confirmed DEC-042; M1 delivered the engine skeleton and invariant harness; M2 the Git layer; M3 the raw diff end to end; M4 parsing and partition construction; M5 matching and alignment; M6 classification, moves and the trust surface; M7 refresh, watching and navigation. M8 has landed the structural budgets (DEC-050), the degradation precedence with F8/F13 wired (DEC-051), and the T-series coverage audit over a 32-fixture corpus (M8-C). **973/973 checks pass.** All three handover gates have passed. Details in [22-experiment-log.md](22-experiment-log.md).
+**M0 through M7 are complete; M8 is under way (2026-07-31).** M0's gates confirmed DEC-042; M1 delivered the engine skeleton and invariant harness; M2 the Git layer; M3 the raw diff end to end; M4 parsing and partition construction; M5 matching and alignment; M6 classification, moves and the trust surface; M7 refresh, watching and navigation. M8 has landed the structural budgets (DEC-050), the degradation precedence with F8/F13 wired (DEC-051), the T-series coverage audit over a 32-fixture corpus (M8-C), the built-in terminal the user drives (DEC-053 … DEC-056), and the keyboard map with the 63-file walk that closes definition of done §6 (DEC-057, M8-J). **1109/1109 checks pass.** All three handover gates have passed. Details in [22-experiment-log.md](22-experiment-log.md).
 
 **Implementation is under way.** Code lives in `Sources/` and `fixtures/`.
 

@@ -76,9 +76,23 @@ echo "==> proving it runs with nothing from the source tree"
 PROOF="$(mktemp -d)"
 cp -R "$APP" "$PROOF/"
 PROOF_CONFIG="$PROOF/config.json"
+
+# The working tree the definition of done is stated against (M8-J). Built by a script, outside the
+# application, and handed to the selftest by path: the walk over 63 files is the measurement behind
+# "reviewable entirely from the keyboard", and it is not a claim to make from the engine's checks.
+KEYBOARD_TREE="$PROOF/keyboard-tree"
+"$ROOT/Scripts/keyboard-tree.sh" "$KEYBOARD_TREE" >/dev/null
+
 if (cd / && DIFFSCOPE_SELFTEST=1 DIFFSCOPE_CONFIG="$PROOF_CONFIG" \
+      DIFFSCOPE_KEYBOARD_TREE="$KEYBOARD_TREE" \
       "$PROOF/DiffScope.app/Contents/MacOS/DiffScope" >"$PROOF/log" 2>&1); then
   grep -c "SELFTEST.*OK" "$PROOF/log" | xargs -I{} echo "    {} selftest arms passed from $PROOF"
+  grep "SELFTEST keyboard" "$PROOF/log" | sed 's/^/    /'
+  # A skipped keyboard walk must not look like a passed one: the packaging step is where this claim
+  # is made, so it is the step that refuses to make it without the measurement.
+  if grep -q "SELFTEST keyboard=SKIPPED" "$PROOF/log"; then
+    echo "!! the keyboard walk was skipped — the 63-file tree never reached the selftest"; exit 1
+  fi
 else
   echo "!! the packaged application failed away from the source tree:"; cat "$PROOF/log"; exit 1
 fi

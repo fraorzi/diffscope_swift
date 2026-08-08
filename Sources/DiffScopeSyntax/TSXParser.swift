@@ -20,6 +20,16 @@ public struct ParseOutcome: Sendable {
 
 public final class TSXParser {
     private let parser: OpaquePointer
+    /// A `TSParser` holds mutable state across a parse and is not safe to use from two threads at
+    /// once. One instance is shared by the application and reached from whichever thread is
+    /// rendering, so the lock lives here rather than at each call site: the object owns the C
+    /// resource and is the only place that can promise anything about it.
+    ///
+    /// Found by walking a 63-file list quickly (M8-J). Overlapping renders put two threads inside
+    /// `ts_parser_parse_string` and tree-sitter aborted the process on an internal assertion —
+    /// `ts_stack_remove_version`. Nothing about it looked like a threading fault, and nothing in the
+    /// suite could have produced it, because every check parses on one thread.
+    private let lock = NSLock()
 
     public init?() {
         guard let parser = ts_parser_new() else { return nil }
@@ -33,7 +43,9 @@ public final class TSXParser {
     deinit { ts_parser_delete(parser) }
 
     func parseRaw(_ bytes: [UInt8]) -> OpaquePointer? {
-        bytes.withUnsafeBufferPointer { buffer in
+        lock.lock()
+        defer { lock.unlock() }
+        return bytes.withUnsafeBufferPointer { buffer in
             guard let base = buffer.baseAddress else { return nil }
             return ts_parser_parse_string(
                 parser, nil,
@@ -47,6 +59,7 @@ public final class TSXParser {
         guard !bytes.isEmpty else {
             return ParseOutcome(leaves: [], hasErrorNodes: false, rootEndByte: 0, byteCount: 0)
         }
+        lock.lock()
         let tree: OpaquePointer? = bytes.withUnsafeBufferPointer { buffer in
             guard let base = buffer.baseAddress else { return nil }
             return ts_parser_parse_string(
@@ -55,6 +68,7 @@ public final class TSXParser {
                 UInt32(buffer.count)
             )
         }
+        lock.unlock()
         guard let tree else { return nil }
         defer { ts_tree_delete(tree) }
 

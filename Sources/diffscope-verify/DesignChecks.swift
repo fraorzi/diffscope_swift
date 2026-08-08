@@ -207,8 +207,11 @@ func runTesterPacketChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // Every Swift file that ships inside the application, which is all of them except the
         // check suite itself.
         var shipped: [String] = []
+        // Every shipped module. A module missing from this list is a module the privacy claim was
+        // never checked against — the T4 lesson that a list of things is itself a thing that can be
+        // incomplete, which is why `DiffScopeShell` was added here in the same commit that created it.
         for module in ["DiffScopeEngine", "DiffScopeGit", "DiffScopeSyntax", "DiffScopeTerminal",
-                       "diffscope-app"] {
+                       "DiffScopeShell", "diffscope-app"] {
             let dir = root.appendingPathComponent("Sources/\(module)")
             guard let walker = fm.enumerator(at: dir, includingPropertiesForKeys: nil) else { continue }
             for case let url as URL in walker where url.pathExtension == "swift" {

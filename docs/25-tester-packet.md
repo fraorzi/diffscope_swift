@@ -65,7 +65,7 @@ Three columns, a bar of grey pills at the top of the diff, and a status line.
 
 **Four scopes** — ⇧⌘1 to ⇧⌘4: everything since your last commit, only unstaged, only staged, or your whole branch against where it split off. Scopes that cannot work for a repository are greyed out, and hovering one says why.
 
-**Keyboard:** ⌘N and ⌘P jump between changes, ⌘E expands anything collapsed, ⌘] and ⌘[ move between files, ⌘O opens the current file in your editor. Everything is in the menu bar too.
+**Keyboard:** ⌘N and ⌘P jump between changes, ⌘E expands anything collapsed, ⌘] and ⌘[ move between files — as do ↑ and ↓ once the list has focus (⌥⌘2) — ⌘O opens the current file in your editor, and **⌥⌘V shows the region you are standing on in Raw and brings you back to it**. Everything is in the menu bar too; nothing in the app needs the mouse.
 
 ---
 
@@ -108,7 +108,7 @@ An hour, roughly in this order.
 2. **The case the app exists for:** find or make a change that removes a wrapper element around several lines. Compare ⌘2 Structural with ⌘1 Raw. That difference is the whole product.
 3. **Run a formatter on a file** — Prettier, or reindent it. Those changes should be grouped as formatting, with a count, and expandable.
 4. **Compare the three modes on the same file.** Look specifically for something visible in Raw and missing in Structural.
-5. **Walk a long file with ⌘N.** Does it stop at every change, or skip one?
+5. **Walk a long file with ⌘N.** Does it stop at every change, or skip one? On a big working tree, walk the whole file list from the keyboard and tell us if anything makes you reach for the mouse — that is a claim we make and would like broken.
 6. **Open a non-code file** — a `.css`, a `.md`, an image. Each should explain itself rather than looking broken.
 7. **Edit a file in your editor while the app is open on it.** It should update within a second or two, and you should not lose your scroll position.
 8. **Open the terminal with ⌥⌘T** — this is the newest part and the least tested. Things worth trying, roughly in order of how much they would annoy you if they were wrong:
@@ -133,7 +133,7 @@ DIFFSCOPE_EDITOR="/usr/bin/open -a Visual\ Studio\ Code {file}" /Applications/Di
 
 Already recorded. Reporting them costs you time and tells us nothing new.
 
-- **No keyboard navigation inside the file list.** ⌘[ and ⌘] step through files; you cannot arrow through the list or type to find.
+- **No type-to-find in the file list.** Arrow keys and ⌘[ / ⌘] walk it; there is no filter field and no search.
 - **No branch or commit picker.** The four scopes are all there is.
 - Code that **moved and was also edited** shows as a deletion plus an addition, not as a move. Deliberate: a move is only claimed when both sides are identical, because a move that swallowed an edit would hide it.
 - A reformat that **changes the number of lines** is never grouped as formatting.

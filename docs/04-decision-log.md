@@ -2438,3 +2438,50 @@ Otherwise **nothing is sent**: the pane shows that the terminal's directory and 
 ### Revisit trigger
 
 Reopen if the terminal ever needs to send anything other than `cd` — a second composed command is a different decision, not an extension of this one.
+
+---
+
+## DEC-057 — The keyboard map is data, and the menu is generated from it
+
+- **Date:** 2026-08-09 · **Topic:** DEC-016's coverage commitment, `12-desktop-ux-specification.md` §9, OQ-023 · **Status:** Accepted
+
+### Context
+
+DEC-016 commits to full keyboard operation and says *"any function reachable only by pointer is a defect"*. `12-…` §9 lists nine functions as binding coverage and defers the concrete keys to implementation, which left the map living in two places that could not disagree out loud: a Markdown table, and a hand-written list inside `buildMenu`.
+
+They did disagree. **Show raw for the current region was specified and never built**, and stayed missing through M6, M7 and M8 without a single check noticing — the same shape as `runBundleFreshnessCheck` and `checkAttr`, which is now the fourth instance in this project of *a requirement nothing runs*.
+
+The definition of done §6 — *a 63-file working tree is reviewable entirely from the keyboard* — was equally unverified, and its ordinary route was broken: group headers took the selection under the arrow keys, where the handler returned in silence and the diff pane went on showing the previous file. Only ⌘] / ⌘[ obeyed DEC-033.
+
+### Options considered
+
+1. **The map as data in a shared target, the menu built from it, the coverage checked.** One source; a specified function with no binding fails the suite.
+2. **A check that greps `main.swift` for each function's title.** Cheap, and it tests the spelling of menu titles rather than what a keystroke does. `DesignChecks` reads sources this way for CSS, where there is nothing else to read; here there is a real value to hold.
+3. **Leave the map in the menu and transcribe §9 into a checklist a human runs.** This is what was already happening, and it is what let a specified function go missing for three milestones.
+
+### Final decision
+
+**Option 1.** `Sources/DiffScopeShell/KeyboardMap.swift` — AppKit-free, linked by the application *and* by `diffscope-verify`, so the check suite measures the shipping map rather than a copy of it (the T1 lesson from gate T0). `KeyboardFunction` transcribes §9's nine rows with their sentences; each binding declares which row it satisfies; `buildMenu` iterates the map and `selector(for:)` is the single place an identifier becomes a method.
+
+The concrete bindings — settling OQ-023 and `12-…` §12's open item — are the map's contents. The one added in this milestone:
+
+| | |
+|---|---|
+| **⌥⌘V** | Raw for Current Region |
+
+**⌥⌘V is not a fourth mode.** Change stops come from the canonical diff, so stop *n* is the same region in every mode; ⌥⌘V records the stop and the mode, switches to Raw on the same pinned pair, and jumps back to that stop. A second press returns to the mode it left, at the same place. Choosing a mode by hand ends the excursion, because the reader has said where they want to be.
+
+`V` rather than `R`: ⌘R reads as *refresh*, and refresh here is automatic (DEC-027's watcher, DEC-006's focus refresh). ⌥⌘R is already the terminal's escape hatch.
+
+**Headers are refused at the source.** `tableView(_:shouldSelectRow:)` returns false for a header row, so arrows, clicks and ⌘] finally agree with DEC-033 instead of one route out of three.
+
+### Consequences
+
+- **A function specified in §9 and not bound fails `diffscope-verify`**, naming the row. So does a second binding on one keystroke, since the loser of a collision is a function reachable only by pointer.
+- **The definition of done §6 is measured, not asserted.** `Scripts/keyboard-tree.sh` builds a 63-file working tree and the application selftest walks it with **real key events through the real menu bar** — 63 files, 62 keystrokes, zero stops on a header. Calling the `@objc` methods directly would have proved the methods work and said nothing about whether anything is bound to them.
+- **The map is now the place bindings are added.** There is nowhere else; a binding absent from it is absent from the menu.
+- Walking the list at keyboard speed found a **crash** nothing else could: renders ran concurrently on one shared tree-sitter parser and aborted the process inside `ts_parser_parse_string`. The parser now holds a lock and renders are serialised, newest selection wins. Recorded in M8-J.
+
+### Revisit trigger
+
+Reopen if a second interface surface appears that needs its own bindings — a preferences window, or the terminal claiming keys the diff also wants. The map is one flat list today because there is one window.

@@ -163,19 +163,19 @@ File selection is preserved across refresh where the file still exists in the sc
 
 DEC-016 commits to **full keyboard operation of every function**. This is a complete map, not a shortcut list. Minimum coverage:
 
-| Function |
-|---|
-| Move between repositories |
-| Move between files (one-dimensional, per DEC-033) |
-| Switch scope |
-| Next / previous change |
-| Switch mode (Structural / Expanded / Raw) |
-| Expand a collapsed range or formatting group |
-| Show raw for the current region |
-| Open current file and line in the editor |
-| Focus movement between sidebar, file list, and diff |
+| Function | Bound to (DEC-057) |
+|---|---|
+| Move between repositories | ⇧⌘] / ⇧⌘[ |
+| Move between files (one-dimensional, per DEC-033) | ⌘] / ⌘[ , and ↑ / ↓ in the list |
+| Switch scope | ⇧⌘1 … ⇧⌘4 |
+| Next / previous change | ⌘N / ⌘P |
+| Switch mode (Structural / Expanded / Raw) | ⌘1 / ⌘2 / ⌘3 |
+| Expand a collapsed range or formatting group | ⌘E |
+| Show raw for the current region | ⌥⌘V |
+| Open current file and line in the editor | ⌘O |
+| Focus movement between sidebar, file list, and diff | ⌥⌘1 / ⌥⌘2 / ⌥⌘3 |
 
-Concrete key assignments are deferred to implementation but the **coverage** above is binding. Any function reachable only by pointer is a defect.
+The **coverage** above is binding: any function reachable only by pointer is a defect. Since DEC-057 the right-hand column is not documentation of the code — it *is* the code, transcribed from `KeyboardMap.bindings`, and a row nothing binds fails the check suite by name. Group headers are not stops (DEC-033), on any route.
 
 ## 10. Editor integration
 
@@ -191,7 +191,7 @@ Follows macOS system light/dark, with a built-in syntax theme per appearance (DE
 
 ## 12. Open items owned by this document
 
-- Concrete key assignments (OQ-023 coverage is settled; bindings are not).
+- ~~Concrete key assignments~~ — **settled by DEC-057, 2026-08-09.** The bindings are data (`KeyboardMap`), the menu bar is generated from them, and the coverage table above is transcribed into `KeyboardFunction` so a row nothing binds fails the check suite.
 - Sorting and grouping order within the repository list.
 - Minimum usable window width, given side-by-side.
 - Visual design of ambiguity indication that does not read as malfunction (DEC-031).

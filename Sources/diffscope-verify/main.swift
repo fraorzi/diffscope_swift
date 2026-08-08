@@ -291,6 +291,7 @@ runTesterPacketChecks { name, ok, detail in report(name, ok, detail) }
 runDegradationChecks { name, ok, detail in report(name, ok, detail) }
 runPartialFailureChecks { name, ok, detail in report(name, ok, detail) }
 runTerminalChecks { name, ok, detail in report(name, ok, detail) }
+runKeyboardChecks { name, ok, detail in report(name, ok, detail) }
 runBundleFreshnessCheck { name, ok, detail in report(name, ok, detail) }
 
 print("\n\(checks - failures)/\(checks) checks passed")
