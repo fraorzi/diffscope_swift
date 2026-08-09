@@ -60,6 +60,12 @@ The dependencies are real; this order avoids doing anything twice.
 7. **Search (DEC-062)**, then **the lenses (DEC-061)**, each adding its Git operations to the closed registry so R-8 keeps covering everything the application can issue.
 8. **The rendered comparison (DEC-063)**, last, because it is the only item that needs new fixtures — `15-test-corpus-plan.md` §4.7a — and its security boundary wants its own check with the `svg-hostile` fixture as the control.
 
+## 4a. Where the work stands, 2026-08-09
+
+All eight steps above are built. The three that cost the most were not the ones this document expected: the token table went in cleanly, and the time went on `NSTableView`'s inset style clipping a rail to two characters, on `NSSplitView` ignoring a pane's width at two priorities and through `setPosition`, and on a selftest that had been reading the developer's own configuration and losing a race with it. Each was found by a picture or a printed frame, never by a check — and each check that had "passed" was asserting what had been *asked for* rather than what the window did.
+
+Remaining: the eight image fixtures of `15-…` §4.7a.
+
 ## 5. What is drawn and deliberately not built yet
 
 `12-desktop-ux-specification.md` §9 lists only functions that exist, because DEC-057's check fails a listed row nothing binds. The lenses, the collapses, search and the image-comparison modes are bound and listed **as they land**, one row per landing. A drawing is not a binding, and the coverage table is not a wish list.

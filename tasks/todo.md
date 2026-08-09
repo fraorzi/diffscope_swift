@@ -875,3 +875,35 @@ the check earned its place by disagreeing with the person who wrote it.
 The two lenses (Blame, History) and the rendered comparison with its eight fixtures. Step 5's
 remaining screens — missing root, base-branch prompt, the watcher's three states — turned out to be
 built already; what was missing was the wording, and that is now in.
+
+## Step 38 — the two lenses and the rendered comparison
+
+- [x] `blame` and `log` in the closed operation registry, so R-8 covers them from the first call
+- [x] Parsers as pure functions over text — fourteen checks, including a block's second line
+      inheriting the author it did not repeat, an all-zero sha as the mark of uncommitted work, and
+      a commit subject carrying a pipe and a tab
+- [x] `#lens` rows: uncommitted work marked by an edge, never tinted
+- [x] `renderableKind` reads bytes as well as names: a `.png` that is not a PNG is undisplayable
+      rather than an empty frame
+- [x] The pixel pass in Swift, with the mask drawn there too, because a canvas that has drawn an
+      SVG cannot be read back
+- [x] Four modes, each offered or refused **with a reason**; fifteen checks over the copy
+- [x] Selftest arms and snapshots: `blame`, `history`, `rendered`
+
+### Step 38 — the collapse, for the third time
+
+`NSSplitView` ignored a width constraint at 600, ignored it at 999, and ignored `setPosition` as
+well. What it does not ignore is a layout pass from **the window's content view** — the split view
+is not the constraint owner, and laying out its own subtree left the second divider exactly where
+it had been. The rail obeyed all along, which is what made it look like a spine problem for three
+sittings.
+
+Worth keeping: the arm that caught this asserts **drawn** widths. Every version of it that asserted
+the constraint's constant passed while the window showed something else.
+
+### Left
+
+The eight image fixtures of `15-…` §4.7a are specified and not built; the classification and the
+copy are checked, and `svg-hostile` is the one that matters — it is the control for the `<img>`
+boundary rather than a nicety. A small image also draws at its natural size in the stage, which is
+right for an asset and mean to a 16-pixel icon.
