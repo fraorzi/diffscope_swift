@@ -202,6 +202,65 @@ func runTesterPacketChecks(_ reportRaw: (String, Bool, String) -> Void) {
     let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
     let fm = FileManager.default
 
+    print("\n=== the design contract describes the window that exists (G2) ===")
+    do {
+        // `24-design-contract.md` is the document a designer works from, and until M8-P **nothing
+        // read it**. It claimed to list *every class the renderer emits* while describing a window
+        // with one webview in it: the terminal landed the day after G2 passed and the contract was
+        // never told. Sixth instance in this project of a written promise nothing runs against —
+        // after `runBundleFreshnessCheck`, `checkAttr`, `MANIFEST.json`, T-10 and §9's missing row.
+        let contract = (try? String(
+            contentsOf: root.appendingPathComponent("docs/24-design-contract.md"),
+            encoding: .utf8)) ?? ""
+        let rendererSources = root.appendingPathComponent("Renderer/src")
+        let diffHTML = (try? String(contentsOf: rendererSources.appendingPathComponent("index.html"),
+                                    encoding: .utf8)) ?? ""
+        let termHTML = (try? String(contentsOf: rendererSources.appendingPathComponent("terminal.html"),
+                                    encoding: .utf8)) ?? ""
+        let diffScript = (try? String(contentsOf: rendererSources.appendingPathComponent("main.js"),
+                                      encoding: .utf8)) ?? ""
+        let shell = (try? String(
+            contentsOf: root.appendingPathComponent("Sources/diffscope-app/main.swift"),
+            encoding: .utf8)) ?? ""
+
+        report("the contract exists and is not empty", !contract.isEmpty, "\(contract.count) bytes")
+
+        // The class the hostile-probe control applies is the selftest's own instrument, not
+        // something a reader ever sees, so it is not part of the contract.
+        let emitted = Set(diffScript.ranges(of: "ds-[a-z-]+")).subtracting(["ds-hostile-probe"])
+        let undocumented = emitted.filter { !contract.contains("`\($0)`") }.sorted()
+        report("every class the renderer applies is described in the contract",
+               undocumented.isEmpty, undocumented.joined(separator: ", "))
+
+        // Ids, because half the load-bearing surface is an element rather than a class: the notice
+        // bar, the unrenderable state, and every part of the terminal pane.
+        let ids = Set((diffHTML + termHTML).ranges(of: "id=\"[a-z-]+\""))
+            .map { $0.replacingOccurrences(of: "id=\"", with: "").replacingOccurrences(of: "\"", with: "") }
+        let undocumentedIds = ids.filter { !contract.contains("`#\($0)`") }.sorted()
+        report("every element the two webviews emit is described in the contract",
+               undocumentedIds.isEmpty, undocumentedIds.joined(separator: ", "))
+
+        // §6 tells a designer which pictures to look at, and a picture nobody is told about is a
+        // state nobody checks. This is how the terminal's three snapshots were missing from a
+        // document whose whole job is "look at every state it draws".
+        // Three call sites, because there are three things worth photographing: the diff document,
+        // the terminal grid, and the whole window. `moveFocus(to:named:)` also takes a `named:` and
+        // is not a snapshot — the first version of this check matched it and demanded the contract
+        // list "repositories", "files" and "diff" as pictures.
+        let snapshots = Set(shell.ranges(of: "(snapshot|snapshotTerminal|windowSnapshot)\\(named: \"[a-z-]+\""))
+            .compactMap { $0.split(separator: "\"").dropFirst().first.map(String.init) }
+        let unlisted = snapshots.filter { !contract.contains("`\($0)`") }.sorted()
+        report("every snapshot the selftest writes is listed in the contract's walkthrough",
+               unlisted.isEmpty, unlisted.joined(separator: ", "))
+
+        // The negative control. Every assertion above is a `contains` over a long document, and a
+        // document long enough will contain almost anything by accident.
+        report("negative control: a class the renderer does not emit is not in the contract",
+               !contract.contains("`ds-invented-for-this-check`"))
+        report("and the contract names the terminal at all",
+               contract.lowercased().contains("terminal") && contract.contains("--ds-term-"))
+    }
+
     print("\n=== the privacy statement given to a tester is true of the source (G3) ===")
     do {
         // Every Swift file that ships inside the application, which is all of them except the

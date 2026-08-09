@@ -27,10 +27,18 @@ Both have negative controls. The selftest injects `display: none` on a mark and 
 
 | File | Holds | A design touches it |
 |---|---|---|
-| `Renderer/src/tokens.css` | Every colour, font, size, spacing, radius and border in the diff | **Yes — this is the file** |
-| `Renderer/src/index.html` | Structure and which token each rule uses | Only to change *which* token a rule reads |
-| `Sources/diffscope-app/Theme.swift` | The same values for the AppKit chrome: window, both lists, status line, empty state | Yes, mirroring the token names |
+| `Renderer/src/tokens.css` | Every colour, font, size, spacing, radius and border in **both** webviews, including the terminal's `--ds-term-*` block | **Yes — this is the file** |
+| `Renderer/src/index.html` | Structure of the diff, and which token each rule uses | Only to change *which* token a rule reads |
+| `Renderer/src/terminal.html` | Structure of the terminal pane, same discipline | Only to change *which* token a rule reads |
+| `Sources/diffscope-app/Theme.swift` | The same values for the AppKit chrome: window, both lists, status line, empty state, the pane sizes | Yes, mirroring the token names |
 | `Renderer/src/main.js` | Which class goes on which range | No |
+| `Renderer/src/terminal.js` | Which token xterm is handed, and where a keystroke goes | No |
+
+**There are three surfaces, not one.** The diff webview, the terminal webview, and the AppKit chrome around both. The chrome is two thirds of the window: a design that stops at the edge of the diff leaves the repository list, the file list and the status line looking like a different application, so `Theme.swift` mirrors the token names rather than inventing its own.
+
+**The terminal is a real surface with real state** (DEC-053 … DEC-056), and it is styled from the same file. xterm.js cannot read CSS variables itself, so `terminal.js` resolves the `--ds-term-*` names and hands xterm the values — which means a token that does not exist becomes a colour xterm silently invents. The grid's probe reports `missingTokens` for exactly that reason, and the selftest fails on a non-empty list.
+
+The sixteen ANSI colours are literal in `tokens.css` rather than derived from the two neutrals, and deliberately so: the palette is what a *program* addresses by index. `ls` asks for "green"; `Canvas` and `CanvasText` cannot express it, and a design that makes green a shade of the background makes some programs' output unreadable rather than merely off-brand.
 
 **The chrome is two thirds of the window.** A design that stops at the edge of the webview leaves the repository list, the file list and the status line looking like a different application, so `Theme.swift` mirrors the token names rather than inventing its own.
 
@@ -62,6 +70,21 @@ Classes marked **load-bearing** carry a difference. They may be restyled and may
 | `#stage`, `#left`, `#right` | Layout of the two panes | No |
 | `#unrenderable` | Shown when the content is not text that can be displayed | **Yes** |
 | `cm-*` | CodeMirror's own classes: editor, scroller, gutters, line numbers | No, except the gutter ones |
+
+### The terminal pane
+
+Added after this contract was first written, and missing from it until M8-P — the terminal landed the day after G2 passed, so the document described a window with one webview in it. Every element the pane emits:
+
+| Element | Means | Load-bearing |
+|---|---|---|
+| `#grid` | The xterm.js screen — everything the shell prints | **Yes.** Output that cannot be read is output that was not shown |
+| `#input-row` | The command line at a prompt (DEC-055) | No, as layout |
+| `#mode` | Which mode the keyboard is in: prompt, program, or forced raw | **Yes.** The reader has to know where their keystrokes are going |
+| `#mode[data-raw="true"]` | Raw forced by ⌥⌘R — **dashed border and heavier weight, not a colour** | **Yes**, and the shape is the point (DEC-035) |
+| `#cwd` | Where the shell says it is (OSC 7) | **Yes** |
+| `#cwd[data-diverged="true"]` | The shell is **not** in the selected repository — dotted underline | **Yes.** This is the terminal's own version of the honesty rule: the pane must never imply the shell is where the diff is |
+| `#line` | The real text field the macOS motions come from (T0) | **Yes** — hidden by `visibility` when there is no prompt, never removed, so the row keeps its explanation |
+| `--ds-term-black` … `--ds-term-bright-white` | The sixteen colours a program addresses by index | **Yes**, as a set: a palette collapsed toward the background makes some programs unreadable |
 
 ---
 
@@ -103,7 +126,19 @@ Step 4 is not optional. The suite proves the model and the rules; only the pictu
 
 The snapshots written are `structural`, `expanded`, `disclosure`, `moved`, `navigation`, `refresh`, `anchored`, `degraded` and `gutter`: the founding wrapper-removal case, the two modes side by side, an invisible-difference badge, a paired move, folds and jumps, a refreshed view, a restored anchor, a ranked degradation notice, and the gutter beside line numbers.
 
-**They photograph the webview only.** The AppKit chrome — both lists, the status line, the empty state — has to be looked at by running the application and taking a screenshot of the window, and there is no automation for it on this machine (`osascript` has no accessibility permission). States are reached by pointing `DIFFSCOPE_CONFIG` at a configuration that produces them.
+The terminal writes three more — `terminal` (a command's output in the grid), `terminal-input` (the input line at a prompt, with the mode chip) and `terminal-follow` (the pane after following a selection into a directory whose name contains a quote and a space). Look at all three: the terminal is the surface where a design most easily makes program output unreadable.
+
+**Those twelve photograph the webviews only.** `keyboard` is the exception and the one to look at for the chrome: since M8-J the selftest snapshots the **whole window** while walking a 63-file working tree, so the repository list, the file list, the group headers, the badges and the status line are all in one picture. Build the tree first:
+
+```bash
+./Scripts/keyboard-tree.sh /tmp/kbtree
+DIFFSCOPE_SELFTEST=1 DIFFSCOPE_SNAPSHOT_DIR=/tmp/shots DIFFSCOPE_KEYBOARD_TREE=/tmp/kbtree \
+  swift run -c release diffscope-app
+```
+
+The diff pane comes out black in that one — a `WKWebView` renders out of process and `cacheDisplay` cannot see it — so the two pictures are complementary rather than redundant. Other chrome states are reached by pointing `DIFFSCOPE_CONFIG` at a configuration that produces them.
+
+**Look at them at the size the reader sees.** The uncommitted-count caption under the repository list looked absent in a downscaled crop of `keyboard.png` and was perfectly present at full resolution (M8-K). A snapshot answers *is it drawn*; only full resolution answers *is it legible*.
 
 ---
 

@@ -2152,3 +2152,42 @@ Recorded rather than papered over, and the dangerous direction is checked: **a r
 ```
 34 -> 47 fixtures      1188 -> 1407 checks
 ```
+
+# M8-P - the design contract described a window with one webview in it
+
+**Date:** 2026-08-09 - **Method:** `24-design-contract.md` read by a check for the first time; every class, element and snapshot the code emits compared against it; the gap closed and a negative control run.
+
+The product owner asked a question that turned out to be the audit: *the design includes a terminal - does it have a ready view in the app?*
+
+It does. `#grid`, `#input-row`, `#mode`, `#cwd`, `#line`, sixteen ANSI colours, every value from `tokens.css`, checked for literals by `DesignChecks` since T1. **The contract a designer reads did not mention any of it.**
+
+## Why it was missing, which is the interesting part
+
+G2 passed on 2026-07-31. T1 - the terminal's grid, in a second webview - landed on **2026-08-01**. The contract was written the day before the surface it was supposed to describe existed, and nothing re-read it. Its §3 is titled *"Every class the renderer emits"*.
+
+**Nothing had ever read that document.** Not one check opened it. It is the sixth instance in this project of a written promise with nothing running against it, after `runBundleFreshnessCheck`, `checkAttr`, `MANIFEST.json`, T-10's grapheme snapping and §9's missing keyboard row. The pattern is now reliable enough to state as a rule: *a document that makes an exhaustive claim needs a check, or the claim decays at the speed the code moves.*
+
+## What is checked now
+
+| | |
+|---|---|
+| every `ds-` class `main.js` applies | named in the contract |
+| every `id` the two webviews emit | named in the contract |
+| every snapshot the selftest writes | listed in §6's walkthrough |
+| negative controls | a class the renderer does not emit is absent; the contract names the terminal |
+
+Verified by breaking it: renaming `#cwd` in the contract fails the run with `— cwd`. A `contains` over a five-thousand-word document is exactly the kind of assertion that passes for the wrong reason, so it was worth proving it bites.
+
+**The snapshot check caught its own author first.** The regex matched `named:` anywhere, including `moveFocus(to:named:)`, and demanded the contract list "repositories", "files" and "diff" as pictures. Narrowed to the three real call sites - `snapshot`, `snapshotTerminal`, `windowSnapshot`.
+
+## What the contract now tells a designer that it did not
+
+- **Three surfaces, not one**: the diff webview, the terminal webview, the AppKit chrome.
+- **xterm cannot read CSS variables.** `terminal.js` resolves the `--ds-term-*` names and hands over the values, so a token that does not exist becomes a colour xterm invents. That is what the grid probe's `missingTokens` is for.
+- **The sixteen ANSI colours are literal on purpose.** The palette is what a *program* addresses by index; `ls` asks for green, and `Canvas`/`CanvasText` cannot express it. A palette collapsed toward the background makes program output unreadable rather than merely off-brand.
+- **`keyboard.png` is the chrome picture.** §6 still said there was no automation for photographing the window - M8-J built exactly that, five milestones' worth of interface in one image.
+- **Look at the pictures at full resolution.** M8-K's caption looked absent in a downscaled crop and was there all along.
+
+```
+1407 -> 1413 checks
+```

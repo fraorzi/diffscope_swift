@@ -736,3 +736,26 @@ unchanged values never reports "no change"* - and it was proven only by an input
 `reordering`: the detector is an exact-permutation test over the aligned gap pair, and a reformat
 turns the pairs into fragments. Recorded, and the dangerous direction checked instead - a reorder is
 never presented as formatting-only, which is the one classification the interface may quieten.
+
+## Step 33 - M8-P: the design contract describes the window that exists
+
+- [x] Section 2: three surfaces, not one; `terminal.html` and `terminal.js` listed
+- [x] Section 3: the terminal pane's seven elements and the sixteen-colour palette, with which are
+      load-bearing and why
+- [x] Section 6: the three terminal snapshots, `keyboard.png` as the chrome picture with the command
+      that produces it, and the instruction to look at full resolution
+- [x] `DesignChecks` reads the contract for the first time: classes, element ids, snapshot names,
+      two negative controls
+- [x] Proved it bites - renaming `#cwd` in the contract fails the run
+- [x] M8-P, handoff section 0, `00-index.md`
+
+### Step 33 - done
+
+1413/1413 checks (1407 + 6).
+
+**The contract was written the day before the surface it describes existed.** G2 passed
+2026-07-31; the terminal's grid landed 2026-08-01. Nothing re-read it, because **nothing had ever
+read it** - sixth instance of a written promise with no check behind it.
+
+**The snapshot check caught its own author first.** Its regex matched `moveFocus(to:named:)` and
+demanded the contract list "repositories", "files" and "diff" as pictures.

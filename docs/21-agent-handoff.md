@@ -8,7 +8,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, the T-series coverage audit, root management, the gutter, the grouped file list, the built-in terminal (T0–T4), the keyboard path (M8-J) and the last four items of the interface audit (M8-K) have all landed, and **all three handover gates have passed**. `23b-spec-vs-app-audit.md` is now closed — every requirement it found written down and not built is built. 1407/1407 checks pass over 47 fixtures.**
+**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, the T-series coverage audit, root management, the gutter, the grouped file list, the built-in terminal (T0–T4), the keyboard path (M8-J) and the last four items of the interface audit (M8-K) have all landed, and **all three handover gates have passed**. `23b-spec-vs-app-audit.md` is now closed — every requirement it found written down and not built is built. 1413/1413 checks pass over 47 fixtures.**
 
 | Milestone | State |
 |---|---|
@@ -25,7 +25,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 Run everything:
 
 ```
-swift run diffscope-verify          # 1407 checks over 47 fixtures, exit 1 on failure
+swift run diffscope-verify          # 1413 checks over 47 fixtures, exit 1 on failure
 ./Scripts/package.sh                # DiffScope.app + zip + SHA-256 for a tester
 swift run diffscope-verify --write-manifest   # re-record fixture hashes, deliberately
 swift run -c release diffscope-verify --survey ~/YourProjects
@@ -149,7 +149,9 @@ Three things from T0 that change the work rather than merely clearing it:
 
 **R-9's guard was strengthened** (DEC-049 amendment, M8-H addendum). The stat bracket alone let **6 blended pins through in 20 reads under load** — a single large `write` stamps `mtime` once at its start, so both stats agree while the read lands mid-copy. The read is now bracketed **and** repeated, both must agree, and the two guards close each other's holes (content alone: 3 in 8,095; bracket alone: 6 in 20). Found because a check failed once and was measured instead of re-run.
 
-**G2 passed** (M8-H). Every visual value lives in `Renderer/src/tokens.css`, mirrored for the AppKit chrome in `Theme.swift`. The rule *a design may restyle any mark and may never hide one* is enforced in two places — the source, and the **computed style of the live document** — because a stylesheet can be read and still be wrong about what the reader gets. Both have negative controls: the selftest injects `display: none` on a mark and requires the audit to catch it. Read `24-design-contract.md` before touching anything visual.
+**G2 passed** (M8-H), **and the contract was brought up to date with the terminal in M8-P.** It described a window with one webview in it: G2 passed on 2026-07-31 and the terminal's grid landed on 2026-08-01, and **nothing had ever read the document**. It is now checked against what the code emits — every `ds-` class, every element id in both webviews, every snapshot the selftest writes — with a negative control that renaming an entry fails the run. **Read `24-design-contract.md` before touching anything visual, and add to it in the same commit that adds a mark.**
+
+ Every visual value lives in `Renderer/src/tokens.css`, mirrored for the AppKit chrome in `Theme.swift`. The rule *a design may restyle any mark and may never hide one* is enforced in two places — the source, and the **computed style of the live document** — because a stylesheet can be read and still be wrong about what the reader gets. Both have negative controls: the selftest injects `display: none` on a mark and requires the audit to catch it. Read `24-design-contract.md` before touching anything visual.
 
 **`23b-spec-vs-app-audit.md` is closed** (§1 and §2 both, as of M8-K). Base-branch override (⇧⌘B, stored in the configuration), staleness in words beside scope 4, unavailable scopes disabled with their reason, refresh on window focus, a wrap toggle (⌥⌘W), and the empty-diff sentence all landed on 2026-07-31. The parser-state indicator (§1.10) and the three §2 items followed on 2026-08-09 under DEC-058.
 
