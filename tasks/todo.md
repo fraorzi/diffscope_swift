@@ -827,3 +827,18 @@ reservation, document-view width); the fifth measurement found it, by printing t
 window coordinates beside the clip view's. `.plain` plus a 4 pt intercell spacing fixes it, and
 the arm now **asserts the indent** — the row must start within 8 pt of the pane, so a style change
 that re-insets the table fails rather than merely looking wrong.
+
+## Step 36 — the states that had engine support and no words
+
+- [x] Base-ref age: `newest commit 9 weeks old`, `newest-commit age unknown`. The old wording could
+      be read as a fetch time, which is the one thing it is not
+- [x] Unavailable scopes state their reason on the status line, not only in a tooltip, with a check
+      on both halves
+- [x] The collapsed rail's clipped label — closed, see step 35's note
+
+### Step 36 — what is left of `27-…` §4
+
+Step 5 is part-done: still to build are `#unrenderable` saying *what* the file is, the missing-root
+and base-branch-prompt screens as drawn, the preferences window for the editor command, and the
+watcher's three status-line states. Then motion (6), search (7), the two lenses (7), and the
+rendered comparison (8) with its eight new fixtures.
