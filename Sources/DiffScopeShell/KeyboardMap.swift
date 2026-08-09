@@ -51,11 +51,16 @@ public struct KeyboardModifiers: OptionSet, Sendable, Hashable {
     public static let command = KeyboardModifiers(rawValue: 1 << 0)
     public static let shift = KeyboardModifiers(rawValue: 1 << 1)
     public static let option = KeyboardModifiers(rawValue: 1 << 2)
+    /// Added by DEC-065 for the layout tier. Nothing needed it while every binding was ⌘-based,
+    /// and `⌃1`–`⌃4` stayed rejected: macOS takes those for switching desktops.
+    public static let control = KeyboardModifiers(rawValue: 1 << 3)
 
     /// `⌥⌘R` rather than `option+command+r`: this string is shown to a person in the tester packet
-    /// and written into the documents, so it is composed once here.
+    /// and written into the documents, so it is composed once here. The order is the one macOS
+    /// prints — ⌃⌥⇧⌘ — so a shortcut in a document matches the same shortcut in the menu bar.
     public var symbols: String {
-        (contains(.option) ? "⌥" : "") + (contains(.shift) ? "⇧" : "") + (contains(.command) ? "⌘" : "")
+        (contains(.control) ? "⌃" : "") + (contains(.option) ? "⌥" : "")
+            + (contains(.shift) ? "⇧" : "") + (contains(.command) ? "⌘" : "")
     }
 }
 
@@ -103,7 +108,11 @@ public struct KeyboardBinding: Sendable, Equatable {
         self.isToggle = isToggle
     }
 
-    public var shortcut: String { modifiers.symbols + key.uppercased() }
+    /// Arrows, Return and the backtick are written as the reader sees them; letters are upper-cased
+    /// the way a menu prints them. `key` is the design's notation throughout and the shell
+    /// translates it into AppKit's function-key constants, so nothing outside the shell has to know
+    /// that a down arrow is `U+F701`.
+    public var shortcut: String { modifiers.symbols + (key.count == 1 && key.first!.isLetter ? key.uppercased() : key) }
 }
 
 public enum KeyboardMap {
@@ -112,17 +121,23 @@ public enum KeyboardMap {
     public static let bindings: [KeyboardBinding] = [
         .init(id: "quit", title: "Quit DiffScope", key: "q", modifiers: [.command], menu: .application),
 
-        .init(id: "mode.raw", title: "Raw", key: "1", modifiers: [.command], menu: .view,
-              satisfies: .switchMode, tag: 0),
-        .init(id: "mode.structural", title: "Structural", key: "2", modifiers: [.command], menu: .view,
+        // Structural first, because it is the default mode and the one a reader returns to
+        // (DEC-065). The tags are positions in `PresentationMode.allCases` and are unchanged; only
+        // the keys moved.
+        .init(id: "mode.structural", title: "Structural", key: "1", modifiers: [.command], menu: .view,
               satisfies: .switchMode, tag: 1),
-        .init(id: "mode.expanded", title: "Expanded", key: "3", modifiers: [.command], menu: .view,
+        .init(id: "mode.expanded", title: "Expanded", key: "2", modifiers: [.command], menu: .view,
               satisfies: .switchMode, tag: 2),
+        .init(id: "mode.raw", title: "Raw", key: "3", modifiers: [.command], menu: .view,
+              satisfies: .switchMode, tag: 0),
         // The control view of DEC-013, pointed at where the reader is standing rather than at the
         // whole file. Not a fourth mode: it switches to Raw and back, keeping the change stop.
-        .init(id: "rawRegion", title: "Raw for Current Region", key: "v", modifiers: [.option, .command],
+        // `⌘R` rather than DEC-057's `⌥⌘V`, and the reversal is recorded in DEC-065: `R` was
+        // rejected as reading like *refresh*, but refresh here is automatic and has no binding for
+        // the mistake to collide with, and this is a move a reader makes constantly.
+        .init(id: "rawRegion", title: "Raw for Current Region", key: "r", modifiers: [.command],
               menu: .view, satisfies: .rawForCurrentRegion, isToggle: true),
-        .init(id: "terminal", title: "Terminal", key: "t", modifiers: [.option, .command],
+        .init(id: "terminal", title: "Terminal", key: "`", modifiers: [.control],
               menu: .view, isToggle: true),
         .init(id: "terminal.raw", title: "Terminal Raw Mode", key: "r", modifiers: [.option, .command],
               menu: .view, isToggle: true),
@@ -147,19 +162,22 @@ public enum KeyboardMap {
         .init(id: "sources.baseBranch", title: "Set Base Branch…", key: "b",
               modifiers: [.shift, .command], menu: .sources),
 
-        .init(id: "change.next", title: "Next Change", key: "n", modifiers: [.command],
+        // Movement is arrows, and the modifier says what is being moved through (DEC-065): the
+        // change inside a file, the file inside a repository, the repository inside the list.
+        // Three nesting levels, three modifier tiers, one direction key.
+        .init(id: "change.next", title: "Next Change", key: "↓", modifiers: [.command],
               menu: .navigate, satisfies: .changeNavigation),
-        .init(id: "change.previous", title: "Previous Change", key: "p", modifiers: [.command],
+        .init(id: "change.previous", title: "Previous Change", key: "↑", modifiers: [.command],
               menu: .navigate, satisfies: .changeNavigation),
         .init(id: "expandAll", title: "Expand All Collapsed Ranges", key: "e", modifiers: [.command],
               menu: .navigate, satisfies: .expandCollapsed),
-        .init(id: "file.next", title: "Next File", key: "]", modifiers: [.command],
+        .init(id: "file.next", title: "Next File", key: "↓", modifiers: [.option],
               menu: .navigate, satisfies: .moveBetweenFiles),
-        .init(id: "file.previous", title: "Previous File", key: "[", modifiers: [.command],
+        .init(id: "file.previous", title: "Previous File", key: "↑", modifiers: [.option],
               menu: .navigate, satisfies: .moveBetweenFiles),
-        .init(id: "repository.next", title: "Next Repository", key: "]", modifiers: [.shift, .command],
+        .init(id: "repository.next", title: "Next Repository", key: "↓", modifiers: [.shift, .command],
               menu: .navigate, satisfies: .moveBetweenRepositories),
-        .init(id: "repository.previous", title: "Previous Repository", key: "[",
+        .init(id: "repository.previous", title: "Previous Repository", key: "↑",
               modifiers: [.shift, .command], menu: .navigate, satisfies: .moveBetweenRepositories),
         .init(id: "focus.repositories", title: "Focus Repositories", key: "1",
               modifiers: [.option, .command], menu: .navigate, satisfies: .moveFocus),
@@ -167,7 +185,9 @@ public enum KeyboardMap {
               menu: .navigate, satisfies: .moveFocus),
         .init(id: "focus.diff", title: "Focus Diff", key: "3", modifiers: [.option, .command],
               menu: .navigate, satisfies: .moveFocus),
-        .init(id: "openInEditor", title: "Open in Editor", key: "o", modifiers: [.command],
+        // `⌘O` is *Open…* everywhere in macOS, and this application has things to open — roots and
+        // repositories, which hold ⇧⌘O and ⇧⌘R (DEC-065).
+        .init(id: "openInEditor", title: "Open in Editor", key: "⏎", modifiers: [.command],
               menu: .navigate, satisfies: .openInEditor),
     ]
 

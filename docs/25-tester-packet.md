@@ -17,7 +17,7 @@ Every diff tool does that. The reason this one exists is one specific case it do
 Two different things, and the difference matters:
 
 - **The app itself never changes anything.** Looking at a diff, switching branches in the list, refreshing — none of it writes to your files, your staging area, or your Git settings. It does not even fetch. This is not a promise about intent; every Git command the app can issue is snapshot-tested to leave the repository byte-identical.
-- **There is a terminal in it, and a terminal runs what you type.** Press ⌥⌘T and a shell opens at the bottom of the window, in the repository you are looking at. If you type `git commit` in it, you commit — the same as in any terminal. That is the point of it, and it is the newest part of the app, so it is the part most worth trying.
+- **There is a terminal in it, and a terminal runs what you type.** Press ⌃` and a shell opens at the bottom of the window, in the repository you are looking at. If you type `git commit` in it, you commit — the same as in any terminal. That is the point of it, and it is the newest part of the app, so it is the part most worth trying.
 
 So: the app will not touch your work behind your back, and the terminal will do exactly what you tell it to.
 
@@ -65,7 +65,7 @@ Three columns, a bar of grey pills at the top of the diff, and a status line.
 
 **Four scopes** — ⇧⌘1 to ⇧⌘4: everything since your last commit, only unstaged, only staged, or your whole branch against where it split off. Scopes that cannot work for a repository are greyed out, and hovering one says why.
 
-**Keyboard:** ⌘N and ⌘P jump between changes, ⌘E expands anything collapsed, ⌘] and ⌘[ move between files — as do ↑ and ↓ once the list has focus (⌥⌘2) — ⌘O opens the current file in your editor, and **⌥⌘V shows the region you are standing on in Raw and brings you back to it**. Everything is in the menu bar too; nothing in the app needs the mouse.
+**Keyboard:** the modifier says what you are moving through — ⌘↑ / ⌘↓ between changes, ⌥↑ / ⌥↓ between files, ⇧⌘↑ / ⇧⌘↓ between repositories. ⌘E expands anything collapsed, ↑ and ↓ also move in a list once it has focus (⌥⌘2), ⌘⏎ opens the current file in your editor, and **⌘R shows the region you are standing on in Raw and brings you back to it**. Everything is in the menu bar too; nothing in the app needs the mouse.
 
 ---
 
@@ -111,7 +111,7 @@ An hour, roughly in this order.
 5. **Walk a long file with ⌘N.** Does it stop at every change, or skip one? On a big working tree, walk the whole file list from the keyboard and tell us if anything makes you reach for the mouse — that is a claim we make and would like broken.
 6. **Open a non-code file** — a `.css`, a `.md`, an image. Each should explain itself rather than looking broken.
 7. **Edit a file in your editor while the app is open on it.** It should update within a second or two, and you should not lose your scroll position.
-8. **Open the terminal with ⌥⌘T** — this is the newest part and the least tested. Things worth trying, roughly in order of how much they would annoy you if they were wrong:
+8. **Open the terminal with ⌃`** — this is the newest part and the least tested. Things worth trying, roughly in order of how much they would annoy you if they were wrong:
    - Type a command with a long path or a quoted string and **edit it with the keys you actually use**: Option+←/→ by word, Cmd+←/→ to the ends of the line, Option+Delete to rub out a word. That is the reason the terminal exists.
    - Press **Tab** in the middle of a path. The shell takes the line back and completes it the way it does in your own terminal; the pill on the left says so while that lasts.
    - Run something long — `npm install`, a test suite — and check that ⌃C stops it.

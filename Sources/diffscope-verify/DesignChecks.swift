@@ -27,7 +27,10 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // and failing on one would teach the next reader to work around the check.
         func stripped(_ text: String) -> String {
             var out = text
-            out = out.replacingOccurrences(of: "/\\*.*?\\*/", with: " ",
+            // `(?s)`, because a CSS comment that explains something is usually more than one line
+            // — and without it this stripped only the one-liners, then reported the hex colour
+            // inside a three-line note as a literal declared in the stylesheet.
+            out = out.replacingOccurrences(of: "(?s)/\\*.*?\\*/", with: " ",
                                            options: [.regularExpression])
             out = out.replacingOccurrences(of: "(?m)^\\s*//.*$", with: " ",
                                            options: [.regularExpression])
@@ -358,7 +361,7 @@ func runTesterPacketChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // anything in your repositories". Since DEC-053 that is false, and it is the one document
         // that goes to a stranger who is about to point this at their own work.
         report("the packet tells the tester the terminal exists",
-               packet.contains("⌥⌘T") && packet.lowercased().contains("terminal"))
+               packet.contains("⌃`") && packet.lowercased().contains("terminal"))
         report("and that it runs what they type, naming the command that would change things",
                packet.contains("git commit"))
         report("and that their shell startup files are not modified",

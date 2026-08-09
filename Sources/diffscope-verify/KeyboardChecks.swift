@@ -44,7 +44,7 @@ func runKeyboardChecks(_ reportRaw: (String, Bool, String) -> Void) {
            unbounded.joined(separator: ", "))
 
     report("the control view for a region is bound",
-           KeyboardMap.bindings.contains { $0.satisfies == .rawForCurrentRegion && $0.shortcut == "⌥⌘V" },
+           KeyboardMap.bindings.contains { $0.satisfies == .rawForCurrentRegion && $0.shortcut == "⌘R" },
            KeyboardMap.bindings.first { $0.satisfies == .rawForCurrentRegion }?.shortcut ?? "unbound")
 
     // Negative controls, run through the same functions the real map goes through. Both defects are
@@ -56,11 +56,11 @@ func runKeyboardChecks(_ reportRaw: (String, Bool, String) -> Void) {
            KeyboardMap.unboundFunctions(in: withoutEditor).map(\.rawValue).joined(separator: ", "))
 
     let collided = KeyboardMap.bindings + [
-        KeyboardBinding(id: "intruder", title: "Intruder", key: "n", modifiers: [.command],
+        KeyboardBinding(id: "intruder", title: "Intruder", key: "e", modifiers: [.command],
                         menu: .navigate),
     ]
-    report("negative control: a second binding on ⌘N is caught",
-           KeyboardMap.collisions(in: collided).contains { $0.0 == "⌘N" },
+    report("negative control: a second binding on ⌘E is caught",
+           KeyboardMap.collisions(in: collided).contains { $0.0 == "⌘E" },
            KeyboardMap.collisions(in: collided).map(\.0).joined(separator: ", "))
 
     print("\n=== a 63-file working tree, walked (definition of done §6) ===")

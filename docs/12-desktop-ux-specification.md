@@ -193,19 +193,21 @@ DEC-016 commits to **full keyboard operation of every function**. This is a comp
 
 | Function | Bound to (DEC-057) |
 |---|---|
-| Move between repositories | ⇧⌘] / ⇧⌘[ |
-| Move between files (one-dimensional, per DEC-033) | ⌘] / ⌘[ , and ↑ / ↓ in the list |
+| Move between repositories | ⇧⌘↑ / ⇧⌘↓ |
+| Move between files (one-dimensional, per DEC-033) | ⌥↑ / ⌥↓ , and ↑ / ↓ in the list |
 | Switch scope | ⇧⌘1 … ⇧⌘4 |
-| Next / previous change | ⌘N / ⌘P |
+| Next / previous change | ⌘↑ / ⌘↓ |
 | Switch mode (Structural / Expanded / Raw) | ⌘1 / ⌘2 / ⌘3 |
 | Expand a collapsed range or formatting group | ⌘E |
-| Show raw for the current region | ⌥⌘V |
-| Open current file and line in the editor | ⌘O |
+| Show raw for the current region | ⌘R |
+| Open current file and line in the editor | ⌘⏎ |
 | Focus movement between sidebar, file list, and diff | ⌥⌘1 / ⌥⌘2 / ⌥⌘3 |
 
 The **coverage** above is binding: any function reachable only by pointer is a defect. Since DEC-057 the right-hand column is not documentation of the code — it *is* the code, transcribed from `KeyboardMap.bindings`, and a row nothing binds fails the check suite by name. Group headers are not stops (DEC-033), on any route.
 
-**The key column above states the shipped map and will change when the code does.** DEC-065 re-cuts it around arrows and modifier tiers — `⌘↑↓` change, `⌥↑↓` file, `⇧⌘↑↓` repository, `⌘1` on Structural, `⌘R` for region-raw, `⌘⏎` for the editor, `⌃\`` for the terminal — and adds the functions the adopted design introduces: the three lenses, the three collapses, search, and the image-comparison modes. Those rows are added here **as each function comes to exist**, not when it is drawn: this column is a transcription, and a transcription that runs ahead of its source is the drift DEC-057 exists to prevent.
+**The key column above is DEC-065's map, and the code has it.** One direction key at three modifier tiers for the three nesting levels — change inside a file, file inside a repository, repository inside the list — with `⌘1` on Structural because it is the mode a reader returns to. Outside this table the same map binds `⌃\`` for the terminal, `⌥⌘R` to force raw in it, `⌥⌘K` to follow the selection, `⌥⌘W` for wrap, and `⇧⌘O` / `⇧⌘R` / `⇧⌘B` for the Sources menu.
+
+**The functions the adopted design introduces are not here yet** — the three lenses, the three collapses, search, the image-comparison modes. A row is added **when the function comes to exist**, not when it is drawn: this column is a transcription of `KeyboardMap.bindings`, and a transcription that runs ahead of its source is the drift DEC-057 exists to prevent.
 
 ## 10. Editor integration
 

@@ -970,8 +970,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         record()
         while keystrokes < 200 {
             let before = fileTable.selectedRow
-            guard press(key: "]", modifiers: [.command]) else { break }
-            // The end of the list is where the selection stops moving; ⌘] does not wrap, which is
+            // ⌥↓ since DEC-065 re-cut the map: the file tier of the three movement tiers. This
+            // was ⌘] and the walk kept passing with the old key bound to nothing, which is why the
+            // press is asserted rather than merely sent.
+            guard press(key: String(UnicodeScalar(NSDownArrowFunctionKey)!),
+                        modifiers: [.option, .function, .numericPad], keyCode: 125) else { break }
+            // The end of the list is where the selection stops moving; ⌥↓ does not wrap, which is
             // itself the behaviour under test. That last press is a probe for the end rather than a
             // step, so it is not counted.
             guard fileTable.selectedRow != before else { break }
@@ -981,12 +985,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let distinct = Set(visited).count
         let menuOK = distinct == 63 && headerStops == 0 && keystrokes == 62
         FileHandle.standardError.write(Data(
-            ("SELFTEST keyboard=\(menuOK ? "OK" : "MISMATCH") ⌘] visited \(distinct) of 63 files in "
+            ("SELFTEST keyboard=\(menuOK ? "OK" : "MISMATCH") ⌥↓ visited \(distinct) of 63 files in "
                 + "\(keystrokes) keystrokes past \(headers) headers, \(headerStops) blind stops\n").utf8))
         guard menuOK else { exit(41) }
 
-        // The arrow keys, through the table's own key handling. `shouldSelectRow` is what makes them
-        // agree with ⌘]; before it, ↓ selected headers and the diff pane kept showing the last file.
+        // The bare arrow keys, through the table's own key handling rather than through the menu.
+        // `shouldSelectRow` is what makes them agree with the menu route; before it, ↓ selected headers and the diff pane kept showing the last file.
         fileTable.selectRowIndexes(IndexSet(integer: RowNavigation.firstSelectable(in: state.fileRows) ?? 0),
                                    byExtendingSelection: false)
         var arrowVisited: [String] = []
@@ -1051,11 +1055,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// A key equivalent, routed the way macOS routes one. `performKeyEquivalent` returning false
     /// means **nothing is bound** to that keystroke, which is the defect DEC-016 names.
     @discardableResult
-    private func press(key: String, modifiers: NSEvent.ModifierFlags) -> Bool {
+    private func press(key: String, modifiers: NSEvent.ModifierFlags, keyCode: UInt16 = 0) -> Bool {
         guard let event = NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
             windowNumber: window.windowNumber, context: nil, characters: key,
-            charactersIgnoringModifiers: key, isARepeat: false, keyCode: 0
+            charactersIgnoringModifiers: key, isARepeat: false, keyCode: keyCode
         ) else { return false }
         return NSApplication.shared.mainMenu?.performKeyEquivalent(with: event) ?? false
     }
@@ -1489,7 +1493,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 if binding.id == "scope.allLocal" { submenu.addItem(.separator()) }
                 let item = submenu.addItem(withTitle: binding.title,
                                            action: selector(for: binding.id),
-                                           keyEquivalent: binding.key)
+                                           keyEquivalent: keyEquivalent(binding.key))
                 item.keyEquivalentModifierMask = modifierFlags(binding.modifiers)
                 if binding.id != "quit" { item.target = self }
                 if let tag = binding.tag { item.tag = tag }
@@ -1541,11 +1545,27 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
+    /// The map writes keys as a reader sees them — `↓`, `⏎` — and this is the one place that
+    /// becomes AppKit's notation. Keeping the translation here rather than in the map is what lets
+    /// `diffscope-verify` link the map without linking AppKit (DEC-057), and what lets the
+    /// documents quote `⌘↓` and mean the thing the menu prints.
+    private func keyEquivalent(_ key: String) -> String {
+        switch key {
+        case "↑": return String(UnicodeScalar(NSUpArrowFunctionKey)!)
+        case "↓": return String(UnicodeScalar(NSDownArrowFunctionKey)!)
+        case "←": return String(UnicodeScalar(NSLeftArrowFunctionKey)!)
+        case "→": return String(UnicodeScalar(NSRightArrowFunctionKey)!)
+        case "⏎": return "\r"
+        default: return key
+        }
+    }
+
     private func modifierFlags(_ modifiers: KeyboardModifiers) -> NSEvent.ModifierFlags {
         var flags: NSEvent.ModifierFlags = []
         if modifiers.contains(.command) { flags.insert(.command) }
         if modifiers.contains(.shift) { flags.insert(.shift) }
         if modifiers.contains(.option) { flags.insert(.option) }
+        if modifiers.contains(.control) { flags.insert(.control) }
         return flags
     }
 
