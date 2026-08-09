@@ -819,8 +819,11 @@ scroll view's own content width was the pane's real floor. The file spine drew *
 scroller stopped reserving its width. Both were invisible to every check and obvious in one
 photograph — M8-D's lesson, third instance. The arm now reports the **drawn** widths.
 
-**Still open: the rail's label is clipped to two characters.** `kbt•` is set on the row and
-`repoRow=kbt•` comes back from the live cell, but the field draws about 14 pt of it, right-aligned
-inside a 28 pt frame. The pane geometry and the spine are correct; this is the cell's own layout
-inside `NSTableCellView` and it needs an hour with the view debugger rather than another guess.
-Three letters are what separate `web` from `wea`, so two is not enough and the item stays open.
+**The rail's clipped label — closed, and it was the table's *style*.** `NSTableView`'s automatic
+style is `.inset` on modern macOS: a 16 pt margin each side and 17 pt of intercell spacing. With
+one column that is 16 pt of padding before the only cell, which in a 44 px rail is half the row —
+`kbt•` set, `kb` drawn. Four guesses missed it (column width, horizontal scroll offset, scroller
+reservation, document-view width); the fifth measurement found it, by printing the cell's frame in
+window coordinates beside the clip view's. `.plain` plus a 4 pt intercell spacing fixes it, and
+the arm now **asserts the indent** — the row must start within 8 pt of the pane, so a style change
+that re-insets the table fails rather than merely looking wrong.

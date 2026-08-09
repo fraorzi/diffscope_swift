@@ -114,6 +114,18 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// `DIFFSCOPE_ROOT` survives as a testing hook that *adds* a root for this launch only. It is
     /// never written to the configuration, so it cannot quietly become a default again.
     private func loadConfiguredSources() {
+        // A selftest that reads the developer's own configuration is not a selftest of anything
+        // repeatable. It also loses: the startup sweep of whatever repositories happen to be on
+        // this machine finished *after* the keyboard arm's own scan and replaced the fixture tree
+        // with them, so the arm reported a 63-file tree as empty. The arms bring their own sources.
+        if ProcessInfo.processInfo.environment["DIFFSCOPE_SELFTEST"] != nil {
+            state.configuration = Configuration(sources: [])
+            if let tree = ProcessInfo.processInfo.environment["DIFFSCOPE_KEYBOARD_TREE"] {
+                state.configuration = Configuration(sources: [ConfiguredSource(kind: .repository, path: tree)])
+            }
+            scan(sources: state.configuration.sources)
+            return
+        }
         let load = configStore.load()
         state.configuration = load.configuration
         if let problem = load.problem {
@@ -324,6 +336,17 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // One column, so "last" is "the one": it grows and shrinks with the pane, which is what a
         // collapse needs (DEC-060).
         table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
+        // `.plain`, because the automatic style is `.inset` on modern macOS: it adds a 16 pt
+        // margin on each side and a 17 pt intercell spacing, and with one column that is 16 pt of
+        // padding before the only cell. In a 44 px rail it consumed half the row — `kbt•` was set
+        // on the row and `kb` was drawn. Measured rather than guessed: the cell reported its frame
+        // 16 pt inside a 32 pt clip view.
+        table.style = .plain
+        table.intercellSpacing = NSSize(width: Theme.space2, height: 0)
+        // The document view keeps whatever width it was last given; the clip view then shows a
+        // window onto the middle of it. Tying the width to the clip is what makes a collapsed
+        // pane show the *start* of each row rather than the middle.
+        table.autoresizingMask = [.width]
         return table
     }
 
@@ -1006,15 +1029,46 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                     + "Scripts/keyboard-tree.sh and the walk over 63 files is measured\n").utf8))
             exit(0)
         }
-        scan(sources: [ConfiguredSource(kind: .repository, path: tree)])
+        // The **configuration** is pointed at the tree, not just this one sweep. DEC-006 refreshes
+        // the list when the window becomes active, and that refresh reads the configuration — so a
+        // scan of the tree alone was being replaced by the reader's real repositories a second
+        // later, and the arm then reported a tree with no changes in it. The race was invisible
+        // until two arms were added ahead of this one and it started losing.
+        state.configuration = Configuration(sources: [ConfiguredSource(kind: .repository, path: tree)])
+        scan(sources: state.configuration.sources)
+        // A sweep already in flight when this one starts still finishes, and finishing later means
+        // winning: the startup sweep of the reader's own configuration replaced the fixture tree a
+        // second after it was scanned, and the arm reported a tree with no changes in it. So the
+        // arm waits for the list to *be* the tree rather than assuming its own scan was the last
+        // word. Invisible until two arms were added ahead of this one and the timing shifted.
+        waitForTree(tree, attemptsLeft: 40) {
         // The sweep is off the main thread; the walk needs the list it produces.
-        waitForFiles(attemptsLeft: 40) { files in
+        self.waitForFiles(attemptsLeft: 40) { files in
             guard files == 63 else {
                 FileHandle.standardError.write(Data(
-                    "SELFTEST keyboard=MISMATCH the tree has \(files) changed files, not 63\n".utf8))
+                    ("SELFTEST keyboard=MISMATCH the tree has \(files) changed files, not 63 "
+                        + "repos=\(self.state.repositories.count) selected=\(self.state.selectedRepository?.url.lastPathComponent ?? "none") "
+                        + "rows=\(self.state.fileRows.count) scope=\(self.state.scope)\n").utf8))
                 exit(40)
             }
             self.walkTheFileList()
+        }
+        }
+    }
+
+    private func waitForTree(_ tree: String, attemptsLeft: Int, then next: @escaping () -> Void) {
+        if state.repositories.count == 1, state.repositories[0].url.path == tree {
+            next(); return
+        }
+        guard attemptsLeft > 0 else {
+            FileHandle.standardError.write(Data(
+                ("SELFTEST keyboard=MISMATCH the list never became the fixture tree — "
+                    + "\(state.repositories.map { $0.url.lastPathComponent })\n").utf8))
+            exit(40)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            self.scan(sources: self.state.configuration.sources)
+            self.waitForTree(tree, attemptsLeft: attemptsLeft - 1, then: next)
         }
     }
 
@@ -1260,11 +1314,22 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             let spineDrawn = self.fileTable.enclosingScrollView?.frame.width ?? -1
             let repoCell = self.repoTable.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView
             let fileCell = self.fileTable.view(atColumn: 0, row: 1, makeIfNecessary: true) as? NSTableCellView
+            // The row has to start where the pane does. `.inset` — the automatic table style —
+            // put the cell 16 pt in, and the rail then drew two letters of the three that separate
+            // one repository from another. Asserted rather than eyeballed, because the picture is
+            // the only other thing that can see it.
+            let field = repoCell?.textField
+            let fieldInWindow = field.map { $0.convert($0.bounds, to: nil) } ?? .zero
+            let paneOrigin = self.repoTable.enclosingScrollView?.convert(NSPoint.zero, to: nil).x ?? 0
+            let indent = fieldInWindow.minX - paneOrigin
+            let indented = indent >= 0 && indent <= Theme.space4
             FileHandle.standardError.write(Data(
-                ("SELFTEST collapse=\(ok ? "OK" : "MISMATCH") rail=\(railDrawn) spine=\(spineDrawn) "
-                    + "repoRow=\(repoCell?.textField?.stringValue ?? "nil") "
+                ("SELFTEST collapse=\(ok && indented ? "OK" : "MISMATCH") rail=\(railDrawn) "
+                    + "spine=\(spineDrawn) indent=\(indent) "
+                    + "repoRow=\(repoCell?.textField?.stringValue ?? "nil")"
+                    + "@\(fieldInWindow.width) "
                     + "fileRow=\(fileCell?.textField?.stringValue ?? "nil")\n").utf8))
-            guard ok else { exit(48) }
+            guard ok, indented else { exit(48) }
             self.windowSnapshot(named: "collapsed") { exit(0) }
         }
     }
@@ -1608,11 +1673,25 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 clip.scroll(to: NSPoint(x: 0, y: clip.bounds.origin.y))
                 table.enclosingScrollView?.reflectScrolledClipView(clip)
             }
-            guard let column = table.tableColumns.first else { continue }
+            guard let column = table.tableColumns.first,
+                  let clip = table.enclosingScrollView?.contentView else { continue }
+            // The table keeps whatever width it had and the clip view then centres the difference,
+            // which put a 32 pt cell 16 pt into a 32 pt window — three letters set, two drawn.
+            // Sizing the table to the clip is what makes the row start where the pane does.
             column.minWidth = Theme.spineWidth - 2 * Theme.space2
             column.maxWidth = Theme.windowWidth
-            column.width = max(column.minWidth, table.enclosingScrollView?.contentView.bounds.width ?? table.frame.width)
+            column.width = max(column.minWidth, clip.bounds.width)
+            table.setFrameSize(NSSize(width: clip.bounds.width, height: table.frame.height))
             table.tile()
+            // …and again after the split view's own layout pass, which re-tiles the scroll view
+            // and puts the width back. The first assignment is what the table is asked for; this
+            // is what it keeps.
+            DispatchQueue.main.async {
+                table.setFrameSize(NSSize(width: clip.bounds.width, height: table.frame.height))
+                table.tile()
+                clip.scroll(to: NSPoint(x: 0, y: clip.bounds.origin.y))
+                table.enclosingScrollView?.reflectScrolledClipView(clip)
+            }
         }
         statusLabel.stringValue = "repositories: \(reposCollapsed ? "rail" : "list")"
             + " · files: \(filesCollapsed ? "spine" : "list")"
