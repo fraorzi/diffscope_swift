@@ -1,7 +1,8 @@
 import { EditorView, Decoration, WidgetType, lineNumbers, gutterLineClass, GutterMarker } from "@codemirror/view";
 import { EditorState, RangeSetBuilder, StateField, StateEffect, Compartment } from "@codemirror/state";
 import { javascript } from "@codemirror/lang-javascript";
-import { syntaxHighlighting, defaultHighlightStyle } from "@codemirror/language";
+import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
 
 const LABEL_CLASS = {
   changed: "ds-changed",
@@ -187,13 +188,32 @@ function makePane(parent, side) {
       return value;
     },
   });
+  // Syntax colours by class, never by value (DEC-066). CodeMirror's own `defaultHighlightStyle`
+  // carries literal colours inside the bundle, which is exactly the boundary `tokens.css` exists
+  // to hold: a design could not restyle a keyword without editing JavaScript. These classes are
+  // declared in `index.html` and read their colours from the token file.
+  const highlighting = HighlightStyle.define([
+    { tag: [tags.keyword, tags.modifier, tags.controlKeyword, tags.moduleKeyword], class: "tok-keyword" },
+    { tag: [tags.typeName, tags.className, tags.namespace, tags.tagName], class: "tok-type" },
+    { tag: [tags.string, tags.special(tags.string)], class: "tok-string" },
+    { tag: [tags.number, tags.bool, tags.null], class: "tok-number" },
+    { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], class: "tok-function" },
+    { tag: [tags.comment, tags.lineComment, tags.blockComment, tags.docComment], class: "tok-comment" },
+    { tag: [tags.punctuation, tags.bracket, tags.angleBracket, tags.separator], class: "tok-punctuation" },
+    { tag: [tags.variableName, tags.attributeName], class: "tok-variable" },
+    { tag: [tags.propertyName, tags.definition(tags.propertyName)], class: "tok-property" },
+    { tag: [tags.operator, tags.derefOperator, tags.arithmeticOperator, tags.logicOperator], class: "tok-operator" },
+    { tag: [tags.regexp, tags.escape], class: "tok-regex" },
+    { tag: tags.invalid, class: "tok-invalid" },
+  ]);
+
   const view = new EditorView({
     parent,
     state: EditorState.create({
       doc: "",
       extensions: [
         javascript({ typescript: true, jsx: true }),
-        syntaxHighlighting(defaultHighlightStyle),
+        syntaxHighlighting(highlighting),
         EditorView.editable.of(false),
         wrapping.of(EditorView.lineWrapping),
         lineNumbers(),

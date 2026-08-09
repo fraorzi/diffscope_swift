@@ -25,9 +25,49 @@ enum Theme {
         .systemFont(ofSize: size, weight: weight)
     }
 
-    /// `--ds-ink` / `--ds-ink-quiet`.
-    static let ink = NSColor.labelColor
-    static let inkQuiet = NSColor.secondaryLabelColor
+    /// One value per appearance, resolved when AppKit draws rather than when this file is read, so
+    /// a light/dark switch mid-diff is handled for free — the same thing the media query in
+    /// `tokens.css` does for the two webviews.
+    private static func dynamic(dark: NSColor, light: NSColor) -> NSColor {
+        NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
+        }
+    }
+    private static func hex(_ value: UInt32, alpha: CGFloat = 1) -> NSColor {
+        NSColor(srgbRed: CGFloat((value >> 16) & 0xff) / 255,
+                green: CGFloat((value >> 8) & 0xff) / 255,
+                blue: CGFloat(value & 0xff) / 255,
+                alpha: alpha)
+    }
+
+    /// `--ds-text` / `--ds-dim` / `--ds-faint`. Three steps, and the third is the one that has to
+    /// be watched: it carries paths, counts and key hints at 10–11 px, and the adopted design's
+    /// first draft had it at 2.7:1 against paper. These clear 4.5:1 in both appearances.
+    static let ink = dynamic(dark: hex(0xf2f2f5), light: hex(0x16161a))
+    static let inkQuiet = dynamic(dark: hex(0xa8a8b1), light: hex(0x4f4f58))
+    static let inkFaint = dynamic(dark: hex(0x86868f), light: hex(0x6b6b74))
+
+    /// The surfaces AppKit draws, mirrored from the `@chrome` block of `tokens.css` (DEC-066).
+    /// The check suite requires every token in that block to be named here; a design that stops at
+    /// the edge of the webview leaves two thirds of the window looking like a different
+    /// application.
+    ///
+    /// `--ds-chrome`
+    static let chrome = dynamic(dark: hex(0x161618), light: hex(0xececed))
+    /// `--ds-panel-repos`
+    static let panelRepositories = dynamic(dark: hex(0x0b0b0d), light: hex(0xf6f6f8))
+    /// `--ds-panel-files`
+    static let panelFiles = dynamic(dark: hex(0x0e0e11), light: hex(0xfbfbfd))
+    /// `--ds-empty-bg`
+    static let emptyStateSurface = dynamic(dark: hex(0x000000), light: hex(0xf2f2f5))
+    /// `--ds-row-selected` and `--ds-row-ring`. Two halves of one signal: the ring is the shape
+    /// that survives when the fill is disabled, so selection is never carried by colour alone.
+    static let rowSelected = dynamic(dark: hex(0x1d1d21), light: hex(0xe3e3e8))
+    static let rowRing = dynamic(dark: hex(0x34343a), light: hex(0xcfcfd6))
+    /// `--ds-win-edge`
+    static let windowEdge = dynamic(dark: .white, light: .black).withAlphaComponent(0.16)
+    /// `--ds-focus-ring`
+    static let focusRing = dynamic(dark: hex(0x0a84ff), light: hex(0x0064d2))
 
     /// `--ds-space-*`.
     static let space2: CGFloat = 4

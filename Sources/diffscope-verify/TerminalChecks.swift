@@ -590,7 +590,11 @@ func runTerminalChecks(_ reportRaw: (String, Bool, String) -> Void) {
                !html.contains("#") || html.range(of: "#[0-9a-fA-F]{3,8}", options: .regularExpression) == nil)
         let tokens = (try? String(contentsOf: root.appendingPathComponent("Renderer/src/tokens.css"),
                                   encoding: .utf8)) ?? ""
-        let missing = ["--ds-term-surface", "--ds-term-ink", "--ds-term-cursor", "--ds-term-selection",
+        // The first four are what xterm.js reads outside the palette, and DEC-066 names them as a
+        // **set**: any one of them left undeclared is not a missing rule, it is a colour the
+        // emulator invents for itself. They were `--ds-term-surface` / `--ds-term-ink` until the
+        // design's table renamed them to the pair xterm's own API uses.
+        let missing = ["--ds-term-bg", "--ds-term-fg", "--ds-term-cursor", "--ds-term-selection",
                        "--ds-term-black", "--ds-term-bright-white", "--ds-term-text-size"]
             .filter { !tokens.contains($0) }
         report("the terminal's own tokens are declared where every other visual value lives",

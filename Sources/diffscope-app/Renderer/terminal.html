@@ -7,7 +7,7 @@
 <style>
   /* Like `index.html`, this file declares no colour, no font and no size of its own — every value
      comes from `tokens.css`. The rules here are layout only. */
-  html, body { margin: 0; height: 100%; background: var(--ds-term-surface); }
+  html, body { margin: 0; height: 100%; background: var(--ds-term-bg); }
   body { display: flex; flex-direction: column; }
   #grid { flex: 1; min-height: 0; padding: var(--ds-space-2); }
   .xterm .xterm-viewport { overflow-y: auto; }
@@ -16,28 +16,28 @@
      come from — measured in T0 before any of this was built. */
   #input-row { display: flex; align-items: baseline; gap: var(--ds-space-3);
                padding: var(--ds-space-2) var(--ds-space-3);
-               border-top: var(--ds-border) solid var(--ds-hairline);
+               border-top: var(--ds-hairline-width) solid var(--ds-border);
                background: var(--ds-term-input-surface); }
   #mode { flex: none; padding: var(--ds-space-1) var(--ds-space-3);
-          border: var(--ds-border) solid var(--ds-hairline-strong);
+          border: var(--ds-hairline-width) solid var(--ds-border-strong);
           border-radius: var(--ds-radius-chip);
           font: var(--ds-text-size-small) var(--ds-font);
-          color: var(--ds-term-ink); white-space: nowrap; cursor: default; }
+          color: var(--ds-term-fg); white-space: nowrap; cursor: default; }
   /* Raw is a different state, not a worse one, so it is marked by shape rather than by colour
      alone (DEC-035). */
   #mode[data-raw="true"] { border-style: dashed; font-weight: var(--ds-weight-emphasis); }
   /* Where the shell says it is (OSC 7). When it disagrees with the reader's selection the chip
      says so in words — the pane must never imply the terminal is where the diff is. */
   #cwd { flex: none; padding: var(--ds-space-1) var(--ds-space-3);
-         font: var(--ds-text-size-small) var(--ds-font); color: var(--ds-ink-quiet);
+         font: var(--ds-text-size-small) var(--ds-font); color: var(--ds-faint);
          white-space: nowrap; max-width: 40%; overflow: hidden; text-overflow: ellipsis; }
-  #cwd[data-diverged="true"] { color: var(--ds-term-ink);
+  #cwd[data-diverged="true"] { color: var(--ds-term-fg);
                                text-decoration: underline dotted;
                                text-underline-offset: var(--ds-underline-offset); }
   #line { flex: 1; min-width: 0; resize: none; overflow: hidden;
           border: none; outline: none; background: transparent;
           font: var(--ds-term-text-size) var(--ds-font);
-          color: var(--ds-term-ink); }
+          color: var(--ds-term-fg); }
   /* Hidden, never removed: a row that leaves the layout takes its own explanation with it. */
   #input-row[data-hidden="true"] #line { visibility: hidden; }
 </style>

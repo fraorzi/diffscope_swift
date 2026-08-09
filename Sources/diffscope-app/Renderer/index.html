@@ -10,72 +10,78 @@
 
   html, body { margin: 0; height: 100%; font: var(--ds-text-size) var(--ds-font); }
   body { display: flex; flex-direction: column;
-         background: var(--ds-surface); color: var(--ds-ink); }
+         background: var(--ds-bg); color: var(--ds-plain); }
 
   /* INV-4 lives here: every fallback and every withheld analysis is stated in this bar. A design
      may restyle it and may not remove it from the layout. */
   #notices { display: flex; gap: var(--ds-space-3);
              padding: var(--ds-space-3) var(--ds-space-4); flex-wrap: wrap;
-             border-bottom: var(--ds-border) solid var(--ds-hairline); }
+             color: var(--ds-text);
+             border-bottom: var(--ds-hairline-width) solid var(--ds-border); }
   .ds-chip { padding: var(--ds-space-1) var(--ds-space-4);
              border-radius: var(--ds-radius-chip); font-size: var(--ds-text-size-small);
-             border: var(--ds-border) solid var(--ds-hairline-strong); }
+             border: var(--ds-hairline-width) solid var(--ds-border-strong); }
   .ds-chip-alert { border-style: dashed; font-weight: var(--ds-weight-emphasis); }
 
   #stage { display: flex; flex: 1; min-height: 0; }
-  #left, #right { flex: 1; min-width: 0; overflow: hidden;
-                  border-right: var(--ds-border) solid var(--ds-hairline); }
+  #left, #right { flex: 1; min-width: 0; overflow: hidden; background: var(--ds-code);
+                  border-right: var(--ds-hairline-width) solid var(--ds-border); }
   #right { border-right: none; }
-  .cm-editor { height: 100%; }
-  .cm-scroller { overflow: auto; }
+  .cm-editor { height: 100%; background: var(--ds-code); color: var(--ds-plain); }
+  .cm-editor .cm-scroller { overflow: auto; font-family: var(--ds-font); }
 
-  #unrenderable { display: none; padding: var(--ds-space-6); white-space: pre-wrap; }
+  #unrenderable { display: none; padding: var(--ds-space-6); white-space: pre-wrap;
+                  color: var(--ds-dim); }
 
-  /* Change meaning is carried by texture and underline, never by token colour (DEC-035). */
+  /* Change meaning is carried by texture and underline, never by token colour (DEC-035). Each
+     mark's texture is a different angle, weight and period, so they stay tellable apart in
+     greyscale — which is the state a screenshot and a colour-blind reader are both in. */
   .ds-changed {
-    background: repeating-linear-gradient(
-      var(--ds-hatch-angle),
-      var(--ds-hatch-ink) 0 var(--ds-hatch-stripe),
-      transparent var(--ds-hatch-stripe) var(--ds-hatch-gap));
+    background-image: var(--ds-tex-changed);
     text-decoration: underline;
     text-decoration-thickness: var(--ds-underline-thickness);
     text-underline-offset: var(--ds-underline-offset);
   }
   .ds-fallback {
-    background: var(--ds-fill);
+    background-image: var(--ds-tex-fallback);
     text-decoration: underline dotted;
     text-decoration-thickness: var(--ds-underline-thickness);
     text-underline-offset: var(--ds-underline-offset);
   }
   .ds-moved {
-    outline: var(--ds-border) dashed var(--ds-outline-moved);
-    outline-offset: calc(-1 * var(--ds-border));
+    background-image: var(--ds-tex-moved);
+    outline: var(--ds-hairline-width) dashed var(--ds-mark);
+    outline-offset: calc(-1 * var(--ds-hairline-width));
   }
   /* Grouping quietens, it never hides: the underline stays, only its weight drops (DEC-017). */
   .ds-formatting {
-    background: none;
+    background-image: var(--ds-tex-format);
     text-decoration-style: dotted;
     text-decoration-thickness: var(--ds-underline-thickness-quiet);
   }
   .ds-behaviour {
+    background-image: var(--ds-tex-behaviour);
     text-decoration-style: wavy;
   }
   /* An alignment the structural layer could not confirm (DEC-017 confidence indication). */
   .ds-uncertain {
+    background-image: var(--ds-tex-ambiguous);
     text-decoration-style: dashed;
   }
   /* A difference that is real in the bytes and absent on screen (DEC-023). */
   .ds-invisible {
-    outline: var(--ds-border) dotted var(--ds-outline-invisible);
-    outline-offset: var(--ds-border);
+    background-image: var(--ds-tex-invisible);
+    outline: var(--ds-hairline-width) dotted var(--ds-mark);
+    outline-offset: var(--ds-hairline-width);
   }
   .ds-fold {
     display: block;
     padding: var(--ds-space-1) var(--ds-space-4);
     font-size: var(--ds-text-size-small);
-    border-top: var(--ds-border) dashed var(--ds-fold-border);
-    border-bottom: var(--ds-border) dashed var(--ds-fold-border);
-    background: var(--ds-fold-fill);
+    color: var(--ds-dim);
+    border-top: var(--ds-hairline-width) dashed var(--ds-border-strong);
+    border-bottom: var(--ds-hairline-width) dashed var(--ds-border-strong);
+    background: var(--ds-fold);
     cursor: pointer;
   }
   /* A group holding real differences, not unchanged text (DEC-048) — so it is marked as
@@ -83,19 +89,19 @@
   .ds-fold-formatting {
     border-top-style: solid;
     border-bottom-style: solid;
-    background: repeating-linear-gradient(
-      var(--ds-hatch-angle),
-      var(--ds-hatch-ink-quiet) 0 var(--ds-hatch-stripe),
-      transparent var(--ds-hatch-stripe) var(--ds-hatch-gap));
+    background-image: var(--ds-tex-format);
   }
   /* The gutter is the third carrier of change meaning (`12-…` §5.1), so it marks by shape —
      a solid edge against the text — rather than by colour, which DEC-035 forbids as a sole signal. */
-  .cm-gutters { border-right: var(--ds-border) solid var(--ds-hairline);
-                background: var(--ds-fill-quiet); }
-  .cm-lineNumbers .cm-gutterElement { padding: 0 var(--ds-space-3) 0 var(--ds-space-4);
-                                      color: var(--ds-ink-quiet); }
-  .ds-gutter-changed { border-right: var(--ds-gutter-edge-width) solid var(--ds-gutter-edge);
-                       color: var(--ds-ink) !important;
+  /* Descendant selectors, not bare class names: CodeMirror injects its own base theme through
+     StyleModule, and `.cm-gutters { background: #f5f5f5 }` from that sheet was quietly winning —
+     both gutters drew light on a black window until a snapshot was sampled pixel by pixel. */
+  .cm-editor .cm-gutters { border-right: var(--ds-hairline-width) solid var(--ds-border);
+                           background: var(--ds-fold); }
+  .cm-editor .cm-lineNumbers .cm-gutterElement { padding: 0 var(--ds-space-3) 0 var(--ds-space-4);
+                                                 color: var(--ds-faint); }
+  .ds-gutter-changed { border-right: var(--ds-gutter-edge-width) solid var(--ds-mark);
+                       color: var(--ds-text) !important;
                        font-weight: var(--ds-weight-emphasis); }
 
   .ds-badge {
@@ -103,10 +109,31 @@
     padding: 0 var(--ds-space-2);
     margin-left: var(--ds-space-2);
     border-radius: var(--ds-radius-badge);
-    border: var(--ds-border) solid var(--ds-hairline-strong);
+    border: var(--ds-hairline-width) solid var(--ds-border-strong);
     white-space: nowrap;
     vertical-align: baseline;
   }
+
+  /* Syntax owns hue, the change system owns shape (DEC-035, DEC-066). The classes are applied by
+     CodeMirror from the highlight style in `main.js`; the colours stay here, so the one-file rule
+     holds for the syntax theme too. */
+  .cm-content { caret-color: var(--ds-syn-cursor); }
+  .cm-activeLine { background: var(--ds-syn-active-line); }
+  .cm-selectionBackground, ::selection { background: var(--ds-syn-selection); }
+  .tok-keyword { color: var(--ds-syn-keyword); }
+  .tok-type { color: var(--ds-syn-type); }
+  .tok-string { color: var(--ds-syn-string); }
+  .tok-number { color: var(--ds-syn-number); }
+  .tok-function { color: var(--ds-syn-function); }
+  .tok-comment { color: var(--ds-syn-comment); font-style: italic; }
+  .tok-punctuation { color: var(--ds-syn-punctuation); }
+  .tok-variable { color: var(--ds-syn-variable); }
+  .tok-property { color: var(--ds-syn-property); }
+  .tok-operator { color: var(--ds-syn-operator); }
+  .tok-regex { color: var(--ds-syn-regex); }
+  /* Invalid syntax carries a dotted underline as well: it is the one syntax class that means
+     something is wrong, and a meaning may not rest on hue alone. */
+  .tok-invalid { color: var(--ds-syn-invalid); text-decoration: underline dotted; }
 </style>
 </head>
 <body>

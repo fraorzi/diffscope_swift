@@ -63,10 +63,10 @@ const term = new Terminal({
   cursorBlink: false,
   convertEol: false,
   theme: {
-    background: colour("--ds-term-surface"),
-    foreground: colour("--ds-term-ink"),
+    background: colour("--ds-term-bg"),
+    foreground: colour("--ds-term-fg"),
     cursor: colour("--ds-term-cursor"),
-    cursorAccent: colour("--ds-term-surface"),
+    cursorAccent: colour("--ds-term-bg"),
     selectionBackground: colour("--ds-term-selection"),
     ...ansi,
   },

@@ -1,32 +1,28 @@
 /* Design tokens — the one file a design replaces.
  *
- * Everything visual lives here. `index.html` declares no colour, no font, no size and no radius of
- * its own; it only references these names. A check in `diffscope-verify` enforces that, because a
- * boundary nobody verifies lasts until the next edit.
+ * Everything visual lives here. `index.html` and `terminal.html` declare no colour, no font, no
+ * size and no radius of their own; they only reference these names. A check in `diffscope-verify`
+ * enforces that, because a boundary nobody verifies lasts until the next edit.
  *
  * Read `docs/24-design-contract.md` before changing these. The short version: **a design may
  * restyle any mark and may never hide one.** The renderer draws differences the engine found, and
  * CSS is the one place where a difference can be made invisible while every engine check still
  * passes — so the rules against that are checked, not merely written down.
  *
- * Values below default to the system's own palette (`Canvas`, `CanvasText`) so the application
- * follows light and dark mode with no work. A design is free to replace them with literal colours;
- * the checks care about *where* values are declared, not what they are.
+ * Since DEC-066 the values are the adopted design's token table (`docs/27-design-adoption.md`),
+ * transcribed: literal colours, both appearances, light in `:root` and dark in the media query
+ * below. The system palette they replaced (`Canvas`, `CanvasText`) followed the appearance for
+ * free; literal values buy the design's contrast in exchange for having to state both.
+ *
+ * Two rules about *which* tokens may live here:
+ *   1. A token nobody references is a value a designer would change to no effect. Checked.
+ *   2. The AppKit chrome cannot read CSS, so its tokens have no consumer in this file. They are
+ *      declared inside the `@chrome` block below and the check requires each of them to appear in
+ *      `Theme.swift` instead — the exemption is a redirect, not a hole.
  */
 
 :root {
   color-scheme: light dark;
-
-  /* ---- Surfaces and ink ------------------------------------------------- */
-  --ds-surface: Canvas;
-  --ds-ink: CanvasText;
-  /* Hairlines, fills and quiet text are all stated as a percentage of the ink over the surface, so
-   * a design that changes the two colours above gets a coherent set for free. */
-  --ds-hairline: color-mix(in srgb, var(--ds-ink) 18%, transparent);
-  --ds-hairline-strong: color-mix(in srgb, var(--ds-ink) 30%, transparent);
-  --ds-ink-quiet: color-mix(in srgb, var(--ds-ink) 45%, transparent);
-  --ds-fill-quiet: color-mix(in srgb, var(--ds-ink) 4%, transparent);
-  --ds-fill: color-mix(in srgb, var(--ds-ink) 7%, transparent);
 
   /* ---- Typography ------------------------------------------------------- */
   --ds-font: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -43,59 +39,182 @@
   --ds-space-6: 16px;
   --ds-radius-chip: 10px;
   --ds-radius-badge: 6px;
-  --ds-border: 1px;
+  --ds-hairline-width: 1px;
 
-  /* ---- Change marks ------------------------------------------------------
-   * DEC-035: meaning is carried by **texture and shape, never by colour alone** — it has to survive
-   * greyscale, a screenshot, and a colour-blind reader. Each token below is a shape decision; a
-   * design may change the shapes, and may not reduce a mark to a colour difference. */
-  --ds-hatch-ink: color-mix(in srgb, var(--ds-ink) 10%, transparent);
-  --ds-hatch-ink-quiet: color-mix(in srgb, var(--ds-ink) 8%, transparent);
-  --ds-hatch-angle: -45deg;
-  --ds-hatch-stripe: 3px;
-  --ds-hatch-gap: 6px;
+  /* ---- Surfaces and ink — light ----------------------------------------- */
+  --ds-bg: #f2f2f5;
+  --ds-code: #ffffff;
+  --ds-fold: #f7f7f9;
+  --ds-text: #16161a;
+  --ds-plain: #16161a;
+  --ds-dim: #4f4f58;
+  --ds-faint: #6b6b74;
+  /* The ink the change marks are drawn in: an alpha over the surface, so a mark reads the same
+     way on the code background and on a fold row. */
+  --ds-mark: rgba(0, 0, 0, .82);
+  --ds-border: #d9d9de;
+  --ds-border-strong: #8f8f99;
+
+  /* ---- Change textures — light -------------------------------------------
+   * DEC-035: meaning is carried by **texture and shape, never by colour alone** — it has to
+   * survive greyscale, a screenshot, and a colour-blind reader. Each texture below is a distinct
+   * angle, weight and period, so the marks stay tellable apart with every colour removed. */
+  --ds-tex-changed: repeating-linear-gradient(45deg, rgba(0,0,0,.075) 0 2px, transparent 2px 6px);
+  --ds-tex-format: repeating-linear-gradient(45deg, rgba(0,0,0,.035) 0 1px, transparent 1px 8px);
+  --ds-tex-behaviour: repeating-linear-gradient(45deg, rgba(0,0,0,.11) 0 3px, transparent 3px 6px);
+  --ds-tex-ambiguous: repeating-linear-gradient(90deg, rgba(0,0,0,.055) 0 5px, transparent 5px 11px);
+  --ds-tex-fallback: repeating-linear-gradient(0deg, rgba(0,0,0,.06) 0 1px, transparent 1px 5px);
+  --ds-tex-moved: repeating-linear-gradient(90deg, rgba(0,0,0,.07) 0 8px, transparent 8px 16px);
+  --ds-tex-invisible: repeating-linear-gradient(45deg, rgba(0,0,0,.045) 0 1px, transparent 1px 6px);
+
+  /* ---- Mark shape ------------------------------------------------------- */
   --ds-underline-thickness: 2px;
   --ds-underline-thickness-quiet: 1px;
   --ds-underline-offset: 2px;
-  --ds-outline-moved: color-mix(in srgb, var(--ds-ink) 45%, transparent);
-  --ds-outline-invisible: color-mix(in srgb, var(--ds-ink) 55%, transparent);
-  --ds-fold-border: color-mix(in srgb, var(--ds-ink) 25%, transparent);
-  --ds-fold-fill: color-mix(in srgb, var(--ds-ink) 5%, transparent);
   /* The gutter edge, third carrier of change meaning beside the underline and the texture. */
   --ds-gutter-edge-width: 3px;
-  --ds-gutter-edge: var(--ds-ink);
 
-  /* ---- Terminal (DEC-054) ------------------------------------------------
-   * The grid is xterm.js, and it takes its colours from here like everything else — `terminal.js`
+  /* ---- Syntax — light -----------------------------------------------------
+   * Syntax owns hue; the change system owns shape. The two live in different perceptual channels
+   * on purpose: a keyword stays pink inside a changed region without the region reading as "pink
+   * means changed". */
+  --ds-syn-keyword: #ad3da4;
+  --ds-syn-type: #0b4f79;
+  --ds-syn-string: #c41a16;
+  --ds-syn-number: #1c00cf;
+  --ds-syn-function: #326d74;
+  --ds-syn-comment: #5d6c79;
+  --ds-syn-punctuation: #3d3d45;
+  --ds-syn-variable: #0f5a94;
+  --ds-syn-property: #1f6b4a;
+  --ds-syn-operator: #2b2b33;
+  --ds-syn-regex: #8a4b00;
+  --ds-syn-invalid: #a3001f;
+  --ds-syn-selection: rgba(0, 0, 0, .12);
+  --ds-syn-cursor: #16161a;
+  --ds-syn-active-line: #f5f5f8;
+
+  /* ---- Terminal (DEC-054) — light ----------------------------------------
+   * The grid is xterm.js and it takes its colours from here like everything else: `terminal.js`
    * reads these names and hands xterm the resolved values. A missing name is reported by the
    * grid's probe rather than silently drawn as black.
    *
-   * The sixteen below are the only place in this file that has to state literal colours: a
-   * terminal palette is what programs address by index, and `Canvas`/`CanvasText` cannot express
-   * "red". A design may replace all sixteen. */
-  --ds-term-surface: var(--ds-surface);
-  --ds-term-ink: var(--ds-ink);
-  --ds-term-cursor: var(--ds-ink);
-  --ds-term-selection: color-mix(in srgb, var(--ds-ink) 22%, transparent);
+   * `--ds-term-fg`, `-bg`, `-cursor` and `-selection` are read **as a set** (DEC-066): any one of
+   * them left undeclared is a colour the emulator invents for itself. The sixteen below are the
+   * only palette in this file that must be literal in both appearances — a program asks for
+   * "green" by index, and no neutral can answer that. */
+  --ds-term-bg: #fbfbfd;
+  --ds-term-fg: #16161a;
+  --ds-term-cursor: #16161a;
+  --ds-term-selection: rgba(0, 0, 0, .18);
   --ds-term-text-size: 12px;
   /* The input line sits slightly off the grid's surface so the boundary between what the reader is
      typing and what the shell has said is visible without a rule doing the work alone. */
-  --ds-term-input-surface: var(--ds-fill-quiet);
+  --ds-term-input-surface: #f2f2f5;
 
-  --ds-term-black: #2e3436;
-  --ds-term-red: #cc0000;
-  --ds-term-green: #4e9a06;
-  --ds-term-yellow: #c4a000;
-  --ds-term-blue: #3465a4;
-  --ds-term-magenta: #75507b;
-  --ds-term-cyan: #06989a;
-  --ds-term-white: #d3d7cf;
-  --ds-term-bright-black: #555753;
-  --ds-term-bright-red: #ef2929;
-  --ds-term-bright-green: #8ae234;
-  --ds-term-bright-yellow: #fce94f;
-  --ds-term-bright-blue: #729fcf;
-  --ds-term-bright-magenta: #ad7fa8;
-  --ds-term-bright-cyan: #34e2e2;
-  --ds-term-bright-white: #eeeeec;
+  --ds-term-black: #16161a;
+  --ds-term-red: #c9002b;
+  --ds-term-green: #00713a;
+  --ds-term-yellow: #8a5a00;
+  --ds-term-blue: #0050b3;
+  --ds-term-magenta: #9b1f8f;
+  --ds-term-cyan: #00646e;
+  --ds-term-white: #6b6b74;
+  /* In light appearance "bright" resolves *darker*, not lighter: brightness on paper is contrast
+     against the paper, and a lighter bright-white would be invisible. */
+  --ds-term-bright-black: #4a4a52;
+  --ds-term-bright-red: #a3001f;
+  --ds-term-bright-green: #005c2e;
+  --ds-term-bright-yellow: #6e4700;
+  --ds-term-bright-blue: #003f8f;
+  --ds-term-bright-magenta: #7a1872;
+  --ds-term-bright-cyan: #004f57;
+  --ds-term-bright-white: #16161a;
+
+  /* @chrome — no CSS consumer by construction ------------------------------
+   * AppKit draws these surfaces and cannot read this file. They are declared here so the design
+   * stays one table in one place, and the check requires each of them to be named in
+   * `Theme.swift`; a name that appears in neither is the failure this block exists to catch. */
+  --ds-chrome: #ececed;
+  --ds-panel-repos: #f6f6f8;
+  --ds-panel-files: #fbfbfd;
+  --ds-empty-bg: #f2f2f5;
+  --ds-row-selected: #e3e3e8;
+  --ds-row-ring: #cfcfd6;
+  --ds-win-edge: rgba(0, 0, 0, .18);
+  --ds-focus-ring: #0064d2;
+  /* @endchrome */
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ds-bg: #000000;
+    --ds-code: #000000;
+    --ds-fold: #0e0e11;
+    --ds-text: #f2f2f5;
+    --ds-plain: #e9e9ee;
+    --ds-dim: #a8a8b1;
+    --ds-faint: #86868f;
+    --ds-mark: rgba(255, 255, 255, .88);
+    --ds-border: #28282d;
+    --ds-border-strong: #6c6c76;
+
+    --ds-tex-changed: repeating-linear-gradient(45deg, rgba(255,255,255,.062) 0 2px, transparent 2px 6px);
+    --ds-tex-format: repeating-linear-gradient(45deg, rgba(255,255,255,.03) 0 1px, transparent 1px 8px);
+    --ds-tex-behaviour: repeating-linear-gradient(45deg, rgba(255,255,255,.1) 0 3px, transparent 3px 6px);
+    --ds-tex-ambiguous: repeating-linear-gradient(90deg, rgba(255,255,255,.05) 0 5px, transparent 5px 11px);
+    --ds-tex-fallback: repeating-linear-gradient(0deg, rgba(255,255,255,.055) 0 1px, transparent 1px 5px);
+    --ds-tex-moved: repeating-linear-gradient(90deg, rgba(255,255,255,.06) 0 8px, transparent 8px 16px);
+    --ds-tex-invisible: repeating-linear-gradient(45deg, rgba(255,255,255,.04) 0 1px, transparent 1px 6px);
+
+    --ds-syn-keyword: #ff7ab2;
+    --ds-syn-type: #5dd8ff;
+    --ds-syn-string: #ff8a7a;
+    --ds-syn-number: #d0bf69;
+    --ds-syn-function: #82d6c0;
+    --ds-syn-comment: #9aa7b3;
+    --ds-syn-punctuation: #d4d4da;
+    --ds-syn-variable: #9ed0ff;
+    --ds-syn-property: #a7dfc0;
+    --ds-syn-operator: #e0e0e6;
+    --ds-syn-regex: #ffb86b;
+    --ds-syn-invalid: #ff9d97;
+    --ds-syn-selection: rgba(255, 255, 255, .16);
+    --ds-syn-cursor: #ffffff;
+    --ds-syn-active-line: #0f0f12;
+
+    --ds-term-bg: #08080a;
+    --ds-term-fg: #e9e9ee;
+    --ds-term-cursor: #ffffff;
+    --ds-term-selection: rgba(255, 255, 255, .22);
+    --ds-term-input-surface: #131316;
+
+    --ds-term-black: #4d4d55;
+    --ds-term-red: #ff6961;
+    --ds-term-green: #3fd463;
+    --ds-term-yellow: #ffd426;
+    --ds-term-blue: #64b5ff;
+    --ds-term-magenta: #ff7ab2;
+    --ds-term-cyan: #5dd8ff;
+    --ds-term-white: #c9c9d0;
+    --ds-term-bright-black: #86868f;
+    --ds-term-bright-red: #ff9d97;
+    --ds-term-bright-green: #7ceb99;
+    --ds-term-bright-yellow: #ffe680;
+    --ds-term-bright-blue: #9ccfff;
+    --ds-term-bright-magenta: #ffa8cd;
+    --ds-term-bright-cyan: #9beaff;
+    --ds-term-bright-white: #ffffff;
+
+    /* @chrome */
+    --ds-chrome: #161618;
+    --ds-panel-repos: #0b0b0d;
+    --ds-panel-files: #0e0e11;
+    --ds-empty-bg: #000000;
+    --ds-row-selected: #1d1d21;
+    --ds-row-ring: #34343a;
+    --ds-win-edge: rgba(255, 255, 255, .14);
+    --ds-focus-ring: #0a84ff;
+    /* @endchrome */
+  }
 }

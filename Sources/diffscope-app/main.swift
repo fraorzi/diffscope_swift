@@ -178,6 +178,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         conventionLabel.setContentCompressionResistancePriority(.required, for: .vertical)
         conventionLabel.setContentHuggingPriority(.required, for: .vertical)
         let leftStack = NSStackView(views: [scrollWrapping(repoTable), conventionLabel])
+        // The caption under the repository list sits on the list's own surface, not on the
+        // window's: it belongs to that pane and the seam would say otherwise (`--ds-panel-repos`).
+        leftStack.wantsLayer = true
+        leftStack.layer?.backgroundColor = Theme.panelRepositories.cgColor
         leftStack.orientation = .vertical
         leftStack.alignment = .leading
         leftStack.spacing = Theme.space2
@@ -194,6 +198,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         rightStack.alignment = .leading
         rightStack.spacing = Theme.space3
         rightStack.edgeInsets = NSEdgeInsets(top: Theme.space4, left: Theme.space4, bottom: 0, right: Theme.space4)
+        // `--ds-chrome`: the band holding the scope bar, the mode control and the status line is
+        // one surface, distinct from both lists and from the diff.
+        rightStack.wantsLayer = true
+        rightStack.layer?.backgroundColor = Theme.chrome.cgColor
         webView.translatesAutoresizingMaskIntoConstraints = false
         webView.widthAnchor.constraint(equalTo: rightStack.widthAnchor, constant: -2 * Theme.space4).isActive = true
 
@@ -273,7 +281,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         table.dataSource = self
         table.delegate = self
         table.identifier = NSUserInterfaceItemIdentifier(identifier)
-        table.usesAlternatingRowBackgroundColors = true
+        // Alternating rows were the only surface distinction the two lists had. The design gives
+        // each list its own background (`--ds-panel-repos`, `--ds-panel-files`) and one selection
+        // treatment, so the stripes go: two systems saying "this row is different from that one"
+        // is one system too many.
+        table.usesAlternatingRowBackgroundColors = false
+        table.backgroundColor = identifier == "repo" ? Theme.panelRepositories : Theme.panelFiles
+        table.selectionHighlightStyle = .regular
         return table
     }
 
@@ -1242,6 +1256,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         stack.spacing = Theme.space6
 
         emptyState = NSView()
+        // `--ds-empty-bg`. The one screen AppKit draws before any pane exists, so it is the one
+        // place the window's own surface is visible on its own.
+        emptyState.wantsLayer = true
+        emptyState.layer?.backgroundColor = Theme.emptyStateSurface.cgColor
         emptyState.addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([

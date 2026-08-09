@@ -76,9 +76,32 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // The other direction: a token nobody references is a value a designer would change to no
         // effect, which is worse than not offering it.
         let declared = Set(tokens.ranges(of: "--ds-[a-z0-9-]+(?=\\s*:)"))
-        let unused = declared.subtracting(used)
-        report("every token declared is actually used", unused.isEmpty,
+
+        // Except that two thirds of the window is AppKit, which cannot read this file (DEC-066).
+        // Those tokens are declared inside `@chrome` blocks and are exempt from the rule above —
+        // and the exemption is a redirect rather than a hole: each one must be named in
+        // `Theme.swift` instead, which is the hand-mirroring step that until now had no check
+        // behind it at all.
+        let chromeBlocks = tokens.ranges(of: "(?s)/\\* @chrome.*?/\\* @endchrome \\*/")
+        let chrome = Set(chromeBlocks.flatMap { $0.ranges(of: "--ds-[a-z0-9-]+(?=\\s*:)") })
+        report("the chrome block is found and non-empty", !chrome.isEmpty,
+               "\(chrome.count) tokens in \(chromeBlocks.count) blocks")
+
+        let unused = declared.subtracting(used).subtracting(chrome)
+        report("every token declared is actually used, or declared for the chrome", unused.isEmpty,
                unused.sorted().joined(separator: ", "))
+
+        let theme = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/Theme.swift"),
+                                 encoding: .utf8)) ?? ""
+        let unmirrored = chrome.filter { !theme.contains($0) }.sorted()
+        report("every chrome token has a counterpart in Theme.swift",
+               unmirrored.isEmpty, unmirrored.joined(separator: ", "))
+
+        // The negative control. A `contains` over two long files will agree with almost anything,
+        // and this check's whole value is that it disagrees when a design adds a chrome token and
+        // stops at the stylesheet.
+        report("negative control: a chrome token absent from Theme.swift is reported",
+               !theme.contains("--ds-invented-for-this-check"))
     }
 
     print("\n=== a design may restyle a mark and may not hide one (G2) ===")
@@ -175,8 +198,11 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
         let inlineColours = main.ranges(of: "= \\.(secondaryLabelColor|labelColor|systemRed|systemBlue)")
         report("no colour is written inline in the application",
                inlineColours.isEmpty, inlineColours.prefix(3).joined(separator: " | "))
+        // The chrome's colours are checked token by token where they are declared; this is the
+        // rest of the mirror — type and spacing, which have no `@chrome` block because both
+        // surfaces use them.
         report("the token names are mirrored, not invented separately",
-               theme.contains("--ds-font") && theme.contains("--ds-space") && theme.contains("--ds-ink"))
+               theme.contains("--ds-font") && theme.contains("--ds-space") && theme.contains("--ds-text"))
     }
 }
 
