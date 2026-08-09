@@ -452,3 +452,69 @@ func runSearchChecks(_ reportRaw: (String, Bool, String) -> Void) {
     report("a capped result says there are more rather than showing a prefix silently",
            searchSummary(query: "a", result: capped, scope: .changedFiles).contains("there are more"))
 }
+
+/// DEC-061: the two lenses. Parsers only — a lens's interface is a list, and the list is
+/// photographed rather than asserted.
+func runLensChecks(_ reportRaw: (String, Bool, String) -> Void) {
+    func report(_ name: String, _ ok: Bool, _ detail: String = "") { reportRaw(name, ok, detail) }
+
+    print("\n=== blame and history are parsed, including the cases a repository will not produce on demand (DEC-061) ===")
+
+    // Two blocks and an uncommitted one, in the shape `--porcelain` actually emits: fields appear
+    // once per block and the following lines inherit them.
+    let blameOutput = """
+        4d70b1e9c0a1b2c3d4e5f60718293a4b5c6d7e8f 1 1 2
+        author M. Ostrowska
+        author-time 1753000000
+        author-tz +0200
+        summary Add Footer count
+        filename src/List.tsx
+        \texport function List() {
+        4d70b1e9c0a1b2c3d4e5f60718293a4b5c6d7e8f 2 2
+        \t  return null;
+        0000000000000000000000000000000000000000 3 3 1
+        author Not Committed Yet
+        author-time 1754000000
+        filename src/List.tsx
+        \t  // still being written
+        """
+    let blame = parseBlamePorcelain(blameOutput)
+    report("every line comes back, in file order", blame.count == 3 && blame.map(\.line) == [1, 2, 3],
+           "\(blame.count)")
+    report("a block's second line inherits the author it did not repeat",
+           blame.count > 1 && blame[1].author == "M. Ostrowska" && blame[1].sha == blame[0].sha)
+    report("the content line keeps its own leading whitespace",
+           blame.count > 1 && blame[1].text == "  return null;")
+    report("an uncommitted line is recognised by its all-zero sha, not by its author string",
+           blame.last?.isUncommitted == true && blame.first?.isUncommitted == false)
+    report("and a committed line is not marked uncommitted by accident",
+           blame.prefix(2).allSatisfy { !$0.isUncommitted })
+    report("author time becomes a date the interface can age",
+           blame.first?.committed.hasPrefix("2025-") == true || blame.first?.committed.hasPrefix("2026-") == true,
+           blame.first?.committed ?? "none")
+
+    // The separator is the point: a subject can contain anything a person types.
+    let logOutput = "a1c93f2\u{1f}you\u{1f}2026-08-09T10:00:00Z\u{1f}Flatten | drop\tPanel\u{1f}HEAD -> main\n"
+        + "4d70b1e\u{1f}M. Ostrowska\u{1f}2026-08-06T09:00:00Z\u{1f}Add Footer count\u{1f}\n"
+    let commits = parseLog(logOutput)
+    report("both commits parse", commits.count == 2)
+    report("a subject containing a pipe and a tab survives intact",
+           commits.first?.subject == "Flatten | drop\tPanel")
+    report("refs are carried where they exist and empty where they do not",
+           commits.first?.refs == "HEAD -> main" && commits.last?.refs == "")
+    report("the short sha is what a reader quotes", commits.first?.shortSha == "a1c93f2")
+    report("negative control: a truncated record is dropped rather than half-read",
+           parseLog("only-a-sha\u{1f}and-an-author\n").isEmpty)
+
+    // DEC-010's rule reaching the history list: what is on disk may be weeks behind the remote.
+    report("the history header says these are the commits on disk and that nothing is fetched",
+           historySummary(commits: commits, branch: "main", ahead: 3)
+               == "2 commits on main · 3 ahead of base · as they are on disk; DiffScope never fetches")
+    report("an unknown ahead-count is said, not shown as zero",
+           historySummary(commits: commits, branch: "main", ahead: nil).contains("unknown"))
+
+    // R-8 covers what the registry lists, so a lens that runs beside it would be outside the proof.
+    report("both lens operations are in the registry the read-only proof runs over",
+           GitOperation.allProvenReadOnly.contains { $0.label == "blame" }
+               && GitOperation.allProvenReadOnly.contains { $0.label == "log" })
+}

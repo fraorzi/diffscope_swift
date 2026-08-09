@@ -15,6 +15,8 @@ enum PresentationMode: String, CaseIterable {
     var title: String { rawValue.capitalized }
 }
 
+enum Lens: String { case diff, blame, history }
+
 final class AppState {
     var repositories: [RepositorySnapshot] = []
     var selectedRepository: RepositorySnapshot?
@@ -37,6 +39,9 @@ final class AppState {
     /// The last search and its hits (DEC-062). Kept on the state rather than in the view, so a
     /// refresh can decide what to do with them — today it replaces them with the file list, which
     /// is the honest answer: the hits were computed against bytes that have just changed.
+    /// Which question the pane is answering (DEC-061). Not a mode and not a scope: the file and
+    /// the pinned pair are the same in all three.
+    var lens: Lens = .diff
     var searchQuery = ""
     var searchMatchCase = false
     var searchHits: [SearchHit] = []
@@ -79,6 +84,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// What the last ⌘⏎ did, shown in Preferences. F13's failure is visible on the status line the
     /// moment it happens and gone by the time the reader opens the settings to fix it.
     var lastEditorAttempt: String?
+    var lensMenuItems: [String: NSMenuItem] = [:]
     var sideBySideMenuItem: NSMenuItem?
     /// DEC-059: the window opens unified, so this starts false.
     var sideBySide = false
@@ -1345,7 +1351,46 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                     + "@\(fieldInWindow.width) "
                     + "fileRow=\(fileCell?.textField?.stringValue ?? "nil")\n").utf8))
             guard ok, indented else { exit(48) }
-            self.windowSnapshot(named: "collapsed") { exit(0) }
+            self.windowSnapshot(named: "collapsed") { self.lensSelftest() }
+        }
+    }
+
+    /// DEC-061, end to end against the fixture tree: a real repository with one commit and 63
+    /// modified files, so blame has both committed lines and lines that are not committed yet —
+    /// the state the parser's all-zero sha exists for, and the one a repository will not produce
+    /// on demand when you want it.
+    private func lensSelftest() {
+        guard press(key: "b", modifiers: [.control, .command]) else { exit(49) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
+                let probe = ((try? JSONSerialization.jsonObject(
+                    with: Data(((value as? String) ?? "{}").utf8))) as? [String: Any]) ?? [:]
+                let rows = probe["lensRows"] as? Int ?? 0
+                let uncommitted = probe["lensUncommitted"] as? Int ?? 0
+                let ok = rows > 0 && uncommitted > 0
+                FileHandle.standardError.write(Data(
+                    ("SELFTEST lens-blame=\(ok ? "OK" : "MISMATCH") rows=\(rows) "
+                        + "uncommitted=\(uncommitted)\n").utf8))
+                self.snapshot(named: "blame") {
+                    guard ok else { exit(49) }
+                    guard self.press(key: "h", modifiers: [.control, .command]) else { exit(50) }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+                        self.webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
+                            let probe = ((try? JSONSerialization.jsonObject(
+                                with: Data(((value as? String) ?? "{}").utf8))) as? [String: Any]) ?? [:]
+                            let commits = probe["lensRows"] as? Int ?? 0
+                            let historyOK = commits > 0
+                            FileHandle.standardError.write(Data(
+                                ("SELFTEST lens-history=\(historyOK ? "OK" : "MISMATCH") "
+                                    + "commits=\(commits)\n").utf8))
+                            self.snapshot(named: "history") {
+                                guard historyOK else { exit(50) }
+                                exit(0)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -1795,6 +1840,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
         wrapMenuItem = menuItems["wrap"]
         sideBySideMenuItem = menuItems["layout.sideBySide"]
+        for id in ["lens.diff", "lens.blame", "lens.history"] { lensMenuItems[id] = menuItems[id] }
+        lensMenuItems["lens.diff"]?.state = .on
         reposCollapseMenuItem = menuItems["collapse.repositories"]
         filesCollapseMenuItem = menuItems["collapse.files"]
         terminalMenuItem = menuItems["terminal"]
@@ -1818,6 +1865,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         case "terminal.follow": return #selector(followTerminalToSelection)
         case "wrap": return #selector(toggleWrap)
         case "layout.sideBySide": return #selector(toggleSideBySide)
+        case "lens.diff": return #selector(showDiffLens)
+        case "lens.blame": return #selector(showBlameLens)
+        case "lens.history": return #selector(showHistoryLens)
         case "collapse.repositories": return #selector(toggleRepositoriesPane)
         case "collapse.files": return #selector(toggleFilesPane)
         case "collapse.both": return #selector(toggleBothPanes)
@@ -2084,6 +2134,91 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
         configStore.save(state.configuration)
         statusLabel.stringValue = "editor command: \(editorTemplate())"
+    }
+
+    // ---- The lenses (DEC-061) ----------------------------------------------------------------
+    //
+    // Same file, same window, same gutter geometry: what changes is the question. Both run through
+    // the closed operation registry, so R-8's proof covers them the moment they exist — an
+    // operation that is not in the registry cannot be issued at all.
+    @objc private func showDiffLens() {
+        state.lens = .diff
+        updateLensMenu()
+        webView.evaluateJavaScript("window.diffscopeHideLens()") { _, _ in }
+        statusLabel.stringValue = "lens: diff"
+    }
+
+    @objc private func showBlameLens() {
+        guard let repository = state.selectedRepository, let file = state.selectedFile else {
+            statusLabel.stringValue = "blame needs a file — choose one first"
+            return
+        }
+        let result = try? GitRunner().run(.blame(path: file.path), in: repository.url)
+        guard let result, result.succeeded else {
+            statusLabel.stringValue = "blame unavailable for \(file.path) — the file has no history yet"
+            return
+        }
+        // Not `trimmedOutput`: blame's content lines carry their own leading whitespace and the
+        // last line of a file may be blank, and trimming would quietly edit the file's text.
+        let lines = parseBlamePorcelain(String(decoding: result.standardOutput, as: UTF8.self))
+        state.lens = .blame
+        updateLensMenu()
+        let rows = lines.map { line in
+            ["sha": line.sha, "who": line.author, "when": line.committed,
+             "line": String(line.line), "text": line.text,
+             "uncommitted": line.isUncommitted ? "1" : ""] as [String: String]
+        }
+        let uncommitted = lines.filter(\.isUncommitted).count
+        pushLens(kind: "blame", rows: rows,
+                 summary: "\(file.path) · \(lines.count) lines · \(uncommitted) not committed yet")
+    }
+
+    @objc private func showHistoryLens() {
+        guard let repository = state.selectedRepository else {
+            statusLabel.stringValue = "history needs a repository — choose one first"
+            return
+        }
+        let result = try? GitRunner().run(.log(limit: 200), in: repository.url)
+        guard let result, result.succeeded else {
+            statusLabel.stringValue = "history unavailable — this repository has no commits yet"
+            return
+        }
+        let commits = parseLog(String(decoding: result.standardOutput, as: UTF8.self))
+        state.lens = .history
+        updateLensMenu()
+        let rows = commits.map { commit in
+            ["sha": commit.sha, "who": commit.author, "when": commit.committed,
+             "subject": commit.subject, "refs": commit.refs] as [String: String]
+        }
+        pushLens(kind: "history", rows: rows,
+                 summary: historySummary(commits: commits,
+                                         branch: repository.head.displayText,
+                                         ahead: repository.aheadCount))
+    }
+
+    private func updateLensMenu() {
+        lensMenuItems["lens.diff"]?.state = state.lens == .diff ? .on : .off
+        lensMenuItems["lens.blame"]?.state = state.lens == .blame ? .on : .off
+        lensMenuItems["lens.history"]?.state = state.lens == .history ? .on : .off
+    }
+
+    private func pushLens(kind: String, rows: [[String: String]], summary: String) {
+        let payload: [String: Any] = ["kind": kind, "summary": summary,
+                                      "rows": rows.map { row -> [String: Any] in
+                                          var out: [String: Any] = row
+                                          out["uncommitted"] = (row["uncommitted"] ?? "") == "1"
+                                          out["line"] = Int(row["line"] ?? "") ?? 0
+                                          return out
+                                      }]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8),
+              let escaped = String(data: try! JSONSerialization.data(withJSONObject: [json]),
+                                   encoding: .utf8) else { return }
+        // The payload is passed as a JSON string inside a JSON array, so quoting it is the
+        // serialiser's problem rather than a piece of string arithmetic here.
+        let argument = String(escaped.dropFirst().dropLast())
+        webView.evaluateJavaScript("window.diffscopeShowLens(\(argument))") { _, _ in }
+        statusLabel.stringValue = summary
     }
 
     // ---- Search (DEC-062) -------------------------------------------------------------------

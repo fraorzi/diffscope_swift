@@ -78,6 +78,26 @@ public struct GitOperation: Sendable, Equatable {
         GitOperation("remote", ["remote"])
     }
 
+    /// The two lenses (DEC-061). Both read, and both enter the registry rather than being issued
+    /// beside it: R-8's proof is over this list, so an operation that is not here cannot be run at
+    /// all — which is the whole point of a closed registry.
+    ///
+    /// `--porcelain` on blame for the reason `--porcelain` is used on status: the human format is
+    /// a presentation and changes; this one is documented output. `-w` is deliberately **not**
+    /// passed — ignoring whitespace would hand authorship of a line to whoever last changed it
+    /// meaningfully, which is a judgement the product owner declined (they asked for the option to
+    /// be dropped, not defaulted).
+    public static func blame(path: String) -> GitOperation {
+        GitOperation("blame", ["blame", "--porcelain", "--", path])
+    }
+
+    /// One record per commit, field-separated by a unit separator so a subject containing anything
+    /// at all still parses. `-n` bounds the read: a repository's whole history is not a screen.
+    public static func log(limit: Int) -> GitOperation {
+        GitOperation("log", ["log", "-n", String(limit),
+                             "--format=%H\u{1f}%an\u{1f}%cI\u{1f}%s\u{1f}%D"])
+    }
+
     public static let allProvenReadOnly: [GitOperation] = [
         .statusPorcelain(),
         .statusPorcelainUall(),
@@ -94,6 +114,8 @@ public struct GitOperation: Sendable, Equatable {
         .checkAttr(FilterCheck.attributes, path: "a.txt"),
         .lsFiles(),
         .remotes(),
+        .blame(path: "a.txt"),
+        .log(limit: 1),
     ]
 
     /// Arguments that would let repository content decide what runs, or let a caller inject

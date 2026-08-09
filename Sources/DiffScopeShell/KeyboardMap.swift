@@ -153,6 +153,14 @@ public enum KeyboardMap {
         .init(id: "layout.sideBySide", title: "Side by Side", key: "→", modifiers: [.option, .command],
               menu: .view, isToggle: true),
         // DEC-060: the layout tier, and the reason `.control` exists in this file.
+        // The three lenses (DEC-061). ⌃⌘H is free on macOS; ⌥⌘H is Hide Others and would have
+        // hidden the application every time a reader asked for its history.
+        .init(id: "lens.diff", title: "Lens: Diff", key: "d", modifiers: [.control, .command],
+              menu: .view, isToggle: true),
+        .init(id: "lens.blame", title: "Lens: Blame", key: "b", modifiers: [.control, .command],
+              menu: .view, isToggle: true),
+        .init(id: "lens.history", title: "Lens: History", key: "h", modifiers: [.control, .command],
+              menu: .view, isToggle: true),
         .init(id: "collapse.repositories", title: "Collapse Repositories", key: "1",
               modifiers: [.control, .command], menu: .view, isToggle: true),
         .init(id: "collapse.files", title: "Collapse Changed Files", key: "2",

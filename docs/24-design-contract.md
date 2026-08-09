@@ -75,6 +75,12 @@ Classes marked **load-bearing** carry a difference. They may be restyled and may
 | `#unified` | The one-column layout, and the default (DEC-059) | No, as layout |
 | `ds-gutter-old`, `ds-gutter-new`, `ds-gutter-sign` | The three gutters of the unified layout: the two number columns and the sign column | **The sign gutter is**, for the reason `ds-sign` is. The number columns are how a reader says *where* — restyle freely, do not collapse them into one |
 | `#stage`, `#left`, `#right` | The two-pane layout, reached by ⌥⌘→ | No, as layout |
+| `#lens` | The Blame and History lenses (DEC-061) | No, as layout |
+| `ds-lens-row` | One line of blame, or one commit | **Yes.** A row that is not drawn is a line whose author, or a commit, the reader was told existed |
+| `ds-lens-uncommitted` | Work that is not committed yet — **marked by an edge, never tinted** | **Yes**, and the shape is the point: tint and texture belong to the change language, and a second meaning for them is a meaning nobody can read |
+| `ds-lens-sha`, `ds-lens-who`, `ds-lens-when`, `ds-lens-line`, `ds-lens-text` | The columns of a blame row | **Yes** — each is one of the questions the lens exists to answer |
+| `ds-lens-subject`, `ds-lens-refs` | The columns a commit adds | **Yes** |
+| `ds-lens-header` | What the lens says above its list, including that nothing is fetched | **Yes** |
 | `cm-*` | CodeMirror's own classes: editor, scroller, gutters, line numbers | No, except the gutter ones |
 
 ### The terminal pane
@@ -150,6 +156,8 @@ Step 4 is not optional. The suite proves the model and the rules; only the pictu
 The snapshots written are `structural`, `expanded`, `disclosure`, `moved`, `navigation`, `refresh`, `anchored`, `degraded`, `gutter` and `unified`: the founding wrapper-removal case, the two modes side by side, an invisible-difference badge, a paired move, folds and jumps, a refreshed view, a restored anchor, a ranked degradation notice, the gutter beside line numbers, and the default one-column layout with its two number columns and its sign column.
 
 The terminal writes three more — `terminal` (a command's output in the grid), `terminal-input` (the input line at a prompt, with the mode chip) and `terminal-follow` (the pane after following a selection into a directory whose name contains a quote and a space). Look at all three: the terminal is the surface where a design most easily makes program output unreadable.
+
+**Two photograph the lenses** — `blame` and `history` (DEC-061), taken against a real repository with a commit behind it and work in front of it, so blame has both committed lines and lines that are not committed yet. The thing to look at is the uncommitted marking: it is an edge, not a tint, because tint and texture belong to the change language and a second meaning for them is a meaning nobody can read.
 
 **One more photographs the chrome collapsed** — `collapsed`, both lists reduced to a rail and a spine with 63 files in the tree (DEC-060). It is the density check: the rail has room for three letters and the spine for a kind glyph and a bar, and whether either is legible at that size is a question only the picture answers. It found two defects that every check had passed: the panes drawing at twice their constrained width, and the file spine drawing nothing at all.
 

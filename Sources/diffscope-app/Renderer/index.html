@@ -27,6 +27,25 @@
   /* One column instead of two (DEC-059). Only one of the two layouts holds a document at a
      time, so nothing is drawn twice and no probe counts a mark that is not on screen. */
   #unified { display: none; flex: 1; min-height: 0; background: var(--ds-code); }
+
+  /* The Blame and History lenses (DEC-061). Same file, same window, same gutter geometry — what
+     changes is the question being answered, not where the code is. */
+  #lens { display: none; flex: 1; min-height: 0; overflow: auto; background: var(--ds-code); }
+  .ds-lens-row { display: flex; gap: var(--ds-space-4); padding: 0 var(--ds-space-4);
+                 white-space: pre; }
+  /* Uncommitted work is *marked*, never tinted: tint and texture belong to the change language,
+     and a second meaning for them is a meaning nobody can read (DEC-061). */
+  .ds-lens-uncommitted { border-left: var(--ds-gutter-edge-width) solid var(--ds-mark);
+                         padding-left: calc(var(--ds-space-4) - var(--ds-gutter-edge-width)); }
+  .ds-lens-sha { color: var(--ds-faint); }
+  .ds-lens-who { color: var(--ds-dim); width: 14ch; overflow: hidden; }
+  .ds-lens-when { color: var(--ds-faint); width: 12ch; }
+  .ds-lens-line { color: var(--ds-faint); width: 5ch; text-align: right; }
+  .ds-lens-text { color: var(--ds-plain); }
+  .ds-lens-subject { color: var(--ds-text); }
+  .ds-lens-refs { color: var(--ds-dim); }
+  .ds-lens-header { padding: var(--ds-space-3) var(--ds-space-4); color: var(--ds-dim);
+                    border-bottom: var(--ds-hairline-width) solid var(--ds-border); }
   #left, #right { flex: 1; min-width: 0; overflow: hidden; background: var(--ds-code);
                   border-right: var(--ds-hairline-width) solid var(--ds-border); }
   #right { border-right: none; }
@@ -182,6 +201,7 @@
     <div id="right"></div>
   </div>
   <div id="unified"></div>
+  <div id="lens"></div>
   <pre id="unrenderable"></pre>
   <script src="renderer.js"></script>
 </body>

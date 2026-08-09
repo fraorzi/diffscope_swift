@@ -519,6 +519,76 @@ function applyLayout(model) {
 
 let lastModel = null;
 
+/// The lens views (DEC-061). Rows rather than an editor: neither answer is a diff, and pretending
+/// otherwise would put change marks on text that has none.
+///
+/// The date arrives as ISO-8601 and is aged here, for the reason `stalenessDescription` exists on
+/// the Git side — a date makes the reader do the subtraction, and the subtraction is the answer.
+function ageOf(iso) {
+  if (!iso) return "";
+  const days = Math.floor((Date.now() - Date.parse(iso)) / 86400000);
+  if (Number.isNaN(days)) return "";
+  if (days <= 0) return "today";
+  if (days === 1) return "1 day ago";
+  if (days < 14) return days + " days ago";
+  if (days < 90) return Math.floor(days / 7) + " weeks ago";
+  if (days < 365) return Math.floor(days / 30) + " months ago";
+  return Math.floor(days / 365) + " years ago";
+}
+
+function cell(className, text) {
+  const el = document.createElement("span");
+  el.className = className;
+  el.textContent = text;
+  return el;
+}
+
+window.diffscopeShowLens = function (json) {
+  const payload = typeof json === "string" ? JSON.parse(json) : json;
+  const host = document.getElementById("lens");
+  host.replaceChildren();
+  const header = document.createElement("div");
+  header.className = "ds-lens-header";
+  header.textContent = payload.summary || "";
+  host.appendChild(header);
+
+  for (const row of payload.rows || []) {
+    const line = document.createElement("div");
+    line.className = "ds-lens-row" + (row.uncommitted ? " ds-lens-uncommitted" : "");
+    if (payload.kind === "blame") {
+      line.append(cell("ds-lens-sha", row.uncommitted ? "uncommitted" : row.sha.slice(0, 7)),
+                  cell("ds-lens-who", row.who),
+                  cell("ds-lens-when", row.uncommitted ? "" : ageOf(row.when)),
+                  cell("ds-lens-line", String(row.line)),
+                  cell("ds-lens-text", row.text));
+    } else {
+      line.append(cell("ds-lens-sha", row.sha.slice(0, 7)),
+                  cell("ds-lens-who", row.who),
+                  cell("ds-lens-when", ageOf(row.when)),
+                  cell("ds-lens-subject", row.subject),
+                  cell("ds-lens-refs", row.refs || ""));
+    }
+    host.appendChild(line);
+  }
+
+  document.getElementById("stage").style.display = "none";
+  document.getElementById("unified").style.display = "none";
+  host.style.display = "block";
+  lastLens = { kind: payload.kind, rows: (payload.rows || []).length };
+  return lastLens;
+};
+
+/// Back to the diff. The lens is a projection like the layout is, so leaving it re-renders the
+/// model that was already there rather than asking the shell for a new one.
+window.diffscopeHideLens = function () {
+  document.getElementById("lens").style.display = "none";
+  lastLens = null;
+  if (lastModel) window.diffscopeRender(lastModel);
+  return true;
+};
+
+let lastLens = null;
+
 /// ⌥⌘→ (DEC-059). The pinned pair does not move, so the re-render compares the same two versions
 /// and lands on the same change stop — switching layout is a change of projection, not of subject.
 window.diffscopeSetLayout = function (name) {
@@ -844,6 +914,9 @@ window.diffscopeProbe = function () {
     newText: right.state.doc.toString(),
     summary: lastSummary,
     layout,
+    lens: lastLens,
+    lensRows: document.querySelectorAll(".ds-lens-row").length,
+    lensUncommitted: document.querySelectorAll(".ds-lens-uncommitted").length,
     unifiedLines: unifiedLines.length,
     unifiedText: unified ? unified.state.doc.toString() : "",
     signs: document.querySelectorAll(".ds-sign").length,
