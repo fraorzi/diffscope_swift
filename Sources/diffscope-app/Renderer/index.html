@@ -28,6 +28,44 @@
      time, so nothing is drawn twice and no probe counts a mark that is not on screen. */
   #unified { display: none; flex: 1; min-height: 0; background: var(--ds-code); }
 
+  /* The rendered comparison (DEC-063). Four modes over two images that arrive as data: URLs and
+     are drawn through <img>, never inlined — an SVG is repository content and can carry script. */
+  #rendered { display: none; flex: 1; min-height: 0; flex-direction: column;
+              background: var(--ds-code); }
+  .ds-render-bar { display: flex; gap: var(--ds-space-3); align-items: baseline;
+                   padding: var(--ds-space-3) var(--ds-space-4);
+                   border-bottom: var(--ds-hairline-width) solid var(--ds-border); }
+  .ds-render-mode { padding: var(--ds-space-1) var(--ds-space-3);
+                    border: var(--ds-hairline-width) solid var(--ds-border);
+                    border-radius: var(--ds-radius-badge); color: var(--ds-dim);
+                    font-size: var(--ds-text-size-small); cursor: pointer; }
+  .ds-render-mode[data-on="true"] { color: var(--ds-text); border-color: var(--ds-border-strong);
+                                    font-weight: var(--ds-weight-emphasis); }
+  /* A mode that cannot work here is disabled **with its reason beside it**, never hidden — the
+     same rule an unavailable scope follows. */
+  .ds-mode-off { border-style: dashed; color: var(--ds-faint); cursor: default; }
+  .ds-render-summary { padding: var(--ds-space-3) var(--ds-space-4); color: var(--ds-text);
+                       border-bottom: var(--ds-hairline-width) solid var(--ds-border); }
+  .ds-render-stage { flex: 1; min-height: 0; display: flex; gap: var(--ds-space-4);
+                     padding: var(--ds-space-4); }
+  .ds-render-panel { flex: 1; min-width: 0; display: flex; flex-direction: column;
+                     gap: var(--ds-space-2); }
+  .ds-render-label { color: var(--ds-dim); font-size: var(--ds-text-size-small); }
+  /* Transparency, at a grid and a scale deliberately unlike every change texture: an alpha change
+     that reads as a change texture is a difference reported in the wrong language. */
+  .ds-checker { flex: 1; min-height: 0; display: grid; place-items: center;
+                position: relative; overflow: hidden;
+                background-color: var(--ds-check-a);
+                background-image:
+                  linear-gradient(45deg, var(--ds-check-b) 25%, transparent 25% 75%, var(--ds-check-b) 75%),
+                  linear-gradient(45deg, var(--ds-check-b) 25%, transparent 25% 75%, var(--ds-check-b) 75%);
+                background-size: var(--ds-checker-size) var(--ds-checker-size);
+                background-position: 0 0, var(--ds-checker-half) var(--ds-checker-half); }
+  .ds-checker img { max-width: 100%; max-height: 100%; }
+  .ds-render-overlay { position: absolute; inset: 0; display: grid; place-items: center; }
+  .ds-pixel-mask { max-width: 100%; max-height: 100%;
+                   outline: var(--ds-hairline-width) dashed var(--ds-mark); }
+
   /* The Blame and History lenses (DEC-061). Same file, same window, same gutter geometry — what
      changes is the question being answered, not where the code is. */
   #lens { display: none; flex: 1; min-height: 0; overflow: auto; background: var(--ds-code); }
@@ -202,6 +240,7 @@
   </div>
   <div id="unified"></div>
   <div id="lens"></div>
+  <div id="rendered"></div>
   <pre id="unrenderable"></pre>
   <script src="renderer.js"></script>
 </body>

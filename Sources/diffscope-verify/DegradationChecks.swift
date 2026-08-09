@@ -356,3 +356,74 @@ func runPartialFailureChecks(_ reportRaw: (String, Bool, String) -> Void) {
                !unknown.contains("Opaque") && unknown.contains("not text this window can display"))
     }
 }
+
+/// DEC-063: files compared by being drawn. The classification and the words — the drawing itself
+/// is photographed, not asserted.
+func runRenderedComparisonChecks(_ reportRaw: (String, Bool, String) -> Void) {
+    func report(_ name: String, _ ok: Bool, _ detail: String = "") { reportRaw(name, ok, detail) }
+
+    print("\n=== an image is a third class, and SVG is not binary (DEC-063) ===")
+    let svg = Array(#"<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>"#.utf8)
+    let png: [UInt8] = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a] + Array(repeating: 0, count: 16)
+
+    report("an SVG is text that renders, not binary",
+           renderableKind(path: "public/mark.svg", bytes: svg) == .textThatRenders(format: "SVG"))
+    report("a PNG is raster", renderableKind(path: "assets/icon.png", bytes: png) == .raster(format: "PNG"))
+    report("a source file is neither", renderableKind(path: "src/List.tsx", bytes: Array("const a = 1".utf8)) == .text)
+    report("an archive is undisplayable",
+           renderableKind(path: "dist/bundle.zip", bytes: Array("PK\u{3}\u{4}".utf8)) == .undisplayable)
+
+    // The cases a name alone gets wrong. A `.png` that is not a PNG is a placeholder, an LFS
+    // pointer, or a rename that outran its content, and drawing it shows an empty frame.
+    report("a .png that is not a PNG is undisplayable rather than drawn blank",
+           renderableKind(path: "assets/icon.png", bytes: Array("version https://git-lfs".utf8)) == .undisplayable)
+    report("a .svg whose bytes are not an SVG is undisplayable too",
+           renderableKind(path: "public/mark.svg", bytes: png) == .undisplayable)
+    report("content decides where it can: a PNG named .bin is still raster",
+           renderableKind(path: "blob.bin", bytes: png) == .raster(format: "PNG"))
+
+    print("\n=== the rendered comparison says what a picture cannot (DEC-063, 12-… §5.5) ===")
+    func comparison(old: (Int, Int)?, new: (Int, Int)?, pixels: Int?,
+                    oldBytes: Int = 4100, newBytes: Int = 4400,
+                    kind: RenderableKind = .raster(format: "PNG")) -> RenderedComparison {
+        RenderedComparison(kind: kind, oldBytes: oldBytes, newBytes: newBytes,
+                           oldSize: old.map { (width: $0.0, height: $0.1) },
+                           newSize: new.map { (width: $0.0, height: $0.1) },
+                           differingPixels: pixels)
+    }
+
+    let identical = renderedComparisonSummary(comparison(old: (131, 150), new: (131, 150), pixels: 0))
+    report("bytes differing while the rendering does not is stated outright",
+           identical.contains("render identically — 0 pixels differ") && identical.contains("4100 → 4400 bytes"),
+           identical)
+    report("and an SVG is pointed at its source reading, which a raster does not have",
+           renderedComparisonSummary(comparison(old: (131, 150), new: (131, 150), pixels: 0,
+                                                kind: .textThatRenders(format: "SVG")))
+               .contains("source reading"))
+
+    let resized = renderedComparisonSummary(comparison(old: (131, 150), new: (160, 150), pixels: 2914))
+    report("a dimension change is named on both sides",
+           resized.contains("131 × 150 → 160 × 150") && resized.contains("2914 pixels differ"), resized)
+
+    report("an added image says why three of the four modes have nothing to do",
+           renderedComparisonSummary(comparison(old: nil, new: (160, 150), pixels: nil))
+               .contains("no left side"))
+    report("and a deleted one says the same of the right",
+           renderedComparisonSummary(comparison(old: (160, 150), new: nil, pixels: nil))
+               .contains("no right side"))
+
+    let huge = comparison(old: (8000, 8000), new: (8000, 8000), pixels: nil)
+    report("over the budget, the mode is unavailable and says so rather than being hidden",
+           !huge.withinPixelBudget
+               && renderedComparisonSummary(huge).contains("unavailable and says so rather than being hidden"))
+    report("and under it, the budget is not mentioned at all",
+           comparison(old: (131, 150), new: (131, 150), pixels: 3).withinPixelBudget
+               && !renderedComparisonSummary(comparison(old: (131, 150), new: (131, 150), pixels: 3))
+                   .contains("megapixel"))
+
+    // The negative control for the trust statement: a comparison that *did* find differing pixels
+    // must never be described as identical.
+    report("negative control: a comparison with differing pixels never claims they are identical",
+           !renderedComparisonSummary(comparison(old: (10, 10), new: (10, 10), pixels: 1))
+               .contains("render identically"))
+}

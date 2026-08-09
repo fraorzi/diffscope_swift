@@ -106,9 +106,13 @@ An image or an SVG is compared by being drawn, and the drawing is a surface with
 | Element | Means | Load-bearing |
 |---|---|---|
 | `#rendered` | The Before / After, Blend, Split or Pixel-diff stage | **Yes** |
+| `ds-render-bar`, `ds-render-mode` | The four modes, and which one is on | **Yes** — a mode that cannot be seen is a comparison the reader cannot ask for |
+| `ds-mode-off` | A mode unavailable here, **with its reason beside it** | **Yes** — disabled and stated, never hidden |
+| `ds-render-summary` | What the picture cannot say: dimensions, bytes, differing pixels | **Yes.** This is where "renders identically, bytes differ" lives |
+| `ds-render-stage`, `ds-render-panel`, `ds-render-overlay` | Layout of the stage | No |
+| `ds-render-label` | Before / After, and "no counterpart on this side" | **Yes** |
 | `ds-checker` | Transparency behind the image | **Yes** — an alpha change that reads as a background change is a hidden difference |
-| `ds-pixel-region` | A region of changed pixels | **Yes**, by outline and hatch. Never by hue alone |
-| `ds-mode-off` | A comparison mode unavailable here, with its reason | **Yes** — disabled and stated, never hidden |
+| `ds-pixel-mask` | Where the pixels differ, drawn by the shell | **Yes**, and outlined as well as filled: never hue alone |
 
 **The SVG is drawn through an `<img>`, never inlined.** It is repository content and it can carry script (DEC-063, extending DEC-028). A design therefore cannot style the interior of an SVG: the checkerboard sits behind it, and no rule inside the pane reaches the mark.
 
@@ -156,6 +160,8 @@ Step 4 is not optional. The suite proves the model and the rules; only the pictu
 The snapshots written are `structural`, `expanded`, `disclosure`, `moved`, `navigation`, `refresh`, `anchored`, `degraded`, `gutter` and `unified`: the founding wrapper-removal case, the two modes side by side, an invisible-difference badge, a paired move, folds and jumps, a refreshed view, a restored anchor, a ranked degradation notice, the gutter beside line numbers, and the default one-column layout with its two number columns and its sign column.
 
 The terminal writes three more — `terminal` (a command's output in the grid), `terminal-input` (the input line at a prompt, with the mode chip) and `terminal-follow` (the pane after following a selection into a directory whose name contains a quote and a space). Look at all three: the terminal is the surface where a design most easily makes program output unreadable.
+
+**One photographs the rendered comparison** — `rendered` (DEC-063), two PNGs that differ in exactly four pixels, so the count in the sentence can be wrong in a way no picture would show. Look at the checkerboard first: its grid is deliberately coarser than every change texture, because a reader who takes an alpha change for a diff mark has been told the wrong thing in the wrong language.
 
 **Two photograph the lenses** — `blame` and `history` (DEC-061), taken against a real repository with a commit behind it and work in front of it, so blame has both committed lines and lines that are not committed yet. The thing to look at is the uncommitted marking: it is an edge, not a tint, because tint and texture belong to the change language and a second meaning for them is a meaning nobody can read.
 

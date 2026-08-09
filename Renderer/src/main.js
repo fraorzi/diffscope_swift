@@ -588,6 +588,116 @@ window.diffscopeHideLens = function () {
 };
 
 let lastLens = null;
+let lastRendered = null;
+
+/// The rendered comparison (DEC-063). The shell has already decoded both sides, measured them and
+/// counted the differing pixels — this draws what it was told and computes nothing, which is why
+/// the sentence above the stage can be checked in Swift before it is ever displayed.
+window.diffscopeShowRendered = function (json) {
+  const payload = typeof json === "string" ? JSON.parse(json) : json;
+  const host = document.getElementById("rendered");
+  host.replaceChildren();
+  let mode = payload.modes.find(m => !m.reason)?.id || "sidebyside";
+
+  const bar = document.createElement("div");
+  bar.className = "ds-render-bar";
+  const summary = document.createElement("div");
+  summary.className = "ds-render-summary";
+  summary.textContent = payload.summary;
+  const stage = document.createElement("div");
+  stage.className = "ds-render-stage";
+
+  function panel(label, src) {
+    const wrap = document.createElement("div");
+    wrap.className = "ds-render-panel";
+    const caption = document.createElement("div");
+    caption.className = "ds-render-label";
+    caption.textContent = label;
+    const frame = document.createElement("div");
+    frame.className = "ds-checker";
+    if (src) {
+      const image = document.createElement("img");
+      image.src = src;
+      frame.appendChild(image);
+    } else {
+      const none = document.createElement("div");
+      none.className = "ds-render-label";
+      none.textContent = "no counterpart on this side";
+      frame.appendChild(none);
+    }
+    wrap.append(caption, frame);
+    return wrap;
+  }
+
+  function draw() {
+    stage.replaceChildren();
+    if (mode === "sidebyside") {
+      stage.append(panel("◀ Before", payload.oldSrc), panel("▶ After", payload.newSrc));
+      return;
+    }
+    const frame = document.createElement("div");
+    frame.className = "ds-checker";
+    if (mode === "blend") {
+      const before = document.createElement("img");
+      before.src = payload.oldSrc;
+      const after = document.createElement("img");
+      after.src = payload.newSrc;
+      after.style.opacity = "0.5";
+      const overlay = document.createElement("div");
+      overlay.className = "ds-render-overlay";
+      overlay.appendChild(after);
+      frame.append(before, overlay);
+    } else if (mode === "split") {
+      const before = document.createElement("img");
+      before.src = payload.oldSrc;
+      const after = document.createElement("img");
+      after.src = payload.newSrc;
+      after.style.clipPath = "inset(0 0 0 50%)";
+      const overlay = document.createElement("div");
+      overlay.className = "ds-render-overlay";
+      overlay.appendChild(after);
+      frame.append(before, overlay);
+    } else if (mode === "pixel") {
+      const base = document.createElement("img");
+      base.src = payload.newSrc;
+      base.style.opacity = "0.3";
+      const overlay = document.createElement("div");
+      overlay.className = "ds-render-overlay";
+      const mask = document.createElement("img");
+      mask.className = "ds-pixel-mask";
+      mask.src = payload.maskSrc;
+      overlay.appendChild(mask);
+      frame.append(base, overlay);
+    }
+    stage.appendChild(frame);
+  }
+
+  for (const entry of payload.modes) {
+    const button = document.createElement("span");
+    button.className = "ds-render-mode" + (entry.reason ? " ds-mode-off" : "");
+    button.dataset.on = String(entry.id === mode && !entry.reason);
+    button.textContent = entry.reason ? entry.label + " — " + entry.reason : entry.label;
+    if (!entry.reason) {
+      button.addEventListener("click", () => {
+        mode = entry.id;
+        for (const other of bar.querySelectorAll(".ds-render-mode")) other.dataset.on = "false";
+        button.dataset.on = "true";
+        draw();
+      });
+    }
+    bar.appendChild(button);
+  }
+
+  host.append(bar, summary, stage);
+  draw();
+  document.getElementById("stage").style.display = "none";
+  document.getElementById("unified").style.display = "none";
+  document.getElementById("lens").style.display = "none";
+  document.getElementById("unrenderable").style.display = "none";
+  host.style.display = "flex";
+  lastRendered = { modes: payload.modes.length, mode };
+  return lastRendered;
+};
 
 /// ⌥⌘→ (DEC-059). The pinned pair does not move, so the re-render compares the same two versions
 /// and lands on the same change stop — switching layout is a change of projection, not of subject.
@@ -859,6 +969,8 @@ window.diffscopeRender = function (json) {
 
   const stage = document.getElementById("stage");
   const unrenderable = document.getElementById("unrenderable");
+  document.getElementById("rendered").style.display = "none";
+  lastRendered = null;
   if (model.payload.kind !== "text") {
     stage.style.display = "none";
     unrenderable.style.display = "block";
@@ -915,6 +1027,10 @@ window.diffscopeProbe = function () {
     summary: lastSummary,
     layout,
     lens: lastLens,
+    rendered: lastRendered,
+    renderedModes: document.querySelectorAll(".ds-render-mode").length,
+    renderedModesOff: document.querySelectorAll(".ds-mode-off").length,
+    renderedImages: document.querySelectorAll(".ds-checker img").length,
     lensRows: document.querySelectorAll(".ds-lens-row").length,
     lensUncommitted: document.querySelectorAll(".ds-lens-uncommitted").length,
     unifiedLines: unifiedLines.length,

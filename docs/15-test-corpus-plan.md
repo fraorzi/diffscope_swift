@@ -175,6 +175,8 @@ Elevated from the original sketch: 51% of the real corpus contains non-ASCII, an
 
 The rendered comparison is the first surface where a *correct* comparison can still mislead, so the fixtures are chosen around that rather than around file formats.
 
+**State, 2026-08-09.** The classification and every sentence the comparison says are checked today — fifteen checks in `runRenderedComparisonChecks`, including a `.png` that is not a PNG, a `.svg` whose bytes are not an SVG, and the negative control that a comparison with differing pixels never claims they are identical. The selftest builds two PNGs differing in exactly four pixels and photographs the result. **The eight fixtures below are not built yet**; they are what turns those checks into end-to-end coverage, and `svg-hostile` in particular is the control for the `<img>` boundary rather than a nicety.
+
 | Case | Exercises |
 |---|---|
 | `svg-text-only-change` | Source differs — a `<title>`, a colour written `#fff` versus `#FFFFFF` — and **not one pixel moves**. F18: the comparison must say the rendering is identical and the bytes are not. The case that would otherwise read as a false positive. |

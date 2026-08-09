@@ -1385,10 +1385,67 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                     + "commits=\(commits)\n").utf8))
                             self.snapshot(named: "history") {
                                 guard historyOK else { exit(50) }
-                                exit(0)
+                                self.renderedSelftest()
                             }
                         }
                     }
+                }
+            }
+        }
+    }
+
+    /// DEC-063, end to end: two PNGs built here that differ in a known number of pixels, so the
+    /// count in the sentence can be wrong in a way a picture would never show.
+    private func renderedSelftest() {
+        func png(dot: Bool) -> [UInt8] {
+            let size = 16
+            var pixels = [UInt8](repeating: 0, count: size * size * 4)
+            for index in stride(from: 0, to: pixels.count, by: 4) {
+                pixels[index] = 40; pixels[index + 1] = 40; pixels[index + 2] = 200
+                pixels[index + 3] = 255
+            }
+            if dot {
+                // Four pixels, in a square, so the expected count is a number rather than "some".
+                for (x, y) in [(4, 4), (5, 4), (4, 5), (5, 5)] {
+                    let index = (y * size + x) * 4
+                    pixels[index] = 255; pixels[index + 1] = 255; pixels[index + 2] = 255
+                }
+            }
+            var buffer = pixels
+            let data: Data? = buffer.withUnsafeMutableBytes { raw in
+                guard let context = CGContext(data: raw.baseAddress, width: size, height: size,
+                                              bitsPerComponent: 8, bytesPerRow: size * 4,
+                                              space: CGColorSpaceCreateDeviceRGB(),
+                                              bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+                      let image = context.makeImage() else { return nil }
+                return NSBitmapImageRep(cgImage: image).representation(using: .png, properties: [:])
+            }
+            return [UInt8](data ?? Data())
+        }
+
+        let old = png(dot: false)
+        let new = png(dot: true)
+        let kind = renderableKind(path: "assets/mark.png", bytes: new)
+        guard kind == .raster(format: "PNG") else {
+            FileHandle.standardError.write(Data("SELFTEST rendered=MISMATCH not classified as PNG\n".utf8))
+            exit(51)
+        }
+        showRendered(file: ChangedFile(path: "assets/mark.png", originalPath: nil, kind: .modified),
+                     oldBytes: old, newBytes: new, kind: kind)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
+            self.webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
+                let probe = ((try? JSONSerialization.jsonObject(
+                    with: Data(((value as? String) ?? "{}").utf8))) as? [String: Any]) ?? [:]
+                let modes = probe["renderedModes"] as? Int ?? 0
+                let images = probe["renderedImages"] as? Int ?? 0
+                let ok = modes == 4 && images == 2
+                FileHandle.standardError.write(Data(
+                    ("SELFTEST rendered=\(ok ? "OK" : "MISMATCH") modes=\(modes) images=\(images) "
+                        + "off=\(probe["renderedModesOff"] as? Int ?? -1)\n").utf8))
+                self.snapshot(named: "rendered") {
+                    guard ok else { exit(51) }
+                    exit(0)
                 }
             }
         }
@@ -1724,15 +1781,33 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         conventionLabel.isHidden = reposCollapsed
         repoTable.reloadData()
         fileTable.reloadData()
+        // The dividers are moved through the split view's own API as well as by constraint.
+        // Constraints alone were satisfied for the rail and quietly ignored for the spine — twice,
+        // at two different priorities — because `NSSplitView` keeps the divider position it last
+        // computed and a width constraint is only one of the things it weighs. `setPosition` is
+        // the instruction it cannot reinterpret.
+        let first = reposCollapsed ? Theme.railWidth : Theme.repositoryPaneWidth
+        let second = first + splitView.dividerThickness
+            + (filesCollapsed ? Theme.spineWidth : Theme.filePaneWidth)
         if animate {
             NSAnimationContext.runAnimationGroup { context in
                 context.duration = Theme.motionQuick
                 context.allowsImplicitAnimation = true
+                splitView.animator().setPosition(first, ofDividerAt: 0)
+                splitView.animator().setPosition(second, ofDividerAt: 1)
                 splitView.animator().layoutSubtreeIfNeeded()
             }
         } else {
+            splitView.setPosition(first, ofDividerAt: 0)
+            splitView.setPosition(second, ofDividerAt: 1)
             splitView.layoutSubtreeIfNeeded()
         }
+        // The split view is not the constraint owner; the window's content view is. Laying out the
+        // subtree from the split alone left the second divider exactly where it had been.
+        window.contentView?.layoutSubtreeIfNeeded()
+        splitView.adjustSubviews()
+        splitView.setPosition(first, ofDividerAt: 0)
+        splitView.setPosition(second, ofDividerAt: 1)
         // The column does not follow the pane on its own, and a column narrower than its pane
         // draws a row that is mostly empty — M8-D's defect exactly: two lists full of correct
         // rows, rendered blank, in a window that passed every check. Setting the width by hand
@@ -2136,6 +2211,73 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         statusLabel.stringValue = "editor command: \(editorTemplate())"
     }
 
+    /// Draws a comparison the diff engine has nothing to say about (DEC-063).
+    ///
+    /// Every number in the sentence is computed here and checked in the engine's own words before
+    /// it reaches the view: dimensions from the decoded images, differing pixels from a real pass
+    /// over both, and the modes that cannot work here disabled **with their reason**.
+    /// Bytes rather than the pinned pair: the pair is a Git-layer type with no public initialiser,
+    /// and widening it so a selftest can build one would be the tail wagging the dog. What this
+    /// needs is two sides.
+    private func showRendered(file: ChangedFile, oldBytes: [UInt8], newBytes: [UInt8],
+                              kind: RenderableKind) {
+        let oldImage = oldBytes.isEmpty ? nil : ImageComparison.image(from: oldBytes)
+        let newImage = newBytes.isEmpty ? nil : ImageComparison.image(from: newBytes)
+        var differing: Int?
+        var maskSource: String?
+        if let oldImage, let newImage {
+            let outcome = ImageComparison.compare(old: oldImage, new: newImage)
+            differing = outcome.differing
+            maskSource = outcome.mask.map { "data:image/png;base64," + $0.base64EncodedString() }
+        }
+
+        let comparison = RenderedComparison(
+            kind: kind,
+            oldBytes: oldBytes.count, newBytes: newBytes.count,
+            oldSize: oldImage.map(ImageComparison.size), newSize: newImage.map(ImageComparison.size),
+            differingPixels: differing)
+        let summary = renderedComparisonSummary(comparison)
+
+        // A mode is offered or refused **with a reason**; there is no third state. An SVG's pixel
+        // pass is refused for a reason worth stating rather than hidden: the bytes are handed to an
+        // `<img>` so nothing inside them can run, and an `<img>` is exactly what cannot be read
+        // back pixel by pixel.
+        let missingSide = oldImage == nil || newImage == nil
+        let svg = kind == .textThatRenders(format: "SVG")
+        func mode(_ id: String, _ label: String, _ reason: String?) -> [String: Any] {
+            reason.map { ["id": id, "label": label, "reason": $0] } ?? ["id": id, "label": label]
+        }
+        let modes: [[String: Any]] = [
+            mode("sidebyside", "Side by side", nil),
+            mode("blend", "Blend", missingSide ? "no counterpart" : nil),
+            mode("split", "Split", missingSide ? "no counterpart" : nil),
+            mode("pixel", "Pixel diff",
+                 missingSide ? "no counterpart"
+                     : svg ? "drawn through an <img>, which cannot be read back"
+                     : !comparison.withinPixelBudget
+                         ? "over \(RenderedComparison.megapixelBudget) megapixels"
+                         : differing == 0 ? "0 pixels differ" : nil),
+        ]
+
+        let mime = ImageComparison.mimeType(for: kind)
+        var payload: [String: Any] = ["summary": "\(file.path) · \(summary)", "modes": modes]
+        if !oldBytes.isEmpty {
+            payload["oldSrc"] = ImageComparison.dataURL(bytes: oldBytes, mimeType: mime)
+        }
+        if !newBytes.isEmpty {
+            payload["newSrc"] = ImageComparison.dataURL(bytes: newBytes, mimeType: mime)
+        }
+        if let maskSource { payload["maskSrc"] = maskSource }
+
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8),
+              let wrapped = try? JSONSerialization.data(withJSONObject: [json]),
+              let escaped = String(data: wrapped, encoding: .utf8) else { return }
+        let argument = String(escaped.dropFirst().dropLast())
+        webView.evaluateJavaScript("window.diffscopeShowRendered(\(argument))") { _, _ in }
+        statusLabel.stringValue = summary
+    }
+
     // ---- The lenses (DEC-061) ----------------------------------------------------------------
     //
     // Same file, same window, same gutter geometry: what changes is the question. Both run through
@@ -2426,6 +2568,20 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 }
                 return
             }
+            // DEC-063: a file that renders is compared by being drawn. Decided from the bytes as
+            // well as the name, because a `.png` that is not a PNG is a placeholder, an LFS
+            // pointer or a rename that outran its content — and drawing it would show an empty
+            // frame with no explanation.
+            let kind = renderableKind(path: file.path,
+                                      bytes: pair.newBytes.isEmpty ? pair.oldBytes : pair.newBytes)
+            if kind.rendersAsImage {
+                DispatchQueue.main.async {
+                    self.showRendered(file: file, oldBytes: pair.oldBytes, newBytes: pair.newBytes,
+                                      kind: kind)
+                }
+                return
+            }
+
             // DEC-028/DEC-041: asked here, on the file actually being shown, so an active filter is
             // disclosed where the discrepancy it causes is visible.
             let filterState = self.filters.state(for: file.path, in: repository.url)
