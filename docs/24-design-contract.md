@@ -118,7 +118,7 @@ An image or an SVG is compared by being drawn, and the drawing is a surface with
 6. **A notice bar laid out to nothing.**
 7. **A font size or colour written inline in the AppKit chrome** rather than read from `Theme.swift`.
 8. **A token marked mirrored with no counterpart in `Theme.swift`** (DEC-066). The flag is a promise about a second file; unkept, it leaves two thirds of the window styled by inference.
-9. **An animated property with no off switch** (DEC-064). Every animation must be neutralised inside `@media (prefers-reduced-motion: reduce)`, and the check carries an unguarded animation as its negative control.
+9. **An animated property with no off switch** (DEC-064). Every animation must be neutralised inside `@media (prefers-reduced-motion: reduce)`, and the check carries two negative controls: an unguarded animation, and a reduce block that switches nothing off. Durations and curves are tokens (`--ds-motion-*`) so the register and the stylesheet cannot drift apart, and the AppKit chrome — which has no media query — must read `accessibilityDisplayShouldReduceMotion` before it animates.
 10. **SVG markup inserted into the document** rather than loaded through an `<img>` (DEC-063). This is repository content reaching a place where it can execute.
 
 ---

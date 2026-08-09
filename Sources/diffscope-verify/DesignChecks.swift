@@ -107,6 +107,51 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
                !theme.contains("--ds-invented-for-this-check"))
     }
 
+    print("\n=== nothing animates without an off switch (DEC-064, 24-… §5) ===")
+    do {
+        // The rule this replaced was stronger and free: *nothing animates*, so reduced motion was
+        // honoured by construction. The product owner reopened it, and a guarantee by construction
+        // becomes a guarantee by check — with the negative control that makes it one.
+        let terminalHTML = (try? String(contentsOf: rendererDir.appendingPathComponent("terminal.html"),
+                                        encoding: .utf8)) ?? ""
+        func guarded(_ page: String) -> Bool {
+            let animates = page.range(of: "(transition|animation)\\s*:", options: .regularExpression) != nil
+            guard animates else { return true }
+            guard let block = page.range(of: "(?s)@media \\(prefers-reduced-motion: reduce\\).*?\\}\\s*\\}",
+                                         options: .regularExpression) else { return false }
+            let body = String(page[block])
+            return body.contains("transition: none") && body.contains("animation: none")
+        }
+        report("every animated surface carries a prefers-reduced-motion block that switches it off",
+               guarded(html) && guarded(terminalHTML))
+
+        // The durations are tokens, so the design's motion register and the stylesheet cannot
+        // drift to different numbers.
+        report("durations and curves come from tokens like every other value",
+               !html.contains("transition:") || html.contains("var(--ds-motion-"))
+
+        let hostile = """
+            .thing { transition: opacity 200ms ease; }
+            """
+        // The chrome animates too, and AppKit has no media query — the system setting is read
+        // directly, and the check says so rather than trusting that someone remembered.
+        let shell = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/main.swift"),
+                                 encoding: .utf8)) ?? ""
+        let animatesChrome = shell.contains("NSAnimationContext")
+        report("the chrome asks the system before it animates",
+               !animatesChrome || shell.contains("accessibilityDisplayShouldReduceMotion"))
+        report("and its duration is the same token the webviews use",
+               !animatesChrome || shell.contains("Theme.motionQuick"))
+
+        report("negative control: an animation with no reduce block is caught", !guarded(hostile))
+        let hostileWithEmptyBlock = """
+            .thing { transition: opacity 200ms ease; }
+            @media (prefers-reduced-motion: reduce) { .other { color: red; } }
+            """
+        report("and so is a reduce block that switches nothing off",
+               !guarded(hostileWithEmptyBlock))
+    }
+
     print("\n=== a design may restyle a mark and may not hide one (G2) ===")
     do {
         // The classes that carry a difference. Hiding any of these turns a correct model into a

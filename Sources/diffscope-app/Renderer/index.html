@@ -130,6 +130,29 @@
     vertical-align: baseline;
   }
 
+  /* Motion (DEC-064). Until 2026-08-09 the rule was that nothing animates, and reduced motion was
+     honoured by there being nothing to disable — a guarantee by construction. That is gone by
+     decision, so what replaces it is this pair: every transition declared here, and every one of
+     them switched off in the block below. The check refuses an animated property that is not.
+
+     Nothing that carries meaning moves: a change mark is where the engine put it the moment the
+     document arrives. What moves is the interface's own furniture — a notice appearing, a fold
+     opening under the pointer. */
+  #notices { transition: opacity var(--ds-motion-quick) var(--ds-motion-curve); }
+  .ds-chip { transition: border-color var(--ds-motion-quick) var(--ds-motion-curve); }
+  .ds-fold { transition: background-color var(--ds-motion-quick) var(--ds-motion-curve); }
+  .ds-fold:hover { background-color: var(--ds-syn-active-line); }
+
+  @media (prefers-reduced-motion: reduce) {
+    /* Everything, not a list: a list is a thing that can be incomplete, and the one transition
+       that is missing from it is the one a reader with vestibular sensitivity gets. */
+    *, *::before, *::after {
+      transition: none !important;
+      animation: none !important;
+      scroll-behavior: auto !important;
+    }
+  }
+
   /* Syntax owns hue, the change system owns shape (DEC-035, DEC-066). The classes are applied by
      CodeMirror from the highlight style in `main.js`; the colours stay here, so the one-file rule
      holds for the syntax theme too. */

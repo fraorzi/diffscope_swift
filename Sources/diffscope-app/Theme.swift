@@ -75,6 +75,10 @@ enum Theme {
     static let space4: CGFloat = 8
     static let space6: CGFloat = 16
 
+    /// `--ds-motion-quick`, in seconds. The same number as the webviews use, so a pane and a chip
+    /// settle together rather than one chasing the other (DEC-064).
+    static let motionQuick: TimeInterval = 0.12
+
     /// Row height in both lists. Not a token in the CSS, because the diff has no rows.
     static let rowHeight: CGFloat = 20
     /// Starting widths for the three panes. Constraints, not fixed sizes — the dividers stay

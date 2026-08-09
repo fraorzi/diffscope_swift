@@ -1649,8 +1649,23 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     }
 
     private func applyCollapses() {
-        repoPaneWidth?.constant = reposCollapsed ? Theme.railWidth : Theme.repositoryPaneWidth
-        filePaneWidth?.constant = filesCollapsed ? Theme.spineWidth : Theme.filePaneWidth
+        // DEC-064: the pane moves, unless the reader has asked the system for less motion — in
+        // which case it is simply the other width, with nothing in between. The system setting is
+        // the authority; there is no preference of our own to disagree with it.
+        let animate = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        let repoTarget = reposCollapsed ? Theme.railWidth : Theme.repositoryPaneWidth
+        let fileTarget = filesCollapsed ? Theme.spineWidth : Theme.filePaneWidth
+        if animate {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Theme.motionQuick
+                context.allowsImplicitAnimation = true
+                repoPaneWidth?.animator().constant = repoTarget
+                filePaneWidth?.animator().constant = fileTarget
+            }
+        } else {
+            repoPaneWidth?.constant = repoTarget
+            filePaneWidth?.constant = fileTarget
+        }
         repoPaneMinimum?.constant = reposCollapsed ? Theme.railWidth : Theme.paneMinimumWidth
         filePaneMinimum?.constant = filesCollapsed ? Theme.spineWidth : Theme.paneMinimumWidth
         // The caption under the repository list is a sentence, and a 44 px rail has no room for

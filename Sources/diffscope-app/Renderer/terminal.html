@@ -38,6 +38,14 @@
           border: none; outline: none; background: transparent;
           font: var(--ds-term-text-size) var(--ds-font);
           color: var(--ds-term-fg); }
+  /* Motion (DEC-064): the mode chip changes as the keyboard's destination changes, and a change
+     the reader did not ask for is worth a moment rather than a jump. Switched off below. */
+  #mode { transition: border-color var(--ds-motion-quick) var(--ds-motion-curve),
+                      font-weight var(--ds-motion-quick) var(--ds-motion-curve); }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { transition: none !important; animation: none !important; }
+  }
+
   /* Hidden, never removed: a row that leaves the layout takes its own explanation with it. */
   #input-row[data-hidden="true"] #line { visibility: hidden; }
 </style>
