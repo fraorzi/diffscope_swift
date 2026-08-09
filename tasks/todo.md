@@ -842,3 +842,36 @@ Step 5 is part-done: still to build are `#unrenderable` saying *what* the file i
 and base-branch-prompt screens as drawn, the preferences window for the editor command, and the
 watcher's three status-line states. Then motion (6), search (7), the two lenses (7), and the
 rendered comparison (8) with its eight new fixtures.
+
+## Step 37 — settings, the unrenderable sentence, motion, search
+
+- [x] `editorTemplate` in the configuration file; Settings (⌘,) edits it; `DIFFSCOPE_EDITOR` stays as
+      the override F13 needs; the last attempt is kept where a reader will look for it
+- [x] `#unrenderable` answers *what this file is* and *why nothing is compared*, with the byte
+      counts, instead of `String(describing: error)`
+- [x] Motion (DEC-064): tokens for duration and curve, transitions on the interface's own
+      furniture, a `prefers-reduced-motion` block that switches everything off, and the chrome
+      reading `accessibilityDisplayShouldReduceMotion` before it animates
+- [x] Search (DEC-062): the engine half as a pure function with thirteen checks; ⌘F over the
+      changed set, ⇧⌘F over the worktree
+
+### Step 37 — three checks that had been agreeing with the wrong number
+
+**The collapse arm asserted a constraint's constant.** The file pane was ignoring its width
+constraint at priority 600 — the rail collapsed, the spine stayed at 320 — and the arm called that
+a pass, because a constant is what was asked for rather than what the window did. Priority 999, and
+the arm asserts drawn widths now.
+
+**The collapse animation animated the constant.** An animation that does not run to completion
+leaves it where it was, so the pane never moved at all under the selftest. Animating the layout
+pass instead keeps the constant authoritative.
+
+**The search count was wrong in the check before it was wrong in the code** — three expected, four
+correct, because the import line carries both the symbol and the module path. Worth writing down:
+the check earned its place by disagreeing with the person who wrote it.
+
+### What is left of `27-…` §4
+
+The two lenses (Blame, History) and the rendered comparison with its eight fixtures. Step 5's
+remaining screens — missing root, base-branch prompt, the watcher's three states — turned out to be
+built already; what was missing was the wording, and that is now in.
