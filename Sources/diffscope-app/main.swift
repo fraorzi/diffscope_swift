@@ -2030,11 +2030,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // `12-…` §3: scopes that cannot work are **disabled with a stated reason, never hidden**.
         // Leaving them enabled lets the reader click into a dead end and makes the control lie
         // about what is available.
+        var unavailable: [String] = []
         for (index, scope) in ComparisonScope.allCases.enumerated() {
             let state = scopes.availability(of: scope, head: repository.head, base: repository.base)
             scopeControl.setEnabled(state == .available, forSegment: index)
             if case let .unavailable(reason) = state {
                 scopeControl.setToolTip("\(scope.title) — \(reason)", forSegment: index)
+                unavailable.append("\(scope.title) — \(reason)")
             } else {
                 scopeControl.setToolTip(scope.title, forSegment: index)
             }
@@ -2063,7 +2065,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 chosenByUser: state.configuration.baseOverrides[repository.url.standardizedFileURL.path] != nil,
                 committerDate: repository.baseRefCommitterDate)
         }
-        statusLabel.stringValue = "\(state.files.count) files · \(state.scope.title)\(ageText)"
+        // A greyed-out segment with its reason in a tooltip is the defect DEC-058 named: a tooltip
+        // is invisible until pointed at, and a reader walking the window from the keyboard never
+        // sees it. `12-…` §3 asks for the reason to be *stated*, so it goes on the line.
+        let reasons = unavailable.isEmpty ? "" : " · unavailable: " + unavailable.joined(separator: ", ")
+        statusLabel.stringValue = "\(state.files.count) files · \(state.scope.title)\(ageText)\(reasons)"
     }
 
     private func showDiff(for file: ChangedFile, restoringStop stop: Int? = nil) {

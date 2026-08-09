@@ -114,9 +114,13 @@ public func stalenessDescription(of iso8601: String?, now: Date = Date()) -> Str
 public func baseSummary(ref: String?, chosenByUser: Bool, committerDate: String?,
                         now: Date = Date()) -> String {
     guard let ref else { return "base: not determined — choose one with ⇧⌘B" }
-    let age = stalenessDescription(of: committerDate, now: now).map { " · \($0)" }
+    // **"newest commit", not "last fetched".** The age is the committer date of the ref tip, and
+    // `11-…` §Scope-4 records that the time of the last fetch is not reliably recoverable. The
+    // obvious wording would be the one the reader wants and a factual misstatement (DEC-059's
+    // review of the adopted design, which asked for "last fetched" and could not have it).
+    let age = stalenessDescription(of: committerDate, now: now).map { " · newest commit \($0)" }
         // Unknown is said, never guessed at: a missing date is not a fresh one.
-        ?? " · age unknown"
+        ?? " · newest-commit age unknown"
     return "base \(ref)\(chosenByUser ? " (yours)" : "")\(age)"
 }
 

@@ -189,6 +189,20 @@ func runTrustSurfaceChecks(_ reportRaw: (String, Bool, String) -> Void) {
                    && shell.contains("leftStack = NSStackView"))
     }
 
+    print("\n=== an unavailable scope states its reason where it can be read (12-… §3) ===")
+    do {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let shell = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/main.swift"),
+                                 encoding: .utf8)) ?? ""
+        // The segment is disabled and its reason is in a tooltip — which is where DEC-058 found
+        // three other statements hiding. A greyed control with no stated reason is the interface
+        // silently disagreeing with itself between repositories, which is what §3 forbids.
+        report("the reasons are collected as the segments are disabled",
+               shell.contains("unavailable.append(\"\\(scope.title) — \\(reason)\")"))
+        report("and reach the status line rather than only the tooltip",
+               shell.contains("· unavailable: "))
+    }
+
     print("\n=== the branch is displayed, not hovered (12-… §2, 23b-… §2) ===")
     do {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)

@@ -342,17 +342,19 @@ func runScopeChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("a clock skew is stated, not shown as negative",
                stalenessDescription(of: ago(-3), now: now) == "dated in the future")
 
-        report("the scope-4 line names the ref and its age",
+        // The phrase matters as much as the number: "last fetched" is what a reader wants to know
+        // and what this cannot tell them, so the words say which of the two they are getting.
+        report("the scope-4 line names the ref and the age of its newest commit",
                baseSummary(ref: "origin/master", chosenByUser: false, committerDate: ago(63), now: now)
-                   == "base origin/master · 9 weeks old",
+                   == "base origin/master · newest commit 9 weeks old",
                baseSummary(ref: "origin/master", chosenByUser: false, committerDate: ago(63), now: now))
         report("a ref the user chose says so",
                baseSummary(ref: "release", chosenByUser: true, committerDate: ago(1), now: now)
-                   == "base release (yours) · 1 day old")
+                   == "base release (yours) · newest commit 1 day old")
         // DEC-013's rule reaching one more corner: unknown is said, never substituted.
         report("an unknown age is said, not passed off as fresh",
                baseSummary(ref: "origin/main", chosenByUser: false, committerDate: nil, now: now)
-                   == "base origin/main · age unknown")
+                   == "base origin/main · newest-commit age unknown")
         report("an unresolved base points at the way to fix it",
                baseSummary(ref: nil, chosenByUser: false, committerDate: nil, now: now)
                    .contains("choose one"))
