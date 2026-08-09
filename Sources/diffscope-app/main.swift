@@ -70,6 +70,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var splitView: NSSplitView!
     var wrapMenuItem: NSMenuItem?
     var wrapEnabled = true
+    var sideBySideMenuItem: NSMenuItem?
+    /// DEC-059: the window opens unified, so this starts false.
+    var sideBySide = false
     /// Every menu item by the identifier of the binding that drew it (DEC-057), so the few items
     /// that carry state can be reached without searching the menu bar by title.
     var menuItems: [String: NSMenuItem] = [:]
@@ -632,7 +635,47 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 FileHandle.standardError.write(
                     Data("SELFTEST gutter=\(ok ? "OK" : "MISMATCH") line=\(reported) \(text.suffix(120))\n".utf8))
                 self.snapshot(named: "gutter") {
-                    if ok { self.runStyleAuditSelftest() } else { exit(23) }
+                    if ok { self.runUnifiedSelftest() } else { exit(23) }
+                }
+            }
+        }
+    }
+
+    /// DEC-059: the default layout, asked of the live document. The model is the gutter arm's —
+    /// one line changed out of twelve — so the unified projection must show that line twice, once
+    /// removed and once added, and the rest exactly once.
+    ///
+    /// What this arm is really for is the greyscale rule. Side-by-side separates direction by
+    /// pane; unified has no panes, so if the sign column is ever empty the two directions differ
+    /// by hue alone and the product is lying in a screenshot.
+    private func runUnifiedSelftest() {
+        webView.evaluateJavaScript("window.diffscopeSetLayout(\"unified\")") { _, _ in
+            self.webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
+                let text = (value as? String) ?? "nil"
+                let data = Data(text.utf8)
+                let probe = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+                let signs = probe["signs"] as? Int ?? 0
+                let added = probe["addedLines"] as? Int ?? 0
+                let removed = probe["removedLines"] as? Int ?? 0
+                let doc = probe["unifiedText"] as? String ?? ""
+                // Thirteen lines for twelve, because the changed one appears on both sides; the
+                // sign column has one more marker than that, for the empty line a trailing
+                // newline leaves behind.
+                let lines = probe["unifiedLines"] as? Int ?? -1
+                let ok = probe["layout"] as? String == "unified"
+                    && lines == 13 && signs == lines + 1 && added == 1 && removed == 1
+                    && doc.contains("value7 = 7;") && doc.contains("value7 = 77;")
+                FileHandle.standardError.write(Data(
+                    ("SELFTEST unified=\(ok ? "OK" : "MISMATCH") signs=\(signs) added=\(added) "
+                        + "removed=\(removed) lines=\(lines) "
+                        + "glyphs=\(probe["signGlyphs"] as? String ?? "?")\n").utf8))
+                self.snapshot(named: "unified") {
+                    guard ok else { exit(24) }
+                    // Back to two panes: every arm after this one probes two documents, and the
+                    // audit that follows must see the marks the reader sees.
+                    self.webView.evaluateJavaScript("window.diffscopeSetLayout(\"split\")") { _, _ in
+                        self.runStyleAuditSelftest()
+                    }
                 }
             }
         }
@@ -1439,6 +1482,17 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         statusLabel.stringValue = wrapEnabled ? "long lines wrap" : "long lines scroll horizontally"
     }
 
+    /// DEC-059. Unified is what the window opens on; this is the mode a reader opts into for a
+    /// large restructure, where the question is whether two versions correspond rather than what
+    /// changed. The renderer re-projects the model it already has, so the pinned pair and the
+    /// current change stop both survive the switch.
+    @objc private func toggleSideBySide() {
+        sideBySide.toggle()
+        sideBySideMenuItem?.state = sideBySide ? .on : .off
+        webView.evaluateJavaScript("window.diffscopeSetLayout(\"\(sideBySide ? "split" : "unified")\")") { _, _ in }
+        statusLabel.stringValue = sideBySide ? "side by side" : "unified"
+    }
+
     @objc private func addRootFolder() { add(kind: .root) }
     @objc private func addRepository() { add(kind: .repository) }
 
@@ -1505,6 +1559,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
 
         wrapMenuItem = menuItems["wrap"]
+        sideBySideMenuItem = menuItems["layout.sideBySide"]
         terminalMenuItem = menuItems["terminal"]
         terminalRawMenuItem = menuItems["terminal.raw"]
         rawRegionMenuItem = menuItems["rawRegion"]
@@ -1524,6 +1579,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         case "terminal.raw": return #selector(toggleTerminalRawMode)
         case "terminal.follow": return #selector(followTerminalToSelection)
         case "wrap": return #selector(toggleWrap)
+        case "layout.sideBySide": return #selector(toggleSideBySide)
         case "scope.allLocal", "scope.unstaged", "scope.staged", "scope.base":
             return #selector(selectScope(_:))
         case "sources.addRoot": return #selector(addRootFolder)

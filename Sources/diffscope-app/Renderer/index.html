@@ -24,6 +24,9 @@
   .ds-chip-alert { border-style: dashed; font-weight: var(--ds-weight-emphasis); }
 
   #stage { display: flex; flex: 1; min-height: 0; }
+  /* One column instead of two (DEC-059). Only one of the two layouts holds a document at a
+     time, so nothing is drawn twice and no probe counts a mark that is not on screen. */
+  #unified { display: none; flex: 1; min-height: 0; background: var(--ds-code); }
   #left, #right { flex: 1; min-width: 0; overflow: hidden; background: var(--ds-code);
                   border-right: var(--ds-hairline-width) solid var(--ds-border); }
   #right { border-right: none; }
@@ -104,6 +107,19 @@
                        color: var(--ds-text) !important;
                        font-weight: var(--ds-weight-emphasis); }
 
+  /* The sign column: `+` and `−`, the shape that tells added from removed where there are no
+     panes to do it. Load-bearing (`24-…` §3) — in unified this is the only part of the
+     distinction that survives greyscale, so the tints below only reinforce it. */
+  .ds-sign { display: inline-block; width: var(--ds-space-6);
+             text-align: center; color: var(--ds-mark);
+             font-weight: var(--ds-weight-emphasis); }
+  .ds-line-add { background-color: var(--ds-tint-add); }
+  .ds-line-del { background-color: var(--ds-tint-del); }
+  .cm-editor .ds-gutter-old .cm-gutterElement,
+  .cm-editor .ds-gutter-new .cm-gutterElement { padding: 0 var(--ds-space-2);
+                                                color: var(--ds-faint); text-align: right; }
+  .cm-editor .ds-gutter-sign .cm-gutterElement { padding: 0; }
+
   .ds-badge {
     font-size: var(--ds-text-size-tiny);
     padding: 0 var(--ds-space-2);
@@ -142,6 +158,7 @@
     <div id="left"></div>
     <div id="right"></div>
   </div>
+  <div id="unified"></div>
   <pre id="unrenderable"></pre>
   <script src="renderer.js"></script>
 </body>

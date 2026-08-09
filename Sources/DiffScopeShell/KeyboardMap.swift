@@ -145,6 +145,10 @@ public enum KeyboardMap {
               modifiers: [.option, .command], menu: .view),
         .init(id: "wrap", title: "Wrap Long Lines", key: "w", modifiers: [.option, .command],
               menu: .view, isToggle: true),
+        // DEC-059: unified is the default and this is the way out of it. Not a mode of the model —
+        // both layouts project the same canonical diff over the same pinned pair.
+        .init(id: "layout.sideBySide", title: "Side by Side", key: "→", modifiers: [.option, .command],
+              menu: .view, isToggle: true),
         .init(id: "scope.allLocal", title: "Scope: All local", key: "1", modifiers: [.shift, .command],
               menu: .view, satisfies: .switchScope, tag: 0),
         .init(id: "scope.unstaged", title: "Scope: Unstaged", key: "2", modifiers: [.shift, .command],

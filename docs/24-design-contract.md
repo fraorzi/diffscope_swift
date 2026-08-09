@@ -69,9 +69,12 @@ Classes marked **load-bearing** carry a difference. They may be restyled and may
 | `ds-chip-alert` | A chip that reports the tool catching itself | **Yes** |
 | `#notices` | The bar carrying every notice — INV-4 made visible | **Yes** |
 | `ds-notice` | An inline notice inside the document | **Yes** |
-| `#stage`, `#left`, `#right` | Layout of the two panes | No |
 | `#unrenderable` | Shown when the content is not text that can be displayed, and why | **Yes** |
 | `ds-sign` | The `+` / `−` column in unified (DEC-059) | **Yes.** With no panes, this is the only signal of direction that survives greyscale |
+| `ds-line-add`, `ds-line-del` | Direction as a tint behind the line | No — they *reinforce* `ds-sign` and may be removed. Removing the sign column is what the rule above forbids |
+| `#unified` | The one-column layout, and the default (DEC-059) | No, as layout |
+| `ds-gutter-old`, `ds-gutter-new`, `ds-gutter-sign` | The three gutters of the unified layout: the two number columns and the sign column | **The sign gutter is**, for the reason `ds-sign` is. The number columns are how a reader says *where* — restyle freely, do not collapse them into one |
+| `#stage`, `#left`, `#right` | The two-pane layout, reached by ⌥⌘→ | No, as layout |
 | `cm-*` | CodeMirror's own classes: editor, scroller, gutters, line numbers | No, except the gutter ones |
 
 ### The terminal pane
@@ -144,7 +147,7 @@ DIFFSCOPE_SELFTEST=1 DIFFSCOPE_SNAPSHOT_DIR=/tmp/shots swift run -c release diff
 
 Step 4 is not optional. The suite proves the model and the rules; only the pictures show whether the result is legible — the lesson M8-D paid for, when both lists rendered blank rows in a window that passed every check.
 
-The snapshots written are `structural`, `expanded`, `disclosure`, `moved`, `navigation`, `refresh`, `anchored`, `degraded` and `gutter`: the founding wrapper-removal case, the two modes side by side, an invisible-difference badge, a paired move, folds and jumps, a refreshed view, a restored anchor, a ranked degradation notice, and the gutter beside line numbers.
+The snapshots written are `structural`, `expanded`, `disclosure`, `moved`, `navigation`, `refresh`, `anchored`, `degraded`, `gutter` and `unified`: the founding wrapper-removal case, the two modes side by side, an invisible-difference badge, a paired move, folds and jumps, a refreshed view, a restored anchor, a ranked degradation notice, the gutter beside line numbers, and the default one-column layout with its two number columns and its sign column.
 
 The terminal writes three more — `terminal` (a command's output in the grid), `terminal-input` (the input line at a prompt, with the mode chip) and `terminal-follow` (the pane after following a selection into a directory whose name contains a quote and a space). Look at all three: the terminal is the surface where a design most easily makes program output unreadable.
 

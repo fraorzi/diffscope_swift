@@ -67,6 +67,10 @@
   --ds-tex-moved: repeating-linear-gradient(90deg, rgba(0,0,0,.07) 0 8px, transparent 8px 16px);
   --ds-tex-invisible: repeating-linear-gradient(45deg, rgba(0,0,0,.045) 0 1px, transparent 1px 6px);
 
+  /* Direction in unified: hue reinforcing the sign column, never carrying it (DEC-059). */
+  --ds-tint-add: rgba(0, 132, 52, .10);
+  --ds-tint-del: rgba(209, 0, 21, .085);
+
   /* ---- Mark shape ------------------------------------------------------- */
   --ds-underline-thickness: 2px;
   --ds-underline-thickness-quiet: 1px;
@@ -158,6 +162,9 @@
     --ds-mark: rgba(255, 255, 255, .88);
     --ds-border: #28282d;
     --ds-border-strong: #6c6c76;
+
+    --ds-tint-add: rgba(48, 209, 88, .11);
+    --ds-tint-del: rgba(255, 69, 58, .11);
 
     --ds-tex-changed: repeating-linear-gradient(45deg, rgba(255,255,255,.062) 0 2px, transparent 2px 6px);
     --ds-tex-format: repeating-linear-gradient(45deg, rgba(255,255,255,.03) 0 1px, transparent 1px 8px);

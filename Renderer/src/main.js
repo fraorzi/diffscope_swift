@@ -1,4 +1,4 @@
-import { EditorView, Decoration, WidgetType, lineNumbers, gutterLineClass, GutterMarker } from "@codemirror/view";
+import { EditorView, Decoration, WidgetType, lineNumbers, gutter, gutterLineClass, GutterMarker } from "@codemirror/view";
 import { EditorState, RangeSetBuilder, StateField, StateEffect, Compartment } from "@codemirror/state";
 import { javascript } from "@codemirror/lang-javascript";
 import { syntaxHighlighting, HighlightStyle } from "@codemirror/language";
@@ -117,7 +117,7 @@ function foldsFor(state, side) {
   return items;
 }
 
-function decorationsFor(state, segments, side) {
+function markItems(state, segments) {
   const items = [];
   const disclosureRuns = [];
   const max = state.doc.length;
@@ -163,12 +163,40 @@ function decorationsFor(state, segments, side) {
       deco: Decoration.widget({ widget: new DisclosureWidget(label), side: 1 }),
     });
   }
-  items.push(...foldsFor(state, side));
-  items.sort((a, b) => a.from - b.from || a.to - b.to);
-  const builder = new RangeSetBuilder();
-  for (const item of items) builder.add(item.from, item.to, item.deco);
-  return builder.finish();
+  return items;
 }
+
+function decorationsFor(state, segments, side) {
+  const items = markItems(state, segments).concat(foldsFor(state, side));
+  return Decoration.set(items.map(item => item.deco.range(item.from, item.to)), true);
+}
+
+/// The unified document's decorations: the same marks over projected offsets, plus one line
+/// decoration per removed or added line. `Decoration.set` sorts, which matters here because a
+/// line decoration and a mark can start at the same offset and a builder would refuse them.
+function decorationsForUnified(state, segments) {
+  const items = markItems(state, segments).concat(directionDecorations(state));
+  return Decoration.set(items.map(item => item.deco.range(item.from, item.to ?? item.from)), true);
+}
+
+// Syntax colours by class, never by value (DEC-066). CodeMirror's own `defaultHighlightStyle`
+// carries literal colours inside the bundle, which is exactly the boundary `tokens.css` exists
+// to hold: a design could not restyle a keyword without editing JavaScript. These classes are
+// declared in `index.html` and read their colours from the token file.
+const highlighting = HighlightStyle.define([
+  { tag: [tags.keyword, tags.modifier, tags.controlKeyword, tags.moduleKeyword], class: "tok-keyword" },
+  { tag: [tags.typeName, tags.className, tags.namespace, tags.tagName], class: "tok-type" },
+  { tag: [tags.string, tags.special(tags.string)], class: "tok-string" },
+  { tag: [tags.number, tags.bool, tags.null], class: "tok-number" },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], class: "tok-function" },
+  { tag: [tags.comment, tags.lineComment, tags.blockComment, tags.docComment], class: "tok-comment" },
+  { tag: [tags.punctuation, tags.bracket, tags.angleBracket, tags.separator], class: "tok-punctuation" },
+  { tag: [tags.variableName, tags.attributeName], class: "tok-variable" },
+  { tag: [tags.propertyName, tags.definition(tags.propertyName)], class: "tok-property" },
+  { tag: [tags.operator, tags.derefOperator, tags.arithmeticOperator, tags.logicOperator], class: "tok-operator" },
+  { tag: [tags.regexp, tags.escape], class: "tok-regex" },
+  { tag: tags.invalid, class: "tok-invalid" },
+]);
 
 function makePane(parent, side) {
   const field = StateField.define({
@@ -188,24 +216,6 @@ function makePane(parent, side) {
       return value;
     },
   });
-  // Syntax colours by class, never by value (DEC-066). CodeMirror's own `defaultHighlightStyle`
-  // carries literal colours inside the bundle, which is exactly the boundary `tokens.css` exists
-  // to hold: a design could not restyle a keyword without editing JavaScript. These classes are
-  // declared in `index.html` and read their colours from the token file.
-  const highlighting = HighlightStyle.define([
-    { tag: [tags.keyword, tags.modifier, tags.controlKeyword, tags.moduleKeyword], class: "tok-keyword" },
-    { tag: [tags.typeName, tags.className, tags.namespace, tags.tagName], class: "tok-type" },
-    { tag: [tags.string, tags.special(tags.string)], class: "tok-string" },
-    { tag: [tags.number, tags.bool, tags.null], class: "tok-number" },
-    { tag: [tags.function(tags.variableName), tags.function(tags.propertyName)], class: "tok-function" },
-    { tag: [tags.comment, tags.lineComment, tags.blockComment, tags.docComment], class: "tok-comment" },
-    { tag: [tags.punctuation, tags.bracket, tags.angleBracket, tags.separator], class: "tok-punctuation" },
-    { tag: [tags.variableName, tags.attributeName], class: "tok-variable" },
-    { tag: [tags.propertyName, tags.definition(tags.propertyName)], class: "tok-property" },
-    { tag: [tags.operator, tags.derefOperator, tags.arithmeticOperator, tags.logicOperator], class: "tok-operator" },
-    { tag: [tags.regexp, tags.escape], class: "tok-regex" },
-    { tag: tags.invalid, class: "tok-invalid" },
-  ]);
 
   const view = new EditorView({
     parent,
@@ -243,6 +253,8 @@ const setSegments = StateEffect.define();
 // vertical alignment on exactly the minified files that section was written about, because a line
 // that wraps to three rows on one side and one on the other stops the panes lining up.
 const wrapping = new Compartment();
+// The unified pane has its own, because it is a separate view and a compartment belongs to one.
+const unifiedWrapping = new Compartment();
 
 // `12-…` §5.1 names the gutter as one of three carriers of change meaning, beside the underline and
 // the background texture. The two others were built; this is the third.
@@ -258,6 +270,193 @@ const changedLineMarker = new (class extends GutterMarker {
 
 const left = makePane(document.getElementById("left"), "old");
 const right = makePane(document.getElementById("right"), "new");
+let unified = null;   // built on first use — see `applyLayout`
+let layout = "split"; // the renderer's default; the shell asks for unified at launch (DEC-059)
+
+// ---- The unified layout (DEC-059) -----------------------------------------------------------
+//
+// One column, composed here from the two sides the engine produced — the model is unchanged and
+// so is every offset in it; what changes is which document those offsets are projected into.
+//
+// Side-by-side separates *removed* from *added* by which pane a line is in, and that separation
+// is free and survives greyscale. Unified has no panes, so the direction has to be carried by
+// something: a sign column, `+` and `−`, drawn as a gutter beside the two number columns. Hue
+// only reinforces it (DEC-035).
+let unifiedLines = [];
+let unifiedRuns = { old: [], new: [] };
+
+function lineStartAt(text, index) { return text.lastIndexOf("\n", index - 1) + 1; }
+function lineEndAt(text, index) {
+  const at = text.indexOf("\n", index);
+  return at === -1 ? text.length : at + 1;
+}
+
+/// Change stops snapped out to whole lines and merged where they touch. A unified diff is a
+/// line-based form and a stop is not: a stop can start mid-line, and emitting half a line as a
+/// removal would print text the file does not contain.
+function unifiedBlocks(model, oldText, newText) {
+  const stops = (model.stops || []).slice()
+    .sort((a, b) => a.oldStart - b.oldStart || a.newStart - b.newStart);
+  // An empty range on one side is an insertion seen from that side. At a line boundary it takes
+  // nothing from this side and the line count simply grows; **inside** a line it changes that
+  // line, and the line has to appear as removed even though no byte of it was deleted. Getting
+  // this wrong is invisible in the model and obvious on screen: `7` → `77` showed an added line
+  // with nothing to compare it against.
+  function snap(text, start, end) {
+    if (end > start) return { start: lineStartAt(text, start), end: lineEndAt(text, end - 1) };
+    const at = lineStartAt(text, start);
+    return at === start ? { start, end: start } : { start: at, end: lineEndAt(text, start) };
+  }
+  const blocks = [];
+  for (const stop of stops) {
+    const oldRange = snap(oldText, stop.oldStart, stop.oldEnd);
+    const newRange = snap(newText, stop.newStart, stop.newEnd);
+    const block = {
+      oldStart: oldRange.start, oldEnd: oldRange.end,
+      newStart: newRange.start, newEnd: newRange.end,
+    };
+    const last = blocks[blocks.length - 1];
+    if (last && block.oldStart <= last.oldEnd && block.newStart <= last.newEnd) {
+      last.oldEnd = Math.max(last.oldEnd, block.oldEnd);
+      last.newEnd = Math.max(last.newEnd, block.newEnd);
+    } else {
+      blocks.push(block);
+    }
+  }
+  return blocks;
+}
+
+function buildUnified(model) {
+  const oldText = model.payload.old.text;
+  const newText = model.payload.new.text;
+  const runs = { old: [], new: [] };
+  const meta = [];
+  let doc = "";
+  let oldNumber = 1;
+  let newNumber = 1;
+
+  function emit(side, from, to, sign) {
+    if (to <= from) return;
+    const text = side === "old" ? oldText : newText;
+    runs[side].push({ srcStart: from, srcEnd: to, docStart: doc.length });
+    const chunk = text.slice(from, to);
+    doc += chunk;
+    // The last line of a file with no trailing newline still counts as a line.
+    const count = chunk.split("\n").length - (chunk.endsWith("\n") ? 1 : 0);
+    for (let index = 0; index < count; index += 1) {
+      meta.push({
+        sign,
+        old: sign === "+" ? null : oldNumber,
+        new: sign === "−" ? null : newNumber,
+      });
+      if (sign !== "+") oldNumber += 1;
+      if (sign !== "−") newNumber += 1;
+    }
+  }
+
+  let oldCursor = 0;
+  let newCursor = 0;
+  for (const block of unifiedBlocks(model, oldText, newText)) {
+    // Context is emitted from the old side only: between two stops the two sides are byte-equal,
+    // which is what makes one column able to stand for both.
+    emit("old", oldCursor, block.oldStart, " ");
+    emit("old", block.oldStart, block.oldEnd, "−");
+    emit("new", block.newStart, block.newEnd, "+");
+    oldCursor = block.oldEnd;
+    newCursor = block.newEnd;
+  }
+  emit("old", oldCursor, oldText.length, " ");
+
+  unifiedLines = meta;
+  unifiedRuns = runs;
+  return doc;
+}
+
+/// Offsets are the engine's, projected. A segment is clipped to each run of its own side and
+/// moved by that run's displacement; a segment spanning two runs comes out as two marks over the
+/// same bytes, which is what the reader should see in a document where those bytes are apart.
+function projectSegments(segments, runs) {
+  const out = [];
+  for (const seg of segments) {
+    for (const run of runs) {
+      const from = Math.max(seg.start, run.srcStart);
+      const to = Math.min(seg.end, run.srcEnd);
+      if (to <= from) continue;
+      out.push({ ...seg,
+                 start: run.docStart + (from - run.srcStart),
+                 end: run.docStart + (to - run.srcStart) });
+    }
+  }
+  return out.sort((a, b) => a.start - b.start || a.end - b.end);
+}
+
+class SignMarker extends GutterMarker {
+  constructor(sign) { super(); this.sign = sign; }
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "ds-sign";
+    el.textContent = this.sign === " " ? " " : this.sign;
+    return el;
+  }
+}
+
+class NumberMarker extends GutterMarker {
+  constructor(value) { super(); this.value = value; }
+  toDOM() { return document.createTextNode(this.value == null ? " " : String(this.value)); }
+}
+
+function unifiedMeta(view, line) {
+  return unifiedLines[view.state.doc.lineAt(line.from).number - 1]
+    || { sign: " ", old: null, new: null };
+}
+
+/// The unified pane. Three gutters — old number, new number, sign — and the same decoration
+/// machinery as the two panes, so a mark means the same thing in either layout.
+function makeUnifiedPane(parent) {
+  const field = StateField.define({
+    create: () => Decoration.none,
+    update: (value, tr) => {
+      for (const effect of tr.effects) {
+        if (effect.is(setSegments)) return decorationsForUnified(tr.state, effect.value);
+      }
+      return value.map(tr.changes);
+    },
+    provide: f => EditorView.decorations.from(f),
+  });
+  return new EditorView({
+    parent,
+    state: EditorState.create({
+      doc: "",
+      extensions: [
+        javascript({ typescript: true, jsx: true }),
+        syntaxHighlighting(highlighting),
+        EditorView.editable.of(false),
+        unifiedWrapping.of(EditorView.lineWrapping),
+        gutter({ class: "ds-gutter-old",
+                 lineMarker: (view, line) => new NumberMarker(unifiedMeta(view, line).old) }),
+        gutter({ class: "ds-gutter-new",
+                 lineMarker: (view, line) => new NumberMarker(unifiedMeta(view, line).new) }),
+        gutter({ class: "ds-gutter-sign",
+                 lineMarker: (view, line) => new SignMarker(unifiedMeta(view, line).sign) }),
+        field,
+      ],
+    }),
+  });
+}
+
+/// Line decorations for direction, beside the sign column: hue reinforcing a shape that is
+/// already there, never carrying the meaning by itself (DEC-035).
+function directionDecorations(state) {
+  const items = [];
+  for (let number = 1; number <= state.doc.lines; number += 1) {
+    const meta = unifiedLines[number - 1];
+    if (!meta || meta.sign === " ") continue;
+    const line = state.doc.line(number);
+    items.push({ from: line.from,
+                 deco: Decoration.line({ class: meta.sign === "+" ? "ds-line-add" : "ds-line-del" }) });
+  }
+  return items;
+}
 
 let syncing = false;
 function link(a, b) {
@@ -284,7 +483,52 @@ function applySide(view, side) {
                             setChangedLines.of(side.changedLines || [])] });
 }
 
+/// Only the active layout holds a document. Populating both and hiding one would double every
+/// mark in the DOM, and the probes that count marks would agree with themselves while saying
+/// nothing — the shape of failure this project keeps finding in checks that cannot fail.
+function applyLayout(model) {
+  const stage = document.getElementById("stage");
+  const host = document.getElementById("unified");
+  const empty = { text: "", segments: [], changedLines: [] };
+  if (layout === "unified") {
+    if (!unified) unified = makeUnifiedPane(host);
+    const doc = buildUnified(model);
+    const segments = projectSegments(model.payload.old.segments, unifiedRuns.old)
+      .concat(projectSegments(model.payload.new.segments, unifiedRuns.new))
+      .sort((a, b) => a.start - b.start || a.end - b.end);
+    unified.dispatch({ changes: { from: 0, to: unified.state.doc.length, insert: doc } });
+    unified.__segments = segments;
+    unified.dispatch({ effects: setSegments.of(segments) });
+    applySide(left, empty);
+    applySide(right, empty);
+    stage.style.display = "none";
+    host.style.display = "flex";
+  } else {
+    if (unified) {
+      unified.dispatch({ changes: { from: 0, to: unified.state.doc.length, insert: "" } });
+      unified.__segments = [];
+    }
+    unifiedLines = [];
+    unifiedRuns = { old: [], new: [] };
+    applySide(left, model.payload.old);
+    applySide(right, model.payload.new);
+    host.style.display = "none";
+    stage.style.display = "flex";
+  }
+}
+
+let lastModel = null;
+
+/// ⌥⌘→ (DEC-059). The pinned pair does not move, so the re-render compares the same two versions
+/// and lands on the same change stop — switching layout is a change of projection, not of subject.
+window.diffscopeSetLayout = function (name) {
+  layout = name === "unified" ? "unified" : "split";
+  if (lastModel) window.diffscopeRender(lastModel);
+  return layout;
+};
+
 function refreshDecorations() {
+  if (unified) unified.dispatch({ effects: setSegments.of(unified.__segments || []) });
   for (const view of [left, right]) {
     view.dispatch({ effects: setSegments.of(view.__segments || []) });
   }
@@ -397,6 +641,9 @@ window.diffscopeInjectHostileStyle = function (enable) {
 };
 
 window.diffscopeSetWrap = function (enabled) {
+  if (unified) {
+    unified.dispatch({ effects: unifiedWrapping.reconfigure(enabled ? EditorView.lineWrapping : []) });
+  }
   for (const view of [left, right]) {
     view.dispatch({ effects: wrapping.reconfigure(enabled ? EditorView.lineWrapping : []) });
   }
@@ -535,6 +782,7 @@ function renderNotices(model) {
 
 window.diffscopeRender = function (json) {
   const model = typeof json === "string" ? JSON.parse(json) : json;
+  lastModel = model;
   currentPin = model.pinOld + ":" + model.pinNew;
   currentMode = model.mode;
   renderNotices(model);
@@ -563,8 +811,7 @@ window.diffscopeRender = function (json) {
   anchors = model.anchors || [];
   expanded = new Set();
   stopIndex = -1;
-  applySide(left, model.payload.old);
-  applySide(right, model.payload.new);
+  applyLayout(model);
   restoreAnchor(model.restore);
 
   lastSummary = {
@@ -576,6 +823,8 @@ window.diffscopeRender = function (json) {
     newSegments: model.payload.new.segments.length,
     groups: Object.fromEntries(groupCounts(model)),
     mode: currentMode,
+    layout,
+    unifiedLines: unifiedLines.length,
     stops: stops.length,
     folds: folds.length,
     formattingGroups: folds.filter(fold => fold.kind === "formatting").length,
@@ -594,6 +843,13 @@ window.diffscopeProbe = function () {
     oldText: left.state.doc.toString(),
     newText: right.state.doc.toString(),
     summary: lastSummary,
+    layout,
+    unifiedLines: unifiedLines.length,
+    unifiedText: unified ? unified.state.doc.toString() : "",
+    signs: document.querySelectorAll(".ds-sign").length,
+    signGlyphs: [...document.querySelectorAll(".ds-sign")].map(el => el.textContent).join(""),
+    addedLines: document.querySelectorAll(".ds-line-add").length,
+    removedLines: document.querySelectorAll(".ds-line-del").length,
     formattingMarks: document.querySelectorAll(".ds-formatting").length,
     foldMarks: document.querySelectorAll(".ds-fold").length,
     formattingFoldMarks: document.querySelectorAll(".ds-fold-formatting").length,
