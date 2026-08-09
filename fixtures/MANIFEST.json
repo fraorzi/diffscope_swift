@@ -35,6 +35,18 @@
       "sha256" : "ffb6681d49aff01ea8d478fb59575c0c6e8d934d4166723e214606691b576581"
     }
   },
+  "clsx-expression-change" : {
+    "after" : {
+      "bytes" : 77,
+      "ext" : "ts",
+      "sha256" : "13b3f1d5b4900485adb842b5c63d9d1ce819aed22f5b827b65776775ab98601e"
+    },
+    "before" : {
+      "bytes" : 75,
+      "ext" : "ts",
+      "sha256" : "d09478bd9a268914d7ad05742a07e922147f4bdb52f305266d443f9261453fd9"
+    }
+  },
   "comment-only-change" : {
     "after" : {
       "bytes" : 53,
@@ -71,6 +83,18 @@
       "sha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
     }
   },
+  "eslint-autofix" : {
+    "after" : {
+      "bytes" : 99,
+      "ext" : "ts",
+      "sha256" : "cd11c77ecb26e94114f0749e6af80f6ac82eef0ba6ced3300a7ca4fdfbfd8e2e"
+    },
+    "before" : {
+      "bytes" : 87,
+      "ext" : "ts",
+      "sha256" : "c0403e7570bacc84c06972196f4a4c38d06df722b705451b8ce2b2607b3775c1"
+    }
+  },
   "identical" : {
     "after" : {
       "bytes" : 13,
@@ -81,6 +105,42 @@
       "bytes" : 13,
       "ext" : "ts",
       "sha256" : "95befdd6e691d4d89031a2a2901cc74fc6242109980b060e08ddf87829924483"
+    }
+  },
+  "identifier-typo" : {
+    "after" : {
+      "bytes" : 98,
+      "ext" : "ts",
+      "sha256" : "fb2cc5886453c18a027683040808b0beb64072d65ef2a362b2d8d8b8d88714f7"
+    },
+    "before" : {
+      "bytes" : 98,
+      "ext" : "ts",
+      "sha256" : "299eb75a60baa9b95da0194cd233436cd73d079afda76aa6a78354e5646013a1"
+    }
+  },
+  "image-file" : {
+    "after" : {
+      "bytes" : 23,
+      "ext" : "jpg",
+      "sha256" : "abacd54295e741cb3afa9f154b1c82078170e7354cc8b2647322040e14a69e37"
+    },
+    "before" : {
+      "bytes" : 23,
+      "ext" : "jpg",
+      "sha256" : "7a6a0e2355ecc57e58620298e182727c2ccea204b961629202d683f9d614d10c"
+    }
+  },
+  "import-item-removal" : {
+    "after" : {
+      "bytes" : 86,
+      "ext" : "ts",
+      "sha256" : "47cc2d064129d0193887a9b8c80748e5a58cd704f7e6c8a5aff3946d34488c2f"
+    },
+    "before" : {
+      "bytes" : 108,
+      "ext" : "ts",
+      "sha256" : "2333a0224898ff310459694084dbf1dce03a66468fd01685d07f920ce58b6bf5"
     }
   },
   "import-reordering" : {
@@ -131,6 +191,30 @@
       "sha256" : "7a6645c756b55155c3a3ba67e88b591373f0c131c7c53228f1c1885a7863e0d8"
     }
   },
+  "jsx-text-punctuation" : {
+    "after" : {
+      "bytes" : 38,
+      "ext" : "tsx",
+      "sha256" : "ea9cdbad4f51dc12d4f2d13dece245e42ec6fb0fe467fd5ce0ce27061de3643b"
+    },
+    "before" : {
+      "bytes" : 37,
+      "ext" : "tsx",
+      "sha256" : "3c3826d6aa001c4bae0d8406fe79d09cabed21da79fc075d79eacd4657daa1b8"
+    }
+  },
+  "jsx-wrapper-added" : {
+    "after" : {
+      "bytes" : 57,
+      "ext" : "tsx",
+      "sha256" : "c8d67d414c2a33338eef1b121b371a5b0a95984c37d75b5a5e72befa94676612"
+    },
+    "before" : {
+      "bytes" : 34,
+      "ext" : "tsx",
+      "sha256" : "ac65926b00c6401351d825c91af135dd1519ddbf1bfa4771743c4ea83f167826"
+    }
+  },
   "jsx-wrapper-removal" : {
     "after" : {
       "bytes" : 34,
@@ -141,6 +225,18 @@
       "bytes" : 40,
       "ext" : "tsx",
       "sha256" : "d512a6041218e0a935426af36bf008a815f8ce989437c00b9cf95bed6a19d018"
+    }
+  },
+  "jsx-wrapper-type-change" : {
+    "after" : {
+      "bytes" : 74,
+      "ext" : "tsx",
+      "sha256" : "0af89c2883d019f368f2c9ab3432d82b5089b6d8aefe9391d7f36b8f0639e1cf"
+    },
+    "before" : {
+      "bytes" : 66,
+      "ext" : "tsx",
+      "sha256" : "30a0130cd6f858832b2c13a997bdd70cc7d830bf400a5624950159c95ce0d6e2"
     }
   },
   "line-ending-change" : {
@@ -191,6 +287,18 @@
       "sha256" : "4f8a910f9bd10d3be273c33c017ddb1dd78c12950b90b28fc666e0cacb585a46"
     }
   },
+  "moved-block" : {
+    "after" : {
+      "bytes" : 353,
+      "ext" : "ts",
+      "sha256" : "28b5a2e2fd93792f995b023ad9392fb8c2b1e999f8bc5f82d8a6988e82bc0714"
+    },
+    "before" : {
+      "bytes" : 353,
+      "ext" : "ts",
+      "sha256" : "a60b1f44ed1a0aa0ece3dec01d0e8b7773d14f7db7870b4718ab4faf0333b11a"
+    }
+  },
   "moved-function" : {
     "after" : {
       "bytes" : 141,
@@ -213,6 +321,18 @@
       "bytes" : 141,
       "ext" : "ts",
       "sha256" : "81f10f54a8cf0e2307e88ab7d642b6f2d9f7f020bbc445e290adedbd364c0b73"
+    }
+  },
+  "moved-two-blocks" : {
+    "after" : {
+      "bytes" : 352,
+      "ext" : "ts",
+      "sha256" : "f28b904a59a7b124b26f12f449df8c98f7fa240bb5b425bafdf6bd06c33db13b"
+    },
+    "before" : {
+      "bytes" : 352,
+      "ext" : "ts",
+      "sha256" : "574ddf6b91b822411079c186185221530a558649156766ef4c238dbabfed08de"
     }
   },
   "nbsp-vs-space" : {
@@ -275,6 +395,30 @@
       "sha256" : "2e292806a853d6cfc1d604d1dace6bc15f0492abdb36d96c4d6732a792958d9c"
     }
   },
+  "prop-reordering" : {
+    "after" : {
+      "bytes" : 74,
+      "ext" : "tsx",
+      "sha256" : "9494b32c2db1aee16a553bcb64349367bb90a7cca4f8d1f20e8d126cacad7965"
+    },
+    "before" : {
+      "bytes" : 82,
+      "ext" : "tsx",
+      "sha256" : "b9e15367f9a68e34294a5849246dba59227244a648abdb831d163c022e7beb28"
+    }
+  },
+  "prop-value-change" : {
+    "after" : {
+      "bytes" : 75,
+      "ext" : "tsx",
+      "sha256" : "abf93d240ca56ef51bc5076077b6d7c5c75e002955b9210b8033d66b2944dab7"
+    },
+    "before" : {
+      "bytes" : 73,
+      "ext" : "tsx",
+      "sha256" : "aaacd36f31a78308f3b5700e158afb482a14716d6039a929171230f462787efc"
+    }
+  },
   "quote-style-change" : {
     "after" : {
       "bytes" : 20,
@@ -287,6 +431,18 @@
       "sha256" : "b86cd6ffd57302411a9d8e20a65041dea9e876e67e2f5d6c8d4a4b09f0a85bb3"
     }
   },
+  "repeated-identifier-change" : {
+    "after" : {
+      "bytes" : 308,
+      "ext" : "ts",
+      "sha256" : "277b6992dee5bdd8eef10d30c712ec4419be4920e73025c83be3b700e071c839"
+    },
+    "before" : {
+      "bytes" : 308,
+      "ext" : "ts",
+      "sha256" : "0fcb6ea1a97733cfbb93b2e5fe73417f4b14ba0148cf6136e11c74133900e4d9"
+    }
+  },
   "semicolon-change" : {
     "after" : {
       "bytes" : 26,
@@ -297,6 +453,18 @@
       "bytes" : 24,
       "ext" : "ts",
       "sha256" : "c851a32efabb9bbe0994f28a81258ee891bc7e6a1bb4c1072f66077b406de6e0"
+    }
+  },
+  "spread-prop-reordering" : {
+    "after" : {
+      "bytes" : 58,
+      "ext" : "tsx",
+      "sha256" : "f176db2ff67c56a9713afb9d64b748914a6202d206c534f7d6d57cb5f7da6459"
+    },
+    "before" : {
+      "bytes" : 58,
+      "ext" : "tsx",
+      "sha256" : "12e20b82b6bfb94b9487fd8b5ac9d0983d6525f10d6a3b92ec4e62323fee200a"
     }
   },
   "string-single-character" : {
@@ -333,6 +501,18 @@
       "bytes" : 38,
       "ext" : "ts",
       "sha256" : "e527ecc6523cf5dbd6d5b8ff0b74db27ad3b3c8d6838c32970720b0fc88be826"
+    }
+  },
+  "template-literal-expression-change" : {
+    "after" : {
+      "bytes" : 46,
+      "ext" : "ts",
+      "sha256" : "8e2704e913ae0012f08f3d9c433cc232dbf1008695ad647f94dcc1b31d29ae05"
+    },
+    "before" : {
+      "bytes" : 44,
+      "ext" : "ts",
+      "sha256" : "694387b217f7543dfca39c18ac522fa0f3f6c2d243df73233f6451afe6c86b84"
     }
   },
   "truncated-file" : {

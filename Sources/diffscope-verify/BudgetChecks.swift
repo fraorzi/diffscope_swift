@@ -7,22 +7,53 @@ func runBudgetChecks(_ reportRaw: (String, Bool, String) -> Void) {
 
     guard let parser = TSXParser() else { report("parser for the budget checks", false); return }
 
+    /// Wall-clock, measured rather than assumed.
+    ///
+    /// Two of the assertions below are about *cost*, and both were written against an absolute
+    /// second. That is a bound on the machine, not on the behaviour: with four other processes
+    /// saturating this one, the refusal that should take 2.0 s takes 2.3 s and the suite reports a
+    /// failure while the code is doing exactly the right thing. DEC-050 rejected wall-clock
+    /// deadlines for *behaviour* on precisely that reasoning, and the same shape survived inside a
+    /// check of it.
+    ///
+    /// So each cost assertion now names a baseline measured on this machine, in this build, under
+    /// whatever load is present, and asserts a **ratio**. Load inflates both numbers, so the ratio
+    /// holds where the absolute does not — and the ratio is the claim anyway: *refused without
+    /// parsing it* means "costs about what looking at the bytes costs", not "costs under a second".
+    func measure(_ body: () -> Void) -> TimeInterval {
+        let started = Date()
+        body()
+        return Date().timeIntervalSince(started)
+    }
+
     print("\n=== DEC-050: the structural path has gates, and they fire before the cost does ===")
     do {
         // Two shapes with the same bytes and wildly different node counts — the reason the budget
         // is on nodes rather than bytes (`16-…` §2).
         let dense = syntheticDenseJSX(elements: 2000)
         let denseEdited = dense.replacingOccurrences(of: "item", with: "entry")
-        let started = Date()
-        let result = structuralDiff(oldPath: "dense.tsx", oldBytes: [UInt8](dense.utf8),
+        let denseBytes = [UInt8](dense.utf8)
+        // The baseline: parsing this file once. Parsing is linear and always happens; the budget
+        // exists to stop the *matching* that follows, which is quadratic. A run that gave up at the
+        // gate should therefore cost about what the two parses cost and nothing beyond them.
+        let parseBaseline = measure { _ = parser.parseTree(denseBytes) }
+        let elapsed = measure {
+            _ = structuralDiff(oldPath: "dense.tsx", oldBytes: denseBytes,
+                               newPath: "dense.tsx", newBytes: [UInt8](denseEdited.utf8),
+                               parser: parser)
+        }
+        let result = structuralDiff(oldPath: "dense.tsx", oldBytes: denseBytes,
                                     newPath: "dense.tsx", newBytes: [UInt8](denseEdited.utf8),
                                     parser: parser)
-        let elapsed = Date().timeIntervalSince(started)
 
         report("a pathologically dense file falls back rather than matching",
                result.stats.usedFallback, result.stats.fallbackReason ?? "did not fall back")
-        report("and it returns promptly rather than hanging", elapsed < 2.0,
-               String(format: "%.2f s", elapsed))
+        // Four, not two: two parses plus the node walk and the fallback partition, with room for
+        // the scheduler. The number that matters is that it is a small multiple rather than the
+        // unbounded one a hang would produce.
+        report("and it costs about what parsing it costs, rather than hanging",
+               elapsed < parseBaseline * 4 + 0.2,
+               String(format: "%.2f s against a %.2f s parse baseline", elapsed, parseBaseline))
         report("the fallback names which budget was exceeded",
                (result.stats.fallbackReason ?? "").contains("budget")
                    || (result.stats.fallbackReason ?? "").contains("limit"),
@@ -42,17 +73,27 @@ func runBudgetChecks(_ reportRaw: (String, Bool, String) -> Void) {
                "\([UInt8](minified.utf8).count) bytes · \(minifiedResult.stats.fallbackReason ?? "nil")")
 
         let oversize = String(repeating: "const value = 1;\n", count: 200_000)
-        let oversizeStarted = Date()
-        let oversizeResult = structuralDiff(oldPath: "big.ts", oldBytes: [UInt8](oversize.utf8),
-                                            newPath: "big.ts", newBytes: [UInt8]((oversize + "const tail = 2;\n").utf8),
-                                            parser: parser)
-        let oversizeElapsed = Date().timeIntervalSince(oversizeStarted)
+        let oversizeBytes = [UInt8](oversize.utf8)
+        let oversizeNew = [UInt8]((oversize + "const tail = 2;\n").utf8)
         // Refused without building a tree. The remaining cost is `classify`'s content scan, which
         // runs first because a binary or conflicted file deserves the more specific reason
-        // (`13-…` §5 precedence) — in a debug build that scan is most of the time below.
+        // (`13-…` §5 precedence) — in a debug build that scan is most of the time below. So the
+        // baseline is one pass over the same bytes: the work that cannot be avoided.
+        let scanBaseline = measure {
+            var sum = 0
+            for byte in oversizeBytes { sum &+= Int(byte) }
+            precondition(sum >= 0)
+        }
+        let oversizeElapsed = measure {
+            _ = structuralDiff(oldPath: "big.ts", oldBytes: oversizeBytes,
+                               newPath: "big.ts", newBytes: oversizeNew, parser: parser)
+        }
+        let oversizeResult = structuralDiff(oldPath: "big.ts", oldBytes: oversizeBytes,
+                                            newPath: "big.ts", newBytes: oversizeNew, parser: parser)
         report("a file above the size limit is refused without parsing it",
-               oversizeResult.stats.usedFallback && oversizeElapsed < 2.0,
-               String(format: "%.2f s · %@", oversizeElapsed, oversizeResult.stats.fallbackReason ?? "nil"))
+               oversizeResult.stats.usedFallback && oversizeElapsed < scanBaseline * 12 + 0.2,
+               String(format: "%.2f s against a %.2f s scan baseline · %@",
+                      oversizeElapsed, scanBaseline, oversizeResult.stats.fallbackReason ?? "nil"))
     }
 
     print("\n=== a budget that rejects ordinary code is not a budget ===")

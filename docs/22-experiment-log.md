@@ -1977,3 +1977,178 @@ The check that now stands for this — 24 concurrent parses on one shared parser
 `keyboard.png` is the first snapshot in this project of the **window** rather than of the document — `cacheDisplay` on the content view, which is why the diff pane comes out black (a `WKWebView` renders out of process). That was the point: M8-D's blank rows survived because the one surface nothing photographed was the shell.
 
 It shows the walk landing on `File0.tsx` with the row highlighted, the group headers drawn, the `mod`/`add`/`del`/`unt` badges correct, and the status line reading `file 1/63 · packages/app-0/…`. One cosmetic thing worth recording rather than fixing in a hurry: the repository pane draws empty rounded row backgrounds below its single row, from `usesAlternatingRowBackgroundColors`. With one repository configured it reads as a list still loading.
+
+# M8-K — the four statements the interface was not making about itself
+
+**Date:** 2026-08-09 · **Method:** `23b-spec-vs-app-audit.md` §1.10 and §2 taken as a list and closed one by one; the two engine-side items measured by the check suite, the two shell-side items by the check suite *and* the window snapshot.
+
+The audit had four items left and they are the same kind of thing: **statements the interface makes about its own trustworthiness**, three of them missing and one of them wrong.
+
+## The parser state was inferred, and both inferences are wrong in one direction
+
+`12-…` §5.2 lists seven indicators and calls them *"not optional features — these are how the invariant becomes visible"*. Six were built. **Parser state** — parsed, partially parsed, not parsed — was visible only as the presence or absence of a fallback notice, and that inference fails in both directions:
+
+- a file can parse **completely** and still carry a notice, because an active filter (F8) says nothing whatsoever about the parser;
+- a file can be **partially** parsed while the structural result stands, and F1's notice reads like a whole-file failure.
+
+`ParserStateReport.of` decides it from what the run did, and `StructuralStats.parserState` derives it beside the statistics, so the check suite exercises the same derivation the window does. The one case the syntax layer cannot see is a structural result **discarded by validation after parsing** — the parse succeeded and the check afterwards failed, so the shell says `parser: parsed — structural result discarded after parsing`. Reporting "not parsed" there would name the wrong stage of the pipeline, which is precisely why §5.2 lists parser state separately from fallback marking.
+
+## The mode pill reported the reader's selection
+
+Recorded in `23b-…` §2: the pill could read `mode: structural` beside a notice saying structural analysis was unavailable. Both facts are worth having — the selection is what ⌘1–3 will return to, the path is what is on screen — so the pill states both when they disagree: `mode: structural — showing raw`.
+
+**The first version of it invented a disagreement.** Comparing the path against the *mode* made Expanded — a presentation flag over the structural path — read as `mode: expanded — showing structural`. Three modes, two code paths (DEC-013); the comparison is against the path the selection *implies*. Nothing in the harness caught this: the selftest did, in the disclosure arm, which is the one arm that runs in Expanded. A wording defect is still a defect, and the surface that finds it is the one that renders words.
+
+## The branch was in a tooltip
+
+`12-…` §2 lists the branch as displayed. A tooltip is not a display — it is invisible until pointed at, so a reader walking the list from the keyboard, the path M8-J made a definition-of-done item, never sees it. The row now reads `kbtree · main · 63△ ↑0`, and the two unusual head states are the ones that earn the space: `no commits yet (main)` is the sentence that explains why all four scopes are greyed out on `carrefour-inapp`.
+
+## The count did not say what it was counting
+
+`git status --porcelain` collapses an untracked directory to one entry; libgit2's default expands it; X-4 measured the same repository reading **63 or 165**. §2 requires the convention to be stated, and nothing stated it. The sentence lives in `RepositoryReader.uncommittedCountConvention`, next to the operation it describes, so changing `statusPorcelain()` to `statusPorcelainAll()` puts the sentence and the lie in the same diff — and a check asserts the operation actually run matches the words.
+
+## The caption disappeared twice before it was looked at
+
+First it drew at three lines with the third clipped. Shortening the text then removed it **entirely**: an `NSStackView` will give a label zero height beside a scroll view that grows without limit. Both content priorities are now pinned.
+
+Worth recording as a method note rather than a fix: the first crop of `keyboard.png` looked like the caption had vanished a second time, and it had not — `secondaryLabelColor` at 10 pt survives a downscale badly. It took a contrast-enhanced crop at full resolution to see it. **A snapshot answers "is it drawn"; it answers "is it legible" only if you look at it the size the reader does.**
+
+## Numbers
+
+```
+1109 → 1143 checks     (34 new: parser state 16, mode pill 7, contract 6, convention 5)
+37 selftest arms       structural, disclosure and degradation now assert the chips in the document
+```
+
+The two selftest assertions that matter are in the degradation arm, where the reader asked for structural, the file was never parsed, and the interface used to say `mode: structural` without qualification: it now requires `mode: structural — showing raw` **and** `parser: not parsed` to reach the DOM.
+
+# M8-L — T-11's second and third relocation shapes
+
+**Date:** 2026-08-09 · **Method:** two fixtures built and measured through `diffscope-verify`'s per-fixture statistics; the corpus's own T-11 coverage turned into three assertions.
+
+`26-coverage-audit.md` said it plainly: *"T-11 is proven on a single relocation shape, and a second shape would be worth more than any other addition to this table."* There are three now.
+
+| Fixture | Shape | Moves found |
+|---|---|---|
+| `moved-function` | one statement relocated | 1 |
+| `moved-block` | a multi-line function relocated past two declarations | 1 (+1 below floor) |
+| `moved-two-blocks` | two independent relocations in one file | 2 (+1 below floor) |
+
+`moved-two-blocks` is the one that makes `link` mean something. With a single move in the corpus, a `link` field that always read `0` would have passed every check ever written; with two, T-11 compares each link's two sides and a cross-paired link fails.
+
+## The failure that came with it, which is the fourth of its kind
+
+The first `moved-two-blocks` swapped two **short single lines** — `let retryLimit = 3;` and `export type Session = { id: string };`. Zero moves, ten hunks. The canonical diff had matched `" = "` and `";"` across the two lines, so on the old side the relocated line was two changed fragments with an unchanged fragment between them, and the line-based search of DEC-038 had no whole changed line to pair.
+
+That is now the fourth construction failure of the same family: two near-identical functions swapped, `export const VAT_RATE` sharing a prefix, and two short lines sharing punctuation. **The generalisation is worth stating once:** the shorter the relocated line, the more likely the canonical diff has already spent its bytes matching fragments elsewhere. Blocks relocate detectably; short statements often do not.
+
+It is a property of DEC-038 as decided rather than a defect — widening the search to partly-changed lines would put bytes the canonical diff calls unchanged inside a `moved` range.
+
+## The coverage assertion was wrong before the corpus was
+
+The new check asks the corpus to prove it exercises T-11 in more than one shape, and its multi-line arm asked whether any **segment** of a move contains a newline. A relocated block arrives as one segment per line, so none does: the check reported **zero multi-line moves on a corpus that has two**, and failed while the fixtures were correct. Measured over the link's whole span now.
+
+Same shape as the two checks M8-C had to correct after they failed correct behaviour. A check written at the same time as the thing it checks tends to encode the same guess.
+
+```
+1143 → 1182 checks     34 fixtures, up from 32
+```
+
+# M8-M - OQ-046 answered: no read-only operation triggers auto-gc
+
+**Date:** 2026-08-09 - **Method:** two arms. A scratch repository with the thresholds brought down to it (`gc.auto=1`, `gc.autoPackLimit=1`, `gc.autoDetach=false`) so maintenance fires at the first opportunity, in the foreground; and a one-off measurement against the largest repository in the corpus, which turns out to sit at 91% of git's default threshold without any help.
+
+The question has been open since the read-only audit, and the audit said why it could not answer it: it ran below every threshold, so its "no" was a "no" about the wrong repository.
+
+## The mitigation is not available, which is why it had to be measured
+
+`gc.auto=0` in the repository's config is a **write**, forbidden by DEC-003. Passing it per invocation as `-c gc.auto=0` is forbidden too, for an unrelated reason: `-c` is in `GitOperation.forbiddenArguments`, because an operation whose configuration the caller injects is no longer the operation the registry describes. Both doors are closed by decisions taken for other reasons, so a "yes" here would have cost a reopened decision.
+
+## Arm one: thresholds brought down to the repository
+
+| | |
+|---|---|
+| 15 registered operations, one pass | maintenance state unchanged |
+| three full sweeps of the registry | unchanged |
+| **positive control** - one `git commit` in the same repository | **fires** |
+
+The positive control is the whole check. Without it, "no gc happened" is equally consistent with "the configuration was not eager after all", which is a check that proves nothing while passing - the shape this project has now hit five times.
+
+**Arming it taught something small.** The first version asserted the repository had more than one pack, and it never did: building the fixture trips auto-gc several times on its own, so by the time anything is measured git has already packed and pruned to one pack. That is the arming working, not failing. The assertion is now that the thresholds are in force and there is loose material to collect.
+
+## Arm two: the largest real repository, measured once
+
+`mailingi-2025`, 1.5 GB of `.git`, no `gc.*` configuration of its own:
+
+```
+gc defaults in force: gc.auto=6700, gc.autoPackLimit=50
+before:  packs=19  loose=6115  gc.log=no
+after 8 read-only operations
+after:   packs=19  loose=6115  gc.log=no
+```
+
+**6,115 loose objects is 91% of the default threshold.** This is not a repository that happens to be far from the line; it is one sitting just under it, and the read-only operations moved nothing.
+
+## The answer
+
+**No.** Auto-gc is offered by git after commands that *create* objects or refs - commit, merge, am, receive-pack - and none of those is in the registry. The eager-threshold arm is now a permanent check, so an operation added to the registry that does trigger maintenance fails the suite rather than surprising a user with a foreground gc on a 1.5 GB repository.
+
+What remains true, and is not a defect: a `git commit` **typed by the user in the built-in terminal** can trigger auto-gc. That is DEC-053's separation exactly - the application acting on its own writes nothing; the user's shell does what the user says.
+
+# M8-N - the two wall-clock checks re-expressed as ratios
+
+**Date:** 2026-08-09 - **Method:** each cost assertion given a baseline measured on the same machine, in the same build, immediately before the thing it bounds; the whole suite then run with eight CPU spinners saturating the machine.
+
+`21-agent-handoff.md` had carried this as a known weakness since M8-C: `BudgetChecks` asserted an absolute 2.0 s, and with four other processes running the refusal measured 2.3 s and the suite reported 1079/1080 while the code was doing exactly the right thing.
+
+DEC-050 rejected wall-clock deadlines for *behaviour* on that reasoning - a budget must be counted work, because giving up at a deadline makes the output depend on the load. The same shape had survived inside a check *of* DEC-050.
+
+| Assertion | Baseline it is now measured against |
+|---|---|
+| a pathologically dense file returns rather than hanging | one parse of the same file - parsing is linear and unavoidable, matching is what the budget stops |
+| a file above the size limit is refused without parsing it | one pass over the same bytes - the `classify` scan that runs first and cannot be avoided |
+
+Both bounds are small multiples (4x and 12x, each with 0.2 s of slack for the scheduler). Load inflates the baseline and the measurement together, so the ratio survives what the absolute did not.
+
+```
+idle:                 1188/1188
+8 CPU spinners:       1188/1188, both checks passing
+```
+
+The ratio also states the claim better than the second did. *Refused without parsing it* means "costs about what looking at the bytes costs" - a sentence about the work done. "Under two seconds" is a sentence about the machine.
+
+# M8-O - the corpus and the plan can now disagree out loud
+
+**Date:** 2026-08-09 - **Method:** `15-test-corpus-plan.md` §4 transcribed into `FixtureCatalog`, checked against the directory, and the gap closed.
+
+DEC-057's treatment applied to the fixture list. The keyboard map was a Markdown table and a hand-written menu with no link between them, and when they disagreed nothing noticed for three milestones. §4 was the same shape: **sixty named cases in a document, thirty-four directories on disk.** `18-version-one-scope.md`'s definition of done opens with *"every P0 fixture group passes T-0 ... T-11"* - a claim about a list nothing had ever read against the corpus.
+
+## What the check found on its first run
+
+**Thirteen P0 cases named in the plan did not exist**, eight of them in §4.1, *the founding cases* - the group the product is named after:
+
+```
+jsx-wrapper-added            jsx-wrapper-type-change    jsx-text-punctuation
+identifier-typo              repeated-identifier-change prop-value-change
+prop-reordering              spread-prop-reordering     template-literal-expression-change
+clsx-expression-change       eslint-autofix             import-item-removal
+image-file
+```
+
+`prop-reordering` is the one that stings. It is **item 4 of the definition of done** - *"prop reordering with unchanged values never reports no change"* - and it was proven only by an input written inline in `MatchingChecks`. The plan had asked for a fixture since Phase 6.
+
+All thirteen are built. 34 -> 47 fixtures, 1188 -> 1407 checks.
+
+## Evidence that is not a directory is now named as such
+
+Ten cases cannot be file pairs, and each says why in the catalog rather than being quietly absent: `eol-filter-active` needs `.gitattributes` and an index; `huge-file` would put megabytes in every clone; the file-level operations in §4.7 are properties of a repository. **`generated-file` is listed as not proven at all**, because OQ-029 is open and a fixture would freeze an answer nobody has chosen. A gap that is counted is worth more than a gap that is tidy.
+
+## A gap the new fixtures exposed rather than closed
+
+`prop-reordering` and `spread-prop-reordering` are classified as **neither** `reordering` nor `formatting-only`. §4.1 hoped for the first. The detector is an exact-permutation equivalence test over the aligned gap pair (DEC-046), and once the props are reformatted the pairs are fragments rather than whole attribute lists, so the test cannot fire.
+
+Recorded rather than papered over, and the dangerous direction is checked: **a reorder is never presented as formatting-only**, asserted on all four reordering fixtures. Formatting-only is the one classification the interface may quieten (DEC-048), so claiming it about a change that can alter behaviour is the failure that matters. Not claiming `reordering` costs a label; claiming `formatting-only` would cost the invariant.
+
+```
+34 -> 47 fixtures      1188 -> 1407 checks
+```

@@ -631,3 +631,108 @@ render whose file is no longer selected is dropped — the second half being its
 file's diff under another file's name.
 
 1109/1109 checks (1088 + 21), 24 selftest arms, `package.sh` green with the 63-file walk in it.
+
+## Step 28 — M8-K: the four statements the interface was not making about itself (DEC-058)
+
+- [x] `ParserStateReport` in the engine — three states, the words composed once, carried as text
+- [x] `StructuralStats.parserState`, so the suite exercises the derivation the window uses
+- [x] `RenderModel.pathTaken` and `modeChip`; `impliedPath(ofMode:)` states DEC-013's 3-to-2 mapping
+- [x] The branch out of the tooltip and into the repository row
+- [x] `RepositoryReader.uncommittedCountConvention`, on screen under the list, beside the operation
+- [x] `TrustSurfaceChecks`: state derivation, chip wording, the pill both ways, the contract's
+      round trip, the convention's *truth* (`--porcelain`, no `-uall`), the three head states
+- [x] Selftest arms assert the chips in the **document**: `parser: parsed` in the structural arm,
+      `mode: structural — showing raw` and `parser: not parsed` in the degradation arm
+- [x] DEC-058, M8-K, `23b-…` closed, handoff §0, `00-index.md`
+
+### Step 28 — done
+
+1143/1143 checks (1109 + 34), 37 selftest arms, the 63-file walk still clean.
+
+**The pill invented a disagreement before it reported a real one.** Comparing the path against the
+*mode* made Expanded — a presentation flag over the structural path — read as
+`mode: expanded — showing structural`. Three modes, two code paths. No harness check saw it; the
+selftest did, in the one arm that renders in Expanded.
+
+**The caption vanished twice.** Three lines with the third clipped, then gone entirely when the text
+got shorter — an `NSStackView` will give a label zero height beside a scroll view that grows without
+limit. And then it *looked* gone a third time in a downscaled crop of `keyboard.png` while being
+perfectly present at full resolution. A snapshot answers "is it drawn"; only looking at it the size
+the reader does answers "is it legible".
+
+## Step 29 - M8-L: T-11's second and third relocation shapes
+
+- [x] `moved-block` - a multi-line function relocated past two declarations
+- [x] `moved-two-blocks` - two independent relocations, so `link` pairs rather than counts
+- [x] The corpus asserts its own T-11 coverage: a move exists, one spans several lines, one file
+      produces two
+- [x] `MANIFEST.json` re-recorded deliberately (34 fixtures)
+- [x] M8-L, `26-coverage-audit.md`, `15-...`, handoff section 0, notes.md in both fixtures
+
+### Step 29 - done
+
+1182/1182 checks (1143 + 39), 34 fixtures.
+
+**A fourth construction failure of the same family.** Two short single lines swapped produced zero
+moves: the canonical diff had matched the shared ` = ` and `;` across them, so neither was a whole
+changed line for DEC-038's search to pair. The generalisation, finally written down: the shorter the
+relocated line, the more likely the byte diff has already spent its bytes matching fragments
+elsewhere.
+
+**The coverage check was wrong before the corpus was.** Its multi-line arm asked whether any
+*segment* of a move contains a newline - a relocated block arrives as one segment per line, so it
+reported zero multi-line moves on a corpus with two. A check written at the same time as the thing
+it checks tends to encode the same guess.
+
+## Step 30 - M8-M: OQ-046 answered by measurement
+
+- [x] `AutoGcChecks`: a scratch repository with `gc.auto=1`, `gc.autoPackLimit=1`, `autoDetach=false`
+- [x] All 15 registered operations, then three full sweeps, leave maintenance state unchanged
+- [x] **Positive control**: one `git commit` in the same repository does fire
+- [x] Two checks stating that neither mitigation is available - `gc.auto=0` is a write, `-c` is in
+      `forbiddenArguments` - so the reasoning cannot rot into "we could always turn it off"
+- [x] One-off measurement on the corpus's largest repository: 6,115 loose objects, 91% of git's
+      default threshold, unchanged
+- [x] M8-M, OQ-046 resolved, handoff section 0 and the risk table, `00-index.md`
+
+### Step 30 - done
+
+1188/1188 checks (1182 + 6).
+
+**Arming the fixture taught the small thing.** The first version asserted more than one pack and
+never got one: building the repository trips auto-gc several times on its own, so by measurement
+time git has already packed and pruned. That is the arming working, not failing.
+
+## Step 31 - M8-N: the wall-clock checks become ratios
+
+- [x] `measure` helper in `BudgetChecks`, with the reasoning written where the next reader hits it
+- [x] The dense-JSX run bounded by the cost of one parse; the oversize refusal by one byte scan
+- [x] Verified under eight CPU spinners: 1188/1188, both checks passing
+- [x] M8-N, handoff section 0's known-weakness paragraph struck
+
+### Step 31 - done
+
+The known weakness that had stood since M8-C is closed, and the fix is the one DEC-050 already
+argued for in a different place: bound the work, not the wall clock.
+
+## Step 32 - M8-O: the corpus and the plan can disagree out loud
+
+- [x] `FixtureCatalog` - `15-...` section 4's sixty named cases as data, with priority and evidence
+- [x] Evidence that is not a directory names where it *is* proven, and why it cannot be a pair
+- [x] Thirteen missing P0 cases built, eight of them in section 4.1, the founding cases
+- [x] Four reordering fixtures asserted never to be presented as formatting-only
+- [x] `MANIFEST.json` re-recorded (47 fixtures)
+- [x] M8-O, `15-...` section 8, handoff section 0, `00-index.md`, notes.md in every new fixture
+
+### Step 32 - done
+
+1407/1407 checks (1188 + 219), 47 fixtures.
+
+**`prop-reordering` did not exist.** It is item 4 of the definition of done - *prop reordering with
+unchanged values never reports "no change"* - and it was proven only by an input written inline in
+`MatchingChecks`. The plan had asked for the fixture since Phase 6.
+
+**A gap the new fixtures exposed rather than closed.** Neither reordering fixture is classified as
+`reordering`: the detector is an exact-permutation test over the aligned gap pair, and a reformat
+turns the pairs into fragments. Recorded, and the dangerous direction checked instead - a reorder is
+never presented as formatting-only, which is the one classification the interface may quieten.

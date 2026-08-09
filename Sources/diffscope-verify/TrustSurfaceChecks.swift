@@ -1,0 +1,212 @@
+import DiffScopeEngine
+import DiffScopeGit
+import DiffScopeSyntax
+import Foundation
+
+/// M8-K — the four things `23b-spec-vs-app-audit.md` still listed as missing or shallow, all of
+/// them statements the interface makes about its own trustworthiness:
+///
+/// - §1.10 the **parser-state indicator**, the last of `12-…` §5.2's seven;
+/// - §2 the **branch**, listed as displayed and living in a tooltip;
+/// - §2 the **uncommitted-count convention**, required on screen and stated nowhere;
+/// - §2 the **mode pill**, reporting the reader's selection rather than the path taken.
+///
+/// The first and last are computed in the engine and carried on the contract, so they are checked
+/// here. The middle two are shell strings, so what is checked here is that the sentence exists in
+/// one place, that it is *true* of the operation actually run, and that the shell reads it from
+/// there — with the window itself covered by the application selftest.
+func runTrustSurfaceChecks(_ reportRaw: (String, Bool, String) -> Void) {
+    func report(_ name: String, _ ok: Bool, _ detail: String = "") { reportRaw(name, ok, detail) }
+
+    print("\n=== the parser state is stated, not inferred (12-… §5.2, 23b-… §1.10) ===")
+    do {
+        let raw = ParserStateReport.of(structuralRequested: false, structuralUsed: false,
+                                       degradation: nil)
+        report("raw mode says the file is not parsed, and why",
+               raw.state == "not-parsed" && (raw.detail ?? "").contains("raw mode"), raw.chipText)
+
+        let withheld = ParserStateReport.of(
+            structuralRequested: true, structuralUsed: false,
+            degradation: .unsupportedLanguage(reason: "`.css` has no structural support"))
+        report("a withheld structural run reports the condition that withheld it",
+               withheld.state == "not-parsed" && (withheld.detail ?? "").contains(".css"),
+               withheld.chipText)
+
+        // The default matters: a fallback with no recorded condition must still say something,
+        // because "not parsed" with no reason is the shape of an unexplained failure.
+        let unexplained = ParserStateReport.of(structuralRequested: true, structuralUsed: false,
+                                               degradation: nil)
+        report("a withheld run with no recorded condition still gives a reason",
+               unexplained.detail?.isEmpty == false, unexplained.chipText)
+
+        let partial = ParserStateReport.of(structuralRequested: true, structuralUsed: true,
+                                           degradation: .partialParseError(reason: "…"),
+                                           unparsedRegions: 2, unparsedBytes: 41)
+        report("a partly-parsed file says how much of it was not parsed",
+               partial.state == "partial" && partial.chipText.contains("2 regions")
+                   && partial.chipText.contains("41 bytes"), partial.chipText)
+
+        let one = ParserStateReport.of(structuralRequested: true, structuralUsed: true,
+                                       degradation: .partialParseError(reason: "…"),
+                                       unparsedRegions: 1, unparsedBytes: 9)
+        report("one region is one region, not `1 regions`",
+               one.chipText.contains("1 region,"), one.chipText)
+
+        let clean = ParserStateReport.of(structuralRequested: true, structuralUsed: true,
+                                         degradation: nil)
+        report("a file that parsed says so with nothing further",
+               clean == .parsed && clean.chipText == "parser: parsed", clean.chipText)
+
+        // The negative control, and the reason the indicator is worth building at all: before it,
+        // a reader inferred the parse state from the presence of a notice. A filter is a notice
+        // that says nothing whatsoever about the parser.
+        let filtered = ParserStateReport.of(structuralRequested: true, structuralUsed: true,
+                                            degradation: .filterActive(reason: "eol=crlf"))
+        report("a condition unrelated to parsing leaves the parser state alone",
+               filtered.state == "parsed", filtered.chipText)
+
+        report("the three states are the three words the specification names",
+               ParserStateReport(state: "parsed", detail: nil).chipText == "parser: parsed"
+                   && ParserStateReport(state: "partial", detail: nil).chipText
+                       == "parser: partially parsed"
+                   && ParserStateReport(state: "not-parsed", detail: nil).chipText
+                       == "parser: not parsed")
+    }
+
+    print("\n=== the parser state comes from the run, not from a second opinion ===")
+    do {
+        let parser = TSXParser()
+
+        let clean = structuralDiff(oldPath: "a.tsx", oldBytes: [UInt8]("const a = 1;\n".utf8),
+                                   newPath: "a.tsx", newBytes: [UInt8]("const a = 2;\n".utf8),
+                                   parser: parser)
+        report("a real structural run on TSX reports `parsed`",
+               clean.stats.parserState == .parsed, clean.stats.parserState.chipText)
+
+        let unsupported = structuralDiff(oldPath: "a.css", oldBytes: [UInt8]("a{color:red}".utf8),
+                                         newPath: "a.css", newBytes: [UInt8]("a{color:blue}".utf8),
+                                         parser: parser)
+        report("an unsupported language reports `not parsed` with F7's reason",
+               unsupported.stats.parserState.state == "not-parsed"
+                   && unsupported.stats.degradation?.code == "F7",
+               unsupported.stats.parserState.chipText)
+
+        // The same half-typed JSX F1 is measured on in `runPartialFailureChecks`.
+        let broken = structuralDiff(
+            oldPath: "a.tsx", oldBytes: [UInt8]("const el = <Row><Cell name=\"alpha\" /</Row>;\n".utf8),
+            newPath: "a.tsx", newBytes: [UInt8]("const el = <Row><Cell name=\"omega\" /</Row>;\n".utf8),
+            parser: parser)
+        report("a file that parses in part reports `partial`, and the result still stands",
+               broken.stats.parserState.state == "partial" && !broken.stats.usedFallback,
+               broken.stats.parserState.chipText)
+    }
+
+    print("\n=== the mode pill reports the path taken, not only the selection (23b-… §2) ===")
+    do {
+        report("agreement says one thing", modeChipText(selected: "raw", pathTaken: "raw")
+                   == "mode: raw")
+        report("disagreement says both",
+               modeChipText(selected: "structural", pathTaken: "raw")
+                   == "mode: structural — showing raw",
+               modeChipText(selected: "structural", pathTaken: "raw"))
+        // The defect exactly as recorded: `mode: structural` beside a notice saying structural
+        // analysis was unavailable. It must no longer be possible to say the first alone.
+        report("the selection alone is never the whole sentence when the path differs",
+               modeChipText(selected: "expanded", pathTaken: "raw") != "mode: expanded")
+        // Unclaimed stays unclaimed: a caller that knows nothing about the path says nothing about
+        // it, rather than having a claim invented for it.
+        report("a caller that makes no claim gets the selection alone",
+               modeChipText(selected: "structural", pathTaken: nil) == "mode: structural")
+
+        // Three modes over two code paths (DEC-013). The first version of the pill compared the
+        // path against the *mode*, so Expanded — a presentation flag over the structural path —
+        // read as `mode: expanded — showing structural`, a disagreement the wording invented. The
+        // selftest caught it, because that arm runs in Expanded.
+        report("expanded rendered structurally is agreement, not a fallback",
+               modeChipText(selected: "expanded", pathTaken: "structural") == "mode: expanded",
+               modeChipText(selected: "expanded", pathTaken: "structural"))
+        report("and expanded rendered raw is still a fallback",
+               modeChipText(selected: "expanded", pathTaken: "raw")
+                   == "mode: expanded — showing raw")
+        report("the three modes map onto the two code paths",
+               impliedPath(ofMode: "raw") == "raw" && impliedPath(ofMode: "structural") == "structural"
+                   && impliedPath(ofMode: "expanded") == "structural")
+    }
+
+    print("\n=== both reach the renderer as words, decided once ===")
+    do {
+        let model = trivialModel(oldBytes: [UInt8]("a\n".utf8), newBytes: [UInt8]("b\n".utf8))
+        let stated = buildRenderModel(model: model, pinOld: "x", pinNew: "y", mode: "structural",
+                                      pathTaken: "raw",
+                                      parser: ParserStateReport(state: "not-parsed",
+                                                                detail: "budget exceeded"))
+        report("the contract carries the path taken", stated.pathTaken == "raw")
+        report("and composes the pill itself",
+               stated.modeChip == "mode: structural — showing raw", stated.modeChip)
+
+        let json = (try? encodeRenderModel(stated)) ?? ""
+        // Carried as text rather than assembled in JavaScript: the renderer draws it and the
+        // headless probe reads it, and a sentence written in two languages drifts in one of them.
+        report("the encoded model carries the parser chip's words",
+               json.contains("\"chipText\":\"parser: not parsed — budget exceeded\""))
+        report("and the pill's words", json.contains("\"modeChip\":\"mode: structural — showing raw\""))
+
+        let silent = buildRenderModel(model: model, pinOld: "x", pinNew: "y", mode: "raw")
+        report("a caller that says nothing about the parser carries no parser claim",
+               silent.parser == nil && !((try? encodeRenderModel(silent)) ?? "").contains("chipText"))
+        report("and its pill still says what was selected", silent.modeChip == "mode: raw")
+
+        // Round-tripping matters because the probe decodes what the document received.
+        let decoded = try? JSONDecoder().decode(
+            RenderModel.self, from: Data(((try? encodeRenderModel(stated)) ?? "").utf8))
+        report("the model round-trips with both fields intact",
+               decoded?.pathTaken == "raw" && decoded?.parser?.state == "not-parsed"
+                   && decoded?.modeChip == stated.modeChip)
+    }
+
+    print("\n=== the uncommitted count states its convention (12-… §2, X-4) ===")
+    do {
+        let sentence = RepositoryReader.uncommittedCountConvention
+        report("the sentence names the command it describes",
+               sentence.contains("git status --porcelain"), sentence)
+        report("and the disagreement it exists because of — an untracked directory counts once",
+               sentence.lowercased().contains("untracked directory"), sentence)
+
+        // The sentence has to be **true**, which is a different check: `-uall` would expand
+        // untracked directories and make the same words a false statement (63 vs 165 in X-4).
+        let operation = GitOperation.statusPorcelain()
+        report("the operation actually run matches the sentence",
+               operation.arguments.contains("--porcelain") && !operation.arguments.contains("-uall"),
+               operation.arguments.joined(separator: " "))
+
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let shell = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/main.swift"),
+                                 encoding: .utf8)) ?? ""
+        report("the shell reads the sentence from the Git layer rather than restating it",
+               shell.contains("RepositoryReader.uncommittedCountConvention"))
+        report("and puts it in the window beside the counts",
+               shell.contains("conventionLabel = NSTextField")
+                   && shell.contains("leftStack = NSStackView"))
+    }
+
+    print("\n=== the branch is displayed, not hovered (12-… §2, 23b-… §2) ===")
+    do {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let shell = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/main.swift"),
+                                 encoding: .utf8)) ?? ""
+        // A tooltip is not a display: it is invisible until pointed at, so a reader walking the
+        // list from the keyboard — the path M8-J made a definition-of-done item — never sees it.
+        let row = shell.components(separatedBy: "let ahead = snapshot.aheadCount").dropFirst().first ?? ""
+        let rowLabel = row.components(separatedBy: "text.toolTip").first ?? ""
+        report("the row's own text carries the head state",
+               rowLabel.contains("snapshot.head.displayText"))
+
+        // The three head states, because the two unusual ones are the ones worth displaying:
+        // `no commits yet` is the sentence that explains why all four scopes are greyed out.
+        report("a branch reads as its name", HeadState.onBranch("main").displayText == "main")
+        report("a detached head says so",
+               HeadState.detached("0123456789abcdef").displayText == "detached at 01234567")
+        report("an unborn head says there are no commits, and names the intended branch",
+               HeadState.unborn(intendedBranch: "main").displayText == "no commits yet (main)")
+    }
+}

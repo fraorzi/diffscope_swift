@@ -63,6 +63,17 @@ public struct RenderModel: Codable, Sendable, Equatable {
     public let pinOld: String
     public let pinNew: String
     public let mode: String
+    /// Which code path produced what is on screen — `structural` or `raw` — as opposed to `mode`,
+    /// which is what the reader asked for. `nil` means the caller made no claim, and the pill then
+    /// says only what the reader selected, which is what it said everywhere before M8-K.
+    public let pathTaken: String?
+    /// `12-…` §5.2's parser-state indicator. Optional for the same reason: a check that fabricates
+    /// a model has nothing to say about a parser it never ran, and an absent chip is better than a
+    /// default one that would be a claim.
+    public let parser: ParserStateReport?
+    /// The pill's words, composed by `modeChipText` rather than in the renderer, so that "which
+    /// path was taken" is stated in one place and read in two.
+    public let modeChip: String
     public let payload: RenderPayload
     public let coverageVerified: Bool
     public let notices: [String]
@@ -94,6 +105,8 @@ public func buildRenderModel(
     pinOld: String,
     pinNew: String,
     mode: String = "raw",
+    pathTaken: String? = nil,
+    parser: ParserStateReport? = nil,
     validation: ValidationResult? = nil,
     notices extra: [String] = [],
     previousAnchor: RefreshAnchor? = nil
@@ -148,6 +161,8 @@ public func buildRenderModel(
         }
         return RenderModel(
             pinOld: pinOld, pinNew: pinNew, mode: mode,
+            pathTaken: pathTaken, parser: parser,
+            modeChip: modeChipText(selected: mode, pathTaken: pathTaken),
             payload: .text(old: old, new: new),
             coverageVerified: result.coverageChecked,
             notices: notices,
@@ -160,6 +175,8 @@ public func buildRenderModel(
         notices.append("content is not valid UTF-8; no text rendering is offered")
         return RenderModel(
             pinOld: pinOld, pinNew: pinNew, mode: mode,
+            pathTaken: pathTaken, parser: parser,
+            modeChip: modeChipText(selected: mode, pathTaken: pathTaken),
             payload: .unrenderable(reason: String(describing: error)),
             coverageVerified: result.coverageChecked,
             notices: notices,

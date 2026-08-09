@@ -215,13 +215,13 @@ Sourcing rule: fixtures are copied out of repositories, never referenced in plac
 
 ## 6.5 Where the corpus stands
 
-**32 fixtures as of M8-C** (2026-07-29), up from 9. Every one runs through **both** paths — raw and structural — with T-0…T-11 asserted by number, and every one is recorded in `MANIFEST.json`, which is now read by a check rather than being dead data.
+**47 fixtures as of M8-O** (2026-08-09), up from 9. §4 above is now **transcribed into `FixtureCatalog` and checked against the directory**: a P0 case named here and absent from `fixtures/` fails the suite, and a case that cannot be a file pair must name where it is proven instead. Thirteen P0 cases were missing on that check's first run, eight of them in §4.1 - see `22-experiment-log.md` -> **M8-O**. Every one runs through **both** paths — raw and structural — with T-0…T-11 asserted by number, and every one is recorded in `MANIFEST.json`, which is now read by a check rather than being dead data.
 
 Which test is proven where, and what could fail it: **`26-coverage-audit.md`**. Read it before adding a fixture; the gaps it names are worth more than another instance of a case already covered.
 
 ## 7. What "done" means for the corpus
 
-- Every P0 group has at least one fixture, and every fixture passes T-1 through T-11.
+- Every P0 **case** named in §4 exists in the corpus or names where it is proven instead - checked, not asserted - and every fixture passes T-1 through T-11.
 - The read-only proof (§5.1) covers every Git operation the application can issue.
 - Property-based generators run in CI with a fixed seed for reproducibility plus a rotating seed to find new cases.
 - Every invariant violation ever found in development is promoted into a permanent fixture. The corpus grows monotonically; nothing is removed because it started passing.

@@ -58,6 +58,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var scopeControl: NSSegmentedControl!
     var modeControl: NSSegmentedControl!
     var statusLabel: NSTextField!
+    /// The sentence stating which convention the uncommitted counts use (`12-…` §2).
+    var conventionLabel: NSTextField!
     var rendererReady = false
     var pendingModel: String?
     var watcher: RepositoryWatcher?
@@ -156,8 +158,31 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
         webView.navigationDelegate = self
 
-        let leftScroll = scrollWrapping(repoTable)
         let middleScroll = scrollWrapping(fileTable)
+
+        // `12-…` §2: the uncommitted count *"must state which convention it uses"*. On screen,
+        // under the counts it describes, rather than in a tooltip or a document the reader does
+        // not have. The sentence comes from the Git layer, beside the operation it is about.
+        conventionLabel = NSTextField(labelWithString: RepositoryReader.uncommittedCountConvention)
+        // A sentence, so the proportional face rather than the monospace the paths use — it fits
+        // the pane in two lines instead of three, and the third was being clipped.
+        conventionLabel.font = Theme.prose(Theme.textSizeTiny)
+        conventionLabel.textColor = Theme.inkQuiet
+        conventionLabel.maximumNumberOfLines = 2
+        conventionLabel.lineBreakMode = .byWordWrapping
+        conventionLabel.preferredMaxLayoutWidth = Theme.repositoryPaneWidth - 2 * Theme.space3
+        // Both priorities, or the sentence vanishes: a stack view will happily give a label zero
+        // height next to a scroll view that grows without limit, and it did — the first version of
+        // this pane rendered the caption at three lines with the third clipped, and squeezed it out
+        // of existence entirely when the text got shorter. M8-D's defect class, one pane over.
+        conventionLabel.setContentCompressionResistancePriority(.required, for: .vertical)
+        conventionLabel.setContentHuggingPriority(.required, for: .vertical)
+        let leftStack = NSStackView(views: [scrollWrapping(repoTable), conventionLabel])
+        leftStack.orientation = .vertical
+        leftStack.alignment = .leading
+        leftStack.spacing = Theme.space2
+        leftStack.edgeInsets = NSEdgeInsets(top: 0, left: Theme.space3, bottom: Theme.space3, right: Theme.space3)
+        let leftScroll = leftStack
 
         let controls = NSStackView(views: [scopeControl, modeControl])
         controls.orientation = .horizontal
@@ -407,14 +432,20 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         """.utf8)
         let outcome = buildModel(path: "selftest.tsx", old: old, new: new, mode: .structural)
         let render = buildRenderModel(model: outcome.model, pinOld: "pinC", pinNew: "pinD",
-                                      mode: "structural", validation: outcome.validation,
+                                      mode: "structural", pathTaken: outcome.pathTaken,
+                                      parser: outcome.parser, validation: outcome.validation,
                                       notices: outcome.notices)
         guard let json = try? encodeRenderModel(render) else { exit(5) }
         push(json)
         webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
             let text = (value as? String) ?? "nil"
+            // The parser-state indicator (`12-…` §5.2) has to reach the *document*: it is the
+            // seventh of seven and the last to be built, and its whole purpose is that a reader
+            // no longer infers the parse state from the presence of some other notice.
             let ok = text.contains("pinC:pinD")
                 && text.contains("formatting-only")
+                && text.contains("parser: parsed")
+                && text.contains("mode: structural")
                 && !text.contains("\"formattingMarks\":0")
             FileHandle.standardError.write(
                 Data("SELFTEST structural=\(ok ? "OK" : "MISMATCH") \(outcome.summary) \(text.suffix(200))\n".utf8))
@@ -433,7 +464,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let new = [UInt8]("const first = 111;\n\(lines)const last = 222;\n".utf8)
         let outcome = buildModel(path: "selftest.tsx", old: old, new: new, mode: .structural)
         let render = buildRenderModel(model: outcome.model, pinOld: "pinI", pinNew: "pinJ",
-                                      mode: "structural", validation: outcome.validation,
+                                      mode: "structural", pathTaken: outcome.pathTaken,
+                                      parser: outcome.parser, validation: outcome.validation,
                                       notices: outcome.notices)
         guard let json = try? encodeRenderModel(render) else { exit(13) }
         push(json)
@@ -480,7 +512,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         """.utf8)
         let outcome = buildModel(path: "selftest.tsx", old: old, new: new, mode: .structural)
         let render = buildRenderModel(model: outcome.model, pinOld: "pinK", pinNew: "pinL",
-                                      mode: "structural", validation: outcome.validation,
+                                      mode: "structural", pathTaken: outcome.pathTaken,
+                                      parser: outcome.parser, validation: outcome.validation,
                                       notices: outcome.notices)
         guard let json = try? encodeRenderModel(render) else { exit(15) }
         push(json)
@@ -505,7 +538,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             let outcome = self.buildModel(path: "selftest.tsx", old: prefix + old, new: prefix + new,
                                           mode: .structural)
             let render = buildRenderModel(model: outcome.model, pinOld: "pinM", pinNew: "pinN",
-                                          mode: "structural", validation: outcome.validation,
+                                          mode: "structural", pathTaken: outcome.pathTaken,
+                                      parser: outcome.parser, validation: outcome.validation,
                                           notices: outcome.notices, previousAnchor: anchor)
             guard let json = try? encodeRenderModel(render) else { exit(18) }
             self.push(json)
@@ -535,15 +569,22 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let outcome = buildModel(path: "selftest.tsx", old: old, new: new, mode: .structural,
                                  external: [.filterActive(reason: disclosure)])
         let render = buildRenderModel(model: outcome.model, pinOld: "pinO", pinNew: "pinP",
-                                      mode: "structural", validation: outcome.validation,
+                                      mode: "structural", pathTaken: outcome.pathTaken,
+                                      parser: outcome.parser, validation: outcome.validation,
                                       notices: outcome.notices)
         guard let json = try? encodeRenderModel(render) else { exit(20) }
         push(json)
         webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
             let text = (value as? String) ?? "nil"
+            // The pill and the parser chip both have to disagree with the reader's selection here,
+            // which is the case `23b-…` §2 recorded and nothing enforced: the reader asked for
+            // structural, the file was never parsed, and the interface used to say `mode:
+            // structural` with no qualification whatsoever.
             let ok = text.contains("Structural analysis unavailable")
                 && text.contains("git status")
                 && text.contains("All textual differences are shown")
+                && text.contains("mode: structural — showing raw")
+                && text.contains("parser: not parsed")
             FileHandle.standardError.write(
                 Data("SELFTEST degradation=\(ok ? "OK" : "MISMATCH") \(outcome.summary.prefix(80))\n".utf8))
             self.snapshot(named: "degraded") {
@@ -561,7 +602,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let new = [UInt8](lines.replacingOccurrences(of: "value7 = 7", with: "value7 = 77").utf8)
         let outcome = buildModel(path: "selftest.tsx", old: old, new: new, mode: .structural)
         let render = buildRenderModel(model: outcome.model, pinOld: "pinQ", pinNew: "pinR",
-                                      mode: "structural", validation: outcome.validation,
+                                      mode: "structural", pathTaken: outcome.pathTaken,
+                                      parser: outcome.parser, validation: outcome.validation,
                                       notices: outcome.notices)
         guard let json = try? encodeRenderModel(render) else { exit(22) }
         push(json)
@@ -1055,7 +1097,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         """.utf8)
         let outcome = buildModel(path: "selftest.tsx", old: old, new: new, mode: .structural)
         let render = buildRenderModel(model: outcome.model, pinOld: "pinG", pinNew: "pinH",
-                                      mode: "structural", validation: outcome.validation,
+                                      mode: "structural", pathTaken: outcome.pathTaken,
+                                      parser: outcome.parser, validation: outcome.validation,
                                       notices: outcome.notices)
         guard let json = try? encodeRenderModel(render) else { exit(11) }
         push(json)
@@ -1076,7 +1119,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let new = [UInt8]("const shop = \"\u{017B}ABKA\";\n".utf8)
         let outcome = buildModel(path: "selftest.tsx", old: old, new: new, mode: .expanded)
         let render = buildRenderModel(model: outcome.model, pinOld: "pinE", pinNew: "pinF",
-                                      mode: "expanded", validation: outcome.validation,
+                                      mode: "expanded", pathTaken: outcome.pathTaken,
+                                      parser: outcome.parser, validation: outcome.validation,
                                       notices: outcome.notices)
         guard let json = try? encodeRenderModel(render) else { exit(9) }
         push(json)
@@ -1768,7 +1812,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                           mode: mode, external: external)
             let render = buildRenderModel(
                 model: outcome.model, pinOld: pair.oldHash, pinNew: pair.newHash,
-                mode: mode.rawValue, validation: outcome.validation, notices: outcome.notices,
+                mode: mode.rawValue, pathTaken: outcome.pathTaken, parser: outcome.parser,
+                validation: outcome.validation, notices: outcome.notices,
                 previousAnchor: previousAnchor
             )
             guard let json = try? encodeRenderModel(render) else { return }
@@ -1841,6 +1886,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let validation: ValidationResult
         let notices: [String]
         let summary: String
+        /// Which path produced this model, as opposed to which mode asked for it. The two disagree
+        /// exactly when a structural run was withheld or discarded, and `23b-…` §2 records what
+        /// happened while only the mode was carried: the pill said `structural` beside a notice
+        /// saying structural analysis was unavailable.
+        let pathTaken: String
+        /// `12-…` §5.2's parser-state indicator, decided where the parse outcome is known.
+        let parser: ParserStateReport
     }
 
     /// Raw is never a degraded structural run: it is its own path on the same pinned pair.
@@ -1854,15 +1906,20 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                     external: [Degradation] = []) -> ModelOutcome {
         let outside = Degradation.mostConservative(external)
 
-        func rawOutcome(notices: [String], summary: String) -> ModelOutcome {
+        func rawOutcome(notices: [String], summary: String,
+                        parser: ParserStateReport) -> ModelOutcome {
             let model = trivialModel(oldBytes: old, newBytes: new)
             return ModelOutcome(model: model, validation: validate(model),
-                                notices: notices, summary: summary)
+                                notices: notices, summary: summary,
+                                pathTaken: "raw", parser: parser)
         }
 
         guard mode.usesStructure else {
             return rawOutcome(notices: outside.map { [$0.notice] } ?? [],
-                              summary: outside.map { "raw — \($0.reason)" } ?? "raw")
+                              summary: outside.map { "raw — \($0.reason)" } ?? "raw",
+                              parser: ParserStateReport.of(structuralRequested: false,
+                                                           structuralUsed: false,
+                                                           degradation: outside))
         }
 
         let result = structuralDiff(oldPath: path, oldBytes: old, newPath: path, newBytes: new,
@@ -1872,14 +1929,21 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 ?? .parseFailure(reason: "structural analysis unavailable")
             return ModelOutcome(model: result.model, validation: validate(result.model),
                                 notices: [degradation.notice],
-                                summary: "raw — \(degradation.reason)")
+                                summary: "raw — \(degradation.reason)",
+                                pathTaken: "raw", parser: result.stats.parserState)
         }
 
         let validation = validate(result.model)
         guard validation.passed else {
+            let discarded = Degradation.invariantViolation(reason: validation.summary)
             return rawOutcome(
-                notices: [Degradation.invariantViolation(reason: validation.summary).notice],
-                summary: "raw — structural result discarded"
+                notices: [discarded.notice],
+                summary: "raw — structural result discarded",
+                // The file parsed. What failed was the check afterwards, and saying "not parsed"
+                // here would make the indicator report the wrong stage of the pipeline — the whole
+                // reason §5.2 lists parser state separately from fallback marking.
+                parser: ParserStateReport(state: "parsed",
+                                          detail: "structural result discarded after parsing")
             )
         }
 
@@ -1895,7 +1959,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let carried = stats.degradation ?? outside
         return ModelOutcome(model: result.model, validation: validation,
                             notices: carried.map { [$0.notice] } ?? [],
-                            summary: carried.map { "\(summary) · \($0.reason)" } ?? summary)
+                            summary: carried.map { "\(summary) · \($0.reason)" } ?? summary,
+                            pathTaken: "structural", parser: stats.parserState)
     }
 
     private func push(_ json: String) {
@@ -1933,7 +1998,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             let snapshot = state.repositories[row]
             let ahead = snapshot.aheadCount.map { "↑\($0)" } ?? "↑?"
             let label = state.repositoryLabels[snapshot.url.path] ?? snapshot.displayName
-            text.stringValue = "\(label)  ·  \(snapshot.uncommittedCount)△ \(ahead)"
+            // `12-…` §2 lists the branch as **displayed**, and it was in the tooltip only
+            // (`23b-…` §2). A tooltip is not a display: it is invisible until pointed at, so a
+            // reader walking the list from the keyboard never sees it. The unusual head states
+            // matter most of the three — `no commits yet` explains why all four scopes are greyed.
+            text.stringValue = "\(label)  ·  \(snapshot.head.displayText)  ·  "
+                + "\(snapshot.uncommittedCount)△ \(ahead)"
             text.toolTip = "\(snapshot.url.path)\n\(snapshot.head.displayText)\n\(snapshot.baseRefUsed ?? "base: prompt")"
         } else {
             switch state.fileRows[row] {

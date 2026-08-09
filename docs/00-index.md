@@ -37,9 +37,9 @@ In brief: comparison is on **bytes**, normalization is **never** applied anywher
 
 ## Current planning status
 
-**Planning complete. All phases 0–8 done.** 51 decisions recorded.
+**Planning complete. All phases 0–8 done.** 58 decisions recorded.
 
-**M0 through M7 are complete; M8 is under way (2026-07-31).** M0's gates confirmed DEC-042; M1 delivered the engine skeleton and invariant harness; M2 the Git layer; M3 the raw diff end to end; M4 parsing and partition construction; M5 matching and alignment; M6 classification, moves and the trust surface; M7 refresh, watching and navigation. M8 has landed the structural budgets (DEC-050), the degradation precedence with F8/F13 wired (DEC-051), the T-series coverage audit over a 32-fixture corpus (M8-C), the built-in terminal the user drives (DEC-053 … DEC-056), and the keyboard map with the 63-file walk that closes definition of done §6 (DEC-057, M8-J). **1109/1109 checks pass.** All three handover gates have passed. Details in [22-experiment-log.md](22-experiment-log.md).
+**M0 through M7 are complete; M8 is under way (2026-07-31).** M0's gates confirmed DEC-042; M1 delivered the engine skeleton and invariant harness; M2 the Git layer; M3 the raw diff end to end; M4 parsing and partition construction; M5 matching and alignment; M6 classification, moves and the trust surface; M7 refresh, watching and navigation. M8 has landed the structural budgets (DEC-050), the degradation precedence with F8/F13 wired (DEC-051), the T-series coverage audit over a 32-fixture corpus (M8-C), the built-in terminal the user drives (DEC-053 … DEC-056), and the keyboard map with the 63-file walk that closes definition of done §6 (DEC-057, M8-J), and the four trust statements that close `23b-spec-vs-app-audit.md` (DEC-058, M8-K), and T-11's second and third relocation shapes (M8-L), OQ-046 answered by measurement (M8-M), and the fixture plan turned into data that found thirteen missing P0 cases (M8-O). **1407/1407 checks pass over 47 fixtures.** All three handover gates have passed. Details in [22-experiment-log.md](22-experiment-log.md).
 
 **Implementation is under way.** Code lives in `Sources/` and `fixtures/`.
 
@@ -66,7 +66,7 @@ Prove the whole native pipeline headlessly, writing a snapshot of each state it 
 DIFFSCOPE_SELFTEST=1 DIFFSCOPE_SNAPSHOT_DIR=/tmp/shots swift run -c release diffscope-app
 ```
 
-Next: the **built-in terminal**, which the product owner put at the front of the queue on 2026-07-31 — see [26-terminal-plan.md](26-terminal-plan.md) and start at its **gate T0**. All three handover gates in [23-release-gates.md](23-release-gates.md) have passed. A new agent should start at [21-agent-handoff.md](21-agent-handoff.md).
+Next: see [21-agent-handoff.md](21-agent-handoff.md) §"What to do next". The terminal is complete (T0–T4) and `23b-spec-vs-app-audit.md` is closed. All three handover gates in [23-release-gates.md](23-release-gates.md) have passed. A new agent should start at [21-agent-handoff.md](21-agent-handoff.md).
 
 **The stack is now chosen** (DEC-042, after five spikes): **Swift shell and engine, tree-sitter via its C API, CodeMirror 6 in a `WKWebView`, Git through the CLI.** See [09-recommended-architecture.md](09-recommended-architecture.md).
 
@@ -193,6 +193,14 @@ Twenty decisions are accepted. Full records, including options rejected and revi
 | DEC-048 | Formatting-only groups only where both sides span the same lines |
 | DEC-049 | A pin is **refused**, not blended, while a file is still being written |
 | DEC-050 | Structural budgets: 2 MB, 30,000 nodes, 10M counted match comparisons |
+| DEC-051 | Degradation precedence is data; every condition gathered, the most conservative shown |
+| DEC-052 | Roots and individually added repositories stored in a readable JSON configuration |
+| DEC-053 | A built-in terminal the **user** drives; the application still writes nothing on its own |
+| DEC-054 | The terminal grid is xterm.js in a second `WKWebView` |
+| DEC-055 | A real input line at a prompt; Tab and ⌃R hand the line to the shell |
+| DEC-056 | The terminal follows the selection under a three-term guard, path quoted in one place |
+| DEC-057 | The keyboard map is **data**; the menu bar is generated from it |
+| DEC-058 | Parser state and the **path taken** are stated, not inferred |
 
 ## Decisions that remain open
 

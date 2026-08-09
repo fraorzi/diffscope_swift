@@ -75,17 +75,21 @@ Was: nothing at all. Now the notice bar says `no structural changes; 10 formatti
 
 Was: `EditorView.lineWrapping` always on, with no toggle. Now ⌥⌘W switches it, defaulting to on. Vertical scroll linking was already bidirectional and correct.
 
-### 1.10 Two required indicators are not surfaced (`12-…` §5.2)
+### 1.10 ~~Two required indicators are not surfaced~~ — **built 2026-08-09, DEC-058**
 
-Of the seven indicators the spec calls *"not optional features — these are how the invariant becomes visible"*: confidence, fallback, unverified, invisible difference and filter-active are all built. **Ambiguity** was withdrawn deliberately (DEC-045, recorded). **Parser state** — parsed, partially parsed, not parsed — is only visible indirectly, as the presence or absence of a fallback notice.
+Of the seven indicators the spec calls *"not optional features — these are how the invariant becomes visible"*: confidence, fallback, unverified, invisible difference and filter-active were already built. **Ambiguity** was withdrawn deliberately (DEC-045, recorded).
+
+**Parser state** was visible only indirectly, as the presence or absence of a fallback notice — an inference that is wrong in both directions. A filter (F8) produces a notice and says nothing about the parser; a partial parse (F1) leaves the structural result standing behind a notice that reads like a whole-file failure.
+
+Now stated: `parser: parsed`, `parser: partially parsed — 2 regions, 41 bytes shown without a structural claim`, `parser: not parsed — <the condition>`. Computed in the engine beside the statistics, so the check suite exercises the same derivation the window does. **§1 is closed.**
 
 ---
 
-## 2. Built, but shallower than specified
+## 2. ~~Built, but shallower than specified~~ — **all three closed 2026-08-09, DEC-058**
 
-- **Repository rows** show name, changed count and ahead count. The branch is in a tooltip; `12-…` §2 lists it as displayed. Row identity is correctly the path, not the name.
-- **The uncommitted-count convention is not stated on screen.** §2 requires it, because `git status --porcelain` and libgit2 disagree by a factor of two on the same repository (X-4).
-- **The mode pill reports your selection, not the path taken** — so it can read `mode: structural` beside a notice saying structural analysis was unavailable.
+- ~~**Repository rows** show name, changed count and ahead count. The branch is in a tooltip; `12-…` §2 lists it as displayed.~~ The row now reads `kbtree · main · 63△ ↑0`. A tooltip is not a display: it is invisible until pointed at, so a reader walking the list from the keyboard never sees it. Row identity remains the path, not the name.
+- ~~**The uncommitted-count convention is not stated on screen.**~~ Stated under the list, from `RepositoryReader.uncommittedCountConvention`, which lives beside the operation it describes — and a check asserts the operation actually run (`--porcelain`, no `-uall`) makes the sentence true. X-4's 63-versus-165 is the reason this is a correctness item and not a caption.
+- ~~**The mode pill reports your selection, not the path taken.**~~ It reports both when they differ: `mode: structural — showing raw`. The first attempt invented a disagreement for Expanded, which is a presentation flag over the structural path — three modes, two code paths (DEC-013).
 
 ---
 
@@ -119,6 +123,7 @@ Recorded here rather than dismissed, with what it would actually mean, in `05-op
 3. ~~File-list depth~~ — **done**, 2026-07-31.
 4. ~~Base override and staleness wording~~ — **done**, 2026-07-31.
 5. ~~Scope disabling, focus refresh, wrap toggle, empty-diff wording~~ — **done**, 2026-07-31.
-6. Parser-state indicator (§1.10) — **the only §1 item left**, deliberately after the design gate, since it is one more thing on screen.
+6. ~~Parser-state indicator (§1.10)~~ — **done**, 2026-08-09, DEC-058.
+7. ~~The three §2 items~~ — **done**, 2026-08-09, DEC-058.
 
-Everything in §2 remains: the branch is in a tooltip rather than displayed, the uncommitted-count convention is not stated on screen, and the mode pill still reports the selection rather than the path taken.
+**This audit is closed.** Every requirement it found written down and not built is built. What remains open in the project is recorded in `21-agent-handoff.md` §0 and `05-open-questions.md`, not here.

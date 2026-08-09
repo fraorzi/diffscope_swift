@@ -498,7 +498,13 @@ function renderNotices(model) {
   for (const [group, count] of [...groupCounts(model)].sort()) {
     items.push(`${group}: ${count} shown`);
   }
-  items.push(`mode: ${model.mode}`);
+  // `12-…` §5.2's parser-state indicator. Composed in Swift (`ParserStateReport.chipText`) so the
+  // two surfaces that show it cannot word it differently, and so it is checkable without a webview.
+  if (model.parser) items.push(model.parser.chipText);
+  // The pill says what the reader selected *and* what is actually on screen when they differ —
+  // `23b-…` §2: it read `mode: structural` beside a notice saying structural analysis was
+  // unavailable, because it reported the selection alone.
+  items.push(model.modeChip || `mode: ${model.mode}`);
   for (const text of items) {
     const chip = document.createElement("span");
     chip.className = "ds-chip" + (text.startsWith("invariant") ? " ds-chip-alert" : "");

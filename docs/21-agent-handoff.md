@@ -8,7 +8,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, the T-series coverage audit, root management, the gutter, the grouped file list, the rest of the interface audit, the built-in terminal (T0–T4) and the keyboard path (M8-J) have all landed, and **all three handover gates have passed**. 1109/1109 checks pass over 32 fixtures.**
+**Last completed milestone: M7 — refresh, watching and navigation, complete. M8 hardening is under way: structural budgets, the degradation precedence, the T-series coverage audit, root management, the gutter, the grouped file list, the built-in terminal (T0–T4), the keyboard path (M8-J) and the last four items of the interface audit (M8-K) have all landed, and **all three handover gates have passed**. `23b-spec-vs-app-audit.md` is now closed — every requirement it found written down and not built is built. 1407/1407 checks pass over 47 fixtures.**
 
 | Milestone | State |
 |---|---|
@@ -20,12 +20,12 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 | M5 matching and alignment | Complete |
 | **M6 classification, moves, trust surface** | Complete |
 | **M7 refresh, watching, navigation** | **Complete** — navigation, folding, keyboard map, FSEvents watching, debounce, scroll anchoring, formatting-only collapse |
-| M8 hardening and beta | **Started** — DEC-050 budgets, DEC-051 degradation precedence, the M8-C coverage audit and DEC-052 root management landed; the rest of §"What to do next" remains |
+| M8 hardening and beta | **Started** — DEC-050 budgets, DEC-051 degradation precedence, the M8-C coverage audit, DEC-052 root management, the terminal (DEC-053…056), the keyboard map (DEC-057) and the closing of the interface audit (DEC-058) landed; the rest of §"What to do next" remains |
 
 Run everything:
 
 ```
-swift run diffscope-verify          # 1109 checks over 32 fixtures, exit 1 on failure
+swift run diffscope-verify          # 1407 checks over 47 fixtures, exit 1 on failure
 ./Scripts/package.sh                # DiffScope.app + zip + SHA-256 for a tester
 swift run diffscope-verify --write-manifest   # re-record fixture hashes, deliberately
 swift run -c release diffscope-verify --survey ~/YourProjects
@@ -105,6 +105,15 @@ Its remaining value is three things: `moved` labels (bytes cannot express moves)
 
 **What to do next is no longer the terminal.** The list further down this section — OQ-046, a second move shape — is the audit's ordering and is untouched by any of this.
 
+**M8-K landed on 2026-08-09, and `23b-spec-vs-app-audit.md` is closed.** The four items it still listed were one kind of thing — statements the interface makes about how far to trust what it is showing — and they are settled by **DEC-058**, measured in `22-experiment-log.md` → **M8-K**:
+
+- **The parser state is stated rather than inferred** (`12-…` §5.2's seventh and last indicator). A reader used to conclude "this parsed" from the absence of a notice, and that inference is wrong in both directions: a filter (F8) is a notice about something else entirely, and a partial parse (F1) leaves the structural result standing behind a notice that reads like a whole-file failure. `ParserStateReport` is computed beside the statistics, so the suite exercises the derivation the window uses.
+- **The mode pill reports the path taken as well as the selection** — `mode: structural — showing raw`. Its first version invented a disagreement for Expanded, which is a presentation flag over the structural path: **three modes, two code paths**, and `impliedPath(ofMode:)` now states that mapping once. The selftest caught it, not the harness, because only one arm renders in Expanded.
+- **The branch is in the row** and no longer only in a tooltip. A tooltip is not a display — it is invisible until pointed at, so the keyboard reader M8-J measured never saw it.
+- **The uncommitted count says what it counts**, from `RepositoryReader.uncommittedCountConvention`, and a check asserts the operation actually run makes the sentence true. X-4's 63-versus-165 is why this is correctness rather than a caption.
+
+Two method notes from it. **A caption can vanish twice and pass every check both times**: an `NSStackView` gives a label zero height beside a scroll view that grows without limit. And a snapshot answers *is it drawn*; it answers *is it legible* only when you look at it at the size the reader does — the caption looked absent in a downscaled crop and was there at full resolution.
+
 **M8-J landed on 2026-08-09, and the definition of done §6 is met** — a 63-file working tree reviewable entirely from the keyboard, measured rather than asserted. **DEC-057**, measured in `22-experiment-log.md` → **M8-J**. Three things in it are worth more than the feature:
 
 - **The keyboard map is data** (`DiffScopeShell/KeyboardMap.swift`), the menu bar is generated from it, and `12-…` §9's coverage table is transcribed into an enum the check suite links. The first thing that check found: *show raw for the current region* — a row of the specification — **had no implementation at all** and had not been noticed for three milestones. It is now ⌥⌘V, which switches to Raw on the same pinned pair and back, keeping the change stop, because stops come from the canonical diff and are the same in every mode.
@@ -131,10 +140,10 @@ Three things from T0 that change the work rather than merely clearing it:
 
 
 1. ~~**Definition of done §6**~~ — **done 2026-08-09**, DEC-057 and M8-J above.
-2. **OQ-046** auto-gc on large repositories, still unverified.
+2. ~~**OQ-046** auto-gc on large repositories~~ - **answered 2026-08-09**, M8-M: no. Measured on a repository with the thresholds brought down to it, and on the corpus's largest, which sits at **91% of git's default threshold** and did not move. Both obvious mitigations were forbidden - `gc.auto=0` is a write, `-c gc.auto=0` is in `forbiddenArguments` - so it had to be measured.
 3. ~~F1, F3, F4 with no producer~~ — **done**: `parseErrorRegions` reports F1 with region and byte counts, and F3/F4 are recorded as region-level with a check that no ambiguity indicator reaches the contract (DEC-045 stays a decision rather than drift).
-4. **T-11 is proven on one relocation shape only.** A second shape is worth more than any other addition to the corpus — and read M8-C first, because constructing the first one failed twice for reasons that are findings in themselves.
-5. **The parser-state indicator** (`23b-…` §1.10), the only §1 item left, and the three §2 items — the branch shown only in a tooltip, the uncommitted-count convention unstated on screen, and the mode pill reporting the reader's selection rather than the path taken.
+4. ~~**T-11 is proven on one relocation shape only.**~~ — **done 2026-08-09**, M8-L. Three shapes now: one statement, a multi-line block, and two independent moves in one file so that `link` pairs rather than counts. Constructing them failed a **fourth** time in the same family, and the generalisation is in M8-L: the shorter the relocated line, the more likely the canonical diff has already spent its bytes matching fragments elsewhere.
+5. ~~The parser-state indicator and the three §2 items~~ — **done 2026-08-09**, DEC-058 and M8-K above. `23b-…` is closed.
 
 **G3 passed** (M8-I). `Scripts/package.sh` builds an unsigned `DiffScope.app` with a drawn icon, and **proves independence rather than assuming it**: it copies the bundle to a temporary directory and runs the full selftest from `/`, so a build that quietly read from the checkout fails here rather than on the tester's machine. The privacy claims in the packet are checked against the source — no network API in any shipped file, no request in the renderer.
 
@@ -142,7 +151,7 @@ Three things from T0 that change the work rather than merely clearing it:
 
 **G2 passed** (M8-H). Every visual value lives in `Renderer/src/tokens.css`, mirrored for the AppKit chrome in `Theme.swift`. The rule *a design may restyle any mark and may never hide one* is enforced in two places — the source, and the **computed style of the live document** — because a stylesheet can be read and still be wrong about what the reader gets. Both have negative controls: the selftest injects `display: none` on a mark and requires the audit to catch it. Read `24-design-contract.md` before touching anything visual.
 
-**`23b-spec-vs-app-audit.md` §1 is closed except for one item.** Base-branch override (⇧⌘B, stored in the configuration), staleness in words beside scope 4, unavailable scopes disabled with their reason, refresh on window focus, a wrap toggle (⌥⌘W), and the empty-diff sentence all landed on 2026-07-31. **Only the parser-state indicator (§1.10) is left**, deliberately deferred past the design gate. The §2 items — branch shown only in a tooltip, the uncommitted-count convention unstated, the mode pill reporting selection rather than path — all remain.
+**`23b-spec-vs-app-audit.md` is closed** (§1 and §2 both, as of M8-K). Base-branch override (⇧⌘B, stored in the configuration), staleness in words beside scope 4, unavailable scopes disabled with their reason, refresh on window focus, a wrap toggle (⌥⌘W), and the empty-diff sentence all landed on 2026-07-31. The parser-state indicator (§1.10) and the three §2 items followed on 2026-08-09 under DEC-058.
 
 **The file list groups** (DEC-033 amended). Measured first: 12 repositories contain a `pnpm-workspace.yaml` and **none declares `packages:`**, so the specified per-package grouping would have put one meaningless header above every list. Groups are declared packages where they exist and parent directories otherwise; headers are suppressed when grouping buys nothing; grouped rows show the path relative to their group. Per-file badges (`raw`, `bin`, `big`) come from the extension, a `stat` and a 4 KB probe — **the list says only what is cheap to know**, and anything needing a full read stays in the diff view.
 
@@ -166,9 +175,9 @@ Order is G1 → G2 → G3 and the reasoning is in that document. **No gate may b
 
 **Ambiguity display was withdrawn by DEC-045** — detection stays as a guard against ambiguous anchors, but no indicator is built.
 
-**One check is wall-clock and therefore load-sensitive.** `BudgetChecks`' *"a file above the size limit is refused without parsing it"* asserts under 2.0 s in a debug build; with four other processes saturating the machine it measures 2.3 s and the suite reports 1079/1080. The behaviour is right — the file is refused without a parse — and only the timing loses. DEC-050 rejected wall-clock deadlines for *behaviour* on exactly this reasoning; the same shape survives inside a check, and it should be re-expressed against a measured baseline rather than an absolute second.
+~~**One check is wall-clock and therefore load-sensitive.**~~ **Fixed 2026-08-09 (M8-N).** Two checks in `BudgetChecks` asserted an absolute 2.0 s, and under load the refusal measured 2.3 s and failed while the code did exactly the right thing. Both now measure a **baseline on this machine, in this build, under whatever load is present** and assert a ratio against it: the dense-JSX run against the cost of one parse, the oversize refusal against the cost of one pass over the same bytes. Load inflates both numbers, so the ratio holds — verified by running the whole suite with eight CPU spinners saturating the machine: **1188/1188, both checks passing.** The ratio is also the better statement of the claim: *refused without parsing it* means "costs about what looking at the bytes costs", not "costs under a second".
 
-Known weaknesses recorded rather than hidden: **a relocated line whose leading bytes align with a neighbour's identical prefix is not detected as a move** (measured in M8-C — widening the search would put bytes the canonical diff calls unchanged inside a `moved` range, which is a reopening of DEC-038, not an implementation detail); anchor selection is greedy by old-side position rather than a longest-increasing-subsequence; moved-and-modified content presents as delete plus add (accepted in DEC-038); a reformat that changes line counts is never grouped (DEC-048, the conservative direction); files over 2000 anchored lines are strided, so a refresh lands the reader within a few lines rather than exactly; the mode chip still reads `mode: structural` beside a notice saying structural analysis was unavailable, because the chip reports the reader's *selection* rather than the path taken.
+Known weaknesses recorded rather than hidden: **a relocated line whose leading bytes align with a neighbour's identical prefix, or which shares punctuation with the line replacing it, is not detected as a move** (measured in M8-C, generalised in M8-L — widening the search would put bytes the canonical diff calls unchanged inside a `moved` range, which is a reopening of DEC-038, not an implementation detail); anchor selection is greedy by old-side position rather than a longest-increasing-subsequence; moved-and-modified content presents as delete plus add (accepted in DEC-038); a reformat that changes line counts is never grouped (DEC-048, the conservative direction); files over 2000 anchored lines are strided, so a refresh lands the reader within a few lines rather than exactly.
 
 **Two things measurement changed in M7 that reasoning had settled the other way.** DEC-034 says "the nearest segment labeled unchanged" — implemented literally, it gives Raw *zero* anchors, because Raw is one fallback segment over the whole file. And per-side formatting runs find nothing for the ordinary reindent, because a reindent is an insertion and the old side has no changed bytes. Both now derive from the canonical diff instead. If you are about to build something on "the unchanged segments", check what Raw actually contains first.
 
@@ -254,7 +263,7 @@ Each has a recorded rationale. Reopen explicitly against its revisit trigger, or
 | Byte↔UTF-16 conversion in the webview | The one place X-1's hazard survives. One function, independently tested |
 | Matcher cost on dense JSX | The performance risk everywhere. Budget on **node count**, not bytes |
 | tree-sitter error recovery | ~38.4% of bytes outside `ERROR` on truncated files — a quality ceiling, accepted |
-| Auto-gc on large repositories | OQ-046, unverified |
+| ~~Auto-gc on large repositories~~ | **Cleared in M8-M.** No registered operation triggers maintenance, measured where it would fire; a permanent check now holds it |
 
 ## 8. Required experiments before implementation
 

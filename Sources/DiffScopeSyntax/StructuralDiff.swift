@@ -44,6 +44,19 @@ public struct StructuralStats: Sendable, Equatable {
     }
 }
 
+public extension StructuralStats {
+    /// `12-…` §5.2's parser-state indicator, derived from what this run actually did.
+    ///
+    /// It lives beside the statistics rather than in the shell so that the check suite exercises
+    /// the same derivation the window does. The one case it cannot see is a structural result
+    /// discarded by validation *after* parsing: the parse succeeded, so the shell says so itself.
+    var parserState: ParserStateReport {
+        ParserStateReport.of(structuralRequested: true, structuralUsed: !usedFallback,
+                             degradation: degradation,
+                             unparsedRegions: unparsedRegions, unparsedBytes: unparsedBytes)
+    }
+}
+
 public struct StructuralResult: Sendable {
     public let model: DiffModel
     public let stats: StructuralStats

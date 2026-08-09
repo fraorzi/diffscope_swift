@@ -69,6 +69,19 @@ public struct RepositoryReader: Sendable {
         return .detached(verified.trimmedOutput)
     }
 
+    /// The sentence the interface must show beside the count (`12-…` §2).
+    ///
+    /// It is a correctness requirement rather than a caption: `git status --porcelain` collapses an
+    /// untracked directory to one entry while libgit2's default expands it, and X-4 measured the
+    /// same repository reading **63 or 165** depending on which convention is in force. A number
+    /// whose convention is unstated is not a measurement, and this project has a whole document
+    /// about not making claims the reader cannot check.
+    ///
+    /// It lives here, next to the operation it describes, so that changing `statusPorcelain()` to
+    /// `statusPorcelainAll()` puts the two lines in the same diff.
+    public static let uncommittedCountConvention =
+        "counts: git status --porcelain — an untracked directory counts once"
+
     public func uncommittedCount(in repository: URL) throws -> Int {
         let result = try runner.run(.statusPorcelain(), in: repository)
         guard result.succeeded else { return 0 }

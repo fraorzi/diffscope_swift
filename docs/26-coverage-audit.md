@@ -25,16 +25,22 @@ Applied by `runFixtureChecks` to **both paths** of every fixture: raw (`trivialM
 | T-8 | Canonically equivalent, byte-different → still a change | 2 | `nfc-vs-nfd`. Compared through **scalar arrays**; `String ==` is canonical equivalence and would make this test vacuous (M6-C) |
 | T-9 | Broken source still presents every difference | 2 | `truncated-file`, `invalid-tsx` — selected by the parser actually reporting error nodes, not by whether the run happened to fall back |
 | T-10 | Presented ranges start and end on grapheme-cluster boundaries | 60 | `unicode-graphemes`. **Failed on first run** — see below |
-| T-11 | Every move's two sides are byte-equal, so no delta is swallowed | 1 | `moved-function` produces a move; `moved-function-modified` proves the edited case produces **none** |
+| T-11 | Every move's two sides are byte-equal, so no delta is swallowed | 3 | `moved-function` (one statement), `moved-block` (a multi-line block), `moved-two-blocks` (two independent moves, so `link` pairs rather than counts); `moved-function-modified` proves the edited case produces **none** |
 
 ### What the first run found
 
 - **T-10 had no implementation.** `14-losslessness-and-trust-model.md` §4 requires presented regions to be snapped **outward** to grapheme-cluster boundaries, and nothing did it. The canonical diff of `'😀'` → `'😀‍💻'` is an insertion beginning *between* the emoji and its zero-width joiner — correct on bytes, unrenderable on screen. `snapToGraphemeBoundaries` now runs after syntax snapping, which is the right order because a syntax boundary is not obliged to fall on a cluster boundary and this case proves it does not.
 - **T-5 and T-9 were each written too narrowly and failed correct behaviour**, which is recorded because both corrections are the interesting part: an unrenderable file marks its fallback *whole* rather than per segment, and a pure deletion has no changed bytes on the new side at all.
 
-### T-11's thin coverage is real
+### T-11's coverage, and what constructing it keeps teaching
 
-One firing check, on one fixture. Moves are rare in the corpus **and hard to construct**: see M8-C for the two fixtures that failed to produce one and why. The honest summary is that T-11 is proven on a single relocation shape, and a second shape would be worth more than any other addition to this table.
+Three firing checks on three shapes as of M8-L, up from one. The corpus now asserts its own coverage — *a fixture that produces a move*, *one whose move spans several lines*, *one that produces two independent moves* — because a T-check that never fires is invisible in a green suite, which is how the single-shape gap was found in the first place.
+
+**Constructing move fixtures has now failed four times, always the same way.** Two near-identical functions swapped (M8-C); `export const VAT_RATE` sharing its `export ` prefix with a neighbour (M8-C); and two short single lines sharing `" = "` and `";"` with the lines that replaced them (M8-L). The generalisation: *the shorter the relocated line, the more likely the canonical diff has already spent its bytes matching fragments elsewhere*, leaving no whole changed line for the line-based search of DEC-038 to pair. Blocks relocate detectably; short statements often do not.
+
+This is a property of DEC-038 as decided, not a defect. Widening the search to partly-changed lines would put bytes the canonical diff calls unchanged inside a `moved` range, which is a reopening of DEC-038.
+
+**The check that counts multi-line moves was itself wrong first.** It asked whether any *segment* of a move contained a newline; a relocated block arrives as one segment per line, so none does, and it reported zero multi-line moves on a corpus containing two. Measured over the link's whole span now.
 
 ---
 

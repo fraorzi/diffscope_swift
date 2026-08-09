@@ -2485,3 +2485,44 @@ The concrete bindings — settling OQ-023 and `12-…` §12's open item — are 
 ### Revisit trigger
 
 Reopen if a second interface surface appears that needs its own bindings — a preferences window, or the terminal claiming keys the diff also wants. The map is one flat list today because there is one window.
+
+---
+
+## DEC-058 — The interface states its parser state and the path it took, rather than letting the reader infer both
+
+- **Date:** 2026-08-09 · **Topic:** `12-desktop-ux-specification.md` §5.2, `23b-spec-vs-app-audit.md` §1.10 and §2 · **Status:** Accepted
+
+### Context
+
+Four items were left in the audit, and they are one kind of thing: statements the interface makes about how far to trust what it is showing.
+
+**Parser state** was the last of §5.2's seven indicators, and the only one visible purely by inference — a reader concluded "this parsed" from the absence of a notice. That inference is wrong in both directions. An active filter (F8) produces a notice and says nothing about the parser; a partial parse (F1) leaves the structural result standing while its notice reads like a whole-file failure.
+
+**The mode pill** reported the reader's selection, so it could read `mode: structural` beside a notice saying structural analysis was unavailable.
+
+### Options considered
+
+1. **Compute both in the engine, carry them on the render contract, compose the words once.** Checkable headlessly; the renderer draws a sentence rather than assembling one.
+2. **Derive the parser state in the renderer from the notices already present.** This is the inference itself, moved into code — it would be wrong in exactly the two directions above, and wrong silently.
+3. **Replace the mode pill with the path taken.** Loses the selection, which is the thing ⌘1–3 returns to. The reader needs both, and only when they differ.
+
+### Final decision
+
+**Option 1.** `ParserStateReport` in the engine, with three states matching §5.2's words; `StructuralStats.parserState` derives it beside the statistics, so the check suite exercises the derivation the window uses. `RenderModel` carries `parser` and `pathTaken`, and composes both chips as **text** (`chipText`, `modeChip`) rather than leaving the renderer to word them — a sentence written in two languages drifts in one of them.
+
+Both fields are **optional on the contract**. A check that fabricates a model has nothing to say about a parser it never ran, and an absent chip is honest where a defaulted one would be a claim.
+
+A structural result **discarded by validation** reports `parsed`. The parse succeeded; what failed came after it, and §5.2 lists parser state separately from fallback marking precisely so the two stages can disagree.
+
+The two shell items are settled the same way: the branch moves out of the tooltip and into the row, and the uncommitted count's convention is stated on screen from `RepositoryReader.uncommittedCountConvention`, which lives beside the operation it describes.
+
+### Consequences
+
+- **Three modes, two code paths.** `impliedPath(ofMode:)` states DEC-013's mapping once. The first version of the pill compared the path against the mode and invented a disagreement for Expanded; the selftest caught it because that arm renders in Expanded.
+- **The chips are asserted in the document**, not in the model. The structural arm requires `parser: parsed`, the degradation arm requires `mode: structural — showing raw` and `parser: not parsed`.
+- **The convention sentence is checked for truth, not only for presence** — a check asserts the operation actually run is `--porcelain` without `-uall`, because `-uall` would make the same words false.
+- A tooltip is not a display. This is the general form and it is worth keeping: anything §2 or §5.2 lists as shown must survive a reader who never touches the pointer.
+
+### Revisit trigger
+
+Reopen if a fourth mode or a second structural path appears — `pathTaken` is a two-valued field today because DEC-013 has two code paths. Also reopen if DEC-045 is reopened, since ambiguity would become the eighth chip and the notice bar is already crowded.

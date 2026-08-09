@@ -119,11 +119,56 @@ func runFixtureChecks(_ reportRaw: (String, Bool, String) -> Void) {
                recordedNames.subtracting(presentNames).sorted().joined(separator: ", "))
     }
 
+    print("\n=== the corpus matches the plan it is written against (15-… §4) ===")
+    do {
+        let present = Set(fixtures.map(\.name))
+        var missingP0: [String] = []
+        var missingOptional: [String] = []
+        var elsewhereCount = 0
+        for entry in FixtureCatalog.cases {
+            let satisfied: Bool
+            switch entry.evidence {
+            case .corpus: satisfied = present.contains(entry.name)
+            case let .corpusUnder(actual): satisfied = present.contains(actual)
+            case .elsewhere: satisfied = true; elsewhereCount += 1
+            }
+            guard !satisfied else { continue }
+            if entry.priority == .p0 { missingP0.append("\(entry.name) (\(entry.group))") }
+            else { missingOptional.append("\(entry.name) [\(entry.priority.rawValue)]") }
+        }
+        // `18-version-one-scope.md`'s definition of done opens with "every P0 fixture group passes
+        // T-0…T-11". That was a claim about a list nothing had ever read against the directory.
+        report("every P0 case named in the plan exists in the corpus",
+               missingP0.isEmpty, missingP0.joined(separator: ", "))
+        // Deferred scope is reported, never failed: failing on it would assert a schedule.
+        print("      \(elsewhereCount) cases are proven outside the corpus, each with its reason")
+        if !missingOptional.isEmpty {
+            print("      not yet built (P1/P2, deferred rather than missing): "
+                + missingOptional.joined(separator: ", "))
+        }
+
+        let catalogued = Set(FixtureCatalog.cases.map(\.name))
+            .union(FixtureCatalog.cases.compactMap { entry in
+                if case let .corpusUnder(actual) = entry.evidence { return actual }
+                return nil
+            })
+        let unlisted = present.subtracting(catalogued).subtracting(FixtureCatalog.unlistedButDeliberate)
+        report("every fixture on disk is either named in the plan or deliberately unlisted",
+               unlisted.isEmpty, unlisted.sorted().joined(separator: ", "))
+    }
+
     print("\n=== fixtures: T-0…T-11 on both paths ===")
     report("fixture directory was found and non-empty", !fixtures.isEmpty, "found \(fixtures.count)")
 
     var structuralRuns = 0
     var skipped: [String] = []
+    // T-11's coverage, counted rather than assumed. Before M8-L the whole T-series rested on one
+    // relocation shape, and a check that never fires is invisible in a green suite (M8-C found
+    // exactly that by printing the per-fixture statistics). These count what the corpus actually
+    // exercised and assert it at the end.
+    var fixturesWithMoves: [String] = []
+    var fixturesWithMultipleMoves: [String] = []
+    var fixturesWithMultiLineMoves: [String] = []
     for fixture in fixtures {
         let raw = trivialModel(oldBytes: fixture.old, newBytes: fixture.new)
         assertTSeries(fixture: fixture, model: raw, path: "raw", parser: parser, report: report)
@@ -172,6 +217,32 @@ func runFixtureChecks(_ reportRaw: (String, Bool, String) -> Void) {
                       path: result.stats.usedFallback ? "structural→fallback" : "structural",
                       parser: parser, report: report)
 
+        if FixtureCatalog.neverFormattingOnly.contains(fixture.name) {
+            // T-4 already guarantees these never read as "no change" — that is the definition of
+            // done's fourth item, and it now holds on a fixture rather than only on an inline
+            // input. What T-4 cannot see is the softer version of the same mistake: presenting a
+            // reorder as formatting-only, which is the one classification the interface may
+            // quieten (DEC-048).
+            let formatting = result.stats.formattingOnlySegments
+            report("\(fixture.name): a reorder is never presented as formatting-only",
+                   formatting == 0, "\(formatting) formatting-only segments")
+        }
+
+        let links = Set(result.model.newPartition.segments.compactMap(\.link))
+        if !links.isEmpty { fixturesWithMoves.append(fixture.name) }
+        if links.count > 1 { fixturesWithMultipleMoves.append(fixture.name) }
+        // A move spanning more than one line is a different shape from a relocated statement.
+        // Measured over the link's whole span rather than segment by segment: a relocated block
+        // arrives as one segment per line, so no individual segment contains a newline and the
+        // obvious test finds nothing. It reported zero multi-line moves on a corpus that has two.
+        let multiLine = links.contains { link in
+            let spans = result.model.newPartition.segments.filter { $0.link == link }
+            guard let first = spans.map(\.start).min(), let last = spans.map(\.end).max(),
+                  first < last else { return false }
+            return fixture.new[first..<last].contains(0x0A)
+        }
+        if multiLine { fixturesWithMultiLineMoves.append(fixture.name) }
+
         // T-9 — parser failure yields fallback, never a missing change. Driven by whether the
         // parser actually reported error nodes rather than by whether the run happened to fall
         // back: tree-sitter recovers from most broken input, so the interesting case is the file
@@ -192,6 +263,16 @@ func runFixtureChecks(_ reportRaw: (String, Bool, String) -> Void) {
     }
     print("      structural path ran on \(structuralRuns) of \(fixtures.count) fixtures")
     for skip in skipped { print("      skipped: \(skip)") }
+
+    print("\n=== T-11 is exercised by more than one relocation shape (M8-L) ===")
+    report("the corpus contains a fixture that produces a move",
+           !fixturesWithMoves.isEmpty, fixturesWithMoves.joined(separator: ", "))
+    // One shape proves the label exists. It cannot prove that two moves in one file stay apart,
+    // which is the property `link` is for.
+    report("and one whose move spans several lines",
+           !fixturesWithMultiLineMoves.isEmpty, fixturesWithMultiLineMoves.joined(separator: ", "))
+    report("and one that produces two independent moves, so the links are pairing rather than counting",
+           !fixturesWithMultipleMoves.isEmpty, fixturesWithMultipleMoves.joined(separator: ", "))
 }
 
 /// One assertion set, applied to every fixture on every path, named by T-number so the output reads
