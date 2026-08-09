@@ -151,6 +151,8 @@ The snapshots written are `structural`, `expanded`, `disclosure`, `moved`, `navi
 
 The terminal writes three more — `terminal` (a command's output in the grid), `terminal-input` (the input line at a prompt, with the mode chip) and `terminal-follow` (the pane after following a selection into a directory whose name contains a quote and a space). Look at all three: the terminal is the surface where a design most easily makes program output unreadable.
 
+**One more photographs the chrome collapsed** — `collapsed`, both lists reduced to a rail and a spine with 63 files in the tree (DEC-060). It is the density check: the rail has room for three letters and the spine for a kind glyph and a bar, and whether either is legible at that size is a question only the picture answers. It found two defects that every check had passed: the panes drawing at twice their constrained width, and the file spine drawing nothing at all.
+
 **Those twelve photograph the webviews only.** `keyboard` is the exception and the one to look at for the chrome: since M8-J the selftest snapshots the **whole window** while walking a 63-file working tree, so the repository list, the file list, the group headers, the badges and the status line are all in one picture. Build the tree first:
 
 ```bash

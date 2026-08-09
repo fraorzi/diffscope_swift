@@ -196,10 +196,19 @@ func runTrustSurfaceChecks(_ reportRaw: (String, Bool, String) -> Void) {
                                  encoding: .utf8)) ?? ""
         // A tooltip is not a display: it is invisible until pointed at, so a reader walking the
         // list from the keyboard — the path M8-J made a definition-of-done item — never sees it.
-        let row = shell.components(separatedBy: "let ahead = snapshot.aheadCount").dropFirst().first ?? ""
-        let rowLabel = row.components(separatedBy: "text.toolTip").first ?? ""
+        // Asked of the assignment itself rather than of a slice of the file. The slice version
+        // broke the moment the collapsed rail added a second `text.toolTip` above this one, and
+        // it broke by *passing over* the row it was written about — the failure mode a check
+        // should never have.
         report("the row's own text carries the head state",
-               rowLabel.contains("snapshot.head.displayText"))
+               shell.contains("text.stringValue = \"\\(label)  ·  \\(snapshot.head.displayText)"))
+
+        // DEC-060's rail is 44 px and holds three letters. It is a collapsed state, not a hidden
+        // one: the head state stays one hover and one ⌃⌘1 away, and the check says so rather than
+        // leaving the exception unstated.
+        let rail = shell.components(separatedBy: "if reposCollapsed {").dropFirst().first ?? ""
+        report("and the collapsed rail keeps it reachable rather than dropping it",
+               rail.contains("snapshot.head.displayText"))
 
         // The three head states, because the two unusual ones are the ones worth displaying:
         // `no commits yet` is the sentence that explains why all four scopes are greyed out.

@@ -149,6 +149,13 @@ public enum KeyboardMap {
         // both layouts project the same canonical diff over the same pinned pair.
         .init(id: "layout.sideBySide", title: "Side by Side", key: "→", modifiers: [.option, .command],
               menu: .view, isToggle: true),
+        // DEC-060: the layout tier, and the reason `.control` exists in this file.
+        .init(id: "collapse.repositories", title: "Collapse Repositories", key: "1",
+              modifiers: [.control, .command], menu: .view, isToggle: true),
+        .init(id: "collapse.files", title: "Collapse Changed Files", key: "2",
+              modifiers: [.control, .command], menu: .view, isToggle: true),
+        .init(id: "collapse.both", title: "Collapse Both", key: "0",
+              modifiers: [.control, .command], menu: .view),
         .init(id: "scope.allLocal", title: "Scope: All local", key: "1", modifiers: [.shift, .command],
               menu: .view, satisfies: .switchScope, tag: 0),
         .init(id: "scope.unstaged", title: "Scope: Unstaged", key: "2", modifiers: [.shift, .command],

@@ -82,6 +82,11 @@ enum Theme {
     static let repositoryPaneWidth: CGFloat = 280
     static let filePaneWidth: CGFloat = 320
     static let paneMinimumWidth: CGFloat = 140
+    /// Collapsed widths (DEC-060). The rail holds three letters and a dot; the spine holds one bar
+    /// per file with its kind glyph. Neither is a hidden pane — both still answer *which* and
+    /// *how many*.
+    static let railWidth: CGFloat = 44
+    static let spineWidth: CGFloat = 34
     static let diffPaneMinimumWidth: CGFloat = 300
     static let windowWidth: CGFloat = 1400
     static let windowHeight: CGFloat = 860

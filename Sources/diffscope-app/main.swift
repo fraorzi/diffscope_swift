@@ -73,6 +73,17 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var sideBySideMenuItem: NSMenuItem?
     /// DEC-059: the window opens unified, so this starts false.
     var sideBySide = false
+    /// DEC-060: each region collapses on its own. Collapsed is **reduced, not hidden** — the rail
+    /// still says which repositories there are and which have work in them, the spine still says
+    /// how many files changed and how big each change is.
+    var reposCollapsed = false
+    var filesCollapsed = false
+    var reposCollapseMenuItem: NSMenuItem?
+    var filesCollapseMenuItem: NSMenuItem?
+    var repoPaneWidth: NSLayoutConstraint?
+    var filePaneWidth: NSLayoutConstraint?
+    var repoPaneMinimum: NSLayoutConstraint?
+    var filePaneMinimum: NSLayoutConstraint?
     /// Every menu item by the identifier of the binding that drew it (DEC-057), so the few items
     /// that carry state can be reached without searching the menu bar by title.
     var menuItems: [String: NSMenuItem] = [:]
@@ -180,7 +191,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // of existence entirely when the text got shorter. M8-D's defect class, one pane over.
         conventionLabel.setContentCompressionResistancePriority(.required, for: .vertical)
         conventionLabel.setContentHuggingPriority(.required, for: .vertical)
-        let leftStack = NSStackView(views: [scrollWrapping(repoTable), conventionLabel])
+        let repoScroll = scrollWrapping(repoTable)
+        let leftStack = NSStackView(views: [repoScroll, conventionLabel])
         // The caption under the repository list sits on the list's own surface, not on the
         // window's: it belongs to that pane and the seam would say otherwise (`--ds-panel-repos`).
         leftStack.wantsLayer = true
@@ -189,6 +201,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         leftStack.alignment = .leading
         leftStack.spacing = Theme.space2
         leftStack.edgeInsets = NSEdgeInsets(top: 0, left: Theme.space3, bottom: Theme.space3, right: Theme.space3)
+        // Without this the scroll view's own content width becomes the pane's floor, and a 44 px
+        // rail comes out at 87: the constraint said 44, the constant read 44, and the window drew
+        // twice that. A check on the constant would have agreed with the wrong number.
+        repoScroll.translatesAutoresizingMaskIntoConstraints = false
+        repoScroll.widthAnchor.constraint(equalTo: leftStack.widthAnchor,
+                                          constant: -2 * Theme.space3).isActive = true
         let leftScroll = leftStack
 
         let controls = NSStackView(views: [scopeControl, modeControl])
@@ -237,13 +255,25 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // preserving existing proportions, and every pane started at zero — so the tables were
         // populated, correct, and drawn at zero width. Width constraints at a priority below
         // `defaultHigh` keep the dividers draggable.
+        //
+        // The minimum is *required* while a pane is full and dropped while it is collapsed
+        // (DEC-060): a rail is 44 px wide and a floor of 140 would quietly refuse to draw it.
+        var widthConstraints: [NSLayoutConstraint] = []
+        var minimumConstraints: [NSLayoutConstraint] = []
         for (pane, width) in [(leftScroll, Theme.repositoryPaneWidth), (middleScroll, Theme.filePaneWidth)] {
             pane.translatesAutoresizingMaskIntoConstraints = false
             let constraint = pane.widthAnchor.constraint(equalToConstant: width)
             constraint.priority = NSLayoutConstraint.Priority(600)
             constraint.isActive = true
-            pane.widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.paneMinimumWidth).isActive = true
+            widthConstraints.append(constraint)
+            let minimum = pane.widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.paneMinimumWidth)
+            minimum.isActive = true
+            minimumConstraints.append(minimum)
         }
+        repoPaneWidth = widthConstraints[0]
+        filePaneWidth = widthConstraints[1]
+        repoPaneMinimum = minimumConstraints[0]
+        filePaneMinimum = minimumConstraints[1]
         rightStack.translatesAutoresizingMaskIntoConstraints = false
         vertical.translatesAutoresizingMaskIntoConstraints = false
         vertical.widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.diffPaneMinimumWidth).isActive = true
@@ -291,6 +321,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         table.usesAlternatingRowBackgroundColors = false
         table.backgroundColor = identifier == "repo" ? Theme.panelRepositories : Theme.panelFiles
         table.selectionHighlightStyle = .regular
+        // One column, so "last" is "the one": it grows and shrinks with the pane, which is what a
+        // collapse needs (DEC-060).
+        table.columnAutoresizingStyle = .lastColumnOnlyAutoresizingStyle
         return table
     }
 
@@ -301,6 +334,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: Theme.repositoryPaneWidth, height: Theme.windowHeight))
         scroll.documentView = view
         scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
         scroll.autohidesScrollers = true
         return scroll
     }
@@ -1054,8 +1088,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         rawForCurrentRegionSelftest()
     }
 
-    /// ⌥⌘V, the row of `12-…` §9 that had no implementation at all before M8-J: the same region,
-    /// shown raw, and the mode it left restored on the second press.
+    /// ⌘R since DEC-065 (⌥⌘V when M8-J built it): the row of `12-…` §9 that had no implementation
+    /// at all before that milestone. The same region, shown raw, and the mode it left restored on
+    /// the second press.
     private func rawForCurrentRegionSelftest() {
         guard let modified = state.fileRows.compactMap({ $0.file }).first(where: { $0.kind == .modified }),
               let row = state.fileRows.firstIndex(where: { $0.file?.path == modified.path }) else {
@@ -1066,11 +1101,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         fileTable.scrollRowToVisible(row)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-            guard self.press(key: "n", modifiers: [.command]) else { exit(43) }
+            guard self.press(key: String(UnicodeScalar(NSDownArrowFunctionKey)!),
+                             modifiers: [.command, .function, .numericPad], keyCode: 125) else { exit(43) }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
                 self.webView.evaluateJavaScript("window.diffscopeCommand(\"currentStop\")") { value, _ in
                     let before = (value as? Int) ?? (value as? NSNumber)?.intValue ?? -1
-                    guard self.press(key: "v", modifiers: [.command, .option]) else { exit(44) }
+                    guard self.press(key: "r", modifiers: [.command]) else { exit(44) }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                         self.webView.evaluateJavaScript("window.diffscopeCommand(\"currentStop\")") { raw, _ in
                             let inRaw = (raw as? Int) ?? (raw as? NSNumber)?.intValue ?? -1
@@ -1079,14 +1115,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                 ("SELFTEST keyboard-raw-region=\(ok ? "OK" : "MISMATCH") mode="
                                     + "\(self.state.mode.rawValue) stop \(before) → \(inRaw)\n").utf8))
                             guard ok else { exit(45) }
-                            guard self.press(key: "v", modifiers: [.command, .option]) else { exit(46) }
+                            guard self.press(key: "r", modifiers: [.command]) else { exit(46) }
                             DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
                                 let returned = self.state.mode == .structural
                                 FileHandle.standardError.write(Data(
                                     ("SELFTEST keyboard-return=\(returned ? "OK" : "MISMATCH") the second "
                                         + "press returns to \(self.state.mode.rawValue)\n").utf8))
                                 guard returned else { exit(47) }
-                                self.windowSnapshot(named: "keyboard") { exit(0) }
+                                self.windowSnapshot(named: "keyboard") { self.collapseSelftest() }
                             }
                         }
                     }
@@ -1206,6 +1242,33 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// The diff pane comes out black here, and that is the method rather than the application:
     /// `cacheDisplay` copies AppKit's own drawing, and a `WKWebView` renders out of process. The
     /// document has its own snapshots — this one is of the lists.
+    /// DEC-060, photographed rather than asserted. Both lists collapsed with 63 files in the tree
+    /// is the worst case for width, and the question a check cannot answer is whether the rail and
+    /// the spine still say anything — three letters and a kind glyph are the smallest claims in
+    /// the window.
+    private func collapseSelftest() {
+        guard press(key: "0", modifiers: [.control, .command]) else { exit(48) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            let ok = self.reposCollapsed && self.filesCollapsed
+                && self.repoPaneWidth?.constant == Theme.railWidth
+                && self.filePaneWidth?.constant == Theme.spineWidth
+            // The **drawn** widths, not the constants. A constraint's constant is what was asked
+            // for; the pane is what the window did with it, and the two disagreed by a factor of
+            // two until the scroll view stopped setting the floor. Asserting the constant would
+            // have been a check that agreed with the wrong number.
+            let railDrawn = self.repoTable.enclosingScrollView?.superview?.frame.width ?? -1
+            let spineDrawn = self.fileTable.enclosingScrollView?.frame.width ?? -1
+            let repoCell = self.repoTable.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView
+            let fileCell = self.fileTable.view(atColumn: 0, row: 1, makeIfNecessary: true) as? NSTableCellView
+            FileHandle.standardError.write(Data(
+                ("SELFTEST collapse=\(ok ? "OK" : "MISMATCH") rail=\(railDrawn) spine=\(spineDrawn) "
+                    + "repoRow=\(repoCell?.textField?.stringValue ?? "nil") "
+                    + "fileRow=\(fileCell?.textField?.stringValue ?? "nil")\n").utf8))
+            guard ok else { exit(48) }
+            self.windowSnapshot(named: "collapsed") { exit(0) }
+        }
+    }
+
     private func windowSnapshot(named name: String, then next: @escaping () -> Void) {
         guard let dir = ProcessInfo.processInfo.environment["DIFFSCOPE_SNAPSHOT_DIR"],
               let view = window.contentView else { next(); return }
@@ -1493,6 +1556,68 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         statusLabel.stringValue = sideBySide ? "side by side" : "unified"
     }
 
+    /// DEC-060. Three toggles rather than one focus mode, because the two lists stop being useful
+    /// at different moments: the repository list goes quiet once you are inside a repository, and
+    /// the file list stays in use for the whole review.
+    @objc private func toggleRepositoriesPane() {
+        reposCollapsed.toggle()
+        reposCollapseMenuItem?.state = reposCollapsed ? .on : .off
+        applyCollapses()
+    }
+
+    @objc private func toggleFilesPane() {
+        filesCollapsed.toggle()
+        filesCollapseMenuItem?.state = filesCollapsed ? .on : .off
+        applyCollapses()
+    }
+
+    @objc private func toggleBothPanes() {
+        let collapsing = !(reposCollapsed && filesCollapsed)
+        reposCollapsed = collapsing
+        filesCollapsed = collapsing
+        reposCollapseMenuItem?.state = collapsing ? .on : .off
+        filesCollapseMenuItem?.state = collapsing ? .on : .off
+        applyCollapses()
+    }
+
+    private func applyCollapses() {
+        repoPaneWidth?.constant = reposCollapsed ? Theme.railWidth : Theme.repositoryPaneWidth
+        filePaneWidth?.constant = filesCollapsed ? Theme.spineWidth : Theme.filePaneWidth
+        repoPaneMinimum?.constant = reposCollapsed ? Theme.railWidth : Theme.paneMinimumWidth
+        filePaneMinimum?.constant = filesCollapsed ? Theme.spineWidth : Theme.paneMinimumWidth
+        // The caption under the repository list is a sentence, and a 44 px rail has no room for
+        // one. It is the pane's own explanation, so it goes with the pane rather than being
+        // squeezed into an unreadable column.
+        conventionLabel.isHidden = reposCollapsed
+        repoTable.reloadData()
+        fileTable.reloadData()
+        splitView.layoutSubtreeIfNeeded()
+        // The column does not follow the pane on its own, and a column narrower than its pane
+        // draws a row that is mostly empty — M8-D's defect exactly: two lists full of correct
+        // rows, rendered blank, in a window that passed every check. Setting the width by hand
+        // was worse: the table resized it back to 10 pt behind the change.
+        for (table, collapsed) in [(repoTable!, reposCollapsed), (fileTable!, filesCollapsed)] {
+            // A legacy scroller reserves its own width whether or not it is shown, and that
+            // reservation becomes the pane's floor.
+            table.enclosingScrollView?.scrollerStyle = .overlay
+            table.enclosingScrollView?.hasVerticalScroller = !collapsed
+            // A pane that shrinks keeps its horizontal scroll offset, and the rail then drew its
+            // three letters starting 27 pt into a 44 pt column — present, correct, and mostly off
+            // the left edge. Nothing about the row was wrong; the clip view was where it had been.
+            if let clip = table.enclosingScrollView?.contentView {
+                clip.scroll(to: NSPoint(x: 0, y: clip.bounds.origin.y))
+                table.enclosingScrollView?.reflectScrolledClipView(clip)
+            }
+            guard let column = table.tableColumns.first else { continue }
+            column.minWidth = Theme.spineWidth - 2 * Theme.space2
+            column.maxWidth = Theme.windowWidth
+            column.width = max(column.minWidth, table.enclosingScrollView?.contentView.bounds.width ?? table.frame.width)
+            table.tile()
+        }
+        statusLabel.stringValue = "repositories: \(reposCollapsed ? "rail" : "list")"
+            + " · files: \(filesCollapsed ? "spine" : "list")"
+    }
+
     @objc private func addRootFolder() { add(kind: .root) }
     @objc private func addRepository() { add(kind: .repository) }
 
@@ -1560,6 +1685,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
         wrapMenuItem = menuItems["wrap"]
         sideBySideMenuItem = menuItems["layout.sideBySide"]
+        reposCollapseMenuItem = menuItems["collapse.repositories"]
+        filesCollapseMenuItem = menuItems["collapse.files"]
         terminalMenuItem = menuItems["terminal"]
         terminalRawMenuItem = menuItems["terminal.raw"]
         rawRegionMenuItem = menuItems["rawRegion"]
@@ -1580,6 +1707,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         case "terminal.follow": return #selector(followTerminalToSelection)
         case "wrap": return #selector(toggleWrap)
         case "layout.sideBySide": return #selector(toggleSideBySide)
+        case "collapse.repositories": return #selector(toggleRepositoriesPane)
+        case "collapse.files": return #selector(toggleFilesPane)
+        case "collapse.both": return #selector(toggleBothPanes)
         case "scope.allLocal", "scope.unstaged", "scope.staged", "scope.base":
             return #selector(selectScope(_:))
         case "sources.addRoot": return #selector(addRootFolder)
@@ -2092,6 +2222,22 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             let snapshot = state.repositories[row]
             let ahead = snapshot.aheadCount.map { "↑\($0)" } ?? "↑?"
             let label = state.repositoryLabels[snapshot.url.path] ?? snapshot.displayName
+            if reposCollapsed {
+                // Three letters, because two do not separate `web` from `des` in the product
+                // owner's own tree, and a dot for "there is work in here". The full row is one
+                // hover — and one ⌃⌘1 — away.
+                // No space before the dot: at 11 px the rail has room for four characters and the
+                // three letters are the part that has to be readable.
+                text.stringValue = String(label.prefix(3))
+                    + (snapshot.uncommittedCount > 0 ? "•" : "")
+                // Tiny, because three letters at 11 px do not fit a 44 px rail once the insets
+                // and the dot are counted — and two letters do not separate `web` from `wea`.
+                text.font = Theme.font(Theme.textSizeTiny)
+                text.toolTip = "\(label) — \(snapshot.head.displayText), "
+                    + "\(snapshot.uncommittedCount) uncommitted, \(ahead)"
+                text.lineBreakMode = .byClipping
+                return cell
+            }
             // `12-…` §2 lists the branch as **displayed**, and it was in the tooltip only
             // (`23b-…` §2). A tooltip is not a display: it is invisible until pointed at, so a
             // reader walking the list from the keyboard never sees it. The unusual head states
@@ -2111,6 +2257,19 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 // The badge says what the list could work out cheaply; the diff view says the rest
                 // (`12-…` §4 asks the list to carry degradation state).
                 let badge = state.annotations[file.path].map { " · \($0.badge)" } ?? ""
+                if filesCollapsed {
+                    // One bar per file, carrying the kind glyph: the design drew these bars
+                    // distinguished by hue alone, which DEC-035 forbids.
+                    //
+                    // The design also sizes each bar by how much the file changed. That number is
+                    // not in `ChangedFile` — the scope layer lists paths and kinds, not counts —
+                    // and a bar length invented here would be a measurement the product did not
+                    // make. The bar is uniform until the count is real.
+                    text.stringValue = "\(file.kind.glyph) ▍"
+                    text.toolTip = "\(file.path) — \(file.kind.rawValue)\(badge)"
+                    text.lineBreakMode = .byClipping
+                    return cell
+                }
                 text.stringValue = "\(file.kind.rawValue.prefix(3))  \(display)\(badge)"
                 // The full path stays one hover away, since the row no longer shows all of it.
                 text.toolTip = file.path

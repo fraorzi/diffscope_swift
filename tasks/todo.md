@@ -794,3 +794,33 @@ recoverable. The copy is now the committer date of the ref tip, said in those wo
 `KeyboardMap.bindings`; writing DEC-065's map into it before the code has it would be the exact
 drift DEC-057 exists to prevent. The rebinding is step 2 of `27-…` §4 and moves the tester packet
 and its check in the same commit.
+
+## Step 35 — the design lands: tokens, keys, unified, collapses
+
+- [x] `tokens.css` is the adopted design's table: literal values in both appearances, the syntax
+      theme as classes (`tok-*`) so CodeMirror's own colours leave the bundle, `--ds-term-fg/-bg/
+      -cursor/-selection` renamed to the set xterm reads
+- [x] `@chrome` block + third token check: every chrome token named in `Theme.swift`, negative
+      control included. `Theme.swift` carries the colours as dynamic light/dark pairs
+- [x] DEC-065's map, in code; `⌃`` in the tester packet and its check; the 63-file walk on ⌥↓
+- [x] DEC-059 unified: composed in the renderer from the two sides, sign column, two number
+      columns, tints as reinforcement; `⌥⌘→` for the two panes; selftest arm + `unified.png`
+- [x] DEC-060 three collapses: rail, spine, both; kind glyph on every spine bar; `collapsed.png`
+
+### Step 35 — done, with two defects the pictures found and one still open
+
+**The gutters had been drawing light on a black window.** `.cm-gutters { background: #f5f5f5 }`
+from CodeMirror's own StyleModule was beating the token rule, in both panes, and no check could
+see it — the audit probes a synthetic span, not the real gutter. Found by sampling
+`structural.png` pixel by pixel. Fixed by specificity.
+
+**A 44 px rail drew at 87 px.** The width constraint said 44, the constant read 44, and the
+scroll view's own content width was the pane's real floor. The file spine drew *nothing* until the
+scroller stopped reserving its width. Both were invisible to every check and obvious in one
+photograph — M8-D's lesson, third instance. The arm now reports the **drawn** widths.
+
+**Still open: the rail's label is clipped to two characters.** `kbt•` is set on the row and
+`repoRow=kbt•` comes back from the live cell, but the field draws about 14 pt of it, right-aligned
+inside a 28 pt frame. The pane geometry and the spine are correct; this is the cell's own layout
+inside `NSTableCellView` and it needs an hour with the view debugger rather than another guess.
+Three letters are what separate `web` from `wea`, so two is not enough and the item stays open.

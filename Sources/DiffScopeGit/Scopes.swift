@@ -26,6 +26,21 @@ public enum ScopeAvailability: Sendable, Equatable {
 
 public enum ChangeKind: String, Sendable, Equatable {
     case added, modified, deleted, renamed, untracked, typeChanged, unmerged
+
+    /// One character that means the same thing with every colour removed (DEC-035, DEC-060). The
+    /// collapsed file list has room for this and nothing else, and the adopted design first drew
+    /// those bars distinguished by hue alone.
+    public var glyph: String {
+        switch self {
+        case .added: return "+"
+        case .deleted: return "−"
+        case .renamed: return "→"
+        case .modified: return "✎"
+        case .untracked: return "?"
+        case .typeChanged: return "⇄"
+        case .unmerged: return "!"
+        }
+    }
 }
 
 public struct ChangedFile: Sendable, Equatable {
