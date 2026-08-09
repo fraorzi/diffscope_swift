@@ -100,6 +100,23 @@ public enum ContractError: Error, CustomStringConvertible {
     }
 }
 
+/// What the `#unrenderable` state says (`12-…` §5.5, DEC-063).
+///
+/// It used to say `String(describing: error)` — a Swift value description, handed to a reader who
+/// asked what changed in a file. The state has to answer two questions instead: **what this file
+/// is**, and **why nothing is being compared**. The byte counts are part of the second answer: a
+/// reader who can see that the two sides differ knows the tool found a difference and declined to
+/// draw it, which is a different statement from "nothing here".
+public func unrenderableReason(error: Error, oldBytes: Int, newBytes: Int) -> String {
+    let cause = (error as? ContractError)?.description ?? "the content is not text this window can display"
+    let sides = oldBytes == newBytes
+        ? "Both sides are \(oldBytes) bytes."
+        : "The two sides differ in size: \(oldBytes) bytes → \(newBytes) bytes."
+    return "Not displayable as text — \(cause). \(sides) "
+        + "No text comparison is attempted, and none of the difference is hidden by that: "
+        + "there is simply nothing here a text diff can show."
+}
+
 public func buildRenderModel(
     model: DiffModel,
     pinOld: String,
@@ -177,7 +194,8 @@ public func buildRenderModel(
             pinOld: pinOld, pinNew: pinNew, mode: mode,
             pathTaken: pathTaken, parser: parser,
             modeChip: modeChipText(selected: mode, pathTaken: pathTaken),
-            payload: .unrenderable(reason: String(describing: error)),
+            payload: .unrenderable(reason: unrenderableReason(
+                error: error, oldBytes: model.oldBytes.count, newBytes: model.newBytes.count)),
             coverageVerified: result.coverageChecked,
             notices: notices,
             stops: [], collapses: [],

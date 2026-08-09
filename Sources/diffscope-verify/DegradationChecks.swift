@@ -333,4 +333,26 @@ func runPartialFailureChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("the anchors it produced are still sound",
                validate(result.model).passed, validate(result.model).summary)
     }
+
+    print("\n=== the unrenderable state says what the file is, not what the error was (12-… §5.5) ===")
+    do {
+        let text = unrenderableReason(error: ContractError.mappingFailed(side: .old, underlying: "invalid UTF-8"),
+                                      oldBytes: 4096, newBytes: 5120)
+        report("it names the cause", text.contains("invalid UTF-8"))
+        report("and says the two sides differ, so the reader knows a difference was found",
+               text.contains("4096 bytes → 5120 bytes"))
+        report("and states that nothing is being hidden by the refusal",
+               text.lowercased().contains("nothing is hidden") || text.contains("none of the difference is hidden"))
+        report("equal sides are said to be equal rather than left ambiguous",
+               unrenderableReason(error: ContractError.mappingFailed(side: .new, underlying: "x"),
+                                  oldBytes: 12, newBytes: 12).contains("Both sides are 12 bytes"))
+
+        // The negative control, and the defect this replaced: the payload used to carry
+        // `String(describing: error)`, which is a Swift value description shown to a person who
+        // asked what changed in a file.
+        struct Opaque: Error {}
+        let unknown = unrenderableReason(error: Opaque(), oldBytes: 1, newBytes: 2)
+        report("an error with no words of its own does not leak its Swift description",
+               !unknown.contains("Opaque") && unknown.contains("not text this window can display"))
+    }
 }
