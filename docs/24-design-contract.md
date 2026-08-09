@@ -1,6 +1,6 @@
 # 24 — Design contract
 
-**Status:** Accepted 2026-07-31, gate G2 of `23-release-gates.md`. Authoritative for what a design may change and what it may not.
+**Status:** Accepted 2026-07-31, gate G2 of `23-release-gates.md`. Authoritative for what a design may change and what it may not. **Amended 2026-08-09** by DEC-059 (a sign column), DEC-063 (surfaces that render), DEC-064 (motion) and DEC-066 (the token table as the delivery format).
 
 **Paste your design into `Renderer/src/tokens.css`.** That is the whole answer to "where does it go". The rest of this document is what you get to change, what the interface promises in return, and the two rules the suite enforces so a restyle cannot break the thing the product exists for.
 
@@ -44,6 +44,8 @@ The sixteen ANSI colours are literal in `tokens.css` rather than derived from th
 
 The defaults are the system's own (`Canvas`, `CanvasText`), so light and dark mode work with no effort. Replace them with literal colours if you like — the checks care about *where* values are declared, not what they are.
 
+**A design arrives as a table, not as a stylesheet** (DEC-066). Each row is `name · dark · light · mirrored · what it is for`, and the **mirrored** flag is the part a stylesheet cannot carry: it marks the rows `Theme.swift` must also hold, because AppKit draws that surface and CSS never reaches it. Hand-mirroring was the one step in this document with no check behind it; with the flag present, *every row marked mirrored has a counterpart in `Theme.swift`* becomes a third token check beside the two in §4.
+
 ---
 
 ## 3. Every class the renderer emits
@@ -68,7 +70,8 @@ Classes marked **load-bearing** carry a difference. They may be restyled and may
 | `#notices` | The bar carrying every notice — INV-4 made visible | **Yes** |
 | `ds-notice` | An inline notice inside the document | **Yes** |
 | `#stage`, `#left`, `#right` | Layout of the two panes | No |
-| `#unrenderable` | Shown when the content is not text that can be displayed | **Yes** |
+| `#unrenderable` | Shown when the content is not text that can be displayed, and why | **Yes** |
+| `ds-sign` | The `+` / `−` column in unified (DEC-059) | **Yes.** With no panes, this is the only signal of direction that survives greyscale |
 | `cm-*` | CodeMirror's own classes: editor, scroller, gutters, line numbers | No, except the gutter ones |
 
 ### The terminal pane
@@ -85,6 +88,20 @@ Added after this contract was first written, and missing from it until M8-P — 
 | `#cwd[data-diverged="true"]` | The shell is **not** in the selected repository — dotted underline | **Yes.** This is the terminal's own version of the honesty rule: the pane must never imply the shell is where the diff is |
 | `#line` | The real text field the macOS motions come from (T0) | **Yes** — hidden by `visibility` when there is no prompt, never removed, so the row keeps its explanation |
 | `--ds-term-black` … `--ds-term-bright-white` | The sixteen colours a program addresses by index | **Yes**, as a set: a palette collapsed toward the background makes some programs unreadable |
+| `--ds-term-fg`, `--ds-term-bg`, `--ds-term-cursor`, `--ds-term-selection` | The four values xterm.js reads outside the palette | **Yes**, and **as a set**: any one left undeclared is a colour the emulator invents |
+
+### Surfaces that render (DEC-063)
+
+An image or an SVG is compared by being drawn, and the drawing is a surface with its own rules.
+
+| Element | Means | Load-bearing |
+|---|---|---|
+| `#rendered` | The Before / After, Blend, Split or Pixel-diff stage | **Yes** |
+| `ds-checker` | Transparency behind the image | **Yes** — an alpha change that reads as a background change is a hidden difference |
+| `ds-pixel-region` | A region of changed pixels | **Yes**, by outline and hatch. Never by hue alone |
+| `ds-mode-off` | A comparison mode unavailable here, with its reason | **Yes** — disabled and stated, never hidden |
+
+**The SVG is drawn through an `<img>`, never inlined.** It is repository content and it can carry script (DEC-063, extending DEC-028). A design therefore cannot style the interior of an SVG: the checkerboard sits behind it, and no rule inside the pane reaches the mark.
 
 ---
 
@@ -97,6 +114,9 @@ Added after this contract was first written, and missing from it until M8-P — 
 5. **A mark reduced to colour alone.** Every mark must carry at least one signal that survives greyscale — texture, underline, outline, edge or weight. DEC-035: colour alone fails in a screenshot, in greyscale, and for a colour-blind reader.
 6. **A notice bar laid out to nothing.**
 7. **A font size or colour written inline in the AppKit chrome** rather than read from `Theme.swift`.
+8. **A token marked mirrored with no counterpart in `Theme.swift`** (DEC-066). The flag is a promise about a second file; unkept, it leaves two thirds of the window styled by inference.
+9. **An animated property with no off switch** (DEC-064). Every animation must be neutralised inside `@media (prefers-reduced-motion: reduce)`, and the check carries an unguarded animation as its negative control.
+10. **SVG markup inserted into the document** rather than loaded through an `<img>` (DEC-063). This is repository content reaching a place where it can execute.
 
 ---
 
@@ -104,8 +124,8 @@ Added after this contract was first written, and missing from it until M8-P — 
 
 - **A disclosed count stays legible wherever grouping quietens something** (DEC-017). Grouping is permitted *because* the count is shown; a design that shrinks it to four grey pixels keeps the letter and loses the point.
 - **Quietening is not disappearing.** `ds-formatting` should read as "present and less shouty", never as "absent".
-- **Nothing animates.** DEC-016 commits to reduced motion by construction — there are no transitions to disable, and adding one would need that decision reopened.
-- **The two panes must stay vertically aligned.** Anything that changes line height on one side only breaks the comparison the product exists to show.
+- **Nothing animates without an off switch** (DEC-064, amending this line). Until 2026-08-09 the rule was *nothing animates*, and reduced motion was honoured by there being nothing to disable — a guarantee by construction, which is the strongest kind. That is gone by decision: the product owner wants the interface to move. What replaces it is a register and a check — every transition declares duration, curve and its reduced-motion path, and rule 9 above refuses an animation that lacks one. The register is the design's Motion table. **A transition that is not in it does not ship**, and this line is the reason to be strict about a rule that used to be free.
+- **The two panes must stay vertically aligned** in the side-by-side mode. Anything that changes line height on one side only breaks the comparison the product exists to show. Unified has one column and is not exposed to this, which is part of why it is the default (DEC-059).
 
 ---
 

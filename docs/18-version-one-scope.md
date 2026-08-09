@@ -42,8 +42,13 @@ Derived from the decision log; where this document and [04-decision-log.md](04-d
 - Invisible-difference disclosure: normalisation forms, zero-width and bidi, whitespace lookalikes (DEC-023)
 
 ### Presentation
-- Side-by-side only (DEC-014)
+- **Unified by default, side-by-side as a mode** over the same pinned pair (DEC-059, amending DEC-014). In unified, direction is carried by a `+` / `−` sign column, not by hue
 - Three modes over two code paths: Structural / Expanded / Raw (DEC-013)
+- **Three lenses over the selected file: Diff, Blame, History** (DEC-061, amending DEC-008). History's two-commit selection is a commit-vs-commit comparison; both lenses are read-only and go through the closed operation registry
+- **Search within the diff** (DEC-062, amending DEC-017), scoped to the changed set by default, whole worktree on request
+- **Rendered comparison for images and SVG** — Side by side, Blend, Split, Pixel diff, with a 16-megapixel budget on the last (DEC-063). SVG carries both readings, rendered and source, and is rendered through an `<img>` so repository content never executes
+- **Three independent collapses** — repositories, changed files, terminal — each with a keyboard binding; collapsed is reduced, never hidden (DEC-060)
+- **Motion, with a registered reduced-motion path for every transition** (DEC-064, amending DEC-016)
 - Syntax highlighting, with change meaning carried **outside token colour** (DEC-017, DEC-035)
 - Navigation: previous/next change, collapsed unchanged ranges, changed-file list (DEC-017)
 - Flat file list grouped by workspace package, middle-elided paths (DEC-033)
@@ -51,8 +56,10 @@ Derived from the decision log; where this document and [04-decision-log.md](04-d
 - Auto-refresh, trailing-edge debounce with cap, anchored to nearest unchanged segment (DEC-007, DEC-026, DEC-034)
 
 ### Integration and accessibility
-- Configurable editor command, WebStorm default (DEC-015)
-- No colour-alone meaning; full keyboard operation; system contrast and reduced motion respected (DEC-016)
+- Configurable editor command, WebStorm default (DEC-015), with a visible failure state
+- No colour-alone meaning; full keyboard operation; system contrast respected (DEC-016)
+- Reduced motion respected by a checked off switch rather than by the absence of motion (DEC-064)
+- The keyboard map of DEC-065; the token table of DEC-066. The adopted design and how it maps onto the build: [27-design-adoption.md](27-design-adoption.md)
 
 ## Out of scope — deferred
 
@@ -60,11 +67,10 @@ Derived from the decision log; where this document and [04-decision-log.md](04-d
 |---|---|
 | Any write operation: staging, commit, discard, branch | DEC-003 |
 | Manual fetch button | DEC-011 |
-| Branch-vs-branch, commit-vs-commit, commit-vs-parent, and their pickers | DEC-008 |
-| Unified diff layout | DEC-014 |
+| Branch-vs-branch, and a picker that is a second place to be rather than a lens | DEC-008, DEC-061 |
 | Structural diffing for CSS, JSON, Markdown, HTML | DEC-004 |
 | Moved-and-modified detection with `innerDiff` | DEC-038 |
-| Search within diff; filter by change type | DEC-017 |
+| Filter by change type | DEC-017 |
 | Change minimap; personal annotations | DEC-017 |
 | Screen-reader support | DEC-016 |
 | Homoglyph detection | DEC-023 |

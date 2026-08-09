@@ -15,9 +15,13 @@ One window (DEC-005). Two persistent regions plus a transient one:
 │ Repository list │ Scope bar                            │
 │ (sidebar)       ├──────────────────────────────────────┤
 │                 │ Changed-file list │ Diff view        │
-│                 │ (grouped, flat)   │ (side-by-side)   │
-└─────────────────┴──────────────────────────────────────┘
+│                 │ (grouped, flat)   │ (unified default)│
+├─────────────────┴──────────────────────────────────────┤
+│ Terminal drawer (⌃`), full width, panes compress       │
+└────────────────────────────────────────────────────────┘
 ```
+
+**Each of the three regions collapses independently** (DEC-060): repositories to a 44 px rail carrying three letters and a change dot (⌃⌘1), the changed-file list to a spine of one bar per file with its kind glyph (⌃⌘2), both at once (⌃⌘0), the drawer closed (⌃`). Collapsed is **reduced, never hidden** — a collapsed region still answers *which* and *how many*, in less space. The worst case for vertical density is both lists collapsed with the drawer open, and that is the combination to photograph.
 
 No tabs, no secondary windows. Last-opened repository is restored (DEC-005), treated as a cache: if it has moved, been deleted, or changed state, the application recovers to the repository list rather than trusting its memory.
 
@@ -51,7 +55,9 @@ Four scopes (DEC-008), always visible for the selected repository:
 3. Staged vs `HEAD`
 4. Current branch vs merge-base of base branch
 
-Scope 4 additionally displays **which ref was used and how old it is** — for example `origin/master · 9 weeks old` (DEC-010). This display is a correctness requirement, not decoration: it is the sole staleness signal, because the application never fetches (DEC-011).
+Scope 4 additionally displays **which ref was used and how old it is** (DEC-010). This display is a correctness requirement, not decoration: it is the sole staleness signal, because the application never fetches (DEC-011).
+
+**The copy is fixed, because the obvious wording would be a lie.** The age is the committer date of the ref tip, not the time of the last fetch, which `11-…` §"Scope 4" records as not reliably recoverable. So the row reads `origin/master · newest commit 9 weeks old`, never *"last fetched"*; where the ref cannot be read it says `age unknown`; and the explanation available in the status line states plainly that the application never fetches and that this is the age of what is on disk. A fetch performed elsewhere — another terminal, WebStorm — is picked up on the next refresh, because nothing here is remembered by the application.
 
 The detected base branch is shown and is overridable per repository (DEC-009). Overrides are stored in application configuration, never written into the repository.
 
@@ -69,9 +75,13 @@ Per-file indicators: change kind (added / modified / deleted / renamed), and any
 
 ## 5. Diff view
 
-Side-by-side only (DEC-014). Three modes over two code paths (DEC-013): **Structural** (default), **Expanded**, **Raw**.
+**Unified by default; side-by-side is a mode** reached by ⌥⌘→ (DEC-059, amending DEC-014). Three modes over two code paths (DEC-013): **Structural** (default), **Expanded**, **Raw**. Three lenses over the same file (DEC-061): **Diff**, **Blame**, **History**.
 
-All three operate on the same pinned source pair, so switching modes can never change which versions are compared.
+All of them operate on the same pinned source pair and the same canonical diff, so changing mode, layout or lens can never change which versions are compared nor which change stop the reader is standing on.
+
+**Unified needs a signal side-by-side got for free.** With no panes, *added* and *removed* would fall back onto hue. A dedicated sign column carries `+` and `−`; hue only reinforces it. The column is load-bearing (`24-…` §3) precisely because it is the only part of the distinction that survives greyscale.
+
+**Blame marks uncommitted lines rather than tinting them**, so the change language keeps sole ownership of tint and texture, and the gutter geometry is identical across lenses so that switching one does not move the code.
 
 ### 5.1 Colour discipline
 
@@ -99,7 +109,24 @@ Formatting-only changes may be collapsed **with a disclosed count and immediate 
 
 ### 5.4 Long lines
 
-DEC-014's side-by-side choice makes long lines the known weak spot. Horizontal scrolling is linked between panes; wrapping is available; neither may truncate content silently. Spike X-2 found no rendering cliff at 50,000-character lines in either web candidate.
+The side-by-side mode makes long lines the known weak spot. Horizontal scrolling is linked between panes; wrapping is available; neither may truncate content silently. Spike X-2 found no rendering cliff at 50,000-character lines in either web candidate.
+
+### 5.5 Files that render (DEC-063)
+
+Three classes, not two:
+
+| Class | Shown as |
+|---|---|
+| Text that also renders — **SVG** | A **Rendered / Source** switch; both readings complete, source defaulted to off |
+| **Raster** — png, jpg, webp, gif, avif | Rendered comparison only |
+| Undisplayable — archive, generated blob | `#unrenderable`: what the file is, and why nothing is compared |
+
+The rendered comparison has four modes — **Side by side, Blend, Split, Pixel diff** — with dimensions, size and format stated for each side. Rules that are correctness rather than styling:
+
+- **Pixel diff has a 16-megapixel budget.** Above it the mode is **disabled with its reason stated**, in the same form as an unavailable scope, and both renderings are still shown.
+- **Bytes differing while the rendering does not must be said out loud**: *"The two files render identically — 0 pixels differ. The bytes differ."* This is DEC-023's disclosure at whole-file scale; without it the reader reads a blank comparison as a false positive.
+- **Changed pixels are marked by outline and hatch**, never by hue alone (DEC-035).
+- **An SVG is rendered through an `<img>`**, never inlined (DEC-063, extending DEC-028). Nothing can style the inside of it; the transparency checkerboard sits behind it.
 
 ## 6. Degradation states
 
@@ -112,7 +139,8 @@ Every degradation is **visible**. Failure reduces visual quality, never correctn
 | Unverified | Above validation size threshold | Explicitly labelled unverified |
 | Unsupported language | Not TS/TSX/JS/JSX (DEC-004) | Ordinary raw diff, labelled — not an error |
 | Filter active | Git filter detected (DEC-028) | Raw, with filter disclosed |
-| Binary / generated | Detected non-text | No text diff attempted |
+| Renderable non-text | Image or SVG (DEC-063) | Rendered comparison, §5.5 — an ordinary state, not a refusal |
+| Undisplayable | Archive, generated blob | `#unrenderable`: what it is, and why nothing is compared |
 
 The unsupported-language state is the **majority case by file count** and must be designed as an ordinary, well-finished state rather than an error condition.
 
@@ -177,6 +205,8 @@ DEC-016 commits to **full keyboard operation of every function**. This is a comp
 
 The **coverage** above is binding: any function reachable only by pointer is a defect. Since DEC-057 the right-hand column is not documentation of the code — it *is* the code, transcribed from `KeyboardMap.bindings`, and a row nothing binds fails the check suite by name. Group headers are not stops (DEC-033), on any route.
 
+**The key column above states the shipped map and will change when the code does.** DEC-065 re-cuts it around arrows and modifier tiers — `⌘↑↓` change, `⌥↑↓` file, `⇧⌘↑↓` repository, `⌘1` on Structural, `⌘R` for region-raw, `⌘⏎` for the editor, `⌃\`` for the terminal — and adds the functions the adopted design introduces: the three lenses, the three collapses, search, and the image-comparison modes. Those rows are added here **as each function comes to exist**, not when it is drawn: this column is a transcription, and a transcription that runs ahead of its source is the drift DEC-057 exists to prevent.
+
 ## 10. Editor integration
 
 Configurable command template with file and line placeholders, defaulting to WebStorm (DEC-015).
@@ -189,10 +219,16 @@ Configurable command template with file and line placeholders, defaulting to Web
 
 Follows macOS system light/dark, with a built-in syntax theme per appearance (DEC-019). Appearance changes are handled while running, including mid-diff. Both variants are independently verified for contrast **and texture legibility**, since DEC-035 makes texture load-bearing.
 
+Every value comes from the token table of DEC-066 — name, both appearances, and a flag marking the rows the AppKit chrome mirrors. Text below 18 px holds at least 4.5:1 against its own surface in both appearances; the first version of the adopted design failed that at 2.7:1 on the tertiary neutral and it was caught by measurement, not by looking.
+
+## 11a. Motion
+
+Since DEC-064 the interface animates. Every transition is registered with its duration, curve, what moves, and **its reduced-motion path**; a transition with no such path is not shippable, and the check refuses an animated property that is not neutralised under `prefers-reduced-motion: reduce`. Scroll re-anchoring keeps the explicit non-animated form DEC-034 already required: the jump is instantaneous and the status line reports *"re-anchored at line 412"*.
+
 ## 12. Open items owned by this document
 
-- ~~Concrete key assignments~~ — **settled by DEC-057, 2026-08-09.** The bindings are data (`KeyboardMap`), the menu bar is generated from them, and the coverage table above is transcribed into `KeyboardFunction` so a row nothing binds fails the check suite.
+- ~~Concrete key assignments~~ — **settled by DEC-057, 2026-08-09**, re-cut by DEC-065 the same day. The bindings are data (`KeyboardMap`), the menu bar is generated from them, and the coverage table above is transcribed into `KeyboardFunction` so a row nothing binds fails the check suite.
 - Sorting and grouping order within the repository list.
-- Minimum usable window width, given side-by-side.
+- ~~Minimum usable window width~~ — **settled by DEC-059, 2026-08-09: 1180 px.** 246 rail + 296 list + 80 monospace columns and gutters. Below it side-by-side falls back to unified; below 1020 the file list collapses to its spine; 860 is the AppKit minimum content size.
 - Visual design of ambiguity indication that does not read as malfunction (DEC-031).
 - Whether the empty-state picker interacts with sandboxing (OQ-035).

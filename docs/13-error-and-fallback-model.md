@@ -32,7 +32,13 @@
 | F15 | Watcher event loss | FSEvents drop signal | Full rescan of the repository | Refresh indication |
 | F16 | Structural budget exceeded | Size, node count or counted work (DEC-050) | Whole-file raw | Fallback + which budget and its value |
 
+| F17 | Pixel comparison over budget | Frame above 16 megapixels (DEC-063) | Both renderings, no pixel pass | Mode disabled **with its reason**, never hidden |
+| F18 | Renders identically, bytes differ | 0 differing pixels, differing bytes (DEC-063) | Say so, and offer the source reading where one exists | *"The two files render identically — 0 pixels differ. The bytes differ."* |
+| F19 | No counterpart to render | One side absent | The single rendering, alone | Blend, Split and Pixel diff disabled with their reason |
+
 **F16 was added by DEC-051.** This table predates the budgets, and a condition with no row cannot be given a rank in §5.
+
+**F17–F19 were added by DEC-063**, when a file that renders stopped being a file the product declines to compare. **F18 is the one that matters for the trust model**: it is DEC-023's invisible difference at whole-file scale, and without it a reader sees an empty comparison and concludes the tool found nothing — when what it found is a difference that does not reach the screen. F9 (binary) now means *undisplayable*, not merely *non-text*.
 
 ## 3. Failure paths that need deliberate testing
 
@@ -59,6 +65,8 @@ Enumerated as prohibitions so they can be tested:
 - A move that discards the delta of its moved content (structurally prevented by DEC-024, still tested).
 - A Git invocation without `--no-optional-locks` or equivalent (DEC-003).
 - Executing any command defined by repository content (DEC-028).
+- Repository content reaching a context where it can execute — an SVG inlined into the document rather than loaded through an `<img>` (DEC-063).
+- An image comparison that renders blank while the bytes differ, without saying so (F18).
 
 ## 5. Degradation ordering
 

@@ -362,6 +362,10 @@ func runTesterPacketChecks(_ reportRaw: (String, Bool, String) -> Void) {
             "docs/21-agent-handoff.md",
             "docs/00-index.md",
             "docs/15-test-corpus-plan.md",
+            // The design-adoption document, added with it: it describes the window a reader will
+            // see, and a document that describes the window and never mentions the shell in it is
+            // the silent half of this check.
+            "docs/27-design-adoption.md",
         ]
         // Each phrase is an unqualified claim about what the product cannot do. The qualified forms
         // — "on its own", "on any path of its own" — are the point and are not matched.

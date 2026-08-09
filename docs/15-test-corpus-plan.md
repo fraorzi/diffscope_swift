@@ -171,6 +171,21 @@ Elevated from the original sketch: 51% of the real corpus contains non-ASCII, an
 | `symlink` | Must not follow into arbitrary content. |
 | `unsupported-language` | Raw fallback path — the **majority case by file count** under DEC-004. |
 
+### 4.7a Files that render — P1, added by DEC-063
+
+The rendered comparison is the first surface where a *correct* comparison can still mislead, so the fixtures are chosen around that rather than around file formats.
+
+| Case | Exercises |
+|---|---|
+| `svg-text-only-change` | Source differs — a `<title>`, a colour written `#fff` versus `#FFFFFF` — and **not one pixel moves**. F18: the comparison must say the rendering is identical and the bytes are not. The case that would otherwise read as a false positive. |
+| `svg-rendered-change` | Source and rendering both differ. Both readings must agree that something changed. |
+| `svg-hostile` | An SVG carrying `<script>` and an external reference. Nothing executes and nothing is fetched — the negative control for the `<img>` boundary, and the reason that boundary is in DEC-063 rather than in a code comment. |
+| `raster-resize` | Dimensions change. The changed number is stated, not silently rescaled. |
+| `raster-identical-bytes-differ` | Re-encoded at the same visual result. F18 again, on the raster path. |
+| `image-added` | No left side. Blend, Split and Pixel diff disabled with their reason (F19). |
+| `image-over-budget` | Above 16 megapixels. Pixel diff disabled with its reason; both renderings still shown (F17). |
+| `undisplayable-blob` | An archive. `#unrenderable`, stating what it is and why nothing is compared. |
+
 ### 4.8 Deferred-scope fixtures — P2
 
 Kept so behavior is defined even though structural support is deferred: `css-declaration-change`, `css-selector-change`, `inline-style-property-change`, `json-change`, `markdown-change`, `html-change`. Under DEC-004 all of these take the raw fallback path in v1; the fixtures assert that fallback is correct and labeled, not that structural output is good.

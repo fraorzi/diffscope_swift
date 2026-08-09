@@ -329,7 +329,7 @@ Reopen if auto-refresh proves disruptive in practice during beta use, in which c
 
 - **Date:** 2026-07-26
 - **Topic:** Which Git comparison scopes version one supports.
-- **Status:** Accepted
+- **Status:** Accepted — **amended 2026-08-09 by DEC-061**, which admits History and Blame as lenses over the selected file. The four scopes below are unchanged; what changed is that a commit-vs-commit comparison is now reachable, through a door this entry did not anticipate. Left as written; the correction is visible rather than edited in.
 
 ### Context
 
@@ -603,7 +603,7 @@ Reopen if Expanded turns out to need behavior that genuinely cannot be expressed
 
 - **Date:** 2026-07-26
 - **Topic:** Side-by-side versus unified diff layout in version one.
-- **Status:** Accepted
+- **Status:** Accepted — **amended 2026-08-09 by DEC-059**, which makes unified the default layout and side-by-side a mode. The reasoning below for side-by-side still holds of the case it was written about; what it missed is which layout a reader arrives already able to read. Left as written.
 
 ### Context
 
@@ -687,7 +687,7 @@ Reopen if the chosen invocation mechanism proves unreliable in Phase 3.5 spikes.
 
 - **Date:** 2026-07-26
 - **Topic:** The accessibility level version one commits to.
-- **Status:** Accepted
+- **Status:** Accepted — **amended 2026-08-09 by DEC-064**, which admits motion. Reduced motion is still honoured; it is now honoured by a checked off switch rather than by there being nothing to switch off. Left as written.
 
 ### Context
 
@@ -734,7 +734,7 @@ Reopen if the application is ever distributed beyond personal use (OQ-002), whic
 
 - **Date:** 2026-07-26
 - **Topic:** Which optional diff-presentation features are in scope for version one.
-- **Status:** Accepted
+- **Status:** Accepted — **amended 2026-08-09 by DEC-062**, which brings search within the diff into version one. The minimap, annotations and filter-by-change-type stay deferred. Left as written.
 
 ### Context
 
@@ -2443,7 +2443,7 @@ Reopen if the terminal ever needs to send anything other than `cd` — a second 
 
 ## DEC-057 — The keyboard map is data, and the menu is generated from it
 
-- **Date:** 2026-08-09 · **Topic:** DEC-016's coverage commitment, `12-desktop-ux-specification.md` §9, OQ-023 · **Status:** Accepted
+- **Date:** 2026-08-09 · **Topic:** DEC-016's coverage commitment, `12-desktop-ux-specification.md` §9, OQ-023 · **Status:** Accepted — **its bindings superseded 2026-08-09 by DEC-065.** The mechanism below is untouched: the map is still data, the menu is still built from it, and a specified function with no binding still fails the suite. Only the contents changed. Left as written.
 
 ### Context
 
@@ -2526,3 +2526,285 @@ The two shell items are settled the same way: the branch moves out of the toolti
 ### Revisit trigger
 
 Reopen if a fourth mode or a second structural path appears — `pathTaken` is a two-valued field today because DEC-013 has two code paths. Also reopen if DEC-045 is reopened, since ambiguity would become the eighth chip and the notice bar is already crowded.
+
+---
+
+## DEC-059 — Unified becomes the default layout, side-by-side becomes a mode
+
+- **Date:** 2026-08-09 · **Topic:** DEC-014, `12-desktop-ux-specification.md` §5, the adopted design · **Status:** Accepted · **Amends DEC-014**
+
+### Context
+
+DEC-014 chose side-by-side and put unified out of scope, reasoning that a structural diff is about correspondence and correspondence wants two columns. The product owner reviewed the adopted design on 2026-08-09 and chose the opposite default: unified, with side-by-side as a mode reached by ⌥⌘→.
+
+Their reason is the one the decision did not weigh — **unified is the shape a reader already knows**, from `git diff`, from GitHub, from every review tool they use. DEC-014 compared the two layouts on how well each expresses a structural alignment and never asked which one a reader arrives already able to read.
+
+There is a real cost, and it is the reason this is a decision rather than a preference. In side-by-side, *added* and *removed* are separated by **which pane the line is in**; that separation is free and it survives greyscale. Unified has no panes, so without something else the distinction collapses onto hue — which DEC-035 forbids, and which the first version of the design did in fact do, marking both with the same gutter bar and the same texture.
+
+### Options considered
+
+1. **Unified default with a dedicated sign column**, side-by-side as a mode over the same pinned pair.
+2. **Keep side-by-side only.** Preserves DEC-014 and rejects the owner's instruction.
+3. **Unified only.** Cheaper, and it discards the layout that is right for a large restructure — the wrapper-removal case this product exists to show.
+
+### Final decision
+
+**Option 1.** Unified is the default view. Added and removed lines carry **`+` and `−` in a dedicated sign column**, a shape that survives greyscale; hue only reinforces them. Side-by-side stays available for the case it is better at, which is checking that two versions correspond after a restructure.
+
+Both layouts read the **same canonical diff over the same pinned pair**, so switching layout can change neither what is compared nor which change stop the reader is standing on. That is the rule DEC-013 already imposes on modes, applied to a second axis.
+
+### Consequences
+
+- **DEC-014's out-of-scope line is retired**; `18-version-one-scope.md` moves unified from the deferred table into scope, and `12-…` §5 is rewritten around two layouts.
+- **The sign column is load-bearing** and joins `24-design-contract.md` §3: it may be restyled and may not be hidden, because in unified it is the only greyscale-surviving signal of direction.
+- **The two-panes-stay-aligned rule** in contract §5 now applies to the side-by-side mode specifically, not to the product as a whole.
+- **Minimum usable width falls out at 1180 px** — 246 rail + 296 list + 80 monospace columns and gutters — which settles the second open item in `12-…` §12. Below 1180 side-by-side falls back to unified, which is available because unified is now the default rather than an absent feature.
+
+### Revisit trigger
+
+Reopen if the sign column is measured to be missed — a reader who reports mistaking an addition for a deletion in unified is evidence that pane separation was carrying more than this decision assumed.
+
+---
+
+## DEC-060 — Three independent collapses, not one focus mode
+
+- **Date:** 2026-08-09 · **Topic:** `12-desktop-ux-specification.md` §1, the adopted design · **Status:** Accepted
+
+### Context
+
+The design first offered a single "Focus" button that collapsed both sidebars at once. The product owner asked for them separately: collapse repositories without collapsing changed files, and the reverse.
+
+This is not only a convenience. The two lists answer different questions and a reader stops needing them at different moments — the repository list goes quiet once you are inside one repository, while the file list stays in use for the whole review.
+
+### Options considered
+
+1. **Three independent toggles** — repositories, changed files, terminal — freely combinable.
+2. **One focus mode**, as first drawn. Fewer states to draw and to test; it forces the reader to give up the list they are still using in order to lose the one they are not.
+3. **Draggable splitters only.** Continuous, and it has no keyboard form, which DEC-016 forbids as the only route.
+
+### Final decision
+
+**Option 1.** Each region has two states and its own binding: repositories full ↔ 44 px rail (⌃⌘1), changed files full ↔ spine (⌃⌘2), both at once (⌃⌘0), terminal drawer (⌃`). Collapsed is **not hidden**: the rail keeps three letters and a change dot, the spine keeps one bar per file with its kind glyph, so neither collapse removes information from the window — it reduces the space that information takes.
+
+The kind glyph on the spine is required rather than decorative: the bars were drawn coloured by change kind and nothing else, which is colour-alone meaning and fails DEC-035.
+
+### Consequences
+
+- **`12-…` §1's information architecture gains states.** Two persistent regions become two regions with two states each, and the diff pane's width is a function of both.
+- **Four combinations must be drawn and photographed**, not one, and the density check is the worst case: both collapsed with the terminal open.
+- The eight-state space is small enough to enumerate, which is why it is enumerated rather than left to a splitter's continuous range.
+
+### Revisit trigger
+
+Reopen if a third list appears in the window — the binding scheme is `⌃⌘<n>` per region and it runs out of obvious digits at three.
+
+---
+
+## DEC-061 — History and Blame enter version one as lenses over the selected file
+
+- **Date:** 2026-08-09 · **Topic:** DEC-008, the adopted design · **Status:** Accepted · **Amends DEC-008**
+
+### Context
+
+DEC-008 fixed four scopes and deferred branch-vs-branch, commit-vs-commit and their pickers, on the reasoning that a picker is a second interface and version one should have one. The adopted design brings back two of the things that deferral removed, in a different shape: **History**, where selecting one commit compares it against the working tree and selecting two compares them with each other, and **Blame**, which is authorship rather than comparison and was never in any scope at all.
+
+The product owner accepted both. What makes them acceptable now and not in July is that they are **lenses over the file already selected**, not a second place to be: the same window, the same file, the same gutter geometry, so switching lens does not move the code under the reader's eyes.
+
+### Options considered
+
+1. **Both, as lenses on the current file**, with the scope bar untouched.
+2. **History only.** Blame is the more speculative of the two and the one no document has ever asked for.
+3. **Neither** — hold DEC-008 as written and ship the four scopes.
+
+### Final decision
+
+**Option 1.** `⌃⌘D` / `⌃⌘B` / `⌃⌘H` switch lens. History's two-commit selection is the deferred commit-vs-commit comparison arriving through a door DEC-008 did not anticipate, and this entry says so rather than pretending otherwise.
+
+**Both are read-only and both go through the closed operation registry.** `git log`, `git blame` and the two-commit diff are added to the registry with their `--no-optional-locks` flags, which means R-8's proof covers them the moment they exist; an operation that is not in the registry cannot be issued at all.
+
+**Blame marks uncommitted lines rather than tinting them.** The change language owns tint and texture in this window; a blame view that tinted rows would be a second meaning for the same signal.
+
+### Consequences
+
+- **`18-version-one-scope.md`'s deferred table loses two rows** and the scope of R-8's read-only proof grows by three operations.
+- **The base-ref age applies to History as well.** The commit list is what is on disk; the application still never fetches, so a history that looks complete may be nine weeks behind and must say so in the same words the scope bar uses.
+- Blame introduces the first **per-line attribution** in the product, which is a second thing a line can carry beside a change mark. The design keeps them in different columns for that reason.
+
+### Revisit trigger
+
+Reopen if History grows a filter, a search or a graph — at that point it is the second interface DEC-008 refused, and the reasoning that admitted it as a lens no longer holds.
+
+---
+
+## DEC-062 — Search within the diff enters version one
+
+- **Date:** 2026-08-09 · **Topic:** DEC-017, the adopted design · **Status:** Accepted · **Amends DEC-017**
+
+### Context
+
+DEC-017 deferred search within the diff along with the change minimap and personal annotations, as presentation features that could wait. The product owner asked for it back on review of the design: ⌘F with a destination, results grouped by file, scoped to changed files by default with the whole worktree as an opt-in.
+
+### Options considered
+
+1. **Search over the changed files, with whole-worktree as an explicit second scope.**
+2. **Search the current file only.** Small, and it fails the case the feature is for — finding where else the symbol you are looking at is used.
+3. **Keep it deferred.**
+
+### Final decision
+
+**Option 1.** Default scope is the changed set, because that is the material under review; whole-worktree is one click away and is stated on screen rather than inferred, since the two answer different questions and a reader who does not know which they asked cannot read the count.
+
+**Hits are marked by more than a highlight colour.** The design's first version used a yellow fill alone, which is the DEC-035 failure in its plainest form; the current hit carries an outline as well, and the current hit within the set carries a marker glyph.
+
+### Consequences
+
+- **Whole-worktree search reads files that are not in any diff**, which is the first time the application opens a file for a reason other than comparing it. Read-only, and inside the same path discipline: no repository content is ever executed or used to build a command (DEC-028).
+- **`18-version-one-scope.md` loses the search row** from its deferred table. Filter-by-change-type stays deferred; it was listed in the same DEC-017 line and nothing in the design asks for it.
+
+### Revisit trigger
+
+Reopen if search becomes the way people navigate rather than a way to answer a question — a minimap and a filter were deferred together with it, and if search is carrying their weight the deferral was the wrong shape.
+
+---
+
+## DEC-063 — Rendered comparison for images and SVG, and the `<img>` boundary
+
+- **Date:** 2026-08-09 · **Topic:** DEC-004, DEC-028, `13-error-and-fallback-model.md`, the adopted design · **Status:** Accepted
+
+### Context
+
+A binary file has, until now, been a file the product declines to compare. The product owner asked for the shape other review tools use — Before / After, Blend, Split, Pixel diff — after seeing it in Bitbucket.
+
+Working through it surfaced a classification error the documents have carried since DEC-004: **SVG is not binary.** It is text that also renders. Treating it as binary hides a real textual diff; treating it as text alone hides that the rendered mark moved. Both readings exist and the reader picks.
+
+### Options considered
+
+1. **Three classes** — text-that-renders (SVG), raster, and genuinely undisplayable — with the rendered comparison for the first two and a stated refusal for the third.
+2. **Hand the file to an external comparison application.** This was the design's first answer. It needs a second configurable command, it leaves the window, and it makes the product's honesty claim depend on a program it did not write.
+3. **Leave binary files undisplayed**, as today.
+
+### Final decision
+
+**Option 1.** SVG gets a Rendered / Source switch and both are complete; raster gets the rendered comparison only; a `.zip` or a generated blob gets the `#unrenderable` state, which states what the file is and why no comparison is attempted.
+
+**The security boundary is the reason this entry exists and not only the feature.** An SVG is repository content and SVG can carry script. It is rendered **through an `<img>` element from a `blob:` URL**, never inlined into the document: script does not execute in an image context, and the renderer's CSP forbids remote loads regardless. This is DEC-028's rule — *never execute anything derived from repository content* — applied to a surface DEC-028 did not foresee. The visible cost is real and is accepted: nothing can style the inside of an SVG, so the transparency checkerboard sits behind the image rather than being composed into it.
+
+**Pixel comparison has a budget** — 16 megapixels — and above it Pixel diff is **disabled with its reason stated**, not hidden, in the same form as an unavailable scope. Both renderings are still shown.
+
+**An image whose bytes differ and whose rendering does not must say so**: *"The two files render identically — 0 pixels differ. The bytes differ."* This is DEC-023's invisible-difference disclosure at the level of a whole file, and without it a reader would read a blank comparison as a false positive.
+
+### Consequences
+
+- **`13-error-and-fallback-model.md` gains the image states**: dimensions changed, renders identically, no counterpart, over budget.
+- **`15-test-corpus-plan.md` gains fixtures** it has never had — an SVG whose text changes without moving a pixel, an SVG whose rendering changes, a raster resize, and a file that is neither.
+- **The changed-file list's `binary` word narrows.** It now means *undisplayable*, and an image says its dimensions instead.
+- The `<img>` boundary is checkable: a check can assert the renderer never inserts SVG markup into the document, with a hostile input as its negative control.
+
+### Revisit trigger
+
+Reopen if a format arrives that is text, renders, and cannot be shown safely in an `<img>` — an HTML fragment is the obvious candidate, and the answer for it is probably *no rendered view at all* rather than a sandboxed frame.
+
+---
+
+## DEC-064 — Motion enters the product, and reduced motion becomes a checked path rather than an absent one
+
+- **Date:** 2026-08-09 · **Topic:** DEC-016, `24-design-contract.md` §5 · **Status:** Accepted · **Amends DEC-016**
+
+### Context
+
+DEC-016 committed to respecting reduced motion, and the contract implemented that commitment by construction: *"Nothing animates. There are no transitions to disable, and adding one would need that decision reopened."* The product owner has reopened it — they want the interface to move.
+
+The reasoning that produced the original rule was sound and is worth keeping visible: **a reduced-motion setting that is honoured by having no motion cannot be got wrong.** Every animation added from here is a thing that can fail to have an off switch.
+
+### Options considered
+
+1. **Motion allowed, with a register**: every transition declares duration, curve, what moves, and its reduced-motion path, and a check enforces that the path exists.
+2. **Motion allowed, reduced motion left to reviewers.** This is how the failure normally happens — the guard is remembered for the first five transitions and forgotten for the sixth.
+3. **Hold the no-motion rule.** Rejected by the product owner, who was told the cost above and confirmed.
+
+### Final decision
+
+**Option 1.** The design's Motion table is the register and it has a *Reduce Motion path* column for every row; a transition with no entry in that column is not shippable.
+
+The construction-based guarantee is replaced by a **check with a negative control**, because that is the only thing that replaces it: every animated property in the stylesheet must be neutralised inside a `@media (prefers-reduced-motion: reduce)` block, and a deliberately unguarded animation must fail the check. Contract §5's *"nothing animates"* becomes *"nothing animates without an off switch"*.
+
+**Scroll re-anchoring keeps its non-animated path explicitly** (DEC-034 already required one): under reduced motion the jump is instantaneous and the status line reports *"re-anchored at line 412"* instead of moving.
+
+### Consequences
+
+- **`24-design-contract.md` §5 is rewritten**, and the rule moves from the list of things checks cannot enforce into the list of things they refuse.
+- **DEC-016's structural argument weakens by one clause.** It said the accessibility commitments were met by construction in three places; now two.
+- A snapshot cannot photograph motion, so this is the first interface property with no picture in the selftest. The register plus the check is what stands in for one.
+
+### Revisit trigger
+
+Reopen if the reduced-motion check is ever weakened to a warning. The check is the whole of what replaced the construction guarantee.
+
+---
+
+## DEC-065 — The keyboard map is re-cut around arrows and modifier tiers
+
+- **Date:** 2026-08-09 · **Topic:** DEC-057, `12-desktop-ux-specification.md` §9 · **Status:** Accepted · **Supersedes DEC-057's bindings, keeps its mechanism**
+
+### Context
+
+DEC-057 made the map data and the menu a function of it. That mechanism stands and this entry does not touch it. What changes is the map's contents: the design assigned its own keys, they disagreed with the shipped map in nine of eleven rows, and the product owner asked for whichever set is better rather than either as drawn.
+
+### Options considered
+
+1. **A tiered arrow scheme**: the same direction key at three modifier levels for the three nesting levels of the thing being moved through.
+2. **The design's map as drawn.** It used `⌃1`–`⌃4` for scopes, which macOS takes for switching desktops, and it put focus movement on ⇥ alone, which a text field in the terminal drawer claims.
+3. **The shipped map as built.** Bracket keys for both files and repositories, and `⌘1` on Raw — the least used of the three modes sitting on the first digit.
+
+### Final decision
+
+**Option 1.** Movement is arrows, and the modifier says what is being moved through: `⌘↑↓` change, `⌥↑↓` file, `⇧⌘↑↓` repository. Digits are grouped the same way: `⌘1–3` modes with **Structural on `⌘1`**, `⇧⌘1–4` scopes, `⌥⌘1–3` focus, `⌃⌘0–2` layout. `⌃\`` opens the terminal, matching what every other editor on this machine does.
+
+**Two reversals of DEC-057 are recorded rather than quietly applied:**
+
+- **Region-raw moves from `⌥⌘V` to `⌘R`.** DEC-057 rejected `R` on the grounds that `⌘R` reads as *refresh*. That reasoning assumed a reader who might press it looking for a refresh — but refresh here is automatic and has no binding, so there is nothing for the mistake to collide with, and region-raw is a control move a reader makes constantly. A constant action belongs on the primary tier.
+- **Open-in-editor moves from `⌘O` to `⌘⏎`.** `⌘O` is *Open…* everywhere in macOS, and this application does have things to open — roots and repositories — which now hold `⇧⌘O` and `⇧⌘R`.
+
+**Functions the design introduces are bound but not yet listed in `12-…` §9.** §9's table is the coverage contract and DEC-057's check fails on a row nothing binds; a row is added there when the function it names exists, not when it is drawn.
+
+### Consequences
+
+- **`KeyboardModifiers` gains `.control`**, which the shell must translate, since no binding needed it before.
+- **The tester packet changes.** It names `⌥⌘T` for the terminal, and `DesignChecks` asserts that string; both move to `⌃\`` in the same commit as the rebinding, or the check catches the drift — which is the mechanism working.
+- **`12-…` §9's key column is rewritten** when the bindings change, not before. Until then it states the shipped map, because the column is a transcription of code and a transcription that runs ahead of its source is the drift DEC-057 exists to prevent.
+
+### Revisit trigger
+
+Reopen if a second window appears — DEC-057 named this trigger for preferences, and preferences now exist as a design (DEC-015's editor command). A preferences window that claims keys the diff also wants is exactly the case the flat list does not handle.
+
+---
+
+## DEC-066 — The design is delivered as a token table, and the table says which tokens the chrome mirrors
+
+- **Date:** 2026-08-09 · **Topic:** `24-design-contract.md` §2 and §7, the adopted design · **Status:** Accepted
+
+### Context
+
+The contract says a design is pasted into `Renderer/src/tokens.css` and mirrored by hand into `Theme.swift`, and that mirroring is the step with no check behind it. The first version of the adopted design made that worse by naming no tokens at all: every colour was a literal inside a component, including the sixteen ANSI colours the terminal cannot invent for itself and the four values xterm.js reads as a set.
+
+### Options considered
+
+1. **The design delivers a table** of `name · dark · light · mirrored · description`, and the table is the interface between design and build.
+2. **The design delivers a stylesheet.** It is the same information with the mirrored flag lost, which is the flag the chrome needs.
+3. **Extract tokens from the components during implementation.** This is what would have happened by default, and it is how a value ends up literal in two places.
+
+### Final decision
+
+**Option 1.** Eighty tokens, in groups, each row carrying both appearances, a one-line description of where it is used, and a **mirrored** flag marking the rows `Theme.swift` must carry because AppKit draws that surface.
+
+The set is closed deliberately at both ends: the four terminal values (`--ds-term-fg`, `-bg`, `-cursor`, `-selection`) are present as a set because xterm.js invents any one that is missing, and the sixteen ANSI colours stay literal rather than derived from the neutrals, for the reason contract §2 already gives — a program asks for *green* by index.
+
+### Consequences
+
+- **A third token check becomes possible**, beside *every declared token is used* and *no `var()` without a declaration*: **every row marked mirrored has a counterpart in `Theme.swift`**. The hand-mirroring step gains the check it has never had.
+- **`--ds-row-selected` and `--ds-row-ring` are one entry with two halves.** Selection is not carried by the background alone; the ring is the shape that survives when a system setting removes the fill.
+- The table is the reason the design is implementable at all in one pass. Without the mirrored column, two thirds of the window would be styled by inference.
+
+### Revisit trigger
+
+Reopen if a token is needed that has no single value — a gradient that must be composed per surface, or a colour that depends on the file's state. The table's shape assumes one value per name per appearance.

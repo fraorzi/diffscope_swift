@@ -759,3 +759,38 @@ read it** - sixth instance of a written promise with no check behind it.
 
 **The snapshot check caught its own author first.** Its regex matched `moveFocus(to:named:)` and
 demanded the contract list "repositories", "files" and "diff" as pictures.
+
+## Step 34 — the design review becomes decisions, before any interface code
+
+- [x] Read the adopted Claude Design project against the specification: `DiffScope.dc.html`,
+      `ReviewScreen.dc.html`, `ChangeLanguage.dc.html`, `ImageCompare.dc.html`
+- [x] Two rounds of correction sent back to the design — scope gaps, four DEC-035 breaches
+      (add/remove by hue in unified, spine kind by hue, 2.7:1 tertiary text, search hit by fill),
+      thirteen missing tokens including the four xterm.js reads as a set
+- [x] DEC-059 … DEC-066 written
+- [x] Amendment pointers on DEC-014, DEC-008, DEC-017, DEC-016; supersession pointer on DEC-057
+- [x] `18-version-one-scope.md` — five items out of the deferred table, seven into scope
+- [x] `12-…` §1 collapses, §3 base-age copy, §5 layouts and lenses, §5.5 files that render,
+      §6 two rows, §9 the transcription rule, §11a motion, §12 minimum width settled at 1180
+- [x] `24-design-contract.md` — the sign column and the rendered surfaces as load-bearing,
+      three new refusals, and *nothing animates* replaced by *nothing animates without an off switch*
+- [x] `13-error-and-fallback-model.md` — F17, F18, F19
+- [x] `15-test-corpus-plan.md` §4.7a — eight fixtures, `svg-hostile` as the boundary's control
+- [x] `27-design-adoption.md` — where the design lives, what its review had to fix, the work order
+- [x] `00-index.md`, handoff §0, and `27` added to the retired-sentence document list
+
+### Step 34 — done
+
+**The design was a different product before the review.** Four features outside version one, four
+colour-alone breaches, nine of eleven keyboard rows disagreeing with the shipped map, and four
+load-bearing terminal elements missing. None of that is a criticism of the design — it is what a
+design contract is for, and the reason `24-…` exists at all.
+
+**The one thing the review could not fix by asking:** the age shown beside a base ref. The design
+wanted "last fetched"; `11-…` §Scope-4 already records that the last fetch is not reliably
+recoverable. The copy is now the committer date of the ref tip, said in those words.
+
+**No key was rebound in this step, deliberately.** `12-…` §9's key column is a transcription of
+`KeyboardMap.bindings`; writing DEC-065's map into it before the code has it would be the exact
+drift DEC-057 exists to prevent. The rebinding is step 2 of `27-…` §4 and moves the tester packet
+and its check in the same commit.
