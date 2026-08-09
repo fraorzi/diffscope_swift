@@ -202,13 +202,12 @@ DEC-016 commits to **full keyboard operation of every function**. This is a comp
 | Show raw for the current region | ⌘R |
 | Open current file and line in the editor | ⌘⏎ |
 | Focus movement between sidebar, file list, and diff | ⌥⌘1 / ⌥⌘2 / ⌥⌘3 |
-| Settings — the editor command (DEC-015) | ⌘, |
 
 The **coverage** above is binding: any function reachable only by pointer is a defect. Since DEC-057 the right-hand column is not documentation of the code — it *is* the code, transcribed from `KeyboardMap.bindings`, and a row nothing binds fails the check suite by name. Group headers are not stops (DEC-033), on any route.
 
-**The key column above is DEC-065's map, and the code has it.** One direction key at three modifier tiers for the three nesting levels — change inside a file, file inside a repository, repository inside the list — with `⌘1` on Structural because it is the mode a reader returns to. Outside this table the same map binds `⌃\`` for the terminal, `⌥⌘R` to force raw in it, `⌥⌘K` to follow the selection, `⌥⌘W` for wrap, and `⇧⌘O` / `⇧⌘R` / `⇧⌘B` for the Sources menu.
+**The key column above is DEC-065's map, and the code has it.** One direction key at three modifier tiers for the three nesting levels — change inside a file, file inside a repository, repository inside the list — with `⌘1` on Structural because it is the mode a reader returns to. Outside this table the same map binds `⌃\`` for the terminal, `⌥⌘R` to force raw in it, `⌥⌘K` to follow the selection, `⌥⌘W` for wrap, `⌥⌘→` for side-by-side, `⌃⌘1` / `⌃⌘2` / `⌃⌘0` for the three collapses (DEC-060), `⌘F` and `⇧⌘F` for search over the changed set and over the worktree (DEC-062), `⌘,` for Settings (DEC-015), and `⇧⌘O` / `⇧⌘R` / `⇧⌘B` for the Sources menu. The table above stays exactly the nine rows §9 specifies — those are the coverage contract, and the others are functions this document does not require.
 
-**The functions the adopted design introduces are not here yet** — the three lenses, the three collapses, search, the image-comparison modes. A row is added **when the function comes to exist**, not when it is drawn: this column is a transcription of `KeyboardMap.bindings`, and a transcription that runs ahead of its source is the drift DEC-057 exists to prevent.
+**The functions the adopted design introduces arrive as they are built** — the collapses and search are bound; the two lenses and the image-comparison modes are not. A row is added **when the function comes to exist**, not when it is drawn: this column is a transcription of `KeyboardMap.bindings`, and a transcription that runs ahead of its source is the drift DEC-057 exists to prevent.
 
 ## 10. Editor integration
 

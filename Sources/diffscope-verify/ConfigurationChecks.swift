@@ -396,3 +396,59 @@ func runScopeChecks(_ reportRaw: (String, Bool, String) -> Void) {
                    .contains("choose one"))
     }
 }
+
+/// DEC-062: search within the changed set. The engine half — the interface's half is a field and a
+/// list, and neither can be checked headlessly.
+func runSearchChecks(_ reportRaw: (String, Bool, String) -> Void) {
+    func report(_ name: String, _ ok: Bool, _ detail: String = "") { reportRaw(name, ok, detail) }
+
+    print("\n=== search finds what is there, and says which question it answered (DEC-062) ===")
+    let files = [
+        (path: "packages/web/src/results/ResultsList.tsx",
+         text: "import { useSelection } from './useSelection';\nconst handle = useSelection(query);\n"),
+        (path: "packages/ui/src/list/List.tsx",
+         text: "export const List = () => null;\n// useselection is mentioned in lower case here\n"),
+    ]
+
+    let hits = search(query: "useSelection", in: files).hits
+    // Four, not three: the import line carries the symbol and the module path, and the second
+    // file mentions it in lower case. Writing the expectation down first got this wrong, which is
+    // the argument for having the check rather than reasoning about the string.
+    report("every occurrence is found, including two on one line and one in another file",
+           hits.count == 4, "\(hits.count)")
+    report("line numbers are 1-based, as an editor and a reader both expect",
+           hits.first?.line == 1 && hits.last?.line == 2)
+    report("a hit carries the line split around it, so the mark and the search agree",
+           hits.first?.before == "import { " && hits.first?.match == "useSelection"
+               && hits.first?.after == " } from './useSelection';")
+
+    report("case is ignored by default",
+           search(query: "USESELECTION", in: files).hits.count == 4)
+    report("and respected when asked",
+           search(query: "USESELECTION", in: files, options: SearchOptions(matchCase: true)).hits.isEmpty)
+
+    // Two occurrences on one line, and the second must not be swallowed by the first.
+    let twice = [(path: "a.ts", text: "aa\n")]
+    report("two matches on one line are two hits", search(query: "a", in: twice).hits.count == 2)
+
+    let capped = search(query: "a", in: twice, options: SearchOptions(limit: 1))
+    report("the limit stops the search and says so", capped.hits.count == 1 && capped.truncated)
+    report("and a search that was not capped does not claim to be",
+           !search(query: "a", in: twice).truncated)
+
+    report("an empty query searches nothing rather than matching everything",
+           search(query: "", in: files).hits.isEmpty)
+    report("negative control: a query that is not there finds nothing",
+           search(query: "notInAnyFile", in: files).hits.isEmpty)
+
+    // The scope is part of the answer, not decoration: the same count means different things over
+    // the changed set and over the worktree.
+    report("the summary names the scope it searched",
+           searchSummary(query: "useSelection", result: search(query: "useSelection", in: files),
+                         scope: .changedFiles).contains("changed files"))
+    report("and says so when nothing matched, with the scope again",
+           searchSummary(query: "zzz", result: search(query: "zzz", in: files), scope: .wholeWorktree)
+               == "no matches for “zzz” in 2 whole worktree")
+    report("a capped result says there are more rather than showing a prefix silently",
+           searchSummary(query: "a", result: capped, scope: .changedFiles).contains("there are more"))
+}

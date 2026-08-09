@@ -45,7 +45,7 @@ Derived from the decision log; where this document and [04-decision-log.md](04-d
 - **Unified by default, side-by-side as a mode** over the same pinned pair (DEC-059, amending DEC-014). In unified, direction is carried by a `+` / `−` sign column, not by hue
 - Three modes over two code paths: Structural / Expanded / Raw (DEC-013)
 - **Three lenses over the selected file: Diff, Blame, History** (DEC-061, amending DEC-008). History's two-commit selection is a commit-vs-commit comparison; both lenses are read-only and go through the closed operation registry
-- **Search within the diff** (DEC-062, amending DEC-017), scoped to the changed set by default, whole worktree on request
+- **Search within the diff** (DEC-062, amending DEC-017), scoped to the changed set by default (⌘F), whole worktree on request (⇧⌘F). Matched as literal text, never as a pattern compiled from repository content
 - **Rendered comparison for images and SVG** — Side by side, Blend, Split, Pixel diff, with a 16-megapixel budget on the last (DEC-063). SVG carries both readings, rendered and source, and is rendered through an `<img>` so repository content never executes
 - **Three independent collapses** — repositories, changed files, terminal — each with a keyboard binding; collapsed is reduced, never hidden (DEC-060)
 - **Motion, with a registered reduced-motion path for every transition** (DEC-064, amending DEC-016)

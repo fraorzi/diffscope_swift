@@ -34,6 +34,12 @@ final class AppState {
     /// Path → what the list can say about the file cheaply. Filled in by a background pass, so a
     /// large working tree lists immediately and gains its badges a moment later.
     var annotations: [String: FileAnnotation] = [:]
+    /// The last search and its hits (DEC-062). Kept on the state rather than in the view, so a
+    /// refresh can decide what to do with them — today it replaces them with the file list, which
+    /// is the honest answer: the hits were computed against bytes that have just changed.
+    var searchQuery = ""
+    var searchMatchCase = false
+    var searchHits: [SearchHit] = []
 }
 
 final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, WKNavigationDelegate {
@@ -278,7 +284,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         for (pane, width) in [(leftScroll, Theme.repositoryPaneWidth), (middleScroll, Theme.filePaneWidth)] {
             pane.translatesAutoresizingMaskIntoConstraints = false
             let constraint = pane.widthAnchor.constraint(equalToConstant: width)
-            constraint.priority = NSLayoutConstraint.Priority(600)
+            // 999, not 600: the divider stays draggable (that needs a priority below required),
+            // and a collapse wins against whatever the pane's own content would rather be. At 600
+            // the repository rail collapsed and the file spine did not, which is worse than
+            // neither — half a layout is a layout nobody designed.
+            constraint.priority = NSLayoutConstraint.Priority(999)
             constraint.isActive = true
             widthConstraints.append(constraint)
             let minimum = pane.widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.paneMinimumWidth)
@@ -1306,15 +1316,17 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     private func collapseSelftest() {
         guard press(key: "0", modifiers: [.control, .command]) else { exit(48) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+            // The **drawn** widths. A constraint's constant is what was asked for: at priority 600
+            // the file pane ignored it and stayed at 320 while the rail obeyed, and an assertion on
+            // the constants would have called that a pass.
+            let railDrawn = self.repoTable.enclosingScrollView?.superview?.frame.width ?? -1
+            let spineDrawn = self.fileTable.enclosingScrollView?.frame.width ?? -1
             let ok = self.reposCollapsed && self.filesCollapsed
-                && self.repoPaneWidth?.constant == Theme.railWidth
-                && self.filePaneWidth?.constant == Theme.spineWidth
+                && abs(railDrawn - Theme.railWidth) < 1 && abs(spineDrawn - Theme.spineWidth) < 1
             // The **drawn** widths, not the constants. A constraint's constant is what was asked
             // for; the pane is what the window did with it, and the two disagreed by a factor of
             // two until the scroll view stopped setting the floor. Asserting the constant would
             // have been a check that agreed with the wrong number.
-            let railDrawn = self.repoTable.enclosingScrollView?.superview?.frame.width ?? -1
-            let spineDrawn = self.fileTable.enclosingScrollView?.frame.width ?? -1
             let repoCell = self.repoTable.view(atColumn: 0, row: 0, makeIfNecessary: true) as? NSTableCellView
             let fileCell = self.fileTable.view(atColumn: 0, row: 1, makeIfNecessary: true) as? NSTableCellView
             // The row has to start where the pane does. `.inset` — the automatic table style —
@@ -1652,20 +1664,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // DEC-064: the pane moves, unless the reader has asked the system for less motion — in
         // which case it is simply the other width, with nothing in between. The system setting is
         // the authority; there is no preference of our own to disagree with it.
+        // The constant is set outright and the *layout pass* is what animates. Animating the
+        // constant itself left it at its old value whenever the animation did not run to
+        // completion — the selftest caught a collapse that had been asked for and not made, which
+        // is the failure mode worth having a check for at all.
         let animate = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        let repoTarget = reposCollapsed ? Theme.railWidth : Theme.repositoryPaneWidth
-        let fileTarget = filesCollapsed ? Theme.spineWidth : Theme.filePaneWidth
-        if animate {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = Theme.motionQuick
-                context.allowsImplicitAnimation = true
-                repoPaneWidth?.animator().constant = repoTarget
-                filePaneWidth?.animator().constant = fileTarget
-            }
-        } else {
-            repoPaneWidth?.constant = repoTarget
-            filePaneWidth?.constant = fileTarget
-        }
+        repoPaneWidth?.constant = reposCollapsed ? Theme.railWidth : Theme.repositoryPaneWidth
+        filePaneWidth?.constant = filesCollapsed ? Theme.spineWidth : Theme.filePaneWidth
         repoPaneMinimum?.constant = reposCollapsed ? Theme.railWidth : Theme.paneMinimumWidth
         filePaneMinimum?.constant = filesCollapsed ? Theme.spineWidth : Theme.paneMinimumWidth
         // The caption under the repository list is a sentence, and a 44 px rail has no room for
@@ -1674,7 +1679,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         conventionLabel.isHidden = reposCollapsed
         repoTable.reloadData()
         fileTable.reloadData()
-        splitView.layoutSubtreeIfNeeded()
+        if animate {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Theme.motionQuick
+                context.allowsImplicitAnimation = true
+                splitView.animator().layoutSubtreeIfNeeded()
+            }
+        } else {
+            splitView.layoutSubtreeIfNeeded()
+        }
         // The column does not follow the pane on its own, and a column narrower than its pane
         // draws a row that is mostly empty — M8-D's defect exactly: two lists full of correct
         // rows, rendered blank, in a window that passed every check. Setting the width by hand
@@ -1814,6 +1827,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         case "sources.addRepository": return #selector(addRepository)
         case "sources.remove": return #selector(removeSource)
         case "sources.baseBranch": return #selector(setBaseBranch)
+        case "search": return #selector(searchChangedFiles)
+        case "search.worktree": return #selector(searchWorktree)
         case "change.next": return #selector(nextChange)
         case "change.previous": return #selector(previousChange)
         case "expandAll": return #selector(expandAll)
@@ -2069,6 +2084,104 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
         configStore.save(state.configuration)
         statusLabel.stringValue = "editor command: \(editorTemplate())"
+    }
+
+    // ---- Search (DEC-062) -------------------------------------------------------------------
+    //
+    // The default scope is the changed set, because that is the material under review; the whole
+    // worktree is a different question and is asked with a different key rather than a hidden
+    // default. Both are read-only: the reader's query is matched as a literal, and nothing
+    // compiled from a repository is ever run (DEC-028).
+    @objc private func searchChangedFiles() { runSearch(scope: .changedFiles) }
+    @objc private func searchWorktree() { runSearch(scope: .wholeWorktree) }
+
+    private func runSearch(scope: SearchScope) {
+        guard let repository = state.selectedRepository else {
+            statusLabel.stringValue = "search needs a repository — choose one first"
+            return
+        }
+        let prompt = NSAlert()
+        prompt.messageText = "Find in \(scope.title)"
+        prompt.informativeText = "Matched as literal text, not as a pattern. "
+            + "An empty search clears the results and brings the file list back."
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: Theme.emptyStateMaximumWidth,
+                                              height: Theme.space6 + Theme.space4))
+        field.stringValue = state.searchQuery
+        field.font = Theme.font(Theme.textSize)
+        let matchCase = NSButton(checkboxWithTitle: "Match case", target: nil, action: nil)
+        matchCase.state = state.searchMatchCase ? .on : .off
+        let stack = NSStackView(views: [field, matchCase])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.frame = NSRect(x: 0, y: 0, width: Theme.emptyStateMaximumWidth,
+                             height: 2 * (Theme.space6 + Theme.space4))
+        prompt.accessoryView = stack
+        prompt.addButton(withTitle: "Find")
+        prompt.addButton(withTitle: "Cancel")
+        guard prompt.runModal() == .alertFirstButtonReturn else { return }
+
+        state.searchQuery = field.stringValue
+        state.searchMatchCase = matchCase.state == .on
+        guard !state.searchQuery.isEmpty else {
+            state.searchHits = []
+            reloadFiles()
+            return
+        }
+
+        let contents = searchableContents(of: repository, scope: scope)
+        let result = search(query: state.searchQuery, in: contents,
+                            options: SearchOptions(matchCase: state.searchMatchCase))
+        state.searchHits = result.hits
+        showSearchResults(result, scope: scope)
+    }
+
+    /// The text to search. Changed files come from the scope the reader is already looking at;
+    /// the worktree walk skips `.git` and `node_modules` for the reason DEC-027 skips them in the
+    /// watcher, and stops at a file count rather than reading a repository of unknown size.
+    private func searchableContents(of repository: RepositorySnapshot,
+                                    scope: SearchScope) -> [(path: String, text: String)] {
+        func read(_ relative: String) -> (path: String, text: String)? {
+            let url = repository.url.appendingPathComponent(relative)
+            guard let data = try? Data(contentsOf: url), data.count < 4_000_000,
+                  let text = String(data: data, encoding: .utf8) else { return nil }
+            return (path: relative, text: text)
+        }
+        switch scope {
+        case .changedFiles:
+            return state.files.compactMap { read($0.path) }
+        case .wholeWorktree:
+            let skipped = Set([".git", "node_modules", ".next", "dist", "build"])
+            var out: [(path: String, text: String)] = []
+            let base = repository.url.standardizedFileURL.path
+            guard let walker = FileManager.default.enumerator(at: repository.url,
+                                                              includingPropertiesForKeys: [.isDirectoryKey]) else {
+                return out
+            }
+            for case let url as URL in walker {
+                if skipped.contains(url.lastPathComponent) {
+                    walker.skipDescendants()
+                    continue
+                }
+                guard out.count < 4_000 else { break }
+                let path = url.standardizedFileURL.path
+                guard path.hasPrefix(base + "/") else { continue }
+                if let entry = read(String(path.dropFirst(base.count + 1))) { out.append(entry) }
+            }
+            return out
+        }
+    }
+
+    private func showSearchResults(_ result: SearchResult, scope: SearchScope) {
+        // Results take the file list's place: one window, no second place to be (DEC-005). ⌘F with
+        // an empty query brings the files back, and so does any refresh.
+        state.fileRows = result.hits.map { hit in
+            let file = state.files.first { $0.path == hit.path }
+                ?? ChangedFile(path: hit.path, originalPath: nil, kind: .modified)
+            let snippet = (hit.before + hit.match + hit.after).trimmingCharacters(in: .whitespaces)
+            return .file(file, display: "\(hit.line)  \(snippet.prefix(80))")
+        }
+        fileTable.reloadData()
+        statusLabel.stringValue = searchSummary(query: state.searchQuery, result: result, scope: scope)
     }
 
     @objc private func modeChanged() {

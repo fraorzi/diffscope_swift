@@ -179,6 +179,13 @@ public enum KeyboardMap {
         // Movement is arrows, and the modifier says what is being moved through (DEC-065): the
         // change inside a file, the file inside a repository, the repository inside the list.
         // Three nesting levels, three modifier tiers, one direction key.
+        // DEC-062. In the Navigate menu rather than View: it is a way of getting somewhere, and
+        // the results replace the file list until the reader clears them.
+        .init(id: "search", title: "Find in Changed Files…", key: "f", modifiers: [.command],
+              menu: .navigate),
+        .init(id: "search.worktree", title: "Find in Whole Worktree…", key: "f",
+              modifiers: [.shift, .command], menu: .navigate),
+
         .init(id: "change.next", title: "Next Change", key: "↓", modifiers: [.command],
               menu: .navigate, satisfies: .changeNavigation),
         .init(id: "change.previous", title: "Previous Change", key: "↑", modifiers: [.command],
