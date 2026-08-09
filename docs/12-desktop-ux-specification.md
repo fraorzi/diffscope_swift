@@ -202,6 +202,7 @@ DEC-016 commits to **full keyboard operation of every function**. This is a comp
 | Show raw for the current region | ⌘R |
 | Open current file and line in the editor | ⌘⏎ |
 | Focus movement between sidebar, file list, and diff | ⌥⌘1 / ⌥⌘2 / ⌥⌘3 |
+| Settings — the editor command (DEC-015) | ⌘, |
 
 The **coverage** above is binding: any function reachable only by pointer is a defect. Since DEC-057 the right-hand column is not documentation of the code — it *is* the code, transcribed from `KeyboardMap.bindings`, and a row nothing binds fails the check suite by name. Group headers are not stops (DEC-033), on any route.
 
@@ -213,7 +214,9 @@ The **coverage** above is binding: any function reachable only by pointer is a d
 
 Configurable command template with file and line placeholders, defaulting to WebStorm (DEC-015).
 
-- Failure — editor absent, command fails — must be **visible**, never a silent no-op.
+**Where it lives:** `editorTemplate` in the application's configuration file, edited in Settings (⌘,). Absent means the built-in default — the file records what the user chose, not what the application would have done anyway. `DIFFSCOPE_EDITOR` overrides it for a launch and is never written, so the broken-editor arm (F13) has a way in that does not touch the reader's file.
+
+- Failure — editor absent, command fails — must be **visible**, never a silent no-op. The status line says it as it happens and Settings keeps the last attempt, because the line has moved on by the time a reader opens the settings to fix it.
 - The template is user configuration and must never be populated from repository content, which is untrusted input.
 - Opening "this line" from the old side of a deleted region has no destination in the current file; behaviour must be defined rather than left to produce a wrong jump.
 

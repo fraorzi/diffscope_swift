@@ -119,6 +119,9 @@ public enum KeyboardMap {
     /// The bindings, in menu order. Adding a function to the application means adding a row here;
     /// there is nowhere else to add it.
     public static let bindings: [KeyboardBinding] = [
+        // ⌘, is where macOS keeps settings, and DEC-015's template is the first thing this
+        // application has that a person configures rather than chooses per repository.
+        .init(id: "preferences", title: "Settings…", key: ",", modifiers: [.command], menu: .application),
         .init(id: "quit", title: "Quit DiffScope", key: "q", modifiers: [.command], menu: .application),
 
         // Structural first, because it is the default mode and the one a reader returns to

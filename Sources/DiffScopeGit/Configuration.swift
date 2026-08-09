@@ -61,21 +61,32 @@ public struct Configuration: Sendable, Equatable, Codable {
     /// startup, and the failure mode here is a forgotten override, not a wrong diff.
     public var baseOverrides: [String: String]
 
-    public init(sources: [ConfiguredSource] = [], baseOverrides: [String: String] = [:]) {
+    /// The editor command template (DEC-015). `nil` means the built-in default — the file records
+    /// what the user chose, not what the application would have done anyway.
+    ///
+    /// **User configuration, and only that.** DEC-015 and `12-…` §10 both say it may never be
+    /// populated from repository content, which is untrusted input: this file is written by the
+    /// application and edited by the user, and nothing reads a repository into it.
+    public var editorTemplate: String?
+
+    public init(sources: [ConfiguredSource] = [], baseOverrides: [String: String] = [:],
+                editorTemplate: String? = nil) {
         self.sources = sources
         self.baseOverrides = baseOverrides
+        self.editorTemplate = editorTemplate
     }
 
     public var isEmpty: Bool { sources.isEmpty }
 
     // Decoded explicitly so a configuration written before overrides existed still loads. A missing
     // key is an older file, not a corrupt one, and must not cost the user their roots.
-    private enum CodingKeys: String, CodingKey { case sources, baseOverrides }
+    private enum CodingKeys: String, CodingKey { case sources, baseOverrides, editorTemplate }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         sources = try container.decodeIfPresent([ConfiguredSource].self, forKey: .sources) ?? []
         baseOverrides = try container.decodeIfPresent([String: String].self, forKey: .baseOverrides) ?? [:]
+        editorTemplate = try container.decodeIfPresent(String.self, forKey: .editorTemplate)
     }
 }
 

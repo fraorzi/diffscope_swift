@@ -70,6 +70,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var splitView: NSSplitView!
     var wrapMenuItem: NSMenuItem?
     var wrapEnabled = true
+    /// What the last ⌘⏎ did, shown in Preferences. F13's failure is visible on the status line the
+    /// moment it happens and gone by the time the reader opens the settings to fix it.
+    var lastEditorAttempt: String?
     var sideBySideMenuItem: NSMenuItem?
     /// DEC-059: the window opens unified, so this starts false.
     var sideBySide = false
@@ -1779,6 +1782,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     private func selector(for id: String) -> Selector? {
         switch id {
         case "quit": return #selector(NSApplication.terminate(_:))
+        case "preferences": return #selector(showPreferences)
         case "mode.raw", "mode.structural", "mode.expanded": return #selector(selectMode(_:))
         case "rawRegion": return #selector(toggleRawForCurrentRegion)
         case "terminal": return #selector(toggleTerminal)
@@ -1983,8 +1987,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             statusLabel.stringValue = "open in editor: no file selected"
             return
         }
-        let template = ProcessInfo.processInfo.environment["DIFFSCOPE_EDITOR"]
-            ?? EditorCommand.defaultTemplate
+        let template = editorTemplate()
         let path = repository.url.appendingPathComponent(file.path).path
 
         // The line comes from the renderer, which is the only side that knows where the reader is
@@ -2001,9 +2004,56 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             self.statusLabel.stringValue = "opening \(file.path):\(line)…"
             DispatchQueue.global(qos: .userInitiated).async {
                 let outcome = launchEditor(command, file: "\(file.path):\(line)")
-                DispatchQueue.main.async { self.statusLabel.stringValue = outcome.message }
+                DispatchQueue.main.async {
+                    self.statusLabel.stringValue = outcome.message
+                    self.lastEditorAttempt = outcome.message
+                }
             }
         }
+    }
+
+    /// DEC-015: the command is **user configuration**. The environment variable stays as a testing
+    /// override — F13's broken-editor arm needs a way in that does not write to the reader's file —
+    /// and the configuration is what a person edits, in Preferences or in the JSON itself.
+    private func editorTemplate() -> String {
+        ProcessInfo.processInfo.environment["DIFFSCOPE_EDITOR"]
+            ?? state.configuration.editorTemplate
+            ?? EditorCommand.defaultTemplate
+    }
+
+    /// The preferences window (DEC-015, `12-…` §10). One setting today, and it is the one with a
+    /// failure the reader has to be able to see: the last attempt and its exit status are shown
+    /// here, because "nothing happened" is the least useful thing an editor integration can say.
+    @objc private func showPreferences() {
+        let panel = NSAlert()
+        panel.messageText = "Editor command"
+        panel.informativeText = """
+            {file} is the absolute path, {line} the 1-based line. The template is split into \
+            arguments first and substituted afterwards, so a path with spaces stays one argument.
+
+            Last attempt: \(lastEditorAttempt ?? "none this session")
+            """
+        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: Theme.emptyStateMaximumWidth,
+                                              height: Theme.space6 + Theme.space4))
+        field.stringValue = editorTemplate()
+        field.font = Theme.font(Theme.textSize)
+        field.placeholderString = EditorCommand.defaultTemplate
+        panel.accessoryView = field
+        panel.addButton(withTitle: "Save")
+        panel.addButton(withTitle: "Cancel")
+        panel.addButton(withTitle: "Reset to default")
+        let choice = panel.runModal()
+        switch choice {
+        case .alertFirstButtonReturn:
+            let entered = field.stringValue.trimmingCharacters(in: .whitespaces)
+            state.configuration.editorTemplate = entered.isEmpty ? nil : entered
+        case .alertThirdButtonReturn:
+            state.configuration.editorTemplate = nil
+        default:
+            return
+        }
+        configStore.save(state.configuration)
+        statusLabel.stringValue = "editor command: \(editorTemplate())"
     }
 
     @objc private func modeChanged() {

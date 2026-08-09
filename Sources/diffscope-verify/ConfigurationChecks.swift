@@ -306,6 +306,42 @@ func runScopeChecks(_ reportRaw: (String, Bool, String) -> Void) {
                detected?.baseRefUsed ?? "nil")
     }
 
+    print("\n=== the editor command is configuration, not a constant (DEC-015, 12-… §10) ===")
+    do {
+        let fm = FileManager.default
+        let scratch = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("diffscope-editor-\(UUID().uuidString)")
+        try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: scratch) }
+
+        let store = ConfigurationStore(url: scratch.appendingPathComponent("config.json"))
+        var configuration = Configuration(sources: [ConfiguredSource(kind: .root, path: "/tmp/x")])
+        configuration.editorTemplate = "/usr/local/bin/code --goto {file}:{line}"
+        store.save(configuration)
+        report("a chosen editor command is written and read back",
+               store.load().configuration.editorTemplate == "/usr/local/bin/code --goto {file}:{line}")
+        report("and it travels beside the sources",
+               store.load().configuration.sources.count == 1)
+
+        // Absent means *the default*, not an empty command. A file written before this setting
+        // existed is an older file, not a broken one — the same rule the overrides follow.
+        try? #"{"sources":[]}"#.write(to: store.url, atomically: true, encoding: .utf8)
+        report("a configuration written before the setting existed still loads",
+               store.load().configuration.editorTemplate == nil)
+
+        let shell = (try? String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                                     .appendingPathComponent("Sources/diffscope-app/main.swift"),
+                                 encoding: .utf8)) ?? ""
+        // Order matters and is stated in one place: the environment overrides for the F13 arm,
+        // then the user's setting, then the built-in default.
+        report("the shell resolves the template from the configuration, not only the environment",
+               shell.contains("state.configuration.editorTemplate"))
+        report("and the default is still the fallback rather than an empty command",
+               shell.contains("?? EditorCommand.defaultTemplate"))
+        report("the last attempt is kept, so Preferences can show a failure the status line has lost",
+               shell.contains("lastEditorAttempt"))
+    }
+
     print("\n=== a stranger's first run explains itself (G3) ===")
     do {
         let message = noRepositoriesFoundMessage(paths: ["/Users/x/Documents"], depth: 2)
