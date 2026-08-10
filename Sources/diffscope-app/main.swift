@@ -81,6 +81,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var statusLabel: NSTextField!
     var comparisonLabel: NSTextField!
     var lensControl: NSSegmentedControl!
+    var preferencesWindow: NSWindow?
+    var preferencesField: NSTextField?
+    /// The three regions, as views that can carry a ring. Held rather than looked up, because
+    /// "the view the diff is in" is a different thing from "the web view".
+    var repoFocusRing: NSView?
+    var fileFocusRing: NSView?
+    var diffFocusRing: NSView?
     var searchField: NSSearchField!
     /// Which scope the next submission searches. ⇧⌘F sets it and the placeholder says so — the
     /// alternative is a field that answers a different question depending on how it was opened.
@@ -262,6 +269,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         repoScroll.translatesAutoresizingMaskIntoConstraints = false
         repoScroll.widthAnchor.constraint(equalTo: leftStack.widthAnchor,
                                           constant: -2 * Theme.space3).isActive = true
+        repoFocusRing = repoScroll
+        fileFocusRing = middleScroll
+        diffFocusRing = webView
         let leftScroll = leftStack
 
         // The lens control sits with the other two (DEC-061). The design draws it inside the pane
@@ -2227,6 +2237,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// from doing nothing, since a table with no selection draws no focus ring worth the name.
     private func moveFocus(to responder: NSResponder, named name: String) {
         window.makeFirstResponder(responder)
+        updateFocusRings()
         let position = responder === fileTable ? filePositionText().map { " · \($0)" } ?? "" : ""
         statusLabel.stringValue = "keyboard: \(name)\(position)"
     }
@@ -2317,34 +2328,68 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// failure the reader has to be able to see: the last attempt and its exit status are shown
     /// here, because "nothing happened" is the least useful thing an editor integration can say.
     @objc private func showPreferences() {
-        let panel = NSAlert()
-        panel.messageText = "Editor command"
-        panel.informativeText = """
-            {file} is the absolute path, {line} the 1-based line. The template is split into \
-            arguments first and substituted afterwards, so a path with spaces stays one argument.
-
-            Last attempt: \(lastEditorAttempt ?? "none this session")
-            """
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: Theme.emptyStateMaximumWidth,
-                                              height: Theme.space6 + Theme.space4))
-        field.stringValue = editorTemplate()
-        field.font = Theme.font(Theme.textSize)
-        field.placeholderString = EditorCommand.defaultTemplate
-        panel.accessoryView = field
-        panel.addButton(withTitle: "Save")
-        panel.addButton(withTitle: "Cancel")
-        panel.addButton(withTitle: "Reset to default")
-        let choice = panel.runModal()
-        switch choice {
-        case .alertFirstButtonReturn:
-            let entered = field.stringValue.trimmingCharacters(in: .whitespaces)
-            state.configuration.editorTemplate = entered.isEmpty ? nil : entered
-        case .alertThirdButtonReturn:
-            state.configuration.editorTemplate = nil
-        default:
+        if let existing = preferencesWindow {
+            existing.makeKeyAndOrderFront(nil)
             return
         }
+        // A window rather than a modal alert (`12-…` §10, the adopted design). A setting a reader
+        // edits *because* something failed cannot sit behind a sheet that blocks the window the
+        // failure is in.
+        let field = NSTextField(string: editorTemplate())
+        field.font = Theme.font(Theme.textSize)
+        field.placeholderString = EditorCommand.defaultTemplate
+
+        let legend = NSTextField(wrappingLabelWithString:
+            "{file} is the absolute path, {line} the 1-based line. The template is split into "
+            + "arguments first and substituted afterwards, so a path with spaces stays one argument.")
+        legend.font = Theme.prose(Theme.textSizeTiny)
+        legend.textColor = Theme.inkQuiet
+
+        let attempt = NSTextField(wrappingLabelWithString:
+            "Last attempt: " + (lastEditorAttempt ?? "none this session"))
+        attempt.font = Theme.prose(Theme.textSizeSmall)
+        attempt.textColor = Theme.inkQuiet
+
+        let save = NSButton(title: "Save", target: self, action: #selector(savePreferences))
+        save.keyEquivalent = "\r"
+        let reset = NSButton(title: "Reset to default", target: self,
+                             action: #selector(resetPreferences))
+        let buttons = NSStackView(views: [reset, save])
+        buttons.orientation = .horizontal
+
+        let stack = NSStackView(views: [field, legend, attempt, buttons])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = Theme.space4
+        stack.edgeInsets = NSEdgeInsets(top: Theme.space6, left: Theme.space6,
+                                        bottom: Theme.space6, right: Theme.space6)
+        field.widthAnchor.constraint(equalToConstant: Theme.emptyStateMaximumWidth
+                                        - 2 * Theme.space6).isActive = true
+
+        let panel = NSWindow(contentRect: NSRect(x: 0, y: 0, width: Theme.emptyStateMaximumWidth,
+                                                 height: Theme.emptyStateMaximumWidth * 0.6),
+                             styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        panel.title = "Editor command"
+        panel.contentView = stack
+        panel.center()
+        panel.isReleasedWhenClosed = false
+        preferencesWindow = panel
+        preferencesField = field
+        panel.makeKeyAndOrderFront(nil)
+    }
+
+    @objc private func savePreferences() {
+        let entered = (preferencesField?.stringValue ?? "").trimmingCharacters(in: .whitespaces)
+        state.configuration.editorTemplate = entered.isEmpty ? nil : entered
         configStore.save(state.configuration)
+        statusLabel.stringValue = "editor command: \(editorTemplate())"
+        preferencesWindow?.close()
+    }
+
+    @objc private func resetPreferences() {
+        state.configuration.editorTemplate = nil
+        configStore.save(state.configuration)
+        preferencesField?.stringValue = EditorCommand.defaultTemplate
         statusLabel.stringValue = "editor command: \(editorTemplate())"
     }
 
@@ -2473,6 +2518,23 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                  summary: historySummary(commits: commits,
                                          branch: repository.head.displayText,
                                          ahead: repository.aheadCount))
+    }
+
+    /// `--ds-focus-ring`, on the region rather than on a row inside it (`12-…` §9's *"a 2 px focus
+    /// ring on its own border"*). The token was mirrored into `Theme.swift` when the chrome landed
+    /// and **nothing drew it** — a value a designer could change to no effect, which is the failure
+    /// the token checks exist to prevent, arriving on the side of the window those checks cannot
+    /// see.
+    private func updateFocusRings() {
+        let focused = window.firstResponder
+        for (view, owner) in [(repoFocusRing, repoTable as NSResponder),
+                              (fileFocusRing, fileTable as NSResponder),
+                              (diffFocusRing, webView as NSResponder)] {
+            guard let view else { continue }
+            view.wantsLayer = true
+            view.layer?.borderWidth = focused === owner ? Theme.focusRingWidth : 0
+            view.layer?.borderColor = Theme.focusRing.cgColor
+        }
     }
 
     @objc private func lensChanged() {
@@ -3083,6 +3145,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     }
 
     func tableViewSelectionDidChange(_ notification: Notification) {
+        updateFocusRings()
         guard let table = notification.object as? NSTableView else { return }
         if table === repoTable {
             guard table.selectedRow >= 0 else { return }

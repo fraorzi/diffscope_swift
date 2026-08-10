@@ -66,8 +66,10 @@ enum Theme {
     static let rowRing = dynamic(dark: hex(0x34343a), light: hex(0xcfcfd6))
     /// `--ds-win-edge`
     static let windowEdge = dynamic(dark: .white, light: .black).withAlphaComponent(0.16)
-    /// `--ds-focus-ring`
+    /// `--ds-focus-ring`, and the 2 px `12-…` §9 asks for: on the region's own border, never on a
+    /// row inside it, so a reader can see *which of the three* has the keyboard.
     static let focusRing = dynamic(dark: hex(0x0a84ff), light: hex(0x0064d2))
+    static let focusRingWidth: CGFloat = 2
 
     /// `--ds-space-*`.
     static let space2: CGFloat = 4
