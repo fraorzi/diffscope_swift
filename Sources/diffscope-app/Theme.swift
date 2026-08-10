@@ -66,6 +66,9 @@ enum Theme {
     static let rowRing = dynamic(dark: hex(0x34343a), light: hex(0xcfcfd6))
     /// `--ds-win-edge`
     static let windowEdge = dynamic(dark: .white, light: .black).withAlphaComponent(0.16)
+    /// `--ds-border`, for the one hairline a chrome bar draws.
+    static let hairline = dynamic(dark: hex(0x28282d), light: hex(0xd9d9de))
+
     /// `--ds-focus-ring`, and the 2 px `12-…` §9 asks for: on the region's own border, never on a
     /// row inside it, so a reader can see *which of the three* has the keyboard.
     static let focusRing = dynamic(dark: hex(0x0a84ff), light: hex(0x0064d2))
@@ -90,6 +93,13 @@ enum Theme {
     /// `--ds-motion-quick`, in seconds. The same number as the webviews use, so a pane and a chip
     /// settle together rather than one chasing the other (DEC-064).
     static let motionQuick: TimeInterval = 0.12
+
+    /// The window's own bars (the adopted design). The title bar carries the repository and its
+    /// path; the status line sits at the bottom edge. `trafficLightInset` clears the three buttons
+    /// the system draws in the title bar and nothing else.
+    static let titleBarHeight: CGFloat = 44
+    static let statusBarHeight: CGFloat = 24
+    static let trafficLightInset: CGFloat = 78
 
     /// Row heights. Not tokens in the CSS, because the diff has no rows. The repository row is
     /// two lines since the adopted design: name and head state above, path below — a path is what
@@ -137,5 +147,36 @@ final class SelectedRowView: NSTableRowView {
         let ring = NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5))
         ring.lineWidth = 1
         ring.stroke()
+    }
+}
+
+/// A band of chrome with one hairline edge — the title bar's is at the bottom, the status line's
+/// at the top. Drawn rather than composed from a box view and a separator, because a separator
+/// that is a subview gets laid out, and a hairline that is one point off reads as a mistake.
+final class ChromeBar: NSView {
+    enum Edge { case top, bottom }
+
+    private let surface: NSColor
+    private let edge: Edge
+
+    init(surface: NSColor, edge: Edge) {
+        self.surface = surface
+        self.edge = edge
+        super.init(frame: .zero)
+        wantsLayer = true
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        surface.setFill()
+        bounds.fill()
+        Theme.hairline.setStroke()
+        let line = NSBezierPath()
+        let y = edge == .top ? bounds.maxY - 0.5 : bounds.minY + 0.5
+        line.move(to: NSPoint(x: bounds.minX, y: y))
+        line.line(to: NSPoint(x: bounds.maxX, y: y))
+        line.lineWidth = 1
+        line.stroke()
     }
 }

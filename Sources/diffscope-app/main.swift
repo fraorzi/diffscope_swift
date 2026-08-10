@@ -86,6 +86,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var modeControl: NSSegmentedControl!
     var statusLabel: NSTextField!
     var comparisonLabel: NSTextField!
+    var titleBar: NSView!
+    var statusBar: NSView!
+    var titleRepositoryLabel: NSTextField!
+    var titlePathLabel: NSTextField!
     var lensControl: NSSegmentedControl!
     var preferencesWindow: NSWindow?
     var preferencesField: NSTextField?
@@ -139,6 +143,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// until it is first shown** — a shell costs ~340 ms and one `ssh-agent` here (T0).
     let terminal = TerminalPane()
     var terminalSplit: NSSplitView!
+    var terminalHeightConstraint: NSLayoutConstraint!
+    var terminalMinimumConstraint: NSLayoutConstraint!
     var terminalMenuItem: NSMenuItem?
     var terminalRawMenuItem: NSMenuItem?
     var terminalVisible = false
@@ -199,10 +205,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     private func buildWindow() {
         window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: Theme.windowWidth, height: Theme.windowHeight),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered, defer: false
         )
         window.title = "DiffScope"
+        // The title bar is ours (the adopted design). The system draws the traffic lights and
+        // nothing else; the row underneath them says which repository is open and where it is,
+        // which is the first question a reader has and was previously only in a list row.
+        window.titlebarAppearsTransparent = true
+        window.titleVisibility = .hidden
         window.center()
 
         repoTable = makeTable(identifier: "repo")
@@ -245,7 +256,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
 
-        let middleScroll = scrollWrapping(fileTable)
+        let middleScroll = scrollWrapping(fileTable, surface: Theme.panelFiles)
 
         // `12-…` §2: the uncommitted count *"must state which convention it uses"*. On screen,
         // under the counts it describes, rather than in a tooltip or a document the reader does
@@ -264,7 +275,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // of existence entirely when the text got shorter. M8-D's defect class, one pane over.
         conventionLabel.setContentCompressionResistancePriority(.required, for: .vertical)
         conventionLabel.setContentHuggingPriority(.required, for: .vertical)
-        let repoScroll = scrollWrapping(repoTable)
+        let repoScroll = scrollWrapping(repoTable, surface: Theme.panelRepositories)
+        // The convention caption belongs to the repository list, not to the status bar: it
+        // explains what that list's counts mean, and it is a sentence — in a 24 pt bar it wrapped
+        // to two lines and pushed the bar out of shape. `12-…` §2 asks for it *shown*, so it is
+        // not a tooltip either.
         let leftStack = NSStackView(views: [repoScroll, conventionLabel])
         // The caption under the repository list sits on the list's own surface, not on the
         // window's: it belongs to that pane and the seam would say otherwise (`--ds-panel-repos`).
@@ -307,22 +322,42 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         searchField.sendsWholeSearchString = true
         searchField.widthAnchor.constraint(equalToConstant: Theme.emptyStateMaximumWidth / 2).isActive = true
 
-        let controls = NSStackView(views: [scopeControl, modeControl, lensControl, searchField])
+        let controls = NSStackView(views: [scopeControl, modeControl, lensControl])
         controls.orientation = .horizontal
-        controls.spacing = Theme.space6 - Theme.space2
+        controls.spacing = Theme.space6
 
-        let rightStack = NSStackView(frame: NSRect(x: 0, y: 0, width: Theme.windowWidth - Theme.repositoryPaneWidth - Theme.filePaneWidth, height: Theme.windowHeight))
-        rightStack.setViews([controls, comparisonLabel, statusLabel, webView], in: .leading)
-        rightStack.orientation = .vertical
-        rightStack.alignment = .leading
-        rightStack.spacing = Theme.space3
-        rightStack.edgeInsets = NSEdgeInsets(top: Theme.space4, left: Theme.space4, bottom: 0, right: Theme.space4)
-        // `--ds-chrome`: the band holding the scope bar, the mode control and the status line is
-        // one surface, distinct from both lists and from the diff.
+        // The band is the scope bar and the row under it that says what this scope compares. The
+        // status line has left it for the bottom of the window, where the design puts it: a line
+        // that reports what just happened belongs at the edge a reader glances at, not between the
+        // controls and the thing they control.
+        let band = NSStackView(views: [controls, comparisonLabel])
+        band.orientation = .vertical
+        band.alignment = .leading
+        band.spacing = Theme.space2
+
+        // The right pane is a view with two constraints, not a stack. A stack view inside a split
+        // view asks for its *fitting* height, and a fitting height built from a control band and a
+        // web view that reports none came out at two thirds of the window — three panes ending in
+        // mid-air with a blank band under them.
+        let rightStack = NSView(frame: NSRect(x: 0, y: 0,
+                                              width: Theme.windowWidth - Theme.repositoryPaneWidth - Theme.filePaneWidth,
+                                              height: Theme.windowHeight))
         rightStack.wantsLayer = true
         rightStack.layer?.backgroundColor = Theme.chrome.cgColor
+        rightStack.addSubview(band)
+        rightStack.addSubview(webView)
+        band.translatesAutoresizingMaskIntoConstraints = false
         webView.translatesAutoresizingMaskIntoConstraints = false
-        webView.widthAnchor.constraint(equalTo: rightStack.widthAnchor, constant: -2 * Theme.space4).isActive = true
+        NSLayoutConstraint.activate([
+            band.topAnchor.constraint(equalTo: rightStack.topAnchor, constant: Theme.space4),
+            band.leadingAnchor.constraint(equalTo: rightStack.leadingAnchor, constant: Theme.space6),
+            band.trailingAnchor.constraint(lessThanOrEqualTo: rightStack.trailingAnchor,
+                                           constant: -Theme.space6),
+            webView.topAnchor.constraint(equalTo: band.bottomAnchor, constant: Theme.space4),
+            webView.leadingAnchor.constraint(equalTo: rightStack.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: rightStack.trailingAnchor),
+            webView.bottomAnchor.constraint(equalTo: rightStack.bottomAnchor),
+        ])
 
         // The terminal spans the window (DEC-067). It sat under the diff until then, which wrapped
         // a command's output to a third of the width while two lists nobody was reading kept
@@ -331,14 +366,25 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let terminalHost = terminal.webView!
         terminalHost.isHidden = true
         terminalHost.translatesAutoresizingMaskIntoConstraints = false
-        let terminalHeight = terminalHost.heightAnchor.constraint(equalToConstant: Theme.terminalPaneHeight)
-        terminalHeight.priority = NSLayoutConstraint.Priority(600)
-        terminalHeight.isActive = true
-        terminalHost.heightAnchor.constraint(greaterThanOrEqualToConstant: Theme.terminalPaneMinimumHeight).isActive = true
+        // The constraints follow the drawer's state. `NSSplitView` sets its arranged subviews'
+        // frames itself and treats these as a suggestion — `setPosition` is the lever that
+        // actually moves the divider — but a hidden pane with a *required* 90 pt floor is a
+        // constraint conflict waiting for the first narrow window, so the floor is only in force
+        // while the drawer is open.
+        terminalHeightConstraint = terminalHost.heightAnchor.constraint(equalToConstant: 0)
+        terminalHeightConstraint.priority = NSLayoutConstraint.Priority(999)
+        terminalHeightConstraint.isActive = true
+        terminalMinimumConstraint = terminalHost.heightAnchor.constraint(
+            greaterThanOrEqualToConstant: Theme.terminalPaneMinimumHeight)
+        terminalMinimumConstraint.isActive = false
 
         let vertical = rightStack
 
-        let split = NSSplitView()
+        // A non-zero starting frame, and for the reason M8-D recorded: `NSSplitView` distributes by
+        // preserving the proportions it already has, so a pane that begins at zero height keeps a
+        // share of zero — here it took half the window and left the rest blank.
+        let split = NSSplitView(frame: NSRect(x: 0, y: 0, width: Theme.windowWidth,
+                                              height: Theme.windowHeight))
         splitView = split
         split.isVertical = true
         split.dividerStyle = .thin
@@ -377,6 +423,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         vertical.translatesAutoresizingMaskIntoConstraints = false
         vertical.widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.diffPaneMinimumWidth).isActive = true
 
+        titleBar = buildTitleBar()
+        statusBar = buildStatusBar()
+
         let drawer = NSSplitView()
         terminalSplit = drawer
         drawer.isVertical = false
@@ -385,14 +434,27 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         drawer.addArrangedSubview(terminalHost)
 
         buildEmptyState()
+        // Constraints rather than a stack view: the drawer has to take **everything** between the
+        // two bars, and a stack asked to do that with a split view inside it gave the split its
+        // frame height and left the rest of the window empty.
         let container = NSView()
+        container.addSubview(titleBar)
         container.addSubview(drawer)
+        container.addSubview(statusBar)
         container.addSubview(emptyState)
+        titleBar.translatesAutoresizingMaskIntoConstraints = false
+        statusBar.translatesAutoresizingMaskIntoConstraints = false
         drawer.translatesAutoresizingMaskIntoConstraints = false
         emptyState.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            drawer.topAnchor.constraint(equalTo: container.topAnchor),
-            drawer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            titleBar.topAnchor.constraint(equalTo: container.topAnchor),
+            titleBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            titleBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            statusBar.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            statusBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            statusBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            drawer.topAnchor.constraint(equalTo: titleBar.bottomAnchor),
+            drawer.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
             drawer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             drawer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             emptyState.topAnchor.constraint(equalTo: container.topAnchor),
@@ -403,6 +465,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
         window.contentView = container
         window.makeKeyAndOrderFront(nil)
+        // The drawer starts closed, and the divider has to say so. `NSSplitView` sets its arranged
+        // subviews' frames itself — a height constraint on one of them is a suggestion it ignores —
+        // so the only lever that works is `setPosition`, and it works on a laid-out split. One turn
+        // of the run loop later, the window has a size and the position takes.
+        DispatchQueue.main.async { [self] in
+            window.contentView?.layoutSubtreeIfNeeded()
+            terminalSplit.setPosition(terminalSplit.bounds.height, ofDividerAt: 0)
+        }
         // The divider positions have to be set *after* the split has a width of its own. Setting
         // them on the next run-loop pass looks like it does that and does not: the split is inside
         // a constrained container, so its frame is still zero until layout runs, and every pane
@@ -452,7 +522,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         SelectedRowView()
     }
 
-    private func scrollWrapping(_ view: NSView) -> NSScrollView {
+    private func scrollWrapping(_ view: NSView, surface: NSColor = Theme.chrome) -> NSScrollView {
         // A non-zero starting frame matters: NSSplitView distributes space by *preserving the
         // proportions of the frames it already has*, so panes that begin at zero width stay at
         // zero width no matter how wide the split becomes.
@@ -461,6 +531,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
         scroll.autohidesScrollers = true
+        // The pane's surface belongs to the scroll view too. A table paints only its own rows'
+        // height, and below the last row the reader was seeing the scroll view's default black —
+        // a third colour, in a window whose two lists each have one.
+        scroll.drawsBackground = true
+        scroll.backgroundColor = surface
         return scroll
     }
 
@@ -498,9 +573,18 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     func setTerminalVisible(_ visible: Bool, startingShell: Bool) {
         terminalVisible = visible
         terminal.webView.isHidden = !visible
+        terminalHeightConstraint.constant = visible ? Theme.terminalPaneHeight : 0
+        terminalMinimumConstraint.isActive = visible
         terminalMenuItem?.state = visible ? .on : .off
         terminalSplit.adjustSubviews()
-        guard visible else { return }
+        guard visible else {
+            // Hiding has to move the divider too. A hidden pane keeps whatever share of the height
+            // the split last gave it — the three panes stopped two thirds of the way down the
+            // window and the rest was blank.
+            terminalSplit.setPosition(terminalSplit.bounds.height, ofDividerAt: 0)
+            window.contentView?.layoutSubtreeIfNeeded()
+            return
+        }
         terminalSplit.setPosition(terminalSplit.bounds.height - Theme.terminalPaneHeight,
                                   ofDividerAt: 0)
         terminal.webView.needsDisplay = true
@@ -1359,6 +1443,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                     ("SELFTEST keyboard-return=\(returned ? "OK" : "MISMATCH") the second "
                                         + "press returns to \(self.state.mode.rawValue)\n").utf8))
                                 guard returned else { exit(47) }
+                                // The drawer is closed first: `cacheDisplay` cannot capture a
+                                // `WKWebView`, so an open terminal turns a third of the chrome
+                                // picture into a black rectangle — which is exactly how six
+                                // rounds went into "why do the panes stop two thirds down".
+                                self.setTerminalVisible(false, startingShell: false)
                                 self.windowSnapshot(named: "keyboard") { self.collapseSelftest() }
                             }
                         }
@@ -1802,6 +1891,68 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// DEC-036: one screen serves both first run and a root that has been moved, so there is no
     /// state in which the window is empty with nothing to act on. No suggested path appears here —
     /// the amendment rejected both that and auto-detection, in favour of predictability.
+    /// The window's own title bar (the adopted design). The system keeps the traffic lights; this
+    /// carries the name of the application, the repository open in it and that repository's path —
+    /// the fact that tells two repositories of the same name apart (DEC-037), which until now lived
+    /// only in a list row.
+    private func buildTitleBar() -> NSView {
+        let name = NSTextField(labelWithString: "DiffScope")
+        name.font = Theme.prose(Theme.textSize, weight: .semibold)
+        name.textColor = Theme.ink
+
+        titleRepositoryLabel = NSTextField(labelWithString: "")
+        titleRepositoryLabel.font = Theme.prose(Theme.textSize)
+        titleRepositoryLabel.textColor = Theme.inkQuiet
+
+        titlePathLabel = NSTextField(labelWithString: "")
+        titlePathLabel.font = Theme.font(Theme.textSizeSmall)
+        titlePathLabel.textColor = Theme.inkFaint
+        titlePathLabel.lineBreakMode = .byTruncatingMiddle
+
+        let stack = NSStackView(views: [name, titleRepositoryLabel, titlePathLabel,
+                                        spacerView(), searchField])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = Theme.space3
+        // The traffic lights live at the left of this bar and the system draws them there, so the
+        // content starts clear of them rather than under them.
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: Theme.trafficLightInset,
+                                        bottom: 0, right: Theme.space6)
+
+        let bar = ChromeBar(surface: Theme.chrome, edge: .bottom)
+        bar.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            bar.heightAnchor.constraint(equalToConstant: Theme.titleBarHeight),
+            stack.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
+            stack.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+        ])
+        return bar
+    }
+
+    /// The status line, at the bottom edge where the design puts it. A line that reports what just
+    /// happened belongs where a reader glances, not between the controls and the thing they
+    /// control.
+    private func buildStatusBar() -> NSView {
+        let stack = NSStackView(views: [statusLabel, spacerView()])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = Theme.space4
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: Theme.space6, bottom: 0, right: Theme.space6)
+
+        let bar = ChromeBar(surface: Theme.chrome, edge: .top)
+        bar.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            bar.heightAnchor.constraint(equalToConstant: Theme.statusBarHeight),
+            stack.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
+            stack.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+        ])
+        return bar
+    }
+
     private func buildEmptyState() {
         let title = NSTextField(labelWithString: "No folders chosen yet")
         title.font = Theme.prose(Theme.emptyStateTitleSize, weight: .medium)
@@ -2067,9 +2218,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         filePaneWidth?.constant = filesCollapsed ? Theme.spineWidth : Theme.filePaneWidth
         repoPaneMinimum?.constant = reposCollapsed ? Theme.railWidth : Theme.paneMinimumWidth
         filePaneMinimum?.constant = filesCollapsed ? Theme.spineWidth : Theme.paneMinimumWidth
-        // The caption under the repository list is a sentence, and a 44 px rail has no room for
-        // one. It is the pane's own explanation, so it goes with the pane rather than being
-        // squeezed into an unreadable column.
+
         conventionLabel.isHidden = reposCollapsed
         repoTable.reloadData()
         fileTable.reloadData()
@@ -3422,6 +3571,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             guard table.selectedRow >= 0 else { return }
             let repository = state.repositories[table.selectedRow]
             state.selectedRepository = repository
+            titleRepositoryLabel.stringValue = state.repositoryLabels[repository.url.path]
+                ?? repository.displayName
+            titlePathLabel.stringValue = repository.url.path.replacingOccurrences(
+                of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
             startWatching(repository)
             followTerminalIfPossible(repository)
             reloadFiles()
