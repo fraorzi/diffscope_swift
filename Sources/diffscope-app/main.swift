@@ -59,6 +59,8 @@ final class AppState {
     var searchQuery = ""
     var searchMatchCase = false
     var searchHits: [SearchHit] = []
+    /// Which hit the reader is on, or `nil` when there are none.
+    var searchIndex: Int?
 }
 
 final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, WKNavigationDelegate, WKScriptMessageHandler {
@@ -2105,6 +2107,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         case "sources.remove": return #selector(removeSource)
         case "sources.baseBranch": return #selector(setBaseBranch)
         case "search": return #selector(searchChangedFiles)
+        case "search.next": return #selector(nextHit)
+        case "search.previous": return #selector(previousHit)
         case "search.worktree": return #selector(searchWorktree)
         case "change.next": return #selector(nextChange)
         case "change.previous": return #selector(previousChange)
@@ -2306,14 +2310,19 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             statusLabel.stringValue = "open in editor: no file selected"
             return
         }
+        // With search results on screen, ⌘⏎ opens the hit under the marker rather than the file
+        // the list happens to have selected: the marker is where the reader is.
+        let hit = state.searchIndex.flatMap { index -> SearchHit? in
+            index < state.searchHits.count ? state.searchHits[index] : nil
+        }
         let template = editorTemplate()
-        let path = repository.url.appendingPathComponent(file.path).path
+        let path = repository.url.appendingPathComponent(hit?.path ?? file.path).path
 
         // The line comes from the renderer, which is the only side that knows where the reader is
         // looking. It used to be a literal 1 — correct in the sense that it opened the file, and
         // useless on the 900-line file where the change is at the bottom.
         webView.evaluateJavaScript("window.diffscopeCurrentLine()") { value, _ in
-            let line = (value as? Int) ?? (value as? NSNumber)?.intValue ?? 1
+            let line = hit?.line ?? (value as? Int) ?? (value as? NSNumber)?.intValue ?? 1
             guard let command = EditorCommand(template: template, file: path, line: max(1, line)) else {
                 self.statusLabel.stringValue = "open in editor failed — the editor template is empty"
                 return
@@ -2700,17 +2709,61 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
+    /// Results go in the **pane**, grouped by file, with each hit's line split around the match —
+    /// the file list keeps showing files. Results are an answer to a question rather than a
+    /// replacement for the thing being reviewed, and a reader who loses the file list to a search
+    /// cannot see where the answer sits.
     private func showSearchResults(_ result: SearchResult, scope: SearchScope) {
-        // Results take the file list's place: one window, no second place to be (DEC-005). ⌘F with
-        // an empty query brings the files back, and so does any refresh.
-        state.fileRows = result.hits.map { hit in
-            let file = state.files.first { $0.path == hit.path }
-                ?? ChangedFile(path: hit.path, originalPath: nil, kind: .modified)
-            let snippet = (hit.before + hit.match + hit.after).trimmingCharacters(in: .whitespaces)
-            return .file(file, display: "\(hit.line)  \(snippet.prefix(80))")
+        state.searchHits = result.hits
+        state.searchIndex = result.hits.isEmpty ? nil : 0
+        pushSearch(summary: searchSummary(query: state.searchQuery, result: result, scope: scope))
+    }
+
+    private func pushSearch(summary: String) {
+        var groups: [[String: Any]] = []
+        for hit in state.searchHits {
+            let row: [String: Any] = ["line": hit.line, "before": hit.before,
+                                      "match": hit.match, "after": hit.after]
+            if var last = groups.last, last["path"] as? String == hit.path {
+                var hits = last["hits"] as? [[String: Any]] ?? []
+                hits.append(row)
+                last["hits"] = hits
+                groups[groups.count - 1] = last
+            } else {
+                groups.append(["path": hit.path, "hits": [row]])
+            }
         }
-        fileTable.reloadData()
-        statusLabel.stringValue = searchSummary(query: state.searchQuery, result: result, scope: scope)
+        let payload: [String: Any] = ["summary": summary, "groups": groups,
+                                      "current": state.searchIndex ?? -1]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8),
+              let wrapped = try? JSONSerialization.data(withJSONObject: [json]),
+              let escaped = String(data: wrapped, encoding: .utf8) else { return }
+        webView.evaluateJavaScript(
+            "window.diffscopeShowSearch(\(String(escaped.dropFirst().dropLast())))") { _, _ in }
+        statusLabel.stringValue = summary
+    }
+
+    @objc private func nextHit() { stepHit(by: 1) }
+    @objc private func previousHit() { stepHit(by: -1) }
+
+    /// Moving between hits moves the marker and says where it is. It does **not** open the file:
+    /// opening replaces the pane the results are in, and a reader stepping through nine matches
+    /// would lose the list at the first one. ⌘⏎ opens the hit under the marker, in the editor, at
+    /// its line.
+    private func stepHit(by delta: Int) {
+        guard !state.searchHits.isEmpty else {
+            statusLabel.stringValue = "no search results — ⌘F to search"
+            return
+        }
+        let count = state.searchHits.count
+        let current = state.searchIndex ?? 0
+        // No wrapping, for the reason ⌘] does not wrap in the file list: the end of a list is a
+        // fact worth feeling.
+        let next = max(0, min(count - 1, current + delta))
+        state.searchIndex = next
+        let hit = state.searchHits[next]
+        pushSearch(summary: "\(hit.path):\(hit.line) · hit \(next + 1) of \(count)")
     }
 
     @objc private func modeChanged() {

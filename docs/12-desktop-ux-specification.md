@@ -85,6 +85,8 @@ All of them operate on the same pinned source pair and the same canonical diff, 
 
 **Unified needs a signal side-by-side got for free.** With no panes, *added* and *removed* would fall back onto hue. A dedicated sign column carries `+` and `−`; hue only reinforces it. The column is load-bearing (`24-…` §3) precisely because it is the only part of the distinction that survives greyscale.
 
+**A commit in the History lens is something you compare against** (DEC-061): one picked commit compares it with the working tree, two compare the two in the reader's selection order, and a third starts again. This is not a fifth scope — the four are untouched — and picking a scope drops the selection rather than leaving the two to argue about which comparison the window shows.
+
 **Blame marks uncommitted lines rather than tinting them**, so the change language keeps sole ownership of tint and texture, and the gutter geometry is identical across lenses so that switching one does not move the code.
 
 ### 5.1 Colour discipline
@@ -220,6 +222,7 @@ Configurable command template with file and line placeholders, defaulting to Web
 **Where it lives:** `editorTemplate` in the application's configuration file, edited in Settings (⌘,). Absent means the built-in default — the file records what the user chose, not what the application would have done anyway. `DIFFSCOPE_EDITOR` overrides it for a launch and is never written, so the broken-editor arm (F13) has a way in that does not touch the reader's file.
 
 - Search (DEC-062) is a **field in the window**, not a dialog: ⌘F puts the caret in it over the changed set, ⇧⌘F over the whole worktree, and the placeholder says which. An empty query is the way back to the file list. A modal cannot show which scope answered, and the scope is half the answer.
+- **Results go in the pane, grouped by file**, each hit's line split around the match. The file list keeps showing files: results answer a question, they do not replace the thing being reviewed. ⌘G and ⇧⌘G move the marker and say where it is — they do not open the file, because opening replaces the pane the results are in and a reader stepping through nine matches would lose the list at the first one. ⌘⏎ opens the hit under the marker, at its line.
 - Failure — editor absent, command fails — must be **visible**, never a silent no-op. The status line says it as it happens and Settings keeps the last attempt, because the line has moved on by the time a reader opens the settings to fix it.
 - The template is user configuration and must never be populated from repository content, which is untrusted input.
 - Opening "this line" from the old side of a deleted region has no destination in the current file; behaviour must be defined rather than left to produce a wrong jump.

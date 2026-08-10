@@ -71,6 +71,10 @@
   --ds-tint-add: rgba(0, 132, 52, .10);
   --ds-tint-del: rgba(209, 0, 21, .085);
 
+  /* Where a search hit is (DEC-062). A fill, with weight beside it in the rule that uses it: a
+   * highlight carried by colour alone is a hit that a greyscale screenshot loses. */
+  --ds-hit: rgba(255, 214, 10, .45);
+
   /* Transparency checkerboard (DEC-063). 16 px squares, which is coarser than every change
    * texture in this file on purpose: a reader must never take an alpha change for a diff mark. */
   --ds-check-a: #fbfbfd;
@@ -180,6 +184,8 @@
     --ds-mark: rgba(255, 255, 255, .88);
     --ds-border: #28282d;
     --ds-border-strong: #6c6c76;
+
+    --ds-hit: rgba(255, 214, 10, .28);
 
     --ds-check-a: #141417;
     --ds-check-b: #232329;

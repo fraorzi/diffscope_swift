@@ -103,6 +103,15 @@
   .ds-lens-text { color: var(--ds-plain); }
   .ds-lens-subject { color: var(--ds-text); }
   .ds-lens-refs { color: var(--ds-dim); }
+  /* A hit is a line of code with one span in it that answers the question. The span is marked by
+     a fill *and* by weight — a highlight that is only a colour is a hit a greyscale screenshot
+     loses (DEC-035). */
+  .ds-search-file { padding: var(--ds-space-3) var(--ds-space-4) var(--ds-space-1);
+                    color: var(--ds-dim); }
+  .ds-search-before, .ds-search-after { color: var(--ds-plain); }
+  .ds-search-match { background: var(--ds-hit); color: var(--ds-text);
+                     font-weight: var(--ds-weight-emphasis); }
+  .ds-search-current { background: var(--ds-fold); }
   .ds-lens-header { padding: var(--ds-space-3) var(--ds-space-4); color: var(--ds-dim);
                     border-bottom: var(--ds-hairline-width) solid var(--ds-border); }
   #left, #right { flex: 1; min-width: 0; overflow: hidden; background: var(--ds-code);

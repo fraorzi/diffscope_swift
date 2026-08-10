@@ -194,6 +194,10 @@ public enum KeyboardMap {
         .init(id: "search.worktree", title: "Find in Whole Worktree…", key: "f",
               modifiers: [.shift, .command], menu: .navigate),
 
+        .init(id: "search.next", title: "Next Hit", key: "g", modifiers: [.command], menu: .navigate),
+        .init(id: "search.previous", title: "Previous Hit", key: "g",
+              modifiers: [.shift, .command], menu: .navigate),
+
         .init(id: "change.next", title: "Next Change", key: "↓", modifiers: [.command],
               menu: .navigate, satisfies: .changeNavigation),
         .init(id: "change.previous", title: "Previous Change", key: "↑", modifiers: [.command],

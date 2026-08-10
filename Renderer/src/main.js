@@ -693,6 +693,47 @@ function slider(leftLabel, rightLabel, value, onChange, describe) {
   return row;
 }
 
+/// Search results, grouped by file, in the pane (DEC-062). The file list keeps showing files:
+/// results are an answer to a question, not a replacement for the thing being reviewed, and a
+/// reader who loses the file list to a search cannot see where the answer sits.
+window.diffscopeShowSearch = function (json) {
+  const payload = typeof json === "string" ? JSON.parse(json) : json;
+  const host = document.getElementById("lens");
+  host.replaceChildren();
+  const header = document.createElement("div");
+  header.className = "ds-lens-header";
+  header.textContent = payload.summary || "";
+  host.appendChild(header);
+
+  let index = 0;
+  for (const group of payload.groups || []) {
+    const title = document.createElement("div");
+    title.className = "ds-search-file";
+    title.textContent = `${group.path}  ·  ${group.hits.length}`;
+    host.appendChild(title);
+    for (const hit of group.hits) {
+      const row = document.createElement("div");
+      const current = index === payload.current;
+      row.className = "ds-lens-row ds-search-hit" + (current ? " ds-search-current" : "");
+      row.append(cell("ds-lens-mark", current ? "▸" : " "),
+                 cell("ds-lens-line", String(hit.line)),
+                 cell("ds-search-before", hit.before),
+                 cell("ds-search-match", hit.match),
+                 cell("ds-search-after", hit.after));
+      host.appendChild(row);
+      if (current) requestAnimationFrame(() => row.scrollIntoView({ block: "center" }));
+      index += 1;
+    }
+  }
+
+  document.getElementById("stage").style.display = "none";
+  document.getElementById("unified").style.display = "none";
+  document.getElementById("rendered").style.display = "none";
+  host.style.display = "block";
+  lastLens = { kind: "search", rows: index };
+  return lastLens;
+};
+
 window.diffscopeShowRendered = function (json) {
   const payload = typeof json === "string" ? JSON.parse(json) : json;
   const host = document.getElementById("rendered");
@@ -1153,6 +1194,8 @@ window.diffscopeProbe = function () {
     renderedModesOff: document.querySelectorAll(".ds-mode-off").length,
     renderedImages: document.querySelectorAll(".ds-checker img").length,
     lensRows: document.querySelectorAll(".ds-lens-row").length,
+    searchHits: document.querySelectorAll(".ds-search-hit").length,
+    searchCurrent: document.querySelector(".ds-search-current")?.textContent || "",
     lensUncommitted: document.querySelectorAll(".ds-lens-uncommitted").length,
     unifiedLines: unifiedLines.length,
     unifiedText: unified ? unified.state.doc.toString() : "",

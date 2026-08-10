@@ -83,6 +83,10 @@ Classes marked **load-bearing** carry a difference. They may be restyled and may
 | `ds-lens-uncommitted` | Work that is not committed yet — **marked by an edge, never tinted** | **Yes**, and the shape is the point: tint and texture belong to the change language, and a second meaning for them is a meaning nobody can read |
 | `ds-lens-sha`, `ds-lens-who`, `ds-lens-when`, `ds-lens-line`, `ds-lens-text` | The columns of a blame row | **Yes** — each is one of the questions the lens exists to answer |
 | `ds-lens-subject`, `ds-lens-refs` | The columns a commit adds | **Yes** |
+| `ds-search-file` | Which file the hits below it are in | **Yes** |
+| `ds-search-hit`, `ds-search-current` | One hit, and the one the reader is on | **Yes** |
+| `ds-search-before`, `ds-search-match`, `ds-search-after` | The line, split around the hit | **Yes**, and the match carries weight as well as a fill: a highlight that is only a colour is a hit a greyscale screenshot loses |
+| `ds-lens-mark`, `ds-lens-picked` | Which commits the reader has picked, and in which order; also the marker on the current search hit | **Yes**, and the order is the point: one commit is *since this*, two is *between these*, and a glyph says which is which without a colour |
 | `ds-lens-header` | What the lens says above its list, including that nothing is fetched | **Yes** |
 | `cm-*` | CodeMirror's own classes: editor, scroller, gutters, line numbers | No, except the gutter ones |
 
