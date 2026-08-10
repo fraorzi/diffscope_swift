@@ -1034,3 +1034,19 @@ the tab now.
 still held a particular string; by then its shell had been restarted twice by earlier arms. What
 the design actually claims is that the two scrollbacks stay **apart** — that the second tab's
 output never appears in the first — which is exactly what one grid replaying a buffer would break.
+
+## Step 43 — nothing in the design is outstanding
+
+The rim was the last item. What the window draws now matches the adopted design in every part that
+was ever written down: the token table in both halves, the keyboard map, unified with its sign
+column, three collapses, the lenses, search, the rendered comparison, motion with its off switch,
+the terminal's tabs, and the empty state.
+
+Two things are worth writing down for whoever picks this up next, because neither is a defect:
+
+- **The design's window chrome is not reproduced.** It draws a custom title bar carrying the
+  repository name and path; the window uses the system title bar and puts both in the repository
+  row instead. A custom title bar is a decision about window management, not about the diff.
+- **Nothing here has been used in anger for a day.** Every claim in this repository is checked or
+  photographed, and neither is the same as a reader reviewing their own work with it for a week.
+  The next thing worth doing is `25-tester-packet.md`'s job, not another feature.
