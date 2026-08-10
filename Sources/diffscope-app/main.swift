@@ -81,6 +81,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var statusLabel: NSTextField!
     var comparisonLabel: NSTextField!
     var lensControl: NSSegmentedControl!
+    var searchField: NSSearchField!
+    /// Which scope the next submission searches. ⇧⌘F sets it and the placeholder says so — the
+    /// alternative is a field that answers a different question depending on how it was opened.
+    var searchScope: SearchScope = .changedFiles
     /// The sentence stating which convention the uncommitted counts use (`12-…` §2).
     var conventionLabel: NSTextField!
     var rendererReady = false
@@ -269,7 +273,20 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                          action: #selector(lensChanged))
         lensControl.selectedSegment = 0
 
-        let controls = NSStackView(views: [scopeControl, modeControl, lensControl])
+        // A field, not a modal (DEC-062, the adopted design). ⌘F puts the caret here; ⇧⌘F does the
+        // same and searches the whole worktree instead of the changed set. The scope is on screen
+        // in the placeholder, because a count over the changed set and a count over the worktree
+        // are different answers and a reader who does not know which they asked cannot read it.
+        searchField = NSSearchField()
+        searchField.font = Theme.font(Theme.textSizeSmall)
+        searchField.placeholderString = "Find in changed files"
+        searchField.target = self
+        searchField.action = #selector(searchSubmitted)
+        searchField.sendsSearchStringImmediately = false
+        searchField.sendsWholeSearchString = true
+        searchField.widthAnchor.constraint(equalToConstant: Theme.emptyStateMaximumWidth / 2).isActive = true
+
+        let controls = NSStackView(views: [scopeControl, modeControl, lensControl, searchField])
         controls.orientation = .horizontal
         controls.spacing = Theme.space6 - Theme.space2
 
@@ -2498,47 +2515,32 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     // worktree is a different question and is asked with a different key rather than a hidden
     // default. Both are read-only: the reader's query is matched as a literal, and nothing
     // compiled from a repository is ever run (DEC-028).
-    @objc private func searchChangedFiles() { runSearch(scope: .changedFiles) }
-    @objc private func searchWorktree() { runSearch(scope: .wholeWorktree) }
+    @objc private func searchChangedFiles() { focusSearch(scope: .changedFiles) }
+    @objc private func searchWorktree() { focusSearch(scope: .wholeWorktree) }
 
-    private func runSearch(scope: SearchScope) {
+    private func focusSearch(scope: SearchScope) {
+        searchScope = scope
+        searchField.placeholderString = "Find in \(scope.title)"
+        window.makeFirstResponder(searchField)
+    }
+
+    @objc private func searchSubmitted() {
         guard let repository = state.selectedRepository else {
             statusLabel.stringValue = "search needs a repository — choose one first"
             return
         }
-        let prompt = NSAlert()
-        prompt.messageText = "Find in \(scope.title)"
-        prompt.informativeText = "Matched as literal text, not as a pattern. "
-            + "An empty search clears the results and brings the file list back."
-        let field = NSTextField(frame: NSRect(x: 0, y: 0, width: Theme.emptyStateMaximumWidth,
-                                              height: Theme.space6 + Theme.space4))
-        field.stringValue = state.searchQuery
-        field.font = Theme.font(Theme.textSize)
-        let matchCase = NSButton(checkboxWithTitle: "Match case", target: nil, action: nil)
-        matchCase.state = state.searchMatchCase ? .on : .off
-        let stack = NSStackView(views: [field, matchCase])
-        stack.orientation = .vertical
-        stack.alignment = .leading
-        stack.frame = NSRect(x: 0, y: 0, width: Theme.emptyStateMaximumWidth,
-                             height: 2 * (Theme.space6 + Theme.space4))
-        prompt.accessoryView = stack
-        prompt.addButton(withTitle: "Find")
-        prompt.addButton(withTitle: "Cancel")
-        guard prompt.runModal() == .alertFirstButtonReturn else { return }
-
-        state.searchQuery = field.stringValue
-        state.searchMatchCase = matchCase.state == .on
+        state.searchQuery = searchField.stringValue
         guard !state.searchQuery.isEmpty else {
+            // An empty field is not an empty result: it is the way back to the file list.
             state.searchHits = []
             reloadFiles()
             return
         }
-
-        let contents = searchableContents(of: repository, scope: scope)
+        let contents = searchableContents(of: repository, scope: searchScope)
         let result = search(query: state.searchQuery, in: contents,
                             options: SearchOptions(matchCase: state.searchMatchCase))
         state.searchHits = result.hits
-        showSearchResults(result, scope: scope)
+        showSearchResults(result, scope: searchScope)
     }
 
     /// The text to search. Changed files come from the scope the reader is already looking at;

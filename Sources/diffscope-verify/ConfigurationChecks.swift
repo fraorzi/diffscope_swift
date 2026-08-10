@@ -465,6 +465,19 @@ func runSearchChecks(_ reportRaw: (String, Bool, String) -> Void) {
     report("and says so when nothing matched, with the scope again",
            searchSummary(query: "zzz", result: search(query: "zzz", in: files), scope: .wholeWorktree)
                == "no matches for “zzz” in 2 whole worktree")
+    // The field is the interface (DEC-062, the adopted design): a modal that asks for a query and
+    // disappears cannot show the reader which scope answered them, and the scope is half the
+    // answer.
+    let shell = (try? String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                                 .appendingPathComponent("Sources/diffscope-app/main.swift"),
+                             encoding: .utf8)) ?? ""
+    report("search is a field in the window rather than a modal",
+           shell.contains("searchField = NSSearchField()") && !shell.contains("prompt.messageText = \"Find"))
+    report("and the field says which scope it will answer for",
+           shell.contains("searchField.placeholderString = \"Find in \\(scope.title)\""))
+    report("an empty query is the way back to the file list, not an empty result",
+           shell.contains("// An empty field is not an empty result"))
+
     report("a capped result says there are more rather than showing a prefix silently",
            searchSummary(query: "a", result: capped, scope: .changedFiles).contains("there are more"))
 }

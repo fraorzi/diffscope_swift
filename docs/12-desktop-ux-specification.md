@@ -67,6 +67,10 @@ Scopes that are undefined for the current repository state are **disabled with a
 
 Flat, one-dimensional, with group headers per workspace package and middle-elided paths (DEC-033).
 
+**Rows are columns.** Kind glyph, path, note, and the line counts right-aligned so a reader can run down the column instead of hunting for them at the end of paths of different lengths. The counts come from `diff --numstat`, and `binary` is a **state** rather than a zero: git reports `-` where a line count would be meaningless, and inventing `+0 −0` there is the same class of misstatement as an ahead-count of 0 for a base that could not be determined.
+
+The counts arrive with the annotations rather than with the rows — one more Git invocation is not worth an empty pane.
+
 - Path elision preserves **start and end**: the start identifies the package, the end identifies the file.
 - Group headers are labels, not focus stops.
 - Files outside any workspace package fall into a default group.
@@ -215,6 +219,7 @@ Configurable command template with file and line placeholders, defaulting to Web
 
 **Where it lives:** `editorTemplate` in the application's configuration file, edited in Settings (⌘,). Absent means the built-in default — the file records what the user chose, not what the application would have done anyway. `DIFFSCOPE_EDITOR` overrides it for a launch and is never written, so the broken-editor arm (F13) has a way in that does not touch the reader's file.
 
+- Search (DEC-062) is a **field in the window**, not a dialog: ⌘F puts the caret in it over the changed set, ⇧⌘F over the whole worktree, and the placeholder says which. An empty query is the way back to the file list. A modal cannot show which scope answered, and the scope is half the answer.
 - Failure — editor absent, command fails — must be **visible**, never a silent no-op. The status line says it as it happens and Settings keeps the last attempt, because the line has moved on by the time a reader opens the settings to fix it.
 - The template is user configuration and must never be populated from repository content, which is untrusted input.
 - Opening "this line" from the old side of a deleted region has no destination in the current file; behaviour must be defined rather than left to produce a wrong jump.
