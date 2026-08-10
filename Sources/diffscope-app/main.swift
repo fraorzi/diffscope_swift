@@ -36,6 +36,10 @@ final class AppState {
     /// Path → what the list can say about the file cheaply. Filled in by a background pass, so a
     /// large working tree lists immediately and gains its badges a moment later.
     var annotations: [String: FileAnnotation] = [:]
+    /// Path → how much of the file changed (`12-…` §4). Arrives with the annotations rather than
+    /// with the rows: the list appears immediately and the counts fill in, because one more Git
+    /// invocation is not worth an empty pane.
+    var counts: [String: ChangeCount] = [:]
     /// The last search and its hits (DEC-062). Kept on the state rather than in the view, so a
     /// refresh can decide what to do with them — today it replaces them with the file list, which
     /// is the honest answer: the hits were computed against bytes that have just changed.
@@ -341,7 +345,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         column.width = Theme.repositoryPaneWidth - 2 * Theme.space6 + Theme.space4
         table.addTableColumn(column)
         table.headerView = nil
-        table.rowHeight = Theme.rowHeight
+        table.rowHeight = identifier == "repo" ? Theme.repositoryRowHeight : Theme.rowHeight
         table.dataSource = self
         table.delegate = self
         table.identifier = NSUserInterfaceItemIdentifier(identifier)
@@ -351,6 +355,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // is one system too many.
         table.usesAlternatingRowBackgroundColors = false
         table.backgroundColor = identifier == "repo" ? Theme.panelRepositories : Theme.panelFiles
+        // Drawn by `SelectedRowView` rather than by AppKit, so the selected row uses the design's
+        // own surface **and** its ring (DEC-066). The system highlight is a solid accent fill: it
+        // carries the selection in colour alone, and it repaints the row's text white, which takes
+        // the file-kind glyph's own colour with it.
         table.selectionHighlightStyle = .regular
         // One column, so "last" is "the one": it grows and shrinks with the pane, which is what a
         // collapse needs (DEC-060).
@@ -367,6 +375,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // pane show the *start* of each row rather than the middle.
         table.autoresizingMask = [.width]
         return table
+    }
+
+    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+        SelectedRowView()
     }
 
     private func scrollWrapping(_ view: NSView) -> NSScrollView {
@@ -1349,7 +1361,17 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             // put the cell 16 pt in, and the rail then drew two letters of the three that separate
             // one repository from another. Asserted rather than eyeballed, because the picture is
             // the only other thing that can see it.
-            let field = repoCell?.textField
+            // The rows are columns now and no longer set `cell.textField`, so the arm looks for
+            // the first label it can see rather than for the one AppKit used to be handed.
+            func firstLabel(_ view: NSView?) -> NSTextField? {
+                guard let view else { return nil }
+                if let field = view as? NSTextField { return field }
+                for child in view.subviews {
+                    if let found = firstLabel(child) { return found }
+                }
+                return nil
+            }
+            let field = firstLabel(repoCell)
             let fieldInWindow = field.map { $0.convert($0.bounds, to: nil) } ?? .zero
             let paneOrigin = self.repoTable.enclosingScrollView?.convert(NSPoint.zero, to: nil).x ?? 0
             let indent = fieldInWindow.minX - paneOrigin
@@ -1357,9 +1379,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             FileHandle.standardError.write(Data(
                 ("SELFTEST collapse=\(ok && indented ? "OK" : "MISMATCH") rail=\(railDrawn) "
                     + "spine=\(spineDrawn) indent=\(indent) "
-                    + "repoRow=\(repoCell?.textField?.stringValue ?? "nil")"
-                    + "@\(fieldInWindow.width) "
-                    + "fileRow=\(fileCell?.textField?.stringValue ?? "nil")\n").utf8))
+                    + "repoRow=\(field?.stringValue ?? "nil")@\(fieldInWindow.width) "
+                    + "fileRow=\(firstLabel(fileCell)?.stringValue ?? "nil")\n").utf8))
             guard ok, indented else { exit(48) }
             self.windowSnapshot(named: "collapsed") { self.lensSelftest() }
         }
@@ -2110,7 +2131,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// already on screen by then. Only the repository still selected gets its badges applied.
     private func annotateFiles(of repository: RepositorySnapshot) {
         let files = state.files
+        let scope = state.scope
+        let baseRef = repository.baseRefUsed ?? repository.base.ref
         DispatchQueue.global(qos: .utility).async {
+            let counts = (try? self.scopes.changeCounts(scope: scope, in: repository.url,
+                                                        baseRef: baseRef)) ?? [:]
             var found: [String: FileAnnotation] = [:]
             for file in files {
                 if let annotation = annotate(path: file.path, in: repository.url,
@@ -2121,6 +2146,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             DispatchQueue.main.async {
                 guard self.state.selectedRepository?.url == repository.url else { return }
                 self.state.annotations = found
+                self.state.counts = counts
                 self.fileTable.reloadData()
             }
         }
@@ -2822,83 +2848,183 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// window looked like a working application with an empty repository list, which is why it
     /// survived: nothing crashed, the counts in the status line were right, and the check suite
     /// cannot see the screen.
+    /// Rows as the adopted design draws them: columns rather than one string.
+    ///
+    /// One string was enough while a row said three things; it says six now — kind, package, file,
+    /// note, and two counts — and a reader comparing two rows has to be able to find the same fact
+    /// in the same place. The label built here is still the whole row's `toolTip`, so nothing the
+    /// columns clip is lost.
+    private func label(_ size: CGFloat, _ weight: NSFont.Weight = .regular,
+                       _ colour: NSColor = Theme.ink) -> NSTextField {
+        let field = NSTextField(labelWithString: "")
+        field.font = Theme.font(size, weight: weight)
+        field.textColor = colour
+        field.lineBreakMode = .byTruncatingTail
+        field.translatesAutoresizingMaskIntoConstraints = false
+        return field
+    }
+
+    private func row(_ fields: [NSTextField], in cell: NSTableCellView,
+                     leading: CGFloat = Theme.space2) -> NSStackView {
+        let stack = NSStackView(views: fields)
+        stack.orientation = .horizontal
+        stack.alignment = .firstBaseline
+        stack.spacing = Theme.space2
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: leading),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: cell.trailingAnchor,
+                                            constant: -Theme.space2),
+            stack.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+        ])
+        return stack
+    }
+
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
         let cell = NSTableCellView()
-        let text = NSTextField(labelWithString: "")
-        text.font = Theme.font(Theme.textSizeSmall)
-        text.lineBreakMode = .byTruncatingMiddle
-        text.translatesAutoresizingMaskIntoConstraints = false
-        cell.addSubview(text)
-        cell.textField = text
-        NSLayoutConstraint.activate([
-            text.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: Theme.space2),
-            text.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -Theme.space2),
-            text.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-        ])
         if tableView === repoTable {
-            let snapshot = state.repositories[row]
-            let ahead = snapshot.aheadCount.map { "↑\($0)" } ?? "↑?"
-            let label = state.repositoryLabels[snapshot.url.path] ?? snapshot.displayName
-            if reposCollapsed {
-                // Three letters, because two do not separate `web` from `des` in the product
-                // owner's own tree, and a dot for "there is work in here". The full row is one
-                // hover — and one ⌃⌘1 — away.
-                // No space before the dot: at 11 px the rail has room for four characters and the
-                // three letters are the part that has to be readable.
-                text.stringValue = String(label.prefix(3))
-                    + (snapshot.uncommittedCount > 0 ? "•" : "")
-                // Tiny, because three letters at 11 px do not fit a 44 px rail once the insets
-                // and the dot are counted — and two letters do not separate `web` from `wea`.
-                text.font = Theme.font(Theme.textSizeTiny)
-                text.toolTip = "\(label) — \(snapshot.head.displayText), "
-                    + "\(snapshot.uncommittedCount) uncommitted, \(ahead)"
-                text.lineBreakMode = .byClipping
-                return cell
-            }
-            // `12-…` §2 lists the branch as **displayed**, and it was in the tooltip only
-            // (`23b-…` §2). A tooltip is not a display: it is invisible until pointed at, so a
-            // reader walking the list from the keyboard never sees it. The unusual head states
-            // matter most of the three — `no commits yet` explains why all four scopes are greyed.
-            text.stringValue = "\(label)  ·  \(snapshot.head.displayText)  ·  "
-                + "\(snapshot.uncommittedCount)△ \(ahead)"
-            text.toolTip = "\(snapshot.url.path)\n\(snapshot.head.displayText)\n\(snapshot.baseRefUsed ?? "base: prompt")"
-        } else {
-            switch state.fileRows[row] {
-            case let .header(title):
-                text.stringValue = title
-                text.textColor = Theme.inkQuiet
-                text.font = Theme.font(Theme.textSizeTiny, weight: .semibold)
-                text.lineBreakMode = .byTruncatingHead
-                text.toolTip = title
-            case let .file(file, display):
-                // The badge says what the list could work out cheaply; the diff view says the rest
-                // (`12-…` §4 asks the list to carry degradation state).
-                let badge = state.annotations[file.path].map { " · \($0.badge)" } ?? ""
-                if filesCollapsed {
-                    // One bar per file, carrying the kind glyph: the design drew these bars
-                    // distinguished by hue alone, which DEC-035 forbids.
-                    //
-                    // The design also sizes each bar by how much the file changed. That number is
-                    // not in `ChangedFile` — the scope layer lists paths and kinds, not counts —
-                    // and a bar length invented here would be a measurement the product did not
-                    // make. The bar is uniform until the count is real.
-                    text.stringValue = "\(file.kind.glyph) ▍"
-                    text.toolTip = "\(file.path) — \(file.kind.rawValue)\(badge)"
-                    text.lineBreakMode = .byClipping
-                    return cell
-                }
-                text.stringValue = "\(file.kind.rawValue.prefix(3))  \(display)\(badge)"
-                // The full path stays one hover away, since the row no longer shows all of it.
-                text.toolTip = file.path
-            }
+            return repositoryCell(cell, row: row)
         }
+        return fileCell(cell, row: row)
+    }
+
+    private func repositoryCell(_ cell: NSTableCellView, row: Int) -> NSView {
+        let snapshot = state.repositories[row]
+        let name = state.repositoryLabels[snapshot.url.path] ?? snapshot.displayName
+
+        if reposCollapsed {
+            // Three letters, because two do not separate `web` from `wea`, and a dot for "there is
+            // work in here". The full row is one hover — and one ⌃⌘1 — away.
+            let rail = label(Theme.textSizeTiny, .semibold, Theme.ink)
+            rail.stringValue = String(name.prefix(3)) + (snapshot.uncommittedCount > 0 ? "•" : "")
+            rail.lineBreakMode = .byClipping
+            _ = self.row([rail], in: cell)
+            cell.toolTip = "\(name) — \(snapshot.head.displayText), "
+                + "\(snapshot.uncommittedCount) uncommitted"
+            return cell
+        }
+
+        let title = label(Theme.textSizeSmall, .semibold, Theme.ink)
+        title.stringValue = name
+        title.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+        // `12-…` §2 lists the branch as **displayed**, and it was in the tooltip only until DEC-058.
+        // Italic for the two unusual head states, which is the design's way of saying *this is not
+        // an ordinary branch* without spending a word on it.
+        let head = label(Theme.textSizeSmall, .regular, Theme.inkQuiet)
+        head.stringValue = snapshot.head.displayText
+        if case .onBranch = snapshot.head {} else {
+            head.font = NSFontManager.shared.convert(head.font!, toHaveTrait: .italicFontMask)
+        }
+
+        let files = label(Theme.textSizeTiny, .regular,
+                          snapshot.uncommittedCount == 0 ? Theme.inkFaint : Theme.inkQuiet)
+        files.stringValue = snapshot.uncommittedCount == 0
+            ? "clean" : "\(snapshot.uncommittedCount) files"
+
+        // The ahead-count, and the one chip in the window that is not a number: unknown is said,
+        // never rendered as 0 (`12-…` §2). Dashed, because the difference has to survive greyscale.
+        let ahead = label(Theme.textSizeTiny, .regular,
+                          snapshot.aheadCount == nil ? Theme.ink : Theme.inkQuiet)
+        ahead.stringValue = snapshot.aheadCount.map { "↑\($0)" } ?? "↑ unknown"
+
+        let path = label(Theme.textSizeTiny, .regular, Theme.inkFaint)
+        path.stringValue = snapshot.url.path.replacingOccurrences(
+            of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
+        path.lineBreakMode = .byTruncatingMiddle
+
+        let top = NSStackView(views: [title, head, NSView(), files, ahead])
+        top.orientation = .horizontal
+        top.alignment = .firstBaseline
+        top.spacing = Theme.space2
+        let stack = NSStackView(views: [top, path])
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 0
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        cell.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: Theme.space2),
+            stack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -Theme.space2),
+            stack.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            top.widthAnchor.constraint(equalTo: stack.widthAnchor),
+        ])
+        cell.toolTip = "\(snapshot.url.path)\n\(snapshot.head.displayText)\n"
+            + "\(snapshot.baseRefUsed ?? "base: prompt")"
         return cell
     }
 
-    /// DEC-033 says headers are labels rather than focus stops, and until M8-J only ⌘] / ⌘[ obeyed
-    /// it. An arrow key — the ordinary way anyone walks a 63-file list — landed on a header, where
-    /// the selection handler returned without a word and the diff pane went on showing the previous
-    /// file. Refusing the selection at the source makes every route agree: arrows, clicks, ⌘].
+    private func fileCell(_ cell: NSTableCellView, row: Int) -> NSView {
+        switch state.fileRows[row] {
+        case let .header(title):
+            let header = label(Theme.textSizeTiny, .semibold, Theme.inkQuiet)
+            header.stringValue = filesCollapsed ? "···" : title
+            header.lineBreakMode = .byTruncatingHead
+            _ = self.row([header], in: cell)
+            cell.toolTip = title
+            return cell
+
+        case let .file(file, display):
+            let annotation = state.annotations[file.path]
+            let count = state.counts[file.path]
+            if filesCollapsed {
+                // One bar per file, carrying the kind glyph: the design drew these bars
+                // distinguished by hue alone, which DEC-035 forbids. The bar's *length* is the
+                // design's other idea and now has a number behind it.
+                let spine = label(Theme.textSizeTiny, .regular, Theme.ink)
+                let size = count.map { min(4, max(1, ($0.added + $0.deleted) / 12 + 1)) } ?? 1
+                spine.stringValue = "\(file.kind.glyph)\(String(repeating: "▍", count: size))"
+                spine.lineBreakMode = .byClipping
+                _ = self.row([spine], in: cell)
+                cell.toolTip = "\(file.path) — \(file.kind.rawValue)"
+                    + (count.map { " \($0.text)" } ?? "")
+                return cell
+            }
+
+            let glyph = label(Theme.textSizeSmall, .semibold, Theme.ink)
+            glyph.stringValue = file.kind.glyph
+            glyph.setContentCompressionResistancePriority(.required, for: .horizontal)
+            glyph.widthAnchor.constraint(equalToConstant: Theme.space6 - Theme.space2).isActive = true
+
+            let name = label(Theme.textSizeSmall, .regular, Theme.ink)
+            name.stringValue = display
+            name.lineBreakMode = .byTruncatingHead
+
+            let note = label(Theme.textSizeTiny, .regular, Theme.inkQuiet)
+            note.stringValue = annotation?.badge ?? ""
+            note.setContentCompressionResistancePriority(.required, for: .horizontal)
+
+            // Counts on the right, where the eye can compare them down the column instead of
+            // hunting for them at the end of paths of different lengths.
+            let counts = label(Theme.textSizeTiny, .regular, Theme.inkQuiet)
+            counts.stringValue = count?.text ?? ""
+            counts.setContentCompressionResistancePriority(.required, for: .horizontal)
+            counts.alignment = .right
+
+            let stack = NSStackView(views: [glyph, name, spacerView(), note, counts])
+            stack.orientation = .horizontal
+            stack.alignment = .firstBaseline
+            stack.spacing = Theme.space2
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            cell.addSubview(stack)
+            NSLayoutConstraint.activate([
+                stack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: Theme.space2),
+                stack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -Theme.space2),
+                stack.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            ])
+            cell.toolTip = file.path + (count.map { " · \($0.text)" } ?? "")
+            return cell
+        }
+    }
+
+    private func spacerView() -> NSView {
+        let spacer = NSView()
+        spacer.translatesAutoresizingMaskIntoConstraints = false
+        spacer.setContentHuggingPriority(.init(1), for: .horizontal)
+        return spacer
+    }
+
     func tableView(_ tableView: NSTableView, shouldSelectRow row: Int) -> Bool {
         guard tableView === fileTable else { return true }
         return RowNavigation.isSelectable(rows: state.fileRows, row: row)

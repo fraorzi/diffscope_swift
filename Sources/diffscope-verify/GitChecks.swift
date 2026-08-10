@@ -256,3 +256,41 @@ func runGitChecks(_ reportRaw: (String, Bool, String) -> Void) {
                GitRunner.readOnlyGlobalArguments.contains("--no-optional-locks"))
     }
 }
+
+/// `12-…` §4's counts. The parser, because the shape git emits is the part that bites: a `-` where
+/// a number would be, and a rename written as a path expression rather than a path.
+func runNumstatChecks(_ reportRaw: (String, Bool, String) -> Void) {
+    func report(_ name: String, _ ok: Bool, _ detail: String = "") { reportRaw(name, ok, detail) }
+
+    print("\n=== line counts are read, and `binary` is a state rather than a zero (12-… §4) ===")
+    let counts = parseNumstat("""
+        9\t11\tpackages/web/src/results/ResultsList.tsx
+        184\t0\tpackages/ui/src/list/List.tsx
+        -\t-\tapps/desktop/assets/icon@2x.png
+        3\t3\tpackages/web/src/panel/{Frame.tsx => Panel.tsx}
+        """)
+    report("added and deleted come back per path",
+           counts["packages/web/src/results/ResultsList.tsx"]
+               == ChangeCount(added: 9, deleted: 11, isBinary: false))
+    report("a new file has no deletions rather than a missing entry",
+           counts["packages/ui/src/list/List.tsx"]?.deleted == 0)
+    report("binary is a state, not +0 −0",
+           counts["apps/desktop/assets/icon@2x.png"]?.isBinary == true)
+    report("and it says the word rather than a count",
+           counts["apps/desktop/assets/icon@2x.png"]?.text == "binary")
+    report("a rename is keyed by the path the list uses — the new one",
+           counts["packages/web/src/panel/Panel.tsx"]
+               == ChangeCount(added: 3, deleted: 3, isBinary: false),
+           counts.keys.sorted().joined(separator: ", "))
+
+    report("the counts are worded once, where they are computed",
+           ChangeCount(added: 9, deleted: 11, isBinary: false).text == "+9 −11"
+               && ChangeCount(added: 184, deleted: 0, isBinary: false).text == "+184"
+               && ChangeCount(added: 0, deleted: 0, isBinary: false).text == "±0")
+
+    report("negative control: a truncated row is skipped rather than read as a path",
+           parseNumstat("9\tpackages/only-two-fields.tsx\n").isEmpty)
+
+    report("the operation is in the registry the read-only proof runs over",
+           GitOperation.allProvenReadOnly.contains { $0.label == "diff-numstat" })
+}

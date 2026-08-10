@@ -188,6 +188,62 @@ public enum FileAnnotation: String, Sendable, Equatable {
     }
 }
 
+/// What the list says about size of change (`12-…` §4, the adopted design's file rows).
+///
+/// `binary` is a state, not a zero. Git reports `-` in both columns where a line count would be
+/// meaningless, and inventing `+0 −0` there would be the same class of misstatement as an
+/// ahead-count of 0 for a base that could not be determined.
+public struct ChangeCount: Sendable, Equatable {
+    public let added: Int
+    public let deleted: Int
+    public let isBinary: Bool
+
+    public init(added: Int, deleted: Int, isBinary: Bool) {
+        self.added = added
+        self.deleted = deleted
+        self.isBinary = isBinary
+    }
+
+    /// `+9 −11`, or the word. Composed here so the list and any other reader of it cannot word the
+    /// same fact two ways.
+    public var text: String {
+        if isBinary { return "binary" }
+        var parts: [String] = []
+        if added > 0 { parts.append("+\(added)") }
+        if deleted > 0 { parts.append("−\(deleted)") }
+        return parts.isEmpty ? "±0" : parts.joined(separator: " ")
+    }
+}
+
+/// `git diff --numstat`: added, deleted, path — tab separated, with `-` for binary. A rename is
+/// reported with the new path, which is the path the list is keyed by.
+public func parseNumstat(_ output: String) -> [String: ChangeCount] {
+    var counts: [String: ChangeCount] = [:]
+    for line in output.split(separator: "\n", omittingEmptySubsequences: true) {
+        let fields = line.split(separator: "\t", omittingEmptySubsequences: false)
+        guard fields.count >= 3 else { continue }
+        let added = String(fields[0])
+        let deleted = String(fields[1])
+        var path = String(fields[2...].joined(separator: "\t"))
+        // `{old => new}` for a rename inside one directory, and `old => new` across directories.
+        if let arrow = path.range(of: " => ") {
+            let tail = String(path[arrow.upperBound...])
+            path = tail.replacingOccurrences(of: "}", with: "")
+            if let open = String(path[path.startIndex...]).firstIndex(of: "{") {
+                path.remove(at: open)
+            }
+            if let brace = String(fields[2...].joined(separator: "\t")).range(of: "{") {
+                let prefix = String(fields[2...].joined(separator: "\t")[..<brace.lowerBound])
+                path = prefix + path
+            }
+        }
+        let binary = added == "-" && deleted == "-"
+        counts[path] = ChangeCount(added: Int(added) ?? 0, deleted: Int(deleted) ?? 0,
+                                   isBinary: binary)
+    }
+    return counts
+}
+
 private let structuralExtensions = [".tsx", ".ts", ".jsx", ".js", ".mts", ".cts", ".mjs", ".cjs"]
 
 public func annotate(

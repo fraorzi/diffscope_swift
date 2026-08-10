@@ -214,8 +214,14 @@ func runTrustSurfaceChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // broke the moment the collapsed rail added a second `text.toolTip` above this one, and
         // it broke by *passing over* the row it was written about — the failure mode a check
         // should never have.
+        // Asked of the assignment, not of a slice of the file — and re-asked when the row became
+        // columns: the head state moved from the middle of one string into a field of its own, and
+        // a check pinned to the old string would have failed for a change that improved the thing
+        // it was protecting.
         report("the row's own text carries the head state",
-               shell.contains("text.stringValue = \"\\(label)  ·  \\(snapshot.head.displayText)"))
+               shell.contains("head.stringValue = snapshot.head.displayText"))
+        report("and the head state is a field in the row, not a tooltip",
+               shell.contains("let head = label("))
 
         // DEC-060's rail is 44 px and holds three letters. It is a collapsed state, not a hidden
         // one: the head state stays one hover and one ⌃⌘1 away, and the check says so rather than

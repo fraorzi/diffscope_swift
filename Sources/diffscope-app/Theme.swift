@@ -79,8 +79,11 @@ enum Theme {
     /// settle together rather than one chasing the other (DEC-064).
     static let motionQuick: TimeInterval = 0.12
 
-    /// Row height in both lists. Not a token in the CSS, because the diff has no rows.
+    /// Row heights. Not tokens in the CSS, because the diff has no rows. The repository row is
+    /// two lines since the adopted design: name and head state above, path below — a path is what
+    /// tells two repositories of the same name apart (DEC-037), so it is not a tooltip.
     static let rowHeight: CGFloat = 20
+    static let repositoryRowHeight: CGFloat = 34
     /// Starting widths for the three panes. Constraints, not fixed sizes — the dividers stay
     /// draggable (see the note in `buildWindow`).
     static let repositoryPaneWidth: CGFloat = 280
@@ -100,4 +103,27 @@ enum Theme {
     /// stays draggable — `--ds-term-*` covers what is drawn *inside* it.
     static let terminalPaneHeight: CGFloat = 260
     static let terminalPaneMinimumHeight: CGFloat = 90
+}
+
+/// The selected row, drawn from the design's two tokens rather than by AppKit (DEC-066).
+///
+/// `--ds-row-selected` is the fill and `--ds-row-ring` is the shape, and the second is the point:
+/// with the fill disabled — increased contrast, a greyscale screenshot, a printout — the ring is
+/// what still says *this row*. AppKit's own highlight is a solid accent fill that also repaints
+/// the row's text white, which would take the file-kind glyph's colour with it.
+final class SelectedRowView: NSTableRowView {
+    /// AppKit turns a selected row's labels white by telling the cell its background is
+    /// "emphasized". The design's selected surface is a quiet grey, so white text on it is
+    /// unreadable — and the file-kind glyph would lose the colour that is half of what it says.
+    override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
+
+    override func drawSelection(in dirtyRect: NSRect) {
+        guard isSelected else { return }
+        Theme.rowSelected.setFill()
+        bounds.fill()
+        Theme.rowRing.setStroke()
+        let ring = NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5))
+        ring.lineWidth = 1
+        ring.stroke()
+    }
 }

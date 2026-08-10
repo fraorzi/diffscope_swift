@@ -121,6 +121,27 @@ public struct ScopeReader: Sendable {
         }
     }
 
+    /// Line counts for the same scope the list is showing (`12-…` §4). Separate from
+    /// `changedFiles` because it is one more invocation and the list must appear before it
+    /// arrives — the counts fill in, the rows do not wait for them.
+    public func changeCounts(scope: ComparisonScope, in repository: URL,
+                             baseRef: String? = nil) throws -> [String: ChangeCount] {
+        var arguments: [String]
+        switch scope {
+        case .allLocalVsHead: arguments = ["HEAD"]
+        case .unstagedVsIndex: arguments = []
+        case .stagedVsHead: arguments = ["--cached"]
+        case .branchVsMergeBase:
+            guard let baseRef else { return [:] }
+            let mergeBase = try runner.run(.mergeBase(baseRef, "HEAD"), in: repository)
+            guard mergeBase.succeeded, !mergeBase.trimmedOutput.isEmpty else { return [:] }
+            arguments = [mergeBase.trimmedOutput, "HEAD"]
+        }
+        let result = try runner.run(.diffNumstat(arguments), in: repository)
+        guard result.succeeded else { return [:] }
+        return parseNumstat(String(decoding: result.standardOutput, as: UTF8.self))
+    }
+
     private func statusFiles(scope: ComparisonScope, in repository: URL) throws -> [ChangedFile] {
         let result = try runner.run(.statusPorcelain(), in: repository)
         guard result.succeeded else { return [] }

@@ -63,6 +63,15 @@ public struct GitOperation: Sendable, Equatable {
         GitOperation("diff-raw", ["diff", "--no-color"] + arguments)
     }
 
+    /// Line counts per file, for the list (`12-…` §4). `--numstat` because the porcelain formats
+    /// are presentations and this one is documented output: two counts and a path, with `-` in
+    /// both count columns where a line count would be meaningless — which is git saying *binary*
+    /// rather than *zero*, and the difference is the whole reason this is not computed from a
+    /// diff we parse ourselves.
+    public static func diffNumstat(_ arguments: [String]) -> GitOperation {
+        GitOperation("diff-numstat", ["diff", "--numstat", "--no-color"] + arguments)
+    }
+
     /// One invocation for every attribute that can make the compared bytes differ from `git diff`'s
     /// (DEC-028). `-z` because a path may contain anything, including the separator git would
     /// otherwise use.
@@ -110,6 +119,7 @@ public struct GitOperation: Sendable, Equatable {
         .refCommitterDate("HEAD"),
         .catFileBlob(rev: "HEAD", path: "a.txt"),
         .diffNameStatus([]),
+        .diffNumstat([]),
         .diffRaw([]),
         .checkAttr(FilterCheck.attributes, path: "a.txt"),
         .lsFiles(),
