@@ -381,14 +381,24 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         return scroll
     }
 
+    /// Selftest lines go to stderr for the arms to read, and a normal launch is not an arm — a
+    /// person starting the application should not be told `SELFTEST renderer=index.html` before
+    /// their window appears.
+    private func selftestLog(_ line: String) {
+        guard ProcessInfo.processInfo.environment["DIFFSCOPE_SELFTEST"] != nil else { return }
+        FileHandle.standardError.write(Data(line.utf8))
+    }
+
     private func loadRenderer() {
         guard let html = Bundle.module.url(forResource: "index", withExtension: "html", subdirectory: "Renderer") else {
+            // Not gated: a missing renderer bundle is a real failure of a real launch, and the
+            // window can only say so in a status line nobody may be looking at.
             statusLabel.stringValue = "renderer bundle missing"
             FileHandle.standardError.write(Data("SELFTEST renderer=MISSING\n".utf8))
             if ProcessInfo.processInfo.environment["DIFFSCOPE_SELFTEST"] != nil { exit(2) }
             return
         }
-        FileHandle.standardError.write(Data("SELFTEST renderer=\(html.lastPathComponent)\n".utf8))
+        selftestLog("SELFTEST renderer=\(html.lastPathComponent)\n")
         webView.loadFileURL(html, allowingReadAccessTo: html.deletingLastPathComponent())
         terminal.load()
     }

@@ -73,7 +73,6 @@ public func search(query: String, in files: [(path: String, text: String)],
                    options: SearchOptions = SearchOptions()) -> SearchResult {
     guard !query.isEmpty else { return SearchResult(hits: [], truncated: false, filesSearched: 0) }
     var hits: [SearchHit] = []
-    var truncated = false
     var searched = 0
 
     for file in files {
@@ -101,7 +100,10 @@ public func search(query: String, in files: [(path: String, text: String)],
             }
         }
     }
-    return SearchResult(hits: hits, truncated: truncated, filesSearched: searched)
+    // Reaching here means the files ran out before the limit did, so this is the one honest value:
+    // the variable that used to carry it was written once, never set, and returned as if it meant
+    // something — the compiler said so and it was right.
+    return SearchResult(hits: hits, truncated: false, filesSearched: searched)
 }
 
 /// What the results header says. Composed here for the reason `baseSummary` is: a sentence the
