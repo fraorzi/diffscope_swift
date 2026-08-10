@@ -1644,19 +1644,56 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let identical = differing("raster-identical-bytes-differ", "png")
         // The same file with a square moved two units: the pass must find it.
         let moved = differing("raster-resize", "png")
+
+        // The packaged bundle is run from wherever the tester put it, and the corpus is in the
+        // checkout — so this arm says SKIPPED **with the reason** rather than failing, the way the
+        // keyboard walk does without its tree. `./Scripts/package.sh` runs the selftest as its last
+        // gate, and a gate that fails for being packaged is a gate nobody can pass.
+        guard identical != nil, moved != nil else {
+            FileHandle.standardError.write(Data(
+                ("SELFTEST rendered-fixtures=SKIPPED no fixtures/ beside the binary — "
+                    + "run the selftest from the checkout and the §4.7a pairs are measured\n").utf8))
+            renderedBoundarySelftest()
+            return
+        }
         let fixturesOK = identical == 0 && (moved ?? 0) > 0
         FileHandle.standardError.write(Data(
             ("SELFTEST rendered-fixtures=\(fixturesOK ? "OK" : "MISMATCH") "
                 + "identical-render=\(identical.map(String.init) ?? "undecodable") "
                 + "resize=\(moved.map(String.init) ?? "undecodable")\n").utf8))
         guard fixturesOK else { exit(52) }
+        renderedBoundarySelftest()
+    }
+
+    /// The `<img>` boundary, asked of the real hostile fixture where there is one and of an
+    /// equivalent built here where there is not — the control is the point, and it must survive
+    /// being packaged.
+    private func renderedBoundarySelftest() {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("fixtures")
+        func bytes(_ case_: String, _ file: String) -> [UInt8] {
+            [UInt8]((try? Data(contentsOf: root.appendingPathComponent("\(case_)/\(file)"))) ?? Data())
+        }
 
         // The boundary control. The SVG carries a script, an onload handler and two remote
         // references; it is drawn through an `<img>` from a `data:` URL, where none of them can
         // run. A marker the file would set is asked for afterwards.
-        let hostile = bytes("svg-hostile", "after.svg")
+        let fromCorpus = bytes("svg-hostile", "after.svg")
+        // Built here when the corpus is not beside the binary: an SVG carrying a script, an event
+        // handler and a remote reference is four lines, and the control is worth more than the
+        // convenience of reading it from disk.
+        let inline = Array("""
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="16" height="16" \
+            onload="globalThis.__diffscopeHostile = 1">
+              <script type="text/javascript">globalThis.__diffscopeHostile = 1;</script>
+              <image href="https://example.invalid/pixel.png" x="0" y="0" width="1" height="1"/>
+              <rect width="16" height="16" fill="#282860"/>
+            </svg>
+            """.utf8)
+        let hostile = fromCorpus.isEmpty ? inline : fromCorpus
+        let before = bytes("svg-hostile", "before.svg")
         showRendered(file: ChangedFile(path: "public/hostile.svg", originalPath: nil, kind: .modified),
-                     oldBytes: bytes("svg-hostile", "before.svg"), newBytes: hostile,
+                     oldBytes: before.isEmpty ? inline : before, newBytes: hostile,
                      kind: .textThatRenders(format: "SVG"))
         DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
             self.webView.evaluateJavaScript("String(globalThis.__diffscopeHostile)") { value, _ in

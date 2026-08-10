@@ -57,13 +57,19 @@ If it finds nothing it says so, and says why.
 Three columns, a bar of grey pills at the top of the diff, and a status line.
 
 - **Left:** your repositories. `3△` means three changed files; `↑5` means five commits ahead of the base branch. **`↑?` means it could not work the number out** — it says unknown rather than showing a zero it does not believe.
-- **Middle:** the changed files, grouped by folder. `mod` modified, `add` added, `del` deleted, `ren` renamed, `unt` untracked. A `raw`, `bin` or `big` tag means that file will not get the clever treatment — unsupported file type, binary, or too large.
-- **Right:** the diff. Old on the left, new on the right.
+- **Middle:** the changed files, grouped by folder. The glyph says what happened — `+` added, `−` deleted, `→` renamed, a pencil modified — and the numbers on the right are lines gained and lost, or the word `binary` where a line count would mean nothing. A `raw`, `bin` or `big` tag means that file will not get the clever treatment — unsupported file type, binary, or too large.
+- **Right:** the diff, in one column. Removed and added lines carry `−` and `+` in their own narrow column between the two line numbers; the colours only reinforce that. **⌥⌘→ switches to two columns** — old on the left, new on the right — which is the better shape for a large restructure.
 - **The grey pills** are the app telling you how much it trusts what it is showing. Worth reading; see below.
 
-**Three view modes** — ⌘1 Raw, ⌘2 Structural, ⌘3 Expanded. Raw is a plain textual diff with no cleverness, and it is the control: if you doubt what Structural shows you, switch to Raw and compare. **All three show the same differences.** Structural groups and labels them; it never removes any.
+**Three view modes** — ⌘1 Structural, ⌘2 Expanded, ⌘3 Raw. Raw is a plain textual diff with no cleverness, and it is the control: if you doubt what Structural shows you, switch to Raw and compare. **All three show the same differences.** Structural groups and labels them; it never removes any.
 
 **Four scopes** — ⇧⌘1 to ⇧⌘4: everything since your last commit, only unstaged, only staged, or your whole branch against where it split off. Scopes that cannot work for a repository are greyed out, and hovering one says why.
+
+**Three lenses** — ⌃⌘D the diff, ⌃⌘B blame, ⌃⌘H history. Same file, same window: what changes is the question. In History, **clicking a commit compares it with your working tree**, and clicking a second compares the two with each other; clicking a scope pill puts you back.
+
+**Search** — ⌘F over the changed files, ⇧⌘F over the whole worktree. The results appear in the pane grouped by file; ⌘G and ⇧⌘G move between them and ⌘⏎ opens the one you are on.
+
+**Collapsing** — ⌃⌘1 shrinks the repository list to a rail, ⌃⌘2 the file list to a spine, ⌃⌘0 both. Neither disappears: the rail keeps three letters and a dot, the spine keeps a glyph and a bar.
 
 **Keyboard:** the modifier says what you are moving through — ⌘↑ / ⌘↓ between changes, ⌥↑ / ⌥↓ between files, ⇧⌘↑ / ⇧⌘↓ between repositories. ⌘E expands anything collapsed, ↑ and ↓ also move in a list once it has focus (⌥⌘2), ⌘⏎ opens the current file in your editor, and **⌘R shows the region you are standing on in Raw and brings you back to it**. Everything is in the menu bar too; nothing in the app needs the mouse.
 
@@ -108,8 +114,8 @@ An hour, roughly in this order.
 2. **The case the app exists for:** find or make a change that removes a wrapper element around several lines. Compare ⌘2 Structural with ⌘1 Raw. That difference is the whole product.
 3. **Run a formatter on a file** — Prettier, or reindent it. Those changes should be grouped as formatting, with a count, and expandable.
 4. **Compare the three modes on the same file.** Look specifically for something visible in Raw and missing in Structural.
-5. **Walk a long file with ⌘N.** Does it stop at every change, or skip one? On a big working tree, walk the whole file list from the keyboard and tell us if anything makes you reach for the mouse — that is a claim we make and would like broken.
-6. **Open a non-code file** — a `.css`, a `.md`, an image. Each should explain itself rather than looking broken.
+5. **Walk a long file with ⌘↓.** Does it stop at every change, or skip one? On a big working tree, walk the whole file list from the keyboard and tell us if anything makes you reach for the mouse — that is a claim we make and would like broken.
+6. **Open a non-code file** — a `.css`, a `.md`, an image, an SVG. Each should explain itself rather than looking broken. An image or an SVG is **compared by being drawn**: Before / After, Blend, Split and a pixel comparison, with the modes that cannot work here disabled and saying why. The one worth checking is an image you re-exported without changing: it should say *the two files render identically — 0 pixels differ, the bytes differ* rather than showing you two identical pictures and leaving you to wonder.
 7. **Edit a file in your editor while the app is open on it.** It should update within a second or two, and you should not lose your scroll position.
 8. **Open the terminal with ⌃`** — this is the newest part and the least tested. Things worth trying, roughly in order of how much they would annoy you if they were wrong:
    - Type a command with a long path or a quoted string and **edit it with the keys you actually use**: Option+←/→ by word, Cmd+←/→ to the ends of the line, Option+Delete to rub out a word. That is the reason the terminal exists.
@@ -118,6 +124,8 @@ An hour, roughly in this order.
    - Run `vim` or `top`, and leave again.
    - Change a file from the terminal and watch whether the diff beside it notices.
    - If a prompt appears that the input line handles badly — an `ssh` password, a `sudo` prompt — **⌥⌘R** hands every key straight to the shell. If you need that, say so: it means we guessed wrong about where the prompt was.
+   - **⌥⌘T opens a second shell** in the same drawer, ⌃⌘] and ⌃⌘[ move between them and ⌃⌘W closes one. Each tab says where *its own* shell is; a dotted underline on a tab means that shell is not in the repository you are looking at. Run something long in one and keep working in the other — the two scrollbacks should never mix.
+9. **Point it at your own editor** — ⌘, opens Settings, where the command is a template with `{file}` and `{line}`. Break it on purpose: the failure must be visible rather than nothing happening, and Settings remembers the last attempt.
 
 **Using a different editor?** ⌘O defaults to WebStorm. To use another, launch the app from Terminal with your own command:
 
