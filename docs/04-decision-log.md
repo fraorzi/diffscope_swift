@@ -2273,7 +2273,7 @@ Reopen if the application is ever sandboxed: OQ-035 notes that each root would t
 
 ## DEC-053 — The built-in terminal enters version one, and what it costs the read-only sentence
 
-- **Date:** 2026-08-01 · **Topic:** Resolves OQ-055 in favour of building; amends DEC-003 and `18-version-one-scope.md`; leaves DEC-028 untouched · **Status:** Accepted
+- **Date:** 2026-08-01 · **Topic:** Resolves OQ-055 in favour of building; amends DEC-003 and `18-version-one-scope.md`; leaves DEC-028 untouched · **Status:** Accepted — **amended 2026-08-10 by DEC-067**, which admits several sessions in tabs and moves the drawer across the window. Everything below still holds of each session; *one* was the smallest thing that could answer T0's question, never the point. Left as written.
 - **Decided by:** the product owner, 2026-07-31. Gated on T0, measured 2026-08-01.
 
 ### Context
@@ -2808,3 +2808,46 @@ The set is closed deliberately at both ends: the four terminal values (`--ds-ter
 ### Revisit trigger
 
 Reopen if a token is needed that has no single value — a gradient that must be composed per surface, or a colour that depends on the file's state. The table's shape assumes one value per name per appearance.
+
+---
+
+## DEC-067 — The terminal holds several sessions, in tabs, and the drawer spans the window
+
+- **Date:** 2026-08-10 · **Topic:** DEC-053's one session and DEC-054's single grid; the adopted design's terminal drawer · **Status:** Accepted · **Amends DEC-053**
+
+### Context
+
+DEC-053 built one terminal because one was what the feature needed to prove: that a prompt could be detected, that a keystroke could be routed, that shell integration could avoid writing to the user's files. All three held, and the number *one* was never the point — it was the smallest thing that could answer the question.
+
+The adopted design draws the terminal as a **drawer across the window** with a **tab strip**, and the product owner asked for it. Two claims are inside that request and they are separable:
+
+- **Several sessions.** A reader running a test suite in one shell and `git log` in another is the ordinary case, and today the second command waits for the first.
+- **Full width.** The drawer sits under the diff pane today, which means a command's output is wrapped to a third of the window while two lists nobody is reading keep their space.
+
+### Options considered
+
+1. **Several sessions, one grid, switched by replaying scrollback.** One xterm instance, and the pane replays a buffer when a tab is selected. Needs a per-session byte log, capped, and a replay that reproduces cursor state — which a byte log does not carry.
+2. **Several sessions, one xterm instance each, hidden and shown.** The emulator keeps its own scrollback and cursor per tab, because that is what an emulator is for. Costs memory per tab and nothing else.
+3. **Several windows.** Rejected by DEC-005, which is about the diff and applies here for the same reason: one window, no second place to be.
+4. **Keep one session.** The product owner asked for tabs; recommending it once is enough.
+
+### Final decision
+
+**Option 2, and the drawer moves below the three panes.**
+
+- **One `TerminalSession` per tab, one xterm instance per tab**, all in the same webview. The emulator holds scrollback, cursor and alternate-screen state per tab because those are the emulator's business; the shell holds everything else. Switching a tab shows a grid that was never asked to forget anything.
+- **A tab is a shell, and it says where it is.** The strip shows the shell's name and the directory *it* reports (OSC 7), not the one the reader selected — which is the same distinction DEC-056 drew for the single pane, now visible per tab.
+- **Following the selection follows the active tab only.** A reader who changes repository is telling the shell they are looking at, not four of them. The others keep their directories, and the divergence marking (DEC-056) is what says so when the reader comes back.
+- **Everything DEC-053 fixed stays fixed.** Each session is spawned exactly as the first one is — the same generated `ZDOTDIR`, the same `add-zsh-hook`, the same argv — so shell integration still writes to nothing of the user's, and DEC-028 is untouched: what runs is what the user typed into *that* tab.
+- **Spawning stays lazy.** DEC-053 measured ~340 ms to a prompt and one leaked `ssh-agent` per interactive shell. A tab starts its shell when it is created, not when the drawer opens, and the drawer still opens with one.
+
+### Consequences
+
+- **`TerminalPane` stops being a session and becomes a list of them.** The single-session API it exposes today — `session`, `start`, `stop`, `toggleForcedRaw` — becomes *the active session's*, and the selftest arms keep working because they are arms about one shell.
+- **The window's layout changes.** The drawer becomes a sibling of the three-pane split rather than of the diff, so the lists compress with everything else. `12-…` §1's diagram is redrawn.
+- **Memory grows per tab** — an xterm instance with a 10,000-line scrollback is the cost, and it is the same cost the reader chose when they opened a second shell.
+- **Four leaked `ssh-agent`s instead of one**, for four tabs, and that is the user's shell configuration rather than this application's doing. Worth stating because DEC-053 counted them.
+
+### Revisit trigger
+
+Reopen if tabs turn out to want their own working directories *persisted* across launches — that is configuration, and DEC-052's file would have to carry it. Also reopen if the drawer wants to be a panel that detaches, which is DEC-005's territory rather than this entry's.

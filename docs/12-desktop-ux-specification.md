@@ -17,7 +17,7 @@ One window (DEC-005). Two persistent regions plus a transient one:
 │                 │ Changed-file list │ Diff view        │
 │                 │ (grouped, flat)   │ (unified default)│
 ├─────────────────┴──────────────────────────────────────┤
-│ Terminal drawer (⌃`), full width, panes compress       │
+│ Terminal drawer (⌃`) — full window width, tabs (DEC-067)│
 └────────────────────────────────────────────────────────┘
 ```
 

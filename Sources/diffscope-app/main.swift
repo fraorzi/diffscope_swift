@@ -324,22 +324,19 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         webView.translatesAutoresizingMaskIntoConstraints = false
         webView.widthAnchor.constraint(equalTo: rightStack.widthAnchor, constant: -2 * Theme.space4).isActive = true
 
-        // The terminal sits under the diff rather than under the whole window: the lists stay
-        // visible while a command runs, which is the arrangement T3 depends on — a command changes
-        // the working tree and the diff beside it refreshes.
+        // The terminal spans the window (DEC-067). It sat under the diff until then, which wrapped
+        // a command's output to a third of the width while two lists nobody was reading kept
+        // theirs. T3's arrangement is unchanged in the part that mattered: a command finishes, the
+        // sweep runs, and the lists beside it are still on screen.
         let terminalHost = terminal.webView!
         terminalHost.isHidden = true
-        let vertical = NSSplitView(frame: rightStack.frame)
-        terminalSplit = vertical
-        vertical.isVertical = false
-        vertical.dividerStyle = .thin
-        vertical.addArrangedSubview(rightStack)
-        vertical.addArrangedSubview(terminalHost)
         terminalHost.translatesAutoresizingMaskIntoConstraints = false
         let terminalHeight = terminalHost.heightAnchor.constraint(equalToConstant: Theme.terminalPaneHeight)
         terminalHeight.priority = NSLayoutConstraint.Priority(600)
         terminalHeight.isActive = true
         terminalHost.heightAnchor.constraint(greaterThanOrEqualToConstant: Theme.terminalPaneMinimumHeight).isActive = true
+
+        let vertical = rightStack
 
         let split = NSSplitView()
         splitView = split
@@ -380,17 +377,24 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         vertical.translatesAutoresizingMaskIntoConstraints = false
         vertical.widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.diffPaneMinimumWidth).isActive = true
 
+        let drawer = NSSplitView()
+        terminalSplit = drawer
+        drawer.isVertical = false
+        drawer.dividerStyle = .thin
+        drawer.addArrangedSubview(split)
+        drawer.addArrangedSubview(terminalHost)
+
         buildEmptyState()
         let container = NSView()
-        container.addSubview(split)
+        container.addSubview(drawer)
         container.addSubview(emptyState)
-        split.translatesAutoresizingMaskIntoConstraints = false
+        drawer.translatesAutoresizingMaskIntoConstraints = false
         emptyState.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            split.topAnchor.constraint(equalTo: container.topAnchor),
-            split.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            split.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            split.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            drawer.topAnchor.constraint(equalTo: container.topAnchor),
+            drawer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            drawer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            drawer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             emptyState.topAnchor.constraint(equalTo: container.topAnchor),
             emptyState.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             emptyState.leadingAnchor.constraint(equalTo: container.leadingAnchor),
