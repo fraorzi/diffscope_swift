@@ -15,6 +15,24 @@ public enum ComparisonScope: String, Sendable, CaseIterable {
         case .branchVsMergeBase: return "Branch vs merge-base"
         }
     }
+
+    /// The two sides, named. `11-…` §"Scopes" is the table this transcribes, and the adopted design
+    /// puts it on a row of its own under the scope control — because *which four scopes exist* and
+    /// *what this one is comparing* are different questions, and a reader who has just switched
+    /// scope is asking the second.
+    ///
+    /// Composed here rather than in the window, for the reason `baseSummary` is: a sentence the
+    /// interface assembles cannot be checked.
+    public var comparisonDescription: String {
+        switch self {
+        case .allLocalVsHead: return "HEAD ↔ working tree"
+        case .unstagedVsIndex: return "index ↔ working tree"
+        case .stagedVsHead: return "HEAD ↔ index"
+        // Scope 4 names its base and its age instead; `baseSummary` owns those words, and saying
+        // "merge-base ↔ working tree" here as well would be the same fact in two voices.
+        case .branchVsMergeBase: return "merge-base ↔ working tree"
+        }
+    }
 }
 
 public enum ScopeAvailability: Sendable, Equatable {

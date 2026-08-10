@@ -11,6 +11,12 @@ import WebKit
 enum PresentationMode: String, CaseIterable {
     case raw, structural, expanded
 
+    /// The order the control draws and the menu numbers: Structural, Expanded, Raw (DEC-065).
+    /// `allCases` keeps its declaration order because the menu's tags are indices into it and
+    /// `12-…` §5's mapping is written against it — the two orders are separate on purpose, and
+    /// this is the one a reader sees.
+    static let displayOrder: [PresentationMode] = [.structural, .expanded, .raw]
+
     var usesStructure: Bool { self != .raw }
     var title: String { rawValue.capitalized }
 }
@@ -73,6 +79,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var scopeControl: NSSegmentedControl!
     var modeControl: NSSegmentedControl!
     var statusLabel: NSTextField!
+    var comparisonLabel: NSTextField!
     /// The sentence stating which convention the uncommitted counts use (`12-…` §2).
     var conventionLabel: NSTextField!
     var rendererReady = false
@@ -189,11 +196,23 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         )
         scopeControl.selectedSegment = 0
 
+        // Structural first, because it is the default and the mode a reader returns to — and
+        // because the menu says ⌘1 Structural (DEC-065). A control whose first segment is Raw while
+        // the first digit selects Structural is two orders for one set of three things.
         modeControl = NSSegmentedControl(
-            labels: PresentationMode.allCases.map(\.title),
+            labels: PresentationMode.displayOrder.map(\.title),
             trackingMode: .selectOne, target: self, action: #selector(modeChanged)
         )
-        modeControl.selectedSegment = PresentationMode.allCases.firstIndex(of: state.mode) ?? 0
+        modeControl.selectedSegment = PresentationMode.displayOrder.firstIndex(of: state.mode) ?? 0
+
+        // The base row (`12-…` §3, the adopted design). Under the scope control, always: the
+        // control says which four scopes exist, and this says what the chosen one is comparing —
+        // for scope 4, which ref and how old its newest commit is, the only staleness signal there
+        // is (DEC-010, DEC-011).
+        comparisonLabel = NSTextField(labelWithString: "")
+        comparisonLabel.font = Theme.font(Theme.textSizeTiny)
+        comparisonLabel.textColor = Theme.inkQuiet
+        comparisonLabel.lineBreakMode = .byTruncatingMiddle
 
         statusLabel = NSTextField(labelWithString: "scanning…")
         statusLabel.font = Theme.font(Theme.textSizeSmall)
@@ -245,7 +264,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         controls.spacing = Theme.space6 - Theme.space2
 
         let rightStack = NSStackView(frame: NSRect(x: 0, y: 0, width: Theme.windowWidth - Theme.repositoryPaneWidth - Theme.filePaneWidth, height: Theme.windowHeight))
-        rightStack.setViews([controls, statusLabel, webView], in: .leading)
+        rightStack.setViews([controls, comparisonLabel, statusLabel, webView], in: .leading)
         rightStack.orientation = .vertical
         rightStack.alignment = .leading
         rightStack.spacing = Theme.space3
@@ -2082,7 +2101,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     }
 
     @objc private func selectMode(_ sender: NSMenuItem) {
-        modeControl.selectedSegment = sender.tag
+        // The menu's tag is an index into `allCases`; the control is drawn in `displayOrder`.
+        modeControl.selectedSegment = PresentationMode.displayOrder
+            .firstIndex(of: PresentationMode.allCases[sender.tag]) ?? 0
         modeChanged()
     }
 
@@ -2219,7 +2240,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// rendered. The delay is a render, not a guess: `showDiff` reads the pair off the main thread.
     private func apply(mode: PresentationMode, restoringStop stop: Int) {
         state.mode = mode
-        modeControl.selectedSegment = PresentationMode.allCases.firstIndex(of: mode) ?? 0
+        modeControl.selectedSegment = PresentationMode.displayOrder.firstIndex(of: mode) ?? 0
         guard let file = state.selectedFile else { return }
         showDiff(for: file, restoringStop: stop >= 0 ? stop : nil)
     }
@@ -2551,7 +2572,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     }
 
     @objc private func modeChanged() {
-        state.mode = PresentationMode.allCases[modeControl.selectedSegment]
+        state.mode = PresentationMode.displayOrder[modeControl.selectedSegment]
         // Choosing a mode by hand ends the ⌥⌘V excursion: the reader has said where they want to
         // be, and a return key that took them somewhere else would be worse than none.
         rawRegionReturn = nil
@@ -2613,6 +2634,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // is invisible until pointed at, and a reader walking the window from the keyboard never
         // sees it. `12-…` §3 asks for the reason to be *stated*, so it goes on the line.
         let reasons = unavailable.isEmpty ? "" : " · unavailable: " + unavailable.joined(separator: ", ")
+        comparisonLabel.stringValue = state.scope == .branchVsMergeBase
+            ? baseSummary(ref: repository.baseRefUsed,
+                          chosenByUser: state.configuration.baseOverrides[repository.url.standardizedFileURL.path] != nil,
+                          committerDate: repository.baseRefCommitterDate)
+            : state.scope.comparisonDescription
         statusLabel.stringValue = "\(state.files.count) files · \(state.scope.title)\(ageText)\(reasons)"
     }
 

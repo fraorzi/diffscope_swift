@@ -391,6 +391,22 @@ func runScopeChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("an unknown age is said, not passed off as fresh",
                baseSummary(ref: "origin/main", chosenByUser: false, committerDate: nil, now: now)
                    == "base origin/main · newest-commit age unknown")
+        // The base row is one row and says one of two things: for scope 4 the ref and its age, and
+        // otherwise which two sides are being compared. Both are composed where they can be
+        // checked rather than assembled in the window.
+        report("each scope names its two sides",
+               ComparisonScope.allLocalVsHead.comparisonDescription == "HEAD ↔ working tree"
+                   && ComparisonScope.unstagedVsIndex.comparisonDescription == "index ↔ working tree"
+                   && ComparisonScope.stagedVsHead.comparisonDescription == "HEAD ↔ index")
+        report("and no two scopes describe the same comparison",
+               Set(ComparisonScope.allCases.map(\.comparisonDescription)).count
+                   == ComparisonScope.allCases.count)
+        let shell = (try? String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                                     .appendingPathComponent("Sources/diffscope-app/main.swift"),
+                                 encoding: .utf8)) ?? ""
+        report("the base row is drawn under the scope control rather than folded into the status line",
+               shell.contains("comparisonLabel.stringValue"))
+
         report("an unresolved base points at the way to fix it",
                baseSummary(ref: nil, chosenByUser: false, committerDate: nil, now: now)
                    .contains("choose one"))
