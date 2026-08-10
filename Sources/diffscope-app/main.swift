@@ -82,15 +82,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var repoTable: NSTableView!
     var fileTable: NSTableView!
     var webView: WKWebView!
-    var scopeControl: NSSegmentedControl!
-    var modeControl: NSSegmentedControl!
+    var scopeControl: PillControl!
+    var modeControl: PillControl!
     var statusLabel: NSTextField!
     var comparisonLabel: NSTextField!
     var titleBar: NSView!
     var statusBar: NSView!
     var titleRepositoryLabel: NSTextField!
     var titlePathLabel: NSTextField!
-    var lensControl: NSSegmentedControl!
+    var lensControl: PillControl!
     var preferencesWindow: NSWindow?
     var preferencesField: NSTextField?
     /// The three regions, as views that can carry a ring. Held rather than looked up, because
@@ -219,19 +219,17 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         repoTable = makeTable(identifier: "repo")
         fileTable = makeTable(identifier: "file")
 
-        scopeControl = NSSegmentedControl(
-            labels: ["All local", "Unstaged", "Staged", "vs base"],
-            trackingMode: .selectOne, target: self, action: #selector(scopeChanged)
-        )
+        scopeControl = PillControl(labels: ["All local", "Unstaged", "Staged", "vs base"])
+        scopeControl.target = self
+        scopeControl.action = #selector(scopeChanged)
         scopeControl.selectedSegment = 0
 
         // Structural first, because it is the default and the mode a reader returns to — and
         // because the menu says ⌘1 Structural (DEC-065). A control whose first segment is Raw while
         // the first digit selects Structural is two orders for one set of three things.
-        modeControl = NSSegmentedControl(
-            labels: PresentationMode.displayOrder.map(\.title),
-            trackingMode: .selectOne, target: self, action: #selector(modeChanged)
-        )
+        modeControl = PillControl(labels: PresentationMode.displayOrder.map(\.title))
+        modeControl.target = self
+        modeControl.action = #selector(modeChanged)
         modeControl.selectedSegment = PresentationMode.displayOrder.firstIndex(of: state.mode) ?? 0
 
         // The base row (`12-…` §3, the adopted design). Under the scope control, always: the
@@ -304,9 +302,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // header; it lives here instead because a control in the webview cannot act — the page
         // receives calls, it does not make them — and a control that looks clickable and is not is
         // worse than one in a different place.
-        lensControl = NSSegmentedControl(labels: ["Diff", "Blame", "History"],
-                                         trackingMode: .selectOne, target: self,
-                                         action: #selector(lensChanged))
+        lensControl = PillControl(labels: ["Diff", "Blame", "History"])
+        lensControl.target = self
+        lensControl.action = #selector(lensChanged)
         lensControl.selectedSegment = 0
 
         // A field, not a modal (DEC-062, the adopted design). ⌘F puts the caret here; ⇧⌘F does the
@@ -3459,18 +3457,20 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
         // The ahead-count, and the one chip in the window that is not a number: unknown is said,
         // never rendered as 0 (`12-…` §2). Dashed, because the difference has to survive greyscale.
-        let ahead = label(Theme.textSizeTiny, .regular,
-                          snapshot.aheadCount == nil ? Theme.ink : Theme.inkQuiet)
-        ahead.stringValue = snapshot.aheadCount.map { "↑\($0)" } ?? "↑ unknown"
+        let ahead = ChipView(text: snapshot.aheadCount.map { "↑\($0)" } ?? "↑ unknown",
+                             dashed: snapshot.aheadCount == nil,
+                             emphasis: snapshot.aheadCount == nil)
 
         let path = label(Theme.textSizeTiny, .regular, Theme.inkFaint)
         path.stringValue = snapshot.url.path.replacingOccurrences(
             of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
         path.lineBreakMode = .byTruncatingMiddle
 
-        let top = NSStackView(views: [title, head, NSView(), files, ahead])
+        let top = NSStackView(views: [title, head, spacerView(), files, ahead])
         top.orientation = .horizontal
-        top.alignment = .firstBaseline
+        // Centred, not baseline-aligned: a chip is a drawn view with no baseline to align to, and
+        // a stack asked for one puts it on a line of its own.
+        top.alignment = .centerY
         top.spacing = Theme.space2
         let stack = NSStackView(views: [top, path])
         stack.orientation = .vertical
@@ -3525,9 +3525,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             name.stringValue = display
             name.lineBreakMode = .byTruncatingHead
 
-            let note = label(Theme.textSizeTiny, .regular, Theme.inkQuiet)
-            note.stringValue = annotation?.badge ?? ""
-            note.setContentCompressionResistancePriority(.required, for: .horizontal)
+            // The note is a chip, not a word in the middle of a row: it is a different kind of
+            // fact from the path beside it, and the design draws it as one.
+            let note: NSView = annotation.map { ChipView(text: $0.badge) } ?? spacerView()
 
             // Counts on the right, where the eye can compare them down the column instead of
             // hunting for them at the end of paths of different lengths.
@@ -3538,7 +3538,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
             let stack = NSStackView(views: [glyph, name, spacerView(), note, counts])
             stack.orientation = .horizontal
-            stack.alignment = .firstBaseline
+            stack.alignment = .centerY
             stack.spacing = Theme.space2
             stack.translatesAutoresizingMaskIntoConstraints = false
             cell.addSubview(stack)

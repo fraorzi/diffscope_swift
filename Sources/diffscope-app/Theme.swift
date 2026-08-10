@@ -101,6 +101,24 @@ enum Theme {
     static let statusBarHeight: CGFloat = 24
     static let trafficLightInset: CGFloat = 78
 
+    /// The segmented pills (the adopted design): a trough, one raised segment in it, and a dashed
+    /// outline where a segment cannot be chosen.
+    ///
+    /// `--ds-control-trough`, `--ds-control-thumb`, `--ds-control-border`.
+    static let controlTrough = dynamic(dark: hex(0x1a1a1e), light: hex(0xe8e8ec))
+    static let controlThumb = dynamic(dark: hex(0x33333a), light: hex(0xffffff))
+    static let controlBorder = dynamic(dark: hex(0x3a3a42), light: hex(0xd0d0d8))
+    static let pillHeight: CGFloat = 24
+    static let pillRadius: CGFloat = 7
+    static let pillInset: CGFloat = 2
+    static let pillPadding: CGFloat = 12
+
+    /// A chip in a row: the ahead-count, a file's note. `--ds-border-strong` outlines the dashed
+    /// one, which is the *unknown* count and has to read as a different kind of thing.
+    static let borderStrong = dynamic(dark: hex(0x6c6c76), light: hex(0x8f8f99))
+    static let chipHeight: CGFloat = 15
+    static let chipRadius: CGFloat = 4
+
     /// Row heights. Not tokens in the CSS, because the diff has no rows. The repository row is
     /// two lines since the adopted design: name and head state above, path below — a path is what
     /// tells two repositories of the same name apart (DEC-037), so it is not a tooltip.
