@@ -966,3 +966,40 @@ Cosmetic, and each an hour or two:
 - Preferences as a window rather than an alert.
 - `--ds-focus-ring` on the focused region: the token is mirrored and nothing draws it.
 - The empty state's two buttons are plain; the design gives them a rim.
+
+## Step 41 — M9-B: the drobiazgi, and two of the three grube
+
+- [x] Hunk headers `@@ −12,4 +12,5 @@` above each merged block in unified
+- [x] Blend and Split get a slider each, ends labelled, value in words — 50% was the one setting
+      that hides a small difference under both images at once
+- [x] **Horizontal scrolling is linked**, which `12-…` §5.4 asked for and only the vertical half of
+      which had ever been wired, plus the one track the two panes share
+- [x] `--ds-focus-ring` drawn on the focused region — the token had been mirrored and used by
+      nothing since the chrome landed
+- [x] Settings as a window rather than an alert
+- [x] History: one picked commit compares against the working tree, two compare each other; the
+      page can post messages now, and what arrives is validated as input
+- [x] Search results in the pane, grouped by file, ⌘G / ⇧⌘G on the marker, ⌘⏎ on the hit
+
+### Step 41 — what was found rather than built
+
+**Linked horizontal scrolling was a specification line with nothing behind it.** §5.4 says the
+panes' horizontal scrolling is linked; `link()` synced `scrollTop` and nothing else, and had since
+M3. On a minified file — the case that section was written about — the panes drifted apart and the
+reader was comparing column 200 of one side with column 40 of the other, with nothing on screen
+saying so. Three milestones of "the spec says we do this".
+
+**The focus ring was a token nobody drew.** `--ds-focus-ring` passed the mirror check the day it
+was added, because that check asks whether `Theme.swift` *names* the token — which it did. Naming
+is not drawing. The chrome is where the token checks cannot see.
+
+### Not done, and why
+
+**The empty state's buttons keep the system bezel.** The design gives them a metal rim; an
+`NSButton` drawn by hand loses the key-equivalent ring, the pressed state and the focus behaviour
+that come with the standard one, and the empty state is the first screen a stranger meets. A rim is
+not worth those.
+
+**The terminal drawer is still one session under the diff pane.** Tabs and a full-width drawer need
+DEC-053 reopened — it says one session — so it belongs in the decision log before it belongs in
+`TerminalPane`.
