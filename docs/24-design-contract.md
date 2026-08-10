@@ -71,6 +71,7 @@ Classes marked **load-bearing** carry a difference. They may be restyled and may
 | `#notices` | The bar carrying every notice — INV-4 made visible | **Yes** |
 | `ds-notice` | An inline notice inside the document | **Yes** |
 | `#unrenderable` | Shown when the content is not text that can be displayed, and why | **Yes** |
+| `ds-hunk` | `@@ −12,4 +12,5 @@` above each change block in unified | No — orientation, not a difference. After a fold, the number columns say where each *line* is and this says where the *change* is |
 | `ds-sign` | The `+` / `−` column in unified (DEC-059) | **Yes.** With no panes, this is the only signal of direction that survives greyscale |
 | `ds-line-add`, `ds-line-del` | Direction as a tint behind the line | No — they *reinforce* `ds-sign` and may be removed. Removing the sign column is what the rule above forbids |
 | `#unified` | The one-column layout, and the default (DEC-059) | No, as layout |
@@ -111,6 +112,7 @@ An image or an SVG is compared by being drawn, and the drawing is a surface with
 | `ds-mode-off` | A mode unavailable here, **with its reason beside it** | **Yes** — disabled and stated, never hidden |
 | `ds-render-summary` | What the picture cannot say: dimensions, bytes, differing pixels | **Yes.** This is where "renders identically, bytes differ" lives |
 | `ds-render-stage`, `ds-render-panel`, `ds-render-overlay` | Layout of the stage | No |
+| `ds-render-slider`, `ds-render-divider` | Blend's opacity and Split's position | No — but the slider is how both are reachable from the keyboard, and a divider that only drags is a control DEC-016 does not allow |
 | `ds-render-label` | Before / After, and "no counterpart on this side" | **Yes** |
 | `ds-checker` | Transparency behind the image | **Yes** — an alpha change that reads as a background change is a hidden difference |
 | `ds-pixel-mask` | Where the pixels differ, drawn by the shell | **Yes**, and outlined as well as filled: never hue alone |

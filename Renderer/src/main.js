@@ -284,6 +284,10 @@ let layout = "split"; // the renderer's default; the shell asks for unified at l
 // only reinforces it (DEC-035).
 let unifiedLines = [];
 let unifiedRuns = { old: [], new: [] };
+/// One entry per merged change block: where it starts in the composed document, and the line
+/// ranges it covers on each side. A hunk header is the answer to *where am I* in a file that has
+/// been folded and interleaved — the two number columns say it per line, and this says it once.
+let unifiedHunks = [];
 
 function lineStartAt(text, index) { return text.lastIndexOf("\n", index - 1) + 1; }
 function lineEndAt(text, index) {
@@ -354,14 +358,20 @@ function buildUnified(model) {
     }
   }
 
+  const hunks = [];
   let oldCursor = 0;
   let newCursor = 0;
   for (const block of unifiedBlocks(model, oldText, newText)) {
     // Context is emitted from the old side only: between two stops the two sides are byte-equal,
     // which is what makes one column able to stand for both.
     emit("old", oldCursor, block.oldStart, " ");
+    const at = doc.length;
+    const oldFirst = oldNumber;
+    const newFirst = newNumber;
     emit("old", block.oldStart, block.oldEnd, "−");
     emit("new", block.newStart, block.newEnd, "+");
+    hunks.push({ at, oldFirst, oldCount: oldNumber - oldFirst,
+                 newFirst, newCount: newNumber - newFirst });
     oldCursor = block.oldEnd;
     newCursor = block.newEnd;
   }
@@ -369,6 +379,7 @@ function buildUnified(model) {
 
   unifiedLines = meta;
   unifiedRuns = runs;
+  unifiedHunks = hunks;
   return doc;
 }
 
@@ -388,6 +399,20 @@ function projectSegments(segments, runs) {
     }
   }
   return out.sort((a, b) => a.start - b.start || a.end - b.end);
+}
+
+/// `@@ −12,4 +12,5` — the form every reader of a unified diff already knows, and the reason it is
+/// worth keeping: after a fold, the two number columns say where each *line* is and nothing says
+/// where the *change* is.
+class HunkWidget extends WidgetType {
+  constructor(text) { super(); this.text = text; }
+  eq(other) { return other.text === this.text; }
+  toDOM() {
+    const el = document.createElement("div");
+    el.className = "ds-hunk";
+    el.textContent = this.text;
+    return el;
+  }
 }
 
 class SignMarker extends GutterMarker {
@@ -448,6 +473,12 @@ function makeUnifiedPane(parent) {
 /// already there, never carrying the meaning by itself (DEC-035).
 function directionDecorations(state) {
   const items = [];
+  for (const hunk of unifiedHunks) {
+    if (hunk.at > state.doc.length) continue;
+    const text = `@@ −${hunk.oldFirst},${hunk.oldCount} +${hunk.newFirst},${hunk.newCount} @@`;
+    items.push({ from: hunk.at,
+                 deco: Decoration.widget({ widget: new HunkWidget(text), block: true, side: -1 }) });
+  }
   for (let number = 1; number <= state.doc.lines; number += 1) {
     const meta = unifiedLines[number - 1];
     if (!meta || meta.sign === " ") continue;
@@ -602,6 +633,38 @@ let lastRendered = null;
 /// The rendered comparison (DEC-063). The shell has already decoded both sides, measured them and
 /// counted the differing pixels — this draws what it was told and computes nothing, which is why
 /// the sentence above the stage can be checked in Swift before it is ever displayed.
+let blendAmount = 0.5;
+let splitAt = 0.5;
+
+/// One control for both modes: a range input, its two ends labelled, and the value in words. The
+/// design draws a draggable divider on the image itself; a slider does the same job from the
+/// keyboard as well, which the divider alone would not (DEC-016).
+function slider(leftLabel, rightLabel, value, onChange, describe) {
+  const row = document.createElement("div");
+  row.className = "ds-render-slider";
+  const left = document.createElement("span");
+  left.className = "ds-render-label";
+  left.textContent = leftLabel;
+  const input = document.createElement("input");
+  input.type = "range";
+  input.min = "0";
+  input.max = "100";
+  input.value = String(Math.round(value * 100));
+  const right = document.createElement("span");
+  right.className = "ds-render-label";
+  right.textContent = rightLabel;
+  const readout = document.createElement("span");
+  readout.className = "ds-render-label";
+  readout.textContent = describe(value);
+  input.addEventListener("input", () => {
+    const amount = Number(input.value) / 100;
+    onChange(amount);
+    readout.textContent = describe(amount);
+  });
+  row.append(left, input, right, readout);
+  return row;
+}
+
 window.diffscopeShowRendered = function (json) {
   const payload = typeof json === "string" ? JSON.parse(json) : json;
   const host = document.getElementById("rendered");
@@ -640,6 +703,7 @@ window.diffscopeShowRendered = function (json) {
 
   function draw() {
     stage.replaceChildren();
+    stage.dataset.mode = mode;
     if (mode === "sidebyside") {
       stage.append(panel("◀ Before", payload.oldSrc), panel("▶ After", payload.newSrc));
       return;
@@ -647,25 +711,43 @@ window.diffscopeShowRendered = function (json) {
     const frame = document.createElement("div");
     frame.className = "ds-checker";
     if (mode === "blend") {
+      // A slider rather than a fixed half: the useful position depends on what changed, and half
+      // is the one setting that hides a small difference under both images at once.
       const before = document.createElement("img");
       before.src = payload.oldSrc;
       const after = document.createElement("img");
       after.src = payload.newSrc;
-      after.style.opacity = "0.5";
+      after.style.opacity = String(blendAmount);
       const overlay = document.createElement("div");
       overlay.className = "ds-render-overlay";
       overlay.appendChild(after);
       frame.append(before, overlay);
+      stage.appendChild(frame);
+      stage.appendChild(slider("Before", "After", blendAmount, value => {
+        blendAmount = value;
+        after.style.opacity = String(value);
+      }, amount => Math.round(amount * 100) + "% after"));
+      return;
     } else if (mode === "split") {
       const before = document.createElement("img");
       before.src = payload.oldSrc;
       const after = document.createElement("img");
       after.src = payload.newSrc;
-      after.style.clipPath = "inset(0 0 0 50%)";
+      after.style.clipPath = `inset(0 0 0 ${splitAt * 100}%)`;
       const overlay = document.createElement("div");
       overlay.className = "ds-render-overlay";
       overlay.appendChild(after);
-      frame.append(before, overlay);
+      const divider = document.createElement("div");
+      divider.className = "ds-render-divider";
+      divider.style.left = `${splitAt * 100}%`;
+      frame.append(before, overlay, divider);
+      stage.appendChild(frame);
+      stage.appendChild(slider("◀ Before", "After ▶", splitAt, value => {
+        splitAt = value;
+        after.style.clipPath = `inset(0 0 0 ${value * 100}%)`;
+        divider.style.left = `${value * 100}%`;
+      }, amount => Math.round(amount * 100) + "%"));
+      return;
     } else if (mode === "pixel") {
       const base = document.createElement("img");
       base.src = payload.newSrc;

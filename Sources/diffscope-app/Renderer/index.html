@@ -57,6 +57,13 @@
                        border-bottom: var(--ds-hairline-width) solid var(--ds-border); }
   .ds-render-stage { flex: 1; min-height: 0; display: flex; gap: var(--ds-space-4);
                      padding: var(--ds-space-4); }
+  /* Blend and Split stack their control under the image; Side by side is two columns. */
+  .ds-render-stage[data-mode="blend"], .ds-render-stage[data-mode="split"],
+  .ds-render-stage[data-mode="pixel"] { flex-direction: column; }
+  .ds-render-slider { flex: none; display: flex; gap: var(--ds-space-3); align-items: center; }
+  .ds-render-slider input { flex: 1; accent-color: var(--ds-mark); }
+  .ds-render-divider { position: absolute; top: 0; bottom: 0; width: var(--ds-hairline-width);
+                       background: var(--ds-mark); }
   .ds-render-panel { flex: 1; min-width: 0; display: flex; flex-direction: column;
                      gap: var(--ds-space-2); }
   .ds-render-label { color: var(--ds-dim); font-size: var(--ds-text-size-small); }
@@ -176,6 +183,13 @@
   /* The sign column: `+` and `−`, the shape that tells added from removed where there are no
      panes to do it. Load-bearing (`24-…` §3) — in unified this is the only part of the
      distinction that survives greyscale, so the tints below only reinforce it. */
+  /* The hunk header: where the *change* is, once, above a block whose lines each say where they
+     are. Restyle it freely — it is orientation, not a difference. */
+  .ds-hunk { padding: var(--ds-space-1) var(--ds-space-4); color: var(--ds-dim);
+             background: var(--ds-fold);
+             border-top: var(--ds-hairline-width) solid var(--ds-border);
+             border-bottom: var(--ds-hairline-width) solid var(--ds-border); }
+
   .ds-sign { display: inline-block; width: var(--ds-space-6);
              text-align: center; color: var(--ds-mark);
              font-weight: var(--ds-weight-emphasis); }
