@@ -934,3 +934,35 @@ most easily hides behind.
 
 The over-budget frame's size is read from its IHDR rather than from its note. A fixture that claims
 to exceed the budget and does not would make the refusal untestable while looking tested.
+
+## Step 40 — M9-A: the chrome catches up with the design
+
+- [x] `diff --numstat` in the registry; `ChangeCount` with `binary` as a state, not a zero; eight
+      checks including the rename path expression git writes instead of a path
+- [x] Both lists drawn as columns; repository rows two lines; counts right-aligned
+- [x] Selection drawn from `--ds-row-selected` and `--ds-row-ring` — the system highlight carried it
+      in colour alone and repainted the row's text white
+- [x] The base row under the scope control: what *this* scope compares, or the base ref and the age
+      of its newest commit
+- [x] The mode control reordered to Structural / Expanded / Raw, so it agrees with ⌘1 / ⌘2 / ⌘3
+- [x] The file header in the diff pane — dim path, emphasised name
+- [x] The lens control beside scope and mode
+- [x] Search as a field in the window, with the scope in its placeholder
+
+### Step 40 — what is left before the window matches the design
+
+Substantial:
+- **Terminal drawer**: full window width with a tab strip and a cwd per tab. Today it is one session
+  under the diff pane.
+- **History → comparison**: selecting one commit to diff against the working tree, two against each
+  other. Today the lens lists commits and does not act on a selection.
+- **Search results**: grouped by file with the hit's line context, as drawn. Today they replace the
+  file list as plain rows.
+
+Cosmetic, and each an hour or two:
+- Blend's opacity slider and Split's draggable divider (both fixed at 50%).
+- Hunk headers (`@@ 12–25 · wrapper removed, children preserved`).
+- The linked horizontal scroll track under the pane.
+- Preferences as a window rather than an alert.
+- `--ds-focus-ring` on the focused region: the token is mirrored and nothing draws it.
+- The empty state's two buttons are plain; the design gives them a rim.
