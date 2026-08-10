@@ -179,6 +179,8 @@ The terminal writes three more — `terminal` (a command's output in the grid), 
 
 **Two photograph the lenses** — `blame` and `history` (DEC-061), taken against a real repository with a commit behind it and work in front of it, so blame has both committed lines and lines that are not committed yet. The thing to look at is the uncommitted marking: it is an edge, not a tint, because tint and texture belong to the change language and a second meaning for them is a meaning nobody can read.
 
+`empty` is the first screen a stranger meets (G3): no repositories, two buttons, and the one place in the window where a control is the subject rather than a tool. Its rim is drawn **around** a standard `NSButton` rather than replacing it — a hand-drawn button loses the key-equivalent ring, the pressed state and the focus behaviour, and none of those is worth a border.
+
 **One more photographs the chrome collapsed** — `collapsed`, both lists reduced to a rail and a spine with 63 files in the tree (DEC-060). It is the density check: the rail has room for three letters and the spine for a kind glyph and a bar, and whether either is legible at that size is a question only the picture answers. It found two defects that every check had passed: the panes drawing at twice their constrained width, and the file spine drawing nothing at all.
 
 **Those twelve photograph the webviews only.** `keyboard` is the exception and the one to look at for the chrome: since M8-J the selftest snapshots the **whole window** while walking a 63-file working tree, so the repository list, the file list, the group headers, the badges and the status line are all in one picture. Build the tree first:

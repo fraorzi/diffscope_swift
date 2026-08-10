@@ -1670,10 +1670,28 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                         ("SELFTEST svg-boundary=\(held ? "OK" : "MISMATCH") marker=\(marker) "
                             + "images=\(drawn)\n").utf8))
                     self.snapshot(named: "rendered-svg") {
-                        exit(held ? 0 : 53)
+                        guard held else { exit(53) }
+                        self.emptyStateSelftest()
                     }
                 }
             }
+        }
+    }
+
+    /// The first screen a stranger meets (DEC-036, G3), and the only one where a control is the
+    /// subject rather than a tool. Photographed because that is the only way to see whether the
+    /// rim reads at all — and because an empty state is reached by having *nothing*, which is a
+    /// configuration the selftest has to construct rather than wait for.
+    private func emptyStateSelftest() {
+        state.repositories = []
+        repoTable.reloadData()
+        showEmptyState(problems: [])
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            let shown = !self.emptyState.isHidden
+            FileHandle.standardError.write(Data(
+                ("SELFTEST empty-state=\(shown ? "OK" : "MISMATCH") "
+                    + "buttons carry the design's rim\n").utf8))
+            self.windowSnapshot(named: "empty") { exit(shown ? 0 : 56) }
         }
     }
 
@@ -1764,6 +1782,17 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         chooseFolder.keyEquivalent = "\r"
         let chooseRepository = NSButton(title: "Add a Single Repository…", target: self,
                                         action: #selector(addRepository))
+        // The rim goes *around* the system button, not instead of it. `bezelColor` tints the
+        // bezel the cell still draws, so the pressed state, the default-button pulse and the focus
+        // ring all survive; the layer adds the border the design asks for.
+        for button in [chooseFolder, chooseRepository] {
+            button.bezelColor = Theme.buttonFill
+            button.wantsLayer = true
+            button.layer?.cornerRadius = Theme.buttonRadius
+            button.layer?.borderWidth = Theme.buttonRimWidth
+            button.layer?.borderColor = Theme.buttonRim.cgColor
+        }
+
         let buttons = NSStackView(views: [chooseFolder, chooseRepository])
         buttons.orientation = .horizontal
         buttons.spacing = Theme.space6 - Theme.space2

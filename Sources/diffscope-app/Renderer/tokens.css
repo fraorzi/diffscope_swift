@@ -169,6 +169,10 @@
   --ds-row-ring: #cfcfd6;
   --ds-win-edge: rgba(0, 0, 0, .18);
   --ds-focus-ring: #0064d2;
+  /* The empty state's two buttons. The design gives them a rim and a fill of their own; they are
+   * chrome, so the values live here and are drawn by `Theme.swift`. */
+  --ds-button-rim: #b8b8c0;
+  --ds-button-fill: #ffffff;
   /* @endchrome */
 }
 
@@ -249,6 +253,8 @@
     --ds-row-ring: #34343a;
     --ds-win-edge: rgba(255, 255, 255, .14);
     --ds-focus-ring: #0a84ff;
+    --ds-button-rim: #6e6e78;
+    --ds-button-fill: #1c1c1f;
     /* @endchrome */
   }
 }

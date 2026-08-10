@@ -995,10 +995,12 @@ is not drawing. The chrome is where the token checks cannot see.
 
 ### Not done, and why
 
-**The empty state's buttons keep the system bezel.** The design gives them a metal rim; an
-`NSButton` drawn by hand loses the key-equivalent ring, the pressed state and the focus behaviour
-that come with the standard one, and the empty state is the first screen a stranger meets. A rim is
-not worth those.
+~~**The empty state's buttons keep the system bezel.**~~ **Done, 2026-08-10** — and the objection
+that deferred it was right about the *method*, not the outcome. The rim goes **around** a standard
+`NSButton` rather than replacing it: `bezelColor` tints the bezel the cell still draws and the
+layer adds the border, so the key-equivalent ring, the pressed state and the focus behaviour all
+survive. Three checks hold that shape, and the empty state is now photographed (`empty`) — the
+only way to see whether a 1 px rim reads at all.
 
 **The terminal drawer is still one session under the diff pane.** Tabs and a full-width drawer need
 DEC-053 reopened — it says one session — so it belongs in the decision log before it belongs in

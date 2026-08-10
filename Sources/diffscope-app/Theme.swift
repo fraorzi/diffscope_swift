@@ -71,6 +71,16 @@ enum Theme {
     static let focusRing = dynamic(dark: hex(0x0a84ff), light: hex(0x0064d2))
     static let focusRingWidth: CGFloat = 2
 
+    /// `--ds-button-rim` and `--ds-button-fill`. The empty state is the first screen a stranger
+    /// meets, and its two buttons are the only place in the window where a control is the subject
+    /// rather than a tool. The rim is drawn **around a standard `NSButton`** rather than replacing
+    /// it: a hand-drawn button loses the key-equivalent ring, the pressed state and the focus
+    /// behaviour that come free with the system's, and none of those is worth a border.
+    static let buttonRim = dynamic(dark: hex(0x6e6e78), light: hex(0xb8b8c0))
+    static let buttonFill = dynamic(dark: hex(0x1c1c1f), light: hex(0xffffff))
+    static let buttonRimWidth: CGFloat = 1
+    static let buttonRadius: CGFloat = 6
+
     /// `--ds-space-*`.
     static let space2: CGFloat = 4
     static let space3: CGFloat = 6

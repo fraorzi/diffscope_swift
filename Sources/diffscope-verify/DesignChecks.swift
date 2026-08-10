@@ -107,6 +107,25 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
                !theme.contains("--ds-invented-for-this-check"))
     }
 
+    print("\n=== the empty state's buttons carry a rim and keep their behaviour ===")
+    do {
+        let shell = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/main.swift"),
+                                 encoding: .utf8)) ?? ""
+        let theme = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/Theme.swift"),
+                                 encoding: .utf8)) ?? ""
+        report("the rim and the fill come from the token table",
+               theme.contains("--ds-button-rim") && theme.contains("--ds-button-fill")
+                   && shell.contains("Theme.buttonRim"))
+        // The reason this is a check rather than a comment: the obvious way to get the design's
+        // rim is to draw the button, and a drawn button loses the key-equivalent ring, the pressed
+        // state and the focus behaviour — on the first screen a stranger meets.
+        report("and they are still system buttons, not drawn ones",
+               !shell.contains("chooseFolder.isBordered = false")
+                   && shell.contains("button.bezelColor = Theme.buttonFill"))
+        report("the default button keeps its key equivalent",
+               shell.contains("chooseFolder.keyEquivalent = \"\\r\""))
+    }
+
     print("\n=== the two panes share one horizontal position (12-… §5.4) ===")
     do {
         let script = (try? String(contentsOf: rendererDir.appendingPathComponent("main.js"),
