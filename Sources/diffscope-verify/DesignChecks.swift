@@ -107,6 +107,22 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
                !theme.contains("--ds-invented-for-this-check"))
     }
 
+    print("\n=== the two panes share one horizontal position (12-… §5.4) ===")
+    do {
+        let script = (try? String(contentsOf: rendererDir.appendingPathComponent("main.js"),
+                                  encoding: .utf8)) ?? ""
+        // §5.4 asks for horizontal scrolling to be linked, and only the vertical half was wired
+        // for three milestones: on a minified file the panes drifted apart and the reader was
+        // comparing column 200 of one side with column 40 of the other.
+        report("scrolling one pane moves the other on both axes",
+               script.contains("b.scrollDOM.scrollTop = a.scrollDOM.scrollTop")
+                   && script.contains("b.scrollDOM.scrollLeft = a.scrollDOM.scrollLeft"))
+        report("and the shared position has a control that is not a scrollbar",
+               html.contains("id=\"track\"") && script.contains("function updateTrack"))
+        report("which is quietened rather than hidden when there is nothing to scroll",
+               html.contains("#track:disabled") && !html.contains("#track:disabled { display: none"))
+    }
+
     print("\n=== nothing animates without an off switch (DEC-064, 24-… §5) ===")
     do {
         // The rule this replaced was stronger and free: *nothing animates*, so reduced motion was

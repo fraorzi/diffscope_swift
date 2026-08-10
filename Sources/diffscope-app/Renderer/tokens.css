@@ -78,6 +78,10 @@
   --ds-checker-size: 16px;
   --ds-checker-half: 8px;
 
+  /* The horizontal track when there is nothing to scroll. Quietened, not hidden: a control that
+   * disappears when it is not needed teaches a reader it does not exist. */
+  --ds-track-idle: 0.35;
+
   /* ---- Motion (DEC-064) ---------------------------------------------------
    * Durations and curve as tokens, so the register in the design and the stylesheet cannot drift
    * to different numbers. Every transition using them is disabled under `prefers-reduced-motion`,

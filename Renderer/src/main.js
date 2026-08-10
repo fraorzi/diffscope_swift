@@ -490,16 +490,44 @@ function directionDecorations(state) {
 }
 
 let syncing = false;
+/// Both axes. `12-…` §5.4 asks for horizontal scrolling to be **linked between panes**, and only
+/// the vertical half was ever wired: on a minified file the two panes drifted apart horizontally
+/// and the reader was comparing column 200 of one side with column 40 of the other.
 function link(a, b) {
   a.scrollDOM.addEventListener("scroll", () => {
     if (syncing) return;
     syncing = true;
     b.scrollDOM.scrollTop = a.scrollDOM.scrollTop;
+    b.scrollDOM.scrollLeft = a.scrollDOM.scrollLeft;
     syncing = false;
+    updateTrack();
   });
+}
+
+/// The one horizontal track under the pane (the adopted design). Two panes that scroll together
+/// have one horizontal position, so they get one control for it — and a range input is reachable
+/// from the keyboard, which a scrollbar is not.
+function updateTrack() {
+  const track = document.getElementById("track");
+  if (!track) return;
+  const scroller = left.scrollDOM;
+  const span = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+  track.max = String(span);
+  track.value = String(scroller.scrollLeft);
+  track.disabled = span === 0;
+  track.title = span === 0 ? "nothing to scroll horizontally"
+    : `column ${Math.round(scroller.scrollLeft)} of ${Math.round(span)}`;
 }
 link(left, right);
 link(right, left);
+
+document.getElementById("track")?.addEventListener("input", event => {
+  const position = Number(event.target.value);
+  syncing = true;
+  left.scrollDOM.scrollLeft = position;
+  right.scrollDOM.scrollLeft = position;
+  syncing = false;
+});
 
 let currentPin = null;
 let lastSummary = null;
@@ -1086,6 +1114,7 @@ window.diffscopeRender = function (json) {
   stopIndex = -1;
   applyLayout(model);
   restoreAnchor(model.restore);
+  updateTrack();
 
   lastSummary = {
     ok: true,

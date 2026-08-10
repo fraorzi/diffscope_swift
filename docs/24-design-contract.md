@@ -75,6 +75,7 @@ Classes marked **load-bearing** carry a difference. They may be restyled and may
 | `ds-sign` | The `+` / `−` column in unified (DEC-059) | **Yes.** With no panes, this is the only signal of direction that survives greyscale |
 | `ds-line-add`, `ds-line-del` | Direction as a tint behind the line | No — they *reinforce* `ds-sign` and may be removed. Removing the sign column is what the rule above forbids |
 | `#unified` | The one-column layout, and the default (DEC-059) | No, as layout |
+| `#track` | The one horizontal position two linked panes share (`12-…` §5.4) | **Yes** — quietened when there is nothing to scroll, never removed: a control that vanishes teaches a reader it does not exist |
 | `ds-gutter-old`, `ds-gutter-new`, `ds-gutter-sign` | The three gutters of the unified layout: the two number columns and the sign column | **The sign gutter is**, for the reason `ds-sign` is. The number columns are how a reader says *where* — restyle freely, do not collapse them into one |
 | `#stage`, `#left`, `#right` | The two-pane layout, reached by ⌥⌘→ | No, as layout |
 | `#lens` | The Blame and History lenses (DEC-061) | No, as layout |

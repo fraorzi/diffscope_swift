@@ -33,6 +33,11 @@
   .ds-chip-alert { border-style: dashed; font-weight: var(--ds-weight-emphasis); }
 
   #stage { display: flex; flex: 1; min-height: 0; }
+  /* One horizontal position for two panes that scroll together (`12-…` §5.4). A range input
+     rather than a scrollbar, because a scrollbar cannot be reached from the keyboard. */
+  #track { flex: none; width: 100%; margin: 0; accent-color: var(--ds-mark);
+           background: var(--ds-fold); }
+  #track:disabled { opacity: var(--ds-track-idle); }
   /* One column instead of two (DEC-059). Only one of the two layouts holds a document at a
      time, so nothing is drawn twice and no probe counts a mark that is not on screen. */
   #unified { display: none; flex: 1; min-height: 0; background: var(--ds-code); }
@@ -262,6 +267,7 @@
     <div id="left"></div>
     <div id="right"></div>
   </div>
+  <input id="track" type="range" min="0" max="0" value="0" aria-label="Horizontal position">
   <div id="unified"></div>
   <div id="lens"></div>
   <div id="rendered"></div>
