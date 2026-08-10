@@ -600,4 +600,43 @@ func runTerminalChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("the terminal's own tokens are declared where every other visual value lives",
                missing.isEmpty, missing.joined(separator: ", "))
     }
+
+    print("\n=== the drawer holds several shells, and keeps them apart (DEC-067) ===")
+    do {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let pane = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/TerminalPane.swift"),
+                                encoding: .utf8)) ?? ""
+        let script = (try? String(contentsOf: root.appendingPathComponent("Renderer/src/terminal.js"),
+                                  encoding: .utf8)) ?? ""
+
+        report("the pane holds a list of sessions rather than one",
+               pane.contains("private(set) var tabs: [Tab] = []")
+                   && pane.contains("struct Tab"))
+        // One emulator per tab, because scrollback and cursor are the emulator's business and an
+        // emulator asked to forget them and reproduce them later gets a full-screen program wrong.
+        report("the page holds one xterm instance per tab",
+               script.contains("function createTab") && script.contains("const tabs = new Map()"))
+        report("output is addressed to the tab it came from",
+               pane.contains("self?.deliver(bytes, to: id)")
+                   && script.contains("tabs.get(id) || createTab(id)"))
+        // Routing input by "whichever Swift thinks is active" races the reader's hand: they can
+        // change tabs between a keystroke and its delivery.
+        report("input carries the tab it was typed into",
+               script.contains("post({ name: \"input\", data, tab: id })")
+                   && pane.contains("message[\"tab\"] as? String"))
+        report("a tab says where its own shell is, not where the reader is looking",
+               pane.contains("let reported = tab.session.reportedDirectory"))
+        report("stopping tells the page as well, so no grid outlives its session",
+               pane.contains("window.diffscopeTerminalCloseTab"))
+        // `evaluateJavaScript` on a page that has not loaded is dropped in silence, which is how a
+        // tab came to exist in Swift and not in the page.
+        report("the page is told the tab list again once it is ready",
+               pane.contains("for tab in tabs {\n            webView.evaluateJavaScript(\"window.diffscopeTerminalOpenTab"))
+
+        let map = (try? String(contentsOf: root.appendingPathComponent("Sources/DiffScopeShell/KeyboardMap.swift"),
+                               encoding: .utf8)) ?? ""
+        report("every tab action is bound",
+               ["terminal.newTab", "terminal.nextTab", "terminal.previousTab", "terminal.closeTab"]
+                   .allSatisfy { map.contains($0) })
+    }
 }

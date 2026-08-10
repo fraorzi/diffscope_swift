@@ -9,7 +9,28 @@
      comes from `tokens.css`. The rules here are layout only. */
   html, body { margin: 0; height: 100%; background: var(--ds-term-bg); }
   body { display: flex; flex-direction: column; }
-  #grid { flex: 1; min-height: 0; padding: var(--ds-space-2); }
+  /* The tab strip (DEC-067). A tab says which shell it is and where that shell says it is; the
+     active one is marked by weight and an edge, never by colour alone (DEC-035). */
+  #tabs { flex: none; display: flex; gap: var(--ds-space-1);
+          padding: var(--ds-space-1) var(--ds-space-2);
+          border-bottom: var(--ds-hairline-width) solid var(--ds-border); }
+  .ds-term-tab { padding: var(--ds-space-1) var(--ds-space-3);
+                 font: var(--ds-text-size-small) var(--ds-font);
+                 color: var(--ds-faint); cursor: default;
+                 border-bottom: var(--ds-gutter-edge-width) solid transparent; }
+  .ds-term-tab[data-active="true"] { color: var(--ds-term-fg);
+                                     font-weight: var(--ds-weight-emphasis);
+                                     border-bottom-color: var(--ds-mark); }
+  /* A shell that is not where the reader is looking says so, in the same dotted underline the
+     single pane uses (DEC-056) — one meaning, one shape. */
+  .ds-term-tab[data-diverged="true"] { text-decoration: underline dotted;
+                                       text-underline-offset: var(--ds-underline-offset); }
+
+  #grid { flex: 1; min-height: 0; padding: var(--ds-space-2); position: relative; }
+  /* One instance per tab, all present, one shown: an emulator asked to forget its scrollback and
+     reproduce it later gets the cursor wrong on the first full-screen program. */
+  .ds-term-grid { position: absolute; inset: var(--ds-space-2); visibility: hidden; }
+  .ds-term-grid[data-active="true"] { visibility: visible; }
   .xterm .xterm-viewport { overflow-y: auto; }
 
   /* The input line (T2). It is a real text field, which is where the macOS word and line motions
@@ -51,6 +72,7 @@
 </style>
 </head>
 <body>
+<div id="tabs"></div>
 <div id="grid"></div>
 <div id="input-row"><span id="mode"></span><span id="cwd" title=""></span><textarea id="line" rows="1"
   spellcheck="false" autocapitalize="off" autocorrect="off" aria-label="Command line"></textarea></div>

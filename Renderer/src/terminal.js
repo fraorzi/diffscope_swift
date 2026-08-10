@@ -56,45 +56,120 @@ const ansi = {
   brightWhite: colour("--ds-term-bright-white"),
 };
 
-const term = new Terminal({
-  fontFamily: declared("--ds-font") || "monospace",
-  fontSize: parseInt(declared("--ds-term-text-size"), 10) || 12,
-  scrollback: SCROLLBACK,
-  cursorBlink: false,
-  convertEol: false,
-  theme: {
-    background: colour("--ds-term-bg"),
-    foreground: colour("--ds-term-fg"),
-    cursor: colour("--ds-term-cursor"),
-    cursorAccent: colour("--ds-term-bg"),
-    selectionBackground: colour("--ds-term-selection"),
-    ...ansi,
-  },
-});
-
-const fit = new FitAddon();
-term.loadAddon(fit);
-term.open(document.getElementById("grid"));
-fit.fit();
-
 const post = (message) =>
   window.webkit?.messageHandlers?.diffscopeTerminal?.postMessage(message);
 
-// The one path a keystroke takes. DEC-028 rests on it: what runs is what the user typed, never
-// anything derived from repository content.
-term.onData((data) => post({ name: "input", data }));
-term.onBinary((data) => post({ name: "binary", data }));
-term.onResize(({ cols, rows }) => post({ name: "resize", cols, rows }));
+// ---- Tabs (DEC-067) --------------------------------------------------------------------------
+//
+// **One xterm instance per tab**, not one grid replaying a buffer. Scrollback, cursor position and
+// the alternate screen are the emulator's business, and an emulator that is asked to forget them
+// and reproduce them later gets the cursor wrong on the first full-screen program. Instances are
+// cheap next to the shell each one is attached to.
+const tabs = new Map();   // id → { term, fit, element }
+let activeTab = null;
+const grid = document.getElementById("grid");
+
+function createTab(id) {
+  const element = document.createElement("div");
+  element.className = "ds-term-grid";
+  grid.appendChild(element);
+
+  const term = new Terminal({
+    fontFamily: declared("--ds-font") || "monospace",
+    fontSize: parseInt(declared("--ds-term-text-size"), 10) || 12,
+    scrollback: SCROLLBACK,
+    cursorBlink: false,
+    convertEol: false,
+    theme: {
+      background: colour("--ds-term-bg"),
+      foreground: colour("--ds-term-fg"),
+      cursor: colour("--ds-term-cursor"),
+      cursorAccent: colour("--ds-term-bg"),
+      selectionBackground: colour("--ds-term-selection"),
+      ...ansi,
+    },
+  });
+  const fit = new FitAddon();
+  term.loadAddon(fit);
+  term.open(element);
+
+  // Every message carries the tab it came from. Without the id the shell that receives a keystroke
+  // is whichever one Swift happened to think was active, which is a race with the reader's hand.
+  term.onData((data) => post({ name: "input", data, tab: id }));
+  term.onBinary((data) => post({ name: "binary", data, tab: id }));
+  term.onResize(({ cols, rows }) => post({ name: "resize", cols, rows, tab: id }));
+
+  const entry = { term, fit, element };
+  tabs.set(id, entry);
+  if (activeTab === null) selectTab(id);
+  return entry;
+}
+
+/// The active tab, or nothing. It used to create one on demand, and that turned every early
+/// `focus()` into a second grid the shell behind it never wrote to — a tab with no session, which
+/// is exactly the thing a tab strip must not contain.
+function current() {
+  return activeTab !== null ? tabs.get(activeTab) : undefined;
+}
+
+function selectTab(id) {
+  if (!tabs.has(id)) createTab(id);
+  activeTab = id;
+  for (const [key, entry] of tabs) {
+    entry.element.dataset.active = String(key === id);
+  }
+  refit();
+  return id;
+}
 
 const refit = () => {
+  const entry = tabs.get(activeTab);
+  if (!entry) return;
   try {
-    fit.fit();
+    entry.fit.fit();
   } catch {
     // A zero-sized pane throws rather than returning a size; nothing to do until it has one.
   }
 };
 window.addEventListener("resize", refit);
-new ResizeObserver(refit).observe(document.getElementById("grid"));
+new ResizeObserver(refit).observe(grid);
+
+window.diffscopeTerminalOpenTab = (id) => { createTab(id); return selectTab(id); };
+window.diffscopeTerminalSelectTab = (id) => selectTab(id);
+window.diffscopeTerminalCloseTab = (id) => {
+  const entry = tabs.get(id);
+  if (!entry) return false;
+  entry.term.dispose();
+  entry.element.remove();
+  tabs.delete(id);
+  if (activeTab === id) {
+    activeTab = null;
+    const next = tabs.keys().next();
+    if (!next.done) selectTab(next.value);
+  }
+  return true;
+};
+
+/// The strip. A tab says which shell it is and **where that shell says it is** — not where the
+/// reader has selected, which is the distinction DEC-056 drew for one pane and DEC-067 makes
+/// visible per tab. The active tab is marked by weight and an edge, never by colour alone.
+window.diffscopeTerminalSetTabs = (payload) => {
+  const strip = document.getElementById("tabs");
+  strip.replaceChildren();
+  for (const tab of payload.tabs || []) {
+    const el = document.createElement("span");
+    el.className = "ds-term-tab";
+    el.dataset.active = String(tab.id === payload.active);
+    el.textContent = tab.title + (tab.cwd ? "  " + tab.cwd : "");
+    if (tab.diverged) {
+      el.dataset.diverged = "true";
+      el.title = "this shell is not in the selected repository";
+    }
+    el.addEventListener("click", () => post({ name: "selectTab", tab: tab.id }));
+    strip.appendChild(el);
+  }
+  return (payload.tabs || []).length;
+};
 
 // The DOM renderer paints on requestAnimationFrame, and WebKit stops firing those while the window
 // is occluded — the buffer then fills while the screen stays empty. The probe reports whether a
@@ -134,7 +209,7 @@ window.diffscopeTerminalSetMode = (mode, label) => {
   modeChip.dataset.raw = String(raw);
   row.dataset.hidden = String(raw);
   if (raw) {
-    term.focus();
+    current()?.term.focus();
   } else {
     field.focus();
   }
@@ -188,19 +263,26 @@ document.addEventListener("keydown", (event) => {
 
 modeChip.addEventListener("click", () => post({ name: "toggleForcedRaw" }));
 
-window.diffscopeTerminalWrite = (base64) => {
+window.diffscopeTerminalWrite = (base64, id) => {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  term.write(bytes);
+  // Output goes to the tab it came from, whether or not that tab is the one on screen: a test
+  // suite running in the background is still running. Output addressed to a tab the page has not
+  // been told about **creates** it rather than falling back to the active one — bytes buffered
+  // while the page was loading arrive before the tab that opened does, and answering them with
+  // "the current tab" invented a second grid and wrote the first shell's output into it.
+  const entry = id != null ? (tabs.get(id) || createTab(id)) : current();
+  if (!entry) return;
+  entry.term.write(bytes);
 };
 
-window.diffscopeTerminalFocus = () => term.focus();
+window.diffscopeTerminalFocus = () => current()?.term.focus();
 
 // A new session starts on a clean grid. Without this the scrollback mixes two shells' output with
 // nothing to say where one ended — and the reader has no way to tell which shell said what.
 window.diffscopeTerminalReset = () => {
-  term.reset();
+  current()?.term.reset();
   field.value = "";
 };
 
@@ -221,21 +303,26 @@ window.diffscopeTerminalProbe = () => {
 };
 
 const probeBody = (framesSinceLastProbe) => ({
-  cols: term.cols,
-  rows: term.rows,
-  scrollback: term.options.scrollback,
-  alternateScreen: term.buffer.active.type === "alternate",
+  cols: current()?.term.cols ?? 0,
+  rows: current()?.term.rows ?? 0,
+  scrollback: current()?.term.options.scrollback ?? 0,
+  alternateScreen: current()?.term.buffer.active.type === "alternate",
   // A pane that is drawn at zero size reports a size and no defect anywhere else — M8-D's lesson,
   // where two lists rendered completely blank and nothing failed.
   pixelWidth: document.getElementById("grid").clientWidth,
   pixelHeight: document.getElementById("grid").clientHeight,
   missingTokens,
-  background: term.options.theme.background,
-  foreground: term.options.theme.foreground,
-  text: bufferText(term.buffer.active, term.rows),
+  tabs: tabs.size,
+  activeTab,
+  background: current()?.term.options.theme.background ?? "",
+  foreground: current()?.term.options.theme.foreground ?? "",
+  text: current() ? bufferText(current().term.buffer.active, current().term.rows) : "",
   // What the buffer holds and what the screen shows are different questions, and only the second
   // one is what the reader gets. M8-D was a surface that drew nothing while every check passed.
-  renderedText: (document.querySelector(".xterm-rows")?.innerText ?? "").trim(),
+  // The **active** tab's rows, not the first in the DOM. With one grid per tab the first one is
+  // whichever tab opened first, and a hidden element reports no text at all — so this read the
+  // wrong grid and then reported it as blank.
+  renderedText: (tabs.get(activeTab)?.element.querySelector(".xterm-rows")?.innerText ?? "").trim(),
   canvases: document.querySelectorAll("#grid canvas").length,
   visibility: document.visibilityState,
   framesSinceLastProbe,

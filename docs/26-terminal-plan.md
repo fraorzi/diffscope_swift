@@ -1,6 +1,6 @@
 # 26 — Built-in terminal, Warp-style
 
-**Status:** Accepted as scope by the product owner, 2026-07-31 (**DEC-053**). Resolves OQ-055 in favour of building it. **Complete.** Gate T0 passed and T1–T4 are built (DEC-053 … DEC-056): the terminal runs, at a prompt the keyboard belongs to a real text field, it follows the repository the reader is looking at, and every document that promised the product could not change a repository now says what is true instead.
+**Status:** Accepted as scope by the product owner, 2026-07-31 (**DEC-053**), **extended 2026-08-10 by DEC-067** — several sessions in tabs, and the drawer across the window rather than under the diff. One session was the smallest thing that could answer T0's question, never the point. Resolves OQ-055 in favour of building it. **Complete.** Gate T0 passed and T1–T4 are built (DEC-053 … DEC-056): the terminal runs, at a prompt the keyboard belongs to a real text field, it follows the repository the reader is looking at, and every document that promised the product could not change a repository now says what is true instead.
 
 This document exists because the terminal was deferred twice on my recommendation, and the product owner has now put it at the front of the queue. That is their call; the ordering until then was the audit's framing, not theirs.
 

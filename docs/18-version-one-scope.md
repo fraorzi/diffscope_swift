@@ -48,6 +48,7 @@ Derived from the decision log; where this document and [04-decision-log.md](04-d
 - **Search within the diff** (DEC-062, amending DEC-017), scoped to the changed set by default (⌘F), whole worktree on request (⇧⌘F). Matched as literal text, never as a pattern compiled from repository content
 - **Rendered comparison for images and SVG** — Side by side, Blend, Split, Pixel diff, with a 16-megapixel budget on the last (DEC-063). SVG carries both readings, rendered and source, and is rendered through an `<img>` so repository content never executes
 - **Three independent collapses** — repositories, changed files, terminal — each with a keyboard binding; collapsed is reduced, never hidden (DEC-060)
+- **Several terminal sessions in tabs, in a drawer across the window** (DEC-067, amending DEC-053). One shell and one emulator per tab; each tab says where *its own* shell is
 - **Motion, with a registered reduced-motion path for every transition** (DEC-064, amending DEC-016)
 - Syntax highlighting, with change meaning carried **outside token colour** (DEC-017, DEC-035)
 - Navigation: previous/next change, collapsed unchanged ranges, changed-file list (DEC-017)

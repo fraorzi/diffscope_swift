@@ -1003,3 +1003,32 @@ not worth those.
 **The terminal drawer is still one session under the diff pane.** Tabs and a full-width drawer need
 DEC-053 reopened — it says one session — so it belongs in the decision log before it belongs in
 `TerminalPane`.
+
+## Step 42 — DEC-067: the terminal drawer grows tabs, and a window's width
+
+- [x] DEC-067 written; DEC-053 carries its amendment pointer
+- [x] The drawer moves below the three-pane split — the grid went from 104 columns to 202
+- [x] One `TerminalSession` **and one xterm instance** per tab; scrollback, cursor and the
+      alternate screen stay the emulator's business
+- [x] Every message carries its tab, in both directions
+- [x] The strip says which shell and where *that* shell is, with DEC-056's dotted underline per tab
+- [x] ⌥⌘T, ⌃⌘] / ⌃⌘[, ⌃⌘W; eight source checks and two selftest arms
+
+### Step 42 — three ways the page and the pane disagreed
+
+**`evaluateJavaScript` on an unloaded page is dropped in silence.** A tab opened before the page
+finished loading existed in Swift and not in the page, and the first selection afterwards created a
+*third* grid for it. The pane's list is the truth and the page is told it again on `didFinish`.
+
+**`stop()` cleared the list and left the grids.** The page then held tabs with no session behind
+them, and a later selection landed on one — a drawer showing a shell that had been dead for two
+arms.
+
+**Buffered output had no address.** Bytes that arrive before the page is ready were replayed into
+"the current tab", which invented a grid and put the first shell's output in it. The buffer carries
+the tab now.
+
+**And the arm's first assertion was wrong rather than the code.** It asked whether the first tab
+still held a particular string; by then its shell had been restarted twice by earlier arms. What
+the design actually claims is that the two scrollbacks stay **apart** — that the second tab's
+output never appears in the first — which is exactly what one grid replaying a buffer would break.

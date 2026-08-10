@@ -511,6 +511,24 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
     /// ⌥⌘R. Opens the pane first if it is closed, because forcing raw mode on a terminal nobody can
     /// see would be a setting with no visible effect.
+    /// A second shell in the same drawer (DEC-067). It opens where the reader is looking, which is
+    /// the same rule the first one follows — and the only place a new shell can start that is not a
+    /// guess.
+    @objc func newTerminalTab() {
+        guard let repository = state.selectedRepository else {
+            statusLabel.stringValue = "a terminal tab opens in the selected repository — choose one first"
+            return
+        }
+        if !terminalVisible { setTerminalVisible(true, startingShell: false) }
+        terminal.openTab(workingDirectory: repository.url.path)
+        terminal.focus()
+        statusLabel.stringValue = "terminal: \(terminal.tabs.count) tabs"
+    }
+
+    @objc func nextTerminalTab() { terminal.stepTab(by: 1) }
+    @objc func previousTerminalTab() { terminal.stepTab(by: -1) }
+    @objc func closeTerminalTab() { terminal.closeActiveTab() }
+
     @objc func toggleTerminalRawMode() {
         if !terminalVisible { setTerminalVisible(true, startingShell: true) }
         startTerminalIfNeeded()
@@ -1115,8 +1133,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                     guard ok else { exit(37) }
                     try? FileManager.default.removeItem(atPath: target)
                     self.snapshotTerminal(named: "terminal-follow") {
-                        self.terminal.stop()
-                        self.runKeyboardSelftest()
+                        // The tabs arm needs the first shell alive: what it checks is that two
+                        // scrollbacks stay apart, which cannot be asked of a drawer with one.
+                        self.terminalTabsSelftest()
                     }
                 }
             }
@@ -1133,6 +1152,58 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// The tree comes from `Scripts/keyboard-tree.sh` by way of `DIFFSCOPE_KEYBOARD_TREE`. Without
     /// it the arm says SKIPPED **with the reason** — the T1-A pattern, after a blank grid passed
     /// every arm it had.
+    /// DEC-067: a second shell in the same drawer. What a picture cannot check is that the two
+    /// scrollbacks stay apart — one grid replaying a buffer would show the first shell's output in
+    /// the second tab and look completely right.
+    private func terminalTabsSelftest() {
+        let directory = NSTemporaryDirectory()
+        guard terminal.openTab(workingDirectory: directory, command: "/bin/sh",
+                               arguments: ["-c", "printf SECOND-TAB-OK; sleep 4"]) else {
+            FileHandle.standardError.write(Data("SELFTEST terminal-tabs=MISMATCH no second shell\n".utf8))
+            exit(54)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            self.terminal.probe { second in
+                let secondHasOwn = second.contains("SECOND-TAB-OK")
+                    && !second.contains("DIFFSCOPE-TERMINAL-OK")
+                let count = self.terminal.tabs.count
+                // Back to the first tab: its scrollback must still hold what it held, which is the
+                // whole claim behind one emulator per tab.
+                guard let first = self.terminal.tabs.first else { exit(54) }
+                self.terminal.selectTab(first.id)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    self.terminal.probe { back in
+                        // The claim is that the two scrollbacks stay **apart**, not that the first
+                        // one holds any particular string: by this point its shell has been
+                        // restarted twice by earlier arms and holds a prompt and a `cd`. What must
+                        // never be true is that the second tab's output turns up in it — which is
+                        // exactly what one grid replaying a buffer would produce.
+                        let firstKeptIts = !back.contains("SECOND-TAB-OK")
+                        let ok = count == 2 && secondHasOwn && firstKeptIts
+                        FileHandle.standardError.write(Data(
+                            ("SELFTEST terminal-tabs=\(ok ? "OK" : "MISMATCH") tabs=\(count) "
+                                + "second-own-scrollback=\(secondHasOwn) "
+                                + "first-scrollback-clean=\(firstKeptIts)\n").utf8))
+                        self.snapshotTerminal(named: "terminal-tabs") {
+                            guard ok else { exit(54) }
+                            // And closing one leaves the other running rather than taking the
+                            // drawer with it.
+                            let closing = self.terminal.tabs.last!.id
+                            self.terminal.closeTab(closing)
+                            let survived = self.terminal.tabs.count == 1 && self.terminal.started
+                            FileHandle.standardError.write(Data(
+                                ("SELFTEST terminal-tab-close=\(survived ? "OK" : "MISMATCH") "
+                                    + "left=\(self.terminal.tabs.count) open=\(self.terminal.started)\n").utf8))
+                            guard survived else { exit(55) }
+                            self.terminal.stop()
+                            self.runKeyboardSelftest()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     private func runKeyboardSelftest() {
         guard let tree = ProcessInfo.processInfo.environment["DIFFSCOPE_KEYBOARD_TREE"],
               FileManager.default.fileExists(atPath: tree + "/.git") else {
@@ -2094,6 +2165,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         case "mode.raw", "mode.structural", "mode.expanded": return #selector(selectMode(_:))
         case "rawRegion": return #selector(toggleRawForCurrentRegion)
         case "terminal": return #selector(toggleTerminal)
+        case "terminal.newTab": return #selector(newTerminalTab)
+        case "terminal.nextTab": return #selector(nextTerminalTab)
+        case "terminal.previousTab": return #selector(previousTerminalTab)
+        case "terminal.closeTab": return #selector(closeTerminalTab)
         case "terminal.raw": return #selector(toggleTerminalRawMode)
         case "terminal.follow": return #selector(followTerminalToSelection)
         case "wrap": return #selector(toggleWrap)

@@ -12,9 +12,30 @@ import WebKit
 /// user typed, and nothing is ever derived from repository content.
 final class TerminalPane: NSObject, WKNavigationDelegate {
     private(set) var webView: WKWebView!
-    private(set) var session: TerminalSession?
+
+    /// One shell per tab (DEC-067). The pane was a session and is now a list of them; everything
+    /// that used to mean *the session* now means *the active one*, which is what the selftest arms
+    /// were always about.
+    struct Tab {
+        let id: String
+        let session: TerminalSession
+        /// What the strip calls it. The shell's own name, so two `zsh` tabs are told apart by the
+        /// directory each of them reports rather than by a number nobody chose.
+        let title: String
+    }
+
+    private(set) var tabs: [Tab] = []
+    private(set) var activeTabID: String?
+    private var nextTabNumber = 1
+
+    var session: TerminalSession? {
+        tabs.first { $0.id == activeTabID }?.session
+    }
     private var ready = false
-    private var buffered: [UInt8] = []
+    /// Bytes that arrived before the page was ready, **with the tab they belong to**. A flat
+    /// buffer replayed into "the current tab" invented a grid: output can arrive before the page
+    /// has been told the tab exists.
+    private var buffered: [(tab: String?, bytes: [UInt8])] = []
     private let relay = ScriptRelay()
 
     /// The shell is not started until the pane is first opened: it costs ~340 ms and one
@@ -56,13 +77,24 @@ final class TerminalPane: NSObject, WKNavigationDelegate {
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         ready = true
+        // Tabs opened before the page finished loading were opened into nothing:
+        // `evaluateJavaScript` on an unloaded page is dropped without a word, and the first
+        // selection afterwards then created a *third* grid for a tab the page had never heard of.
+        // The pane's list is the truth; the page is told it again.
+        for tab in tabs {
+            webView.evaluateJavaScript("window.diffscopeTerminalOpenTab(\"\(tab.id)\")")
+        }
+        if let activeTabID {
+            webView.evaluateJavaScript("window.diffscopeTerminalSelectTab(\"\(activeTabID)\")")
+        }
+        publishTabs()
         configureInput()
         publishMode()
         publishDirectory()
         if !buffered.isEmpty {
             let pending = buffered
             buffered.removeAll()
-            deliver(pending)
+            for chunk in pending { deliver(chunk.bytes, to: chunk.tab) }
         }
     }
 
@@ -139,27 +171,113 @@ final class TerminalPane: NSObject, WKNavigationDelegate {
     func start(workingDirectory: String,
                command: String? = nil,
                arguments: [String]? = nil) -> Bool {
-        guard session == nil else { return true }
+        guard tabs.isEmpty else { return true }
+        return openTab(workingDirectory: workingDirectory, command: command, arguments: arguments)
+    }
+
+    /// A tab starts its shell when it is created, not when the drawer opens: DEC-053 measured
+    /// ~340 ms to a prompt and one leaked `ssh-agent` per interactive shell, and a reader who asks
+    /// for a second shell has asked for both.
+    @discardableResult
+    func openTab(workingDirectory: String,
+                 command: String? = nil,
+                 arguments: [String]? = nil) -> Bool {
         guard let session = TerminalSession(shellPath: command,
                                             workingDirectory: workingDirectory,
                                             arguments: arguments) else { return false }
-        session.onOutput = { [weak self] bytes in self?.deliver(bytes) }
-        session.onExit = { [weak self] in self?.onSessionExit?() }
+        let id = "tab-\(nextTabNumber)"
+        nextTabNumber += 1
+        // Output is addressed to the tab it came from, so a suite running in a tab nobody is
+        // looking at still writes into its own scrollback.
+        session.onOutput = { [weak self] bytes in self?.deliver(bytes, to: id) }
+        session.onExit = { [weak self] in self?.closeTab(id) }
         session.onModeChange = { [weak self] _ in self?.publishMode() }
-        session.onDirectoryChange = { [weak self] _ in self?.publishDirectory() }
+        session.onDirectoryChange = { [weak self] _ in
+            self?.publishDirectory()
+            self?.publishTabs()
+        }
         session.onCommandFinished = { [weak self] code in self?.onCommandFinished?(code) }
+        let title = (command.map { ($0 as NSString).lastPathComponent })
+            ?? (ProcessInfo.processInfo.environment["SHELL"] as NSString?)?.lastPathComponent
+            ?? "shell"
+        tabs.append(Tab(id: id, session: session, title: title))
         selectedDirectory = workingDirectory
-        self.session = session
-        webView.evaluateJavaScript("window.diffscopeTerminalReset && window.diffscopeTerminalReset()")
+        activeTabID = id
+        webView.evaluateJavaScript("window.diffscopeTerminalOpenTab(\"\(id)\")")
         publishMode()
+        publishTabs()
         started = true
         return true
     }
 
+    func selectTab(_ id: String) {
+        guard tabs.contains(where: { $0.id == id }) else { return }
+        activeTabID = id
+        webView.evaluateJavaScript("window.diffscopeTerminalSelectTab(\"\(id)\")")
+        publishMode()
+        publishDirectory()
+        publishTabs()
+    }
+
+    /// The next tab along, wrapping — a strip is a ring, unlike a file list where the end is a fact
+    /// worth feeling.
+    func stepTab(by delta: Int) {
+        guard tabs.count > 1, let index = tabs.firstIndex(where: { $0.id == activeTabID }) else { return }
+        let next = (index + delta + tabs.count) % tabs.count
+        selectTab(tabs[next].id)
+    }
+
+    func closeTab(_ id: String) {
+        guard let index = tabs.firstIndex(where: { $0.id == id }) else { return }
+        tabs[index].session.stop()
+        tabs.remove(at: index)
+        webView.evaluateJavaScript("window.diffscopeTerminalCloseTab(\"\(id)\")")
+        if activeTabID == id { activeTabID = tabs.first?.id }
+        if tabs.isEmpty {
+            started = false
+            onSessionExit?()
+        } else if let active = activeTabID {
+            selectTab(active)
+        }
+        publishTabs()
+    }
+
+    func closeActiveTab() {
+        guard let activeTabID else { return }
+        closeTab(activeTabID)
+    }
+
+    /// What the strip says. The directory is the one each **shell** reports (OSC 7), not the one
+    /// the reader selected — the distinction DEC-056 drew for one pane, made visible per tab.
+    private func publishTabs() {
+        let payload: [String: Any] = [
+            "active": activeTabID ?? "",
+            "tabs": tabs.map { tab -> [String: Any] in
+                let reported = tab.session.reportedDirectory
+                return ["id": tab.id, "title": tab.title,
+                        "cwd": (reported as NSString?)?.lastPathComponent ?? "",
+                        "diverged": reported != nil && selectedDirectory != nil
+                            && reported != selectedDirectory]
+            },
+        ]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript(
+            "window.diffscopeTerminalSetTabs && window.diffscopeTerminalSetTabs(\(json))")
+    }
+
     func stop() {
-        session?.stop()
-        session = nil
+        // The page is told too. Clearing the list here and leaving the grids behind left the page
+        // holding tabs no session was attached to, and the next selection landed on one of them —
+        // a drawer showing a shell that had been dead for two arms.
+        for tab in tabs {
+            tab.session.stop()
+            webView.evaluateJavaScript("window.diffscopeTerminalCloseTab(\"\(tab.id)\")")
+        }
+        tabs.removeAll()
+        activeTabID = nil
         started = false
+        publishTabs()
     }
 
     func focus() {
@@ -173,28 +291,36 @@ final class TerminalPane: NSObject, WKNavigationDelegate {
         }
     }
 
-    private func deliver(_ bytes: [UInt8]) {
-        guard ready else { buffered.append(contentsOf: bytes); return }
+    private func deliver(_ bytes: [UInt8], to tab: String? = nil) {
+        guard ready else { buffered.append((tab: tab, bytes: bytes)); return }
         let base64 = Data(bytes).base64EncodedString()
-        webView.evaluateJavaScript("window.diffscopeTerminalWrite(\"\(base64)\")")
+        let target = tab.map { ", \"\($0)\"" } ?? ""
+        webView.evaluateJavaScript("window.diffscopeTerminalWrite(\"\(base64)\"\(target))")
     }
 
     private func handle(_ body: Any) {
         guard let message = body as? [String: Any], let name = message["name"] as? String else { return }
+        // A message names the tab it came from. Routing by "whichever Swift thinks is active" is a
+        // race with the reader's hand: they can switch tabs between a keystroke and its delivery.
+        let addressed = (message["tab"] as? String).flatMap { id in
+            tabs.first { $0.id == id }?.session
+        } ?? session
         switch name {
+        case "selectTab":
+            if let id = message["tab"] as? String { selectTab(id) }
         case "input":
             guard let data = message["data"] as? String else { return }
-            session?.send(data)
+            addressed?.send(data)
         case "binary":
             // xterm hands binary over as a string of code points 0…255, one per byte.
             guard let data = message["data"] as? String else { return }
-            session?.send(data.unicodeScalars.map { UInt8($0.value & 0xFF) })
+            addressed?.send(data.unicodeScalars.map { UInt8($0.value & 0xFF) })
         case "resize":
             guard let columns = message["cols"] as? Int, let rows = message["rows"] as? Int,
                   columns > 0, rows > 0 else { return }
-            session?.resize(columns: UInt16(columns), rows: UInt16(rows))
+            addressed?.resize(columns: UInt16(columns), rows: UInt16(rows))
         case "key":
-            guard let session, let name = message["key"] as? String else { return }
+            guard let session = addressed, let name = message["key"] as? String else { return }
             let key = InputKey(name,
                                control: message["control"] as? Bool ?? false,
                                alt: message["alt"] as? Bool ?? false,

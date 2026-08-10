@@ -142,6 +142,16 @@ public enum KeyboardMap {
               menu: .view, satisfies: .rawForCurrentRegion, isToggle: true),
         .init(id: "terminal", title: "Terminal", key: "`", modifiers: [.control],
               menu: .view, isToggle: true),
+        // Tabs (DEC-067). ⌥⌘T is free since ⌃` took the drawer, and it is what the drawer used to
+        // be — the muscle memory lands on "another shell" rather than on nothing.
+        .init(id: "terminal.newTab", title: "New Terminal Tab", key: "t",
+              modifiers: [.option, .command], menu: .view),
+        .init(id: "terminal.nextTab", title: "Next Terminal Tab", key: "]",
+              modifiers: [.control, .command], menu: .view),
+        .init(id: "terminal.previousTab", title: "Previous Terminal Tab", key: "[",
+              modifiers: [.control, .command], menu: .view),
+        .init(id: "terminal.closeTab", title: "Close Terminal Tab", key: "w",
+              modifiers: [.control, .command], menu: .view),
         .init(id: "terminal.raw", title: "Terminal Raw Mode", key: "r", modifiers: [.option, .command],
               menu: .view, isToggle: true),
         .init(id: "terminal.follow", title: "Terminal: Follow Selection", key: "k",

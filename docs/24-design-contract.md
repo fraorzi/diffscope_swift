@@ -96,6 +96,8 @@ Added after this contract was first written, and missing from it until M8-P — 
 
 | Element | Means | Load-bearing |
 |---|---|---|
+| `#tabs`, `ds-term-tab` | One tab per shell (DEC-067), saying which shell it is and **where that shell says it is** | **Yes.** The active tab is marked by weight and an edge; a tab whose shell has diverged from the selected repository carries the same dotted underline `#cwd` does — one meaning, one shape |
+| `ds-term-grid` | One xterm instance per tab, all present, one visible | **Yes** — hidden by `visibility`, never removed: a background shell is still running and its scrollback is still its own |
 | `#grid` | The xterm.js screen — everything the shell prints | **Yes.** Output that cannot be read is output that was not shown |
 | `#input-row` | The command line at a prompt (DEC-055) | No, as layout |
 | `#mode` | Which mode the keyboard is in: prompt, program, or forced raw | **Yes.** The reader has to know where their keystrokes are going |
@@ -166,6 +168,8 @@ DIFFSCOPE_SELFTEST=1 DIFFSCOPE_SNAPSHOT_DIR=/tmp/shots swift run -c release diff
 Step 4 is not optional. The suite proves the model and the rules; only the pictures show whether the result is legible — the lesson M8-D paid for, when both lists rendered blank rows in a window that passed every check.
 
 The snapshots written are `structural`, `expanded`, `disclosure`, `moved`, `navigation`, `refresh`, `anchored`, `degraded`, `gutter` and `unified`: the founding wrapper-removal case, the two modes side by side, an invisible-difference badge, a paired move, folds and jumps, a refreshed view, a restored anchor, a ranked degradation notice, the gutter beside line numbers, and the default one-column layout with its two number columns and its sign column.
+
+`terminal-tabs` is the fourth (DEC-067): two shells in one drawer, the strip above them, and the thing no picture can check asserted beside it — that the second tab's output never turns up in the first one's scrollback, which is exactly what one grid replaying a buffer would produce.
 
 The terminal writes three more — `terminal` (a command's output in the grid), `terminal-input` (the input line at a prompt, with the mode chip) and `terminal-follow` (the pane after following a selection into a directory whose name contains a quote and a space). Look at all three: the terminal is the surface where a design most easily makes program output unreadable.
 
