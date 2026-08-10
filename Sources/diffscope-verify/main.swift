@@ -286,6 +286,7 @@ runConfigurationChecks { name, ok, detail in report(name, ok, detail) }
 runSearchChecks { name, ok, detail in report(name, ok, detail) }
 runLensChecks { name, ok, detail in report(name, ok, detail) }
 runNumstatChecks { name, ok, detail in report(name, ok, detail) }
+runHistoryComparisonChecks { name, ok, detail in report(name, ok, detail) }
 runRenderedComparisonChecks { name, ok, detail in report(name, ok, detail) }
 runGutterChecks { name, ok, detail in report(name, ok, detail) }
 runFileListChecks { name, ok, detail in report(name, ok, detail) }

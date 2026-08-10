@@ -246,6 +246,51 @@ public struct ScopeReader: Sendable {
         }
     }
 
+    // ---- History as a comparison (DEC-061) --------------------------------------------------
+    //
+    // DEC-008 deferred commit-vs-commit and its picker; DEC-061 admits it as a lens over the file
+    // already selected, which is a door that decision did not anticipate and its amendment says
+    // so. The four scopes are untouched: this is a second way of naming two sides, not a fifth
+    // scope, and it goes through the same registry and the same pinning.
+    public func changedFiles(between old: String, and new: String?,
+                             in repository: URL) throws -> [ChangedFile] {
+        // With no right-hand commit the comparison is *against the working tree*, which is what a
+        // reader picking one commit means — "what has happened since this".
+        let arguments = new.map { [old, $0] } ?? [old]
+        let diff = try runner.run(.diffNameStatus(arguments), in: repository)
+        guard diff.succeeded else { return [] }
+        return parseNameStatus(String(decoding: diff.standardOutput, as: UTF8.self))
+    }
+
+    public func sources(for file: ChangedFile, between old: String,
+                        and new: String?) -> (old: SideSource, new: SideSource) {
+        let oldPath = file.originalPath ?? file.path
+        return (file.kind == .added ? .absent : .blob(rev: old, path: oldPath),
+                file.kind == .deleted ? .absent
+                    : new.map { .blob(rev: $0, path: file.path) } ?? .worktree(path: file.path))
+    }
+
+    public func pinnedPair(for file: ChangedFile, between old: String, and new: String?,
+                           in repository: URL) throws -> PinnedSourcePair {
+        let (oldSource, newSource) = sources(for: file, between: old, and: new)
+        let oldSide = try settledRead(oldSource, in: repository)
+        let newSide = try settledRead(newSource, in: repository)
+        return PinnedSourcePair(
+            oldBytes: oldSide.bytes, newBytes: newSide.bytes,
+            oldHash: contentHash(oldSide.bytes), newHash: contentHash(newSide.bytes),
+            oldSource: oldSource, newSource: newSource,
+            stable: oldSide.stable && newSide.stable
+        )
+    }
+
+    /// What the base row says while a history comparison is on screen. One commit is *since*;
+    /// two is *between*, and the order is the reader's selection order rather than the log's,
+    /// because "compare this with that" is a sentence with a direction.
+    public func historyComparisonDescription(old: String, new: String?) -> String {
+        let short = { (rev: String) in String(rev.prefix(7)) }
+        return new.map { "\(short(old)) ↔ \(short($0))" } ?? "\(short(old)) ↔ working tree"
+    }
+
     public func readSide(_ source: SideSource, in repository: URL) throws -> [UInt8] {
         switch source {
         case .absent:

@@ -52,12 +52,16 @@ final class AppState {
     /// Which question the pane is answering (DEC-061). Not a mode and not a scope: the file and
     /// the pinned pair are the same in all three.
     var lens: Lens = .diff
+    /// The History lens's selection, and the comparison it names (DEC-061). Not a fifth scope: the
+    /// four are untouched, and this is a second way of saying which two sides.
+    var pickedCommits: [String] = []
+    var historyPair: (old: String, new: String?)?
     var searchQuery = ""
     var searchMatchCase = false
     var searchHits: [SearchHit] = []
 }
 
-final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, WKNavigationDelegate {
+final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, WKNavigationDelegate, WKScriptMessageHandler {
     let state = AppState()
     let discovery = RepositoryDiscovery(maximumDepth: 2)
     let reader = RepositoryReader()
@@ -231,7 +235,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         statusLabel.textColor = Theme.inkQuiet
         statusLabel.lineBreakMode = .byTruncatingMiddle
 
-        webView = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        // The page can now speak back (DEC-061). It receives calls for everything else; the
+        // History lens is the first surface where a *reader's* choice originates inside the
+        // webview, and a commit row that cannot act is a list pretending to be a picker.
+        let configuration = WKWebViewConfiguration()
+        configuration.userContentController.add(self, name: "diffscope")
+        webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = self
 
         let middleScroll = scrollWrapping(fileTable)
@@ -2016,6 +2025,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     }
 
     @objc private func scopeChanged() {
+        // Same reasoning as the menu route: picking a scope is picking two sides.
+        state.historyPair = nil
+        state.pickedCommits = []
         state.scope = [.allLocalVsHead, .unstagedVsIndex, .stagedVsHead, .branchVsMergeBase][scopeControl.selectedSegment]
         reloadFiles()
     }
@@ -2144,7 +2156,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         modeChanged()
     }
 
+    /// Choosing a scope says *compare these two sides*, which is the thing a history selection was
+    /// also saying — so the selection is dropped rather than left to argue with the scope bar.
     @objc private func selectScope(_ sender: NSMenuItem) {
+        state.historyPair = nil
+        state.pickedCommits = []
         scopeControl.selectedSegment = sender.tag
         scopeChanged()
     }
@@ -2514,10 +2530,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             ["sha": commit.sha, "who": commit.author, "when": commit.committed,
              "subject": commit.subject, "refs": commit.refs] as [String: String]
         }
-        pushLens(kind: "history", rows: rows,
+        let picked = state.pickedCommits
+        let selection = state.historyPair.map {
+            " · comparing " + scopes.historyComparisonDescription(old: $0.old, new: $0.new)
+        } ?? " · pick a commit to compare it with the working tree, two to compare them"
+        pushLens(kind: "history", rows: rows, picked: picked,
                  summary: historySummary(commits: commits,
                                          branch: repository.head.displayText,
-                                         ahead: repository.aheadCount))
+                                         ahead: repository.aheadCount) + selection)
     }
 
     /// `--ds-focus-ring`, on the region rather than on a row inside it (`12-…` §9's *"a 2 px focus
@@ -2537,6 +2557,44 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
+    /// The only thing the page is allowed to ask for, and it is named rather than evaluated: a
+    /// message with an unknown action is ignored. Repository content reaches this webview (an SVG
+    /// is drawn in it), so what arrives here is treated as input rather than as instruction —
+    /// DEC-028's rule, one surface further out.
+    func userContentController(_ controller: WKUserContentController,
+                               didReceive message: WKScriptMessage) {
+        guard let body = message.body as? [String: Any],
+              body["action"] as? String == "pickCommit",
+              let sha = body["sha"] as? String,
+              sha.count >= 7, sha.allSatisfy({ $0.isHexDigit }) else { return }
+        pickCommit(sha)
+    }
+
+    /// One commit is *since this*; a second is *between these*; a third starts again. The order is
+    /// the reader's, not the log's, because "compare this with that" is a sentence with a
+    /// direction.
+    private func pickCommit(_ sha: String) {
+        var picked = state.pickedCommits
+        if let existing = picked.firstIndex(of: sha) {
+            picked.remove(at: existing)
+        } else if picked.count >= 2 {
+            picked = [sha]
+        } else {
+            picked.append(sha)
+        }
+        state.pickedCommits = picked
+        guard let first = picked.first else {
+            state.historyPair = nil
+            showHistoryLens()
+            reloadFiles()
+            return
+        }
+        // Two picks compare in selection order: the first is the left side.
+        state.historyPair = (old: first, new: picked.count > 1 ? picked[1] : nil)
+        showHistoryLens()
+        reloadFiles()
+    }
+
     @objc private func lensChanged() {
         switch lensControl.selectedSegment {
         case 1: showBlameLens()
@@ -2552,8 +2610,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         lensMenuItems["lens.history"]?.state = state.lens == .history ? .on : .off
     }
 
-    private func pushLens(kind: String, rows: [[String: String]], summary: String) {
-        let payload: [String: Any] = ["kind": kind, "summary": summary,
+    private func pushLens(kind: String, rows: [[String: String]], picked: [String] = [],
+                          summary: String) {
+        let payload: [String: Any] = ["kind": kind, "summary": summary, "picked": picked,
                                       "rows": rows.map { row -> [String: Any] in
                                           var out: [String: Any] = row
                                           out["uncommitted"] = (row["uncommitted"] ?? "") == "1"
@@ -2698,7 +2757,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             statusLabel.stringValue = "\(state.scope.title) unavailable — \(reason)"
             return
         }
-        state.files = (try? scopes.changedFiles(scope: state.scope, in: repository.url, baseRef: baseRef)) ?? []
+        // A history selection names the two sides instead of the scope (DEC-061). The scope bar
+        // still shows which four exist and which one is armed; the base row says what is actually
+        // being compared, which is the question a reader has after picking a commit.
+        if let pair = state.historyPair {
+            state.files = (try? scopes.changedFiles(between: pair.old, and: pair.new,
+                                                    in: repository.url)) ?? []
+        } else {
+            state.files = (try? scopes.changedFiles(scope: state.scope, in: repository.url, baseRef: baseRef)) ?? []
+        }
         state.fileRows = fileListRows(state.files,
                                       workspacePackages: declaredWorkspacePackages(in: repository.url))
         state.annotations = [:]
@@ -2717,11 +2784,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // is invisible until pointed at, and a reader walking the window from the keyboard never
         // sees it. `12-…` §3 asks for the reason to be *stated*, so it goes on the line.
         let reasons = unavailable.isEmpty ? "" : " · unavailable: " + unavailable.joined(separator: ", ")
-        comparisonLabel.stringValue = state.scope == .branchVsMergeBase
+        comparisonLabel.stringValue = state.historyPair.map {
+            scopes.historyComparisonDescription(old: $0.old, new: $0.new) + " · from History"
+        } ?? (state.scope == .branchVsMergeBase
             ? baseSummary(ref: repository.baseRefUsed,
                           chosenByUser: state.configuration.baseOverrides[repository.url.standardizedFileURL.path] != nil,
                           committerDate: repository.baseRefCommitterDate)
-            : state.scope.comparisonDescription
+            : state.scope.comparisonDescription)
         statusLabel.stringValue = "\(state.files.count) files · \(state.scope.title)\(ageText)\(reasons)"
     }
 
@@ -2758,9 +2827,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // reader had already walked past. Serialising is also the honest model of the work — only
         // the file now selected is worth rendering.
         renderQueue.async {
-            guard let pair = try? self.scopes.pinnedPair(
-                for: file, scope: self.state.scope, in: repository.url, mergeBaseRev: self.state.mergeBaseRev
-            ) else { return }
+            let history = self.state.historyPair
+            guard let pair = history.map({ selection in
+                try? self.scopes.pinnedPair(for: file, between: selection.old, and: selection.new,
+                                            in: repository.url)
+            }) ?? (try? self.scopes.pinnedPair(
+                for: file, scope: self.state.scope, in: repository.url,
+                mergeBaseRev: self.state.mergeBaseRev)) else { return }
             // DEC-049: the file was still being written, so these bytes may be half of one
             // version and half of another. Showing them with a warning would still be showing a
             // blend — the watcher fires again when the writing stops.

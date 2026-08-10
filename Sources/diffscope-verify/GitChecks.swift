@@ -294,3 +294,53 @@ func runNumstatChecks(_ reportRaw: (String, Bool, String) -> Void) {
     report("the operation is in the registry the read-only proof runs over",
            GitOperation.allProvenReadOnly.contains { $0.label == "diff-numstat" })
 }
+
+/// DEC-061's second half: History names two sides. Not a fifth scope — the four are untouched —
+/// so this checks the shape of the second naming rather than the scope table.
+func runHistoryComparisonChecks(_ reportRaw: (String, Bool, String) -> Void) {
+    func report(_ name: String, _ ok: Bool, _ detail: String = "") { reportRaw(name, ok, detail) }
+
+    print("\n=== a history selection names two sides (DEC-061) ===")
+    let scopes = ScopeReader()
+    let file = ChangedFile(path: "src/List.tsx", originalPath: nil, kind: .modified)
+
+    let since = scopes.sources(for: file, between: "a1c93f2", and: String?.none)
+    report("one commit compares it against the working tree",
+           since.old == .blob(rev: "a1c93f2", path: "src/List.tsx")
+               && since.new == .worktree(path: "src/List.tsx"))
+
+    let between = scopes.sources(for: file, between: "a1c93f2", and: "4d70b1e")
+    report("two commits compare the two blobs, in the reader's order",
+           between.old == .blob(rev: "a1c93f2", path: "src/List.tsx")
+               && between.new == .blob(rev: "4d70b1e", path: "src/List.tsx"))
+
+    // The rename rule the four scopes already follow: the old side is read at the old path.
+    let renamed = ChangedFile(path: "src/Panel.tsx", originalPath: "src/Frame.tsx", kind: .renamed)
+    report("a rename reads its old side at its old path",
+           scopes.sources(for: renamed, between: "a1c93f2", and: String?.none).old
+               == .blob(rev: "a1c93f2", path: "src/Frame.tsx"))
+
+    // A side that does not exist is absent, not an empty blob at a rev that never had it.
+    report("an added file has no left side",
+           scopes.sources(for: ChangedFile(path: "new.ts", originalPath: nil, kind: .added),
+                          between: "a1c93f2", and: String?.none).old == .absent)
+    report("and a deleted file has no right side",
+           scopes.sources(for: ChangedFile(path: "gone.ts", originalPath: nil, kind: .deleted),
+                          between: "a1c93f2", and: "4d70b1e").new == .absent)
+
+    report("the base row says which comparison this is, in words",
+           scopes.historyComparisonDescription(old: "a1c93f2b", new: String?.none) == "a1c93f2 ↔ working tree"
+               && scopes.historyComparisonDescription(old: "a1c93f2b", new: "4d70b1e9")
+                   == "a1c93f2 ↔ 4d70b1e")
+
+    let shell = (try? String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+                                 .appendingPathComponent("Sources/diffscope-app/main.swift"),
+                             encoding: .utf8)) ?? ""
+    report("picking a scope drops the history selection rather than arguing with it",
+           shell.ranges(of: "state.historyPair = nil").count >= 2)
+    // The page can post messages now, and repository content is drawn in that page (an SVG). What
+    // arrives is validated as input rather than acted on as instruction (DEC-028).
+    report("a message from the page is checked before it is acted on",
+           shell.contains("sha.allSatisfy({ $0.isHexDigit })")
+               && shell.contains("body[\"action\"] as? String == \"pickCommit\""))
+}
