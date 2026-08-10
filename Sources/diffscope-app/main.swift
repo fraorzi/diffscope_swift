@@ -80,6 +80,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var modeControl: NSSegmentedControl!
     var statusLabel: NSTextField!
     var comparisonLabel: NSTextField!
+    var lensControl: NSSegmentedControl!
     /// The sentence stating which convention the uncommitted counts use (`12-…` §2).
     var conventionLabel: NSTextField!
     var rendererReady = false
@@ -259,7 +260,16 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                           constant: -2 * Theme.space3).isActive = true
         let leftScroll = leftStack
 
-        let controls = NSStackView(views: [scopeControl, modeControl])
+        // The lens control sits with the other two (DEC-061). The design draws it inside the pane
+        // header; it lives here instead because a control in the webview cannot act — the page
+        // receives calls, it does not make them — and a control that looks clickable and is not is
+        // worse than one in a different place.
+        lensControl = NSSegmentedControl(labels: ["Diff", "Blame", "History"],
+                                         trackingMode: .selectOne, target: self,
+                                         action: #selector(lensChanged))
+        lensControl.selectedSegment = 0
+
+        let controls = NSStackView(views: [scopeControl, modeControl, lensControl])
         controls.orientation = .horizontal
         controls.spacing = Theme.space6 - Theme.space2
 
@@ -2448,7 +2458,16 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                          ahead: repository.aheadCount))
     }
 
+    @objc private func lensChanged() {
+        switch lensControl.selectedSegment {
+        case 1: showBlameLens()
+        case 2: showHistoryLens()
+        default: showDiffLens()
+        }
+    }
+
     private func updateLensMenu() {
+        lensControl.selectedSegment = [Lens.diff, .blame, .history].firstIndex(of: state.lens) ?? 0
         lensMenuItems["lens.diff"]?.state = state.lens == .diff ? .on : .off
         lensMenuItems["lens.blame"]?.state = state.lens == .blame ? .on : .off
         lensMenuItems["lens.history"]?.state = state.lens == .history ? .on : .off
@@ -2644,6 +2663,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
     private func showDiff(for file: ChangedFile, restoringStop stop: Int? = nil) {
         state.selectedFile = file
+        if let json = try? JSONSerialization.data(withJSONObject: [file.path]),
+           let argument = String(data: json, encoding: .utf8) {
+            webView.evaluateJavaScript(
+                "window.diffscopeSetFile(\(argument.dropFirst().dropLast()))") { _, _ in }
+        }
         render(file: file, previousAnchor: nil, restoringStop: stop)
     }
 

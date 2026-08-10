@@ -67,6 +67,7 @@ Classes marked **load-bearing** carry a difference. They may be restyled and may
 | `ds-badge` | Names an invisible difference, and its codepoints in Expanded | **Yes** |
 | `ds-chip` | One notice in the bar | **Yes** |
 | `ds-chip-alert` | A chip that reports the tool catching itself | **Yes** |
+| `#file-header`, `#file-path`, `#file-name` | Which file this is, above everything said about it | **Yes.** The path is what tells two files of the same name apart, and DEC-058 has already paid three times for putting a displayed fact in a tooltip |
 | `#notices` | The bar carrying every notice — INV-4 made visible | **Yes** |
 | `ds-notice` | An inline notice inside the document | **Yes** |
 | `#unrenderable` | Shown when the content is not text that can be displayed, and why | **Yes** |

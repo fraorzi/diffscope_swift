@@ -12,6 +12,15 @@
   body { display: flex; flex-direction: column;
          background: var(--ds-bg); color: var(--ds-plain); }
 
+  /* Which file this is, above everything it says about it. The path is what tells two files of
+     the same name apart, so it is shown rather than hovered — the lesson DEC-058 paid for three
+     times over. */
+  #file-header { display: flex; gap: var(--ds-space-2); align-items: baseline;
+                 padding: var(--ds-space-3) var(--ds-space-4);
+                 border-bottom: var(--ds-hairline-width) solid var(--ds-border); }
+  #file-path { color: var(--ds-dim); }
+  #file-name { color: var(--ds-text); font-weight: var(--ds-weight-emphasis); }
+
   /* INV-4 lives here: every fallback and every withheld analysis is stated in this bar. A design
      may restyle it and may not remove it from the layout. */
   #notices { display: flex; gap: var(--ds-space-3);
@@ -233,6 +242,7 @@
 </style>
 </head>
 <body>
+  <div id="file-header"><span id="file-path"></span><span id="file-name"></span></div>
   <div id="notices"></div>
   <div id="stage">
     <div id="left"></div>

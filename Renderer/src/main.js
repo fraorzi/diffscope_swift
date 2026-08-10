@@ -543,6 +543,15 @@ function cell(className, text) {
   return el;
 }
 
+/// The file header. Pushed rather than derived: the renderer is handed a model, and a model does
+/// not carry the path it came from — the shell is the side that knows which file the reader chose.
+window.diffscopeSetFile = function (path) {
+    const cut = String(path || "").lastIndexOf("/");
+    document.getElementById("file-path").textContent = cut < 0 ? "" : path.slice(0, cut + 1);
+    document.getElementById("file-name").textContent = cut < 0 ? path : path.slice(cut + 1);
+    return path;
+};
+
 window.diffscopeShowLens = function (json) {
   const payload = typeof json === "string" ? JSON.parse(json) : json;
   const host = document.getElementById("lens");
@@ -1026,6 +1035,7 @@ window.diffscopeProbe = function () {
     newText: right.state.doc.toString(),
     summary: lastSummary,
     layout,
+    fileHeader: document.getElementById("file-name").textContent,
     lens: lastLens,
     rendered: lastRendered,
     renderedModes: document.querySelectorAll(".ds-render-mode").length,
