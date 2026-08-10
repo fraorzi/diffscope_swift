@@ -64,7 +64,7 @@ The dependencies are real; this order avoids doing anything twice.
 
 All eight steps above are built. The three that cost the most were not the ones this document expected: the token table went in cleanly, and the time went on `NSTableView`'s inset style clipping a rail to two characters, on `NSSplitView` ignoring a pane's width at two priorities and through `setPosition`, and on a selftest that had been reading the developer's own configuration and losing a race with it. Each was found by a picture or a printed frame, never by a check — and each check that had "passed" was asserting what had been *asked for* rather than what the window did.
 
-Remaining: the eight image fixtures of `15-…` §4.7a.
+The eight image fixtures of `15-…` §4.7a were built the next day and are the last item of §4 step 8. Nothing in this document is now outstanding.
 
 ## 5. What is drawn and deliberately not built yet
 
