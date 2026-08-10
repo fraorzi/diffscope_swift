@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+     viewBox="0 0 16 16" width="16" height="16" onload="globalThis.__diffscopeHostile = 1">
+  <script type="text/javascript">globalThis.__diffscopeHostile = 1;</script>
+  <image href="https://example.invalid/pixel-1.png" x="0" y="0" width="1" height="1"/>
+  <use xlink:href="https://example.invalid/sprite-1.svg#icon"/>
+  <rect width="16" height="16" fill="#282860"/>
+</svg>

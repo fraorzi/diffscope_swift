@@ -175,7 +175,13 @@ Elevated from the original sketch: 51% of the real corpus contains non-ASCII, an
 
 The rendered comparison is the first surface where a *correct* comparison can still mislead, so the fixtures are chosen around that rather than around file formats.
 
-**State, 2026-08-09.** The classification and every sentence the comparison says are checked today — fifteen checks in `runRenderedComparisonChecks`, including a `.png` that is not a PNG, a `.svg` whose bytes are not an SVG, and the negative control that a comparison with differing pixels never claims they are identical. The selftest builds two PNGs differing in exactly four pixels and photographs the result. **The eight fixtures below are not built yet**; they are what turns those checks into end-to-end coverage, and `svg-hostile` in particular is the control for the `<img>` boundary rather than a nicety.
+**Built 2026-08-10** by `Scripts/image-fixtures.sh`, which writes the bytes rather than exporting them: an image that passes through an editor, an optimiser or a screenshot tool is no longer the image the case is about, and §2's rule about exact bytes applies to pixels as much as to CRLFs. All eight run under T-0 … T-11 like every other fixture, and three further arms ask what only these can:
+
+- `raster-identical-bytes-differ` must report **0** differing pixels — F18's sentence exists for exactly this pair, and a non-zero count here would replace it with a number.
+- `raster-resize` must report a non-zero count, so the pass is not simply agreeing with everything.
+- `svg-hostile` must be **drawn and inert**: two images on the page and `globalThis.__diffscopeHostile` still undefined afterwards. Either half alone passes while the product fails.
+
+The fixture bytes are asserted to be what they claim — the over-budget frame's size is read from its IHDR rather than from the note beside it, because a fixture that claims to exceed the budget and does not makes the refusal untestable while looking tested.
 
 | Case | Exercises |
 |---|---|

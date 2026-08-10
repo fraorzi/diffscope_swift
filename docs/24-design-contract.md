@@ -163,6 +163,8 @@ The terminal writes three more — `terminal` (a command's output in the grid), 
 
 **One photographs the rendered comparison** — `rendered` (DEC-063), two PNGs that differ in exactly four pixels, so the count in the sentence can be wrong in a way no picture would show. Look at the checkerboard first: its grid is deliberately coarser than every change texture, because a reader who takes an alpha change for a diff mark has been told the wrong thing in the wrong language.
 
+`rendered-svg` is the same stage with the `svg-hostile` fixture in it — an SVG carrying a script, an `onload` handler and two remote references, **drawn and inert**. The arm asks for both halves: two images on the page, and `globalThis.__diffscopeHostile` still undefined. Either half alone would pass while the product failed.
+
 **Two photograph the lenses** — `blame` and `history` (DEC-061), taken against a real repository with a commit behind it and work in front of it, so blame has both committed lines and lines that are not committed yet. The thing to look at is the uncommitted marking: it is an edge, not a tint, because tint and texture belong to the change language and a second meaning for them is a meaning nobody can read.
 
 **One more photographs the chrome collapsed** — `collapsed`, both lists reduced to a rail and a spine with 63 files in the tree (DEC-060). It is the density check: the rail has room for three letters and the spine for a kind glyph and a bar, and whether either is legible at that size is a question only the picture answers. It found two defects that every check had passed: the panes drawing at twice their constrained width, and the file spine drawing nothing at all.

@@ -119,6 +119,18 @@
       "sha256" : "299eb75a60baa9b95da0194cd233436cd73d079afda76aa6a78354e5646013a1"
     }
   },
+  "image-added" : {
+    "after" : {
+      "bytes" : 87,
+      "ext" : "png",
+      "sha256" : "f69bbdf111dfa05e4f37e9a9da17f497ccdc60644f246e087659ff416bce0143"
+    },
+    "before" : {
+      "bytes" : 0,
+      "ext" : "png",
+      "sha256" : "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
   "image-file" : {
     "after" : {
       "bytes" : 23,
@@ -129,6 +141,18 @@
       "bytes" : 23,
       "ext" : "jpg",
       "sha256" : "7a6a0e2355ecc57e58620298e182727c2ccea204b961629202d683f9d614d10c"
+    }
+  },
+  "image-over-budget" : {
+    "after" : {
+      "bytes" : 87920,
+      "ext" : "png",
+      "sha256" : "9cb74101571a9528da714773dcd9ed5766d2fae7690b6d3ac37ebb59707ab3de"
+    },
+    "before" : {
+      "bytes" : 87920,
+      "ext" : "png",
+      "sha256" : "cf8ed1918e36d2e8801cf1a0eaf6f893df4928bc18b708b1e3197a7864ea845d"
     }
   },
   "import-item-removal" : {
@@ -431,6 +455,30 @@
       "sha256" : "b86cd6ffd57302411a9d8e20a65041dea9e876e67e2f5d6c8d4a4b09f0a85bb3"
     }
   },
+  "raster-identical-bytes-differ" : {
+    "after" : {
+      "bytes" : 128,
+      "ext" : "png",
+      "sha256" : "db54836bd5b25623b8dd0979ee536b8951574c3342b8ea7245d661433e8b2d72"
+    },
+    "before" : {
+      "bytes" : 82,
+      "ext" : "png",
+      "sha256" : "baff2bbcd4ece35e42633ab492b5b5298ee1a20cd478f413e36120eb289a6241"
+    }
+  },
+  "raster-resize" : {
+    "after" : {
+      "bytes" : 87,
+      "ext" : "png",
+      "sha256" : "f7dd607d80a8ddd44a158d3a16c759a3e588add1819607add9e423fb77ff3f11"
+    },
+    "before" : {
+      "bytes" : 82,
+      "ext" : "png",
+      "sha256" : "baff2bbcd4ece35e42633ab492b5b5298ee1a20cd478f413e36120eb289a6241"
+    }
+  },
   "repeated-identifier-change" : {
     "after" : {
       "bytes" : 308,
@@ -479,6 +527,42 @@
       "sha256" : "b65d4603e3732cfdfe9a287a93fba67611bafbd5d9690604bc5656b6af17492f"
     }
   },
+  "svg-hostile" : {
+    "after" : {
+      "bytes" : 458,
+      "ext" : "svg",
+      "sha256" : "245f232674e51b865b5882f479c0414e6f0d29f3adb59c26b172f9a2b34a54af"
+    },
+    "before" : {
+      "bytes" : 458,
+      "ext" : "svg",
+      "sha256" : "2993628d91b01844c3346a45a49c6ac084cf09d09bda24535928e4307d5fbe12"
+    }
+  },
+  "svg-rendered-change" : {
+    "after" : {
+      "bytes" : 219,
+      "ext" : "svg",
+      "sha256" : "99dc58733553aa7dba2624ca60a432b4a225cddab5db350f8de32c7efcf69d54"
+    },
+    "before" : {
+      "bytes" : 219,
+      "ext" : "svg",
+      "sha256" : "02695ae903fe61e5f044bf1eff94539460032fa6adc3f83d99b513455c701261"
+    }
+  },
+  "svg-text-only-change" : {
+    "after" : {
+      "bytes" : 224,
+      "ext" : "svg",
+      "sha256" : "07b78f6a355af2e274e8d585fc47c5ff3c82ab1b251e9c9982696a2043cb601a"
+    },
+    "before" : {
+      "bytes" : 216,
+      "ext" : "svg",
+      "sha256" : "000ce0a91f9e492a608b3187fe87a521dae24ee8c1e7e616a0bc20a2d3f00e6f"
+    }
+  },
   "tailwind-class-removal" : {
     "after" : {
       "bytes" : 37,
@@ -525,6 +609,18 @@
       "bytes" : 91,
       "ext" : "tsx",
       "sha256" : "43377bda4eda158cf0da6479a7fe5ca1ee611116906931cc81a6f3f6fd9c3b1a"
+    }
+  },
+  "undisplayable-blob" : {
+    "after" : {
+      "bytes" : 123,
+      "ext" : "zip",
+      "sha256" : "b9b7e6dffa35a8ef8b5ef0c8079bd2a551e2980240cf17d47818feb1af1e531f"
+    },
+    "before" : {
+      "bytes" : 123,
+      "ext" : "zip",
+      "sha256" : "c4b22ee6b3345a40c92ad1817a84cebec9ef540288f11ed4a8148a42a527f1c5"
     }
   },
   "unicode-graphemes" : {

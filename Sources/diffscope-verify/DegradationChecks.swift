@@ -426,4 +426,67 @@ func runRenderedComparisonChecks(_ reportRaw: (String, Bool, String) -> Void) {
     report("negative control: a comparison with differing pixels never claims they are identical",
            !renderedComparisonSummary(comparison(old: (10, 10), new: (10, 10), pixels: 1))
                .contains("render identically"))
+
+    print("\n=== the §4.7a fixtures are what they claim to be (DEC-063) ===")
+    do {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("fixtures")
+        func bytes(_ case_: String, _ file: String) -> [UInt8] {
+            [UInt8]((try? Data(contentsOf: root.appendingPathComponent("\(case_)/\(file)"))) ?? Data())
+        }
+        func kind(_ case_: String, _ file: String) -> RenderableKind {
+            renderableKind(path: file, bytes: bytes(case_, file))
+        }
+
+        report("an SVG fixture classifies as text that renders",
+               kind("svg-text-only-change", "after.svg") == .textThatRenders(format: "SVG")
+                   && kind("svg-rendered-change", "after.svg") == .textThatRenders(format: "SVG"))
+        report("the hostile SVG is classified like any other — the boundary is how it is drawn, not whether",
+               kind("svg-hostile", "after.svg") == .textThatRenders(format: "SVG"))
+        report("the raster fixtures are raster",
+               kind("raster-resize", "after.png") == .raster(format: "PNG")
+                   && kind("raster-identical-bytes-differ", "after.png") == .raster(format: "PNG"))
+        report("the archive is undisplayable", kind("undisplayable-blob", "after.zip") == .undisplayable)
+
+        // An absent side is empty bytes, and an empty side must not be classified as an image that
+        // failed to decode — the reader is told there is no counterpart, not that something broke.
+        report("the added image has no left side at all", bytes("image-added", "before.png").isEmpty)
+        report("and its right side is a real PNG", kind("image-added", "after.png") == .raster(format: "PNG"))
+
+        // Read from IHDR rather than from the note beside the file: a fixture that claims to be
+        // over the budget and is not would make the refusal untestable while looking tested.
+        func size(_ case_: String, _ file: String) -> (width: Int, height: Int)? {
+            let data = bytes(case_, file)
+            guard data.count > 24, Array(data.prefix(8)) == [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+            else { return nil }
+            func int(_ offset: Int) -> Int {
+                (Int(data[offset]) << 24) | (Int(data[offset + 1]) << 16)
+                    | (Int(data[offset + 2]) << 8) | Int(data[offset + 3])
+            }
+            return (width: int(16), height: int(20))
+        }
+        let huge = size("image-over-budget", "after.png")
+        report("the over-budget fixture really is over the budget",
+               (huge.map { $0.width * $0.height } ?? 0) > RenderedComparison.megapixelBudget * 1_000_000,
+               huge.map { "\($0.width) × \($0.height)" } ?? "not a PNG")
+        report("and the resize fixture really changes size",
+               size("raster-resize", "before.png")?.width != size("raster-resize", "after.png")?.width)
+
+        // The pair whose whole point is that the bytes moved and the picture did not.
+        report("the identical-render pair differs in bytes",
+               bytes("raster-identical-bytes-differ", "before.png")
+                   != bytes("raster-identical-bytes-differ", "after.png"))
+        report("and is the same size, so a pixel pass is comparing like with like",
+               size("raster-identical-bytes-differ", "before.png")?.width
+                   == size("raster-identical-bytes-differ", "after.png")?.width)
+
+        // The control's teeth: the file has to actually carry the things the boundary refuses to
+        // honour, or the arm that draws it proves nothing.
+        let hostile = String(decoding: bytes("svg-hostile", "after.svg"), as: UTF8.self)
+        report("the hostile SVG carries a script, an event handler and a remote reference",
+               hostile.contains("<script") && hostile.contains("onload=")
+                   && hostile.contains("https://example.invalid"))
+        report("and sets an observable marker, so a boundary failure is visible rather than argued",
+               hostile.contains("__diffscopeHostile"))
+    }
 }

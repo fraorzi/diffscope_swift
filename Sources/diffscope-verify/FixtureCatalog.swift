@@ -118,6 +118,21 @@ enum FixtureCatalog {
                 why: "the behaviour is undefined, and a fixture would freeze an answer nobody has "
                     + "chosen. Listed so the gap is counted rather than forgotten")),
 
+        // §4.7a — files that render (DEC-063). P1, and every one of them is a case where a
+        // *correct* comparison can still mislead: the two F18 pairs, the boundary control, the
+        // refusals. Built 2026-08-10 by `Scripts/image-fixtures.sh`, which writes the bytes rather
+        // than exporting them — an image that passes through an optimiser is no longer the image
+        // the case is about.
+        FixtureCase(name: "svg-text-only-change", group: "4.7a renders", priority: .p1, evidence: .corpus),
+        FixtureCase(name: "svg-rendered-change", group: "4.7a renders", priority: .p1, evidence: .corpus),
+        FixtureCase(name: "svg-hostile", group: "4.7a renders", priority: .p1, evidence: .corpus),
+        FixtureCase(name: "raster-resize", group: "4.7a renders", priority: .p1, evidence: .corpus),
+        FixtureCase(name: "raster-identical-bytes-differ", group: "4.7a renders", priority: .p1,
+                    evidence: .corpus),
+        FixtureCase(name: "image-added", group: "4.7a renders", priority: .p1, evidence: .corpus),
+        FixtureCase(name: "image-over-budget", group: "4.7a renders", priority: .p1, evidence: .corpus),
+        FixtureCase(name: "undisplayable-blob", group: "4.7a renders", priority: .p1, evidence: .corpus),
+
         // §4.7 — file-level operations
         FixtureCase(
             name: "deleted-file", group: "4.7 file-level", priority: .p1,

@@ -1445,7 +1445,60 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                         + "off=\(probe["renderedModesOff"] as? Int ?? -1)\n").utf8))
                 self.snapshot(named: "rendered") {
                     guard ok else { exit(51) }
-                    exit(0)
+                    self.renderedFixtureSelftest()
+                }
+            }
+        }
+    }
+
+    /// The §4.7a fixtures, through the real path (DEC-063). Two of them make claims a picture
+    /// cannot check — *0 pixels differ* and *the boundary held* — and both are the kind of claim
+    /// that stays true by accident until it does not.
+    private func renderedFixtureSelftest() {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("fixtures")
+        func bytes(_ case_: String, _ file: String) -> [UInt8] {
+            [UInt8]((try? Data(contentsOf: root.appendingPathComponent("\(case_)/\(file)"))) ?? Data())
+        }
+        func differing(_ case_: String, _ ext: String) -> Int? {
+            guard let old = ImageComparison.image(from: bytes(case_, "before.\(ext)")),
+                  let new = ImageComparison.image(from: bytes(case_, "after.\(ext)")) else { return nil }
+            return ImageComparison.compare(old: old, new: new).differing
+        }
+
+        // The pair whose bytes moved and whose picture did not. If this is ever non-zero the
+        // sentence F18 requires would be replaced by a count, which is the failure in reverse.
+        let identical = differing("raster-identical-bytes-differ", "png")
+        // The same file with a square moved two units: the pass must find it.
+        let moved = differing("raster-resize", "png")
+        let fixturesOK = identical == 0 && (moved ?? 0) > 0
+        FileHandle.standardError.write(Data(
+            ("SELFTEST rendered-fixtures=\(fixturesOK ? "OK" : "MISMATCH") "
+                + "identical-render=\(identical.map(String.init) ?? "undecodable") "
+                + "resize=\(moved.map(String.init) ?? "undecodable")\n").utf8))
+        guard fixturesOK else { exit(52) }
+
+        // The boundary control. The SVG carries a script, an onload handler and two remote
+        // references; it is drawn through an `<img>` from a `data:` URL, where none of them can
+        // run. A marker the file would set is asked for afterwards.
+        let hostile = bytes("svg-hostile", "after.svg")
+        showRendered(file: ChangedFile(path: "public/hostile.svg", originalPath: nil, kind: .modified),
+                     oldBytes: bytes("svg-hostile", "before.svg"), newBytes: hostile,
+                     kind: .textThatRenders(format: "SVG"))
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            self.webView.evaluateJavaScript("String(globalThis.__diffscopeHostile)") { value, _ in
+                let marker = (value as? String) ?? "undefined"
+                let images = "document.querySelectorAll(\"#rendered img\").length"
+                self.webView.evaluateJavaScript(images) { count, _ in
+                    let drawn = (count as? Int) ?? (count as? NSNumber)?.intValue ?? 0
+                    // Drawn **and** inert: either half alone would pass while the product failed.
+                    let held = marker == "undefined" && drawn == 2
+                    FileHandle.standardError.write(Data(
+                        ("SELFTEST svg-boundary=\(held ? "OK" : "MISMATCH") marker=\(marker) "
+                            + "images=\(drawn)\n").utf8))
+                    self.snapshot(named: "rendered-svg") {
+                        exit(held ? 0 : 53)
+                    }
                 }
             }
         }

@@ -907,3 +907,30 @@ The eight image fixtures of `15-…` §4.7a are specified and not built; the cla
 copy are checked, and `svg-hostile` is the one that matters — it is the control for the `<img>`
 boundary rather than a nicety. A small image also draws at its natural size in the stage, which is
 right for an asset and mean to a 16-pixel icon.
+
+## Step 39 — the eight fixtures of §4.7a
+
+- [x] `Scripts/image-fixtures.sh` writes all eight byte by byte: PNGs assembled from IHDR/IDAT with
+      an explicit compression level, SVGs as text, a structurally real zip
+- [x] `notes.md` for each, saying what would go wrong without it
+- [x] Registered in `FixtureCatalog` as §4.7a P1, so the plan and the corpus can disagree out loud
+- [x] `MANIFEST.json` rewritten — 47 fixtures to 55, and every one now under T-0 … T-11
+- [x] Twelve checks over the fixture *bytes*: classification, an empty left side, the resize really
+      resizing, the identical pair really differing, and the hostile file really carrying a script,
+      an event handler and a remote reference
+- [x] Two selftest arms: the pixel claims (0 and 128) and the `<img>` boundary
+
+### Step 39 — the two that needed a fixture rather than an assertion
+
+**`raster-identical-bytes-differ` reports 0.** That number is the whole of F18: if a pixel pass ever
+returns non-zero here, the sentence *"the two files render identically"* is replaced by a count and
+the reader is told the opposite of the truth. It could not be tested with a constructed pair,
+because the interesting part is that a real re-encode changes every byte and no pixel.
+
+**`svg-hostile` is asked both questions.** Drawn — two images on the page — *and* inert, with
+`globalThis.__diffscopeHostile` still undefined. A control that only asked whether the marker was
+absent would pass on a pane that drew nothing at all, which is the failure mode a boundary check
+most easily hides behind.
+
+The over-budget frame's size is read from its IHDR rather than from its note. A fixture that claims
+to exceed the budget and does not would make the refusal untestable while looking tested.
