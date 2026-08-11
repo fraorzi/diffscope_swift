@@ -2308,3 +2308,69 @@ The confirming read is separated from the first by `settleRetryDelay` — 20 ms,
 The pre-change measurement is the control, in the form M8-H used: **remove the separation and the blends return at 0.4%**, measured over 1,200 reads rather than argued. No new arm was added for it, because a recorded rate from the same harness is the stronger evidence and the code to produce it is one line away in either direction.
 
 **0 in 1,600 reads is good evidence, not proof.** At the pre-change rate, 1,600 reads would have been expected to produce about six. Clustering makes the arithmetic softer than that — the failures are bursty rather than independent — so the honest statement is that the shape that produced every observed blend is now impossible, and the rate is consistent with that.
+
+# M9-F — OQ-054 was wrong about the mechanism and wrong about the remedy
+
+**Date:** 2026-08-11 · **Method:** the filesystem probed directly for case and normalisation behaviour, Swift's string comparison probed in a standalone binary, then the discovery path measured through a check written to fail.
+
+OQ-054 asked for **case-folded and NFC-normalized** path matching and named the consequence: a mismatch means *auto-refresh silently stops updating that file*. It had been open since Phase 3.5 and the audit earlier the same day confirmed nothing implemented it. Everything in that sentence turned out to need correcting.
+
+## The stated failure mode cannot happen
+
+`RepositoryWatcher.deliver` ORs the event flags and signals `.changed` for the **whole repository**. No FSEvents path is ever compared with a Git path. The entry was written against a per-file watching design; DEC-007 and DEC-027 built a per-repository one, and nobody went back to the question.
+
+## The filesystem, asked rather than assumed
+
+```
+created "Foo"          → "foo" resolves            → case-INSENSITIVE
+created NFC "żabka"    → listing returns NFC        → normalization-PRESERVING
+looked up by NFD form  → found                      → normalization-INSENSITIVE
+created NFD alongside  → collides with the NFC one  → one directory, not two
+```
+
+So **reading a file never fails for either reason** — the kernel resolves the name. Only comparison in Swift can break.
+
+## Swift's comparison, which is half the entry answered by the language
+
+| | |
+|---|---|
+| `nfc == nfd` | **true** |
+| `(nfc + "/pkg").hasPrefix(nfd)` | **true** |
+| `Set([nfc]).contains(nfd)` | **true** |
+| `Array(nfc.utf8) != Array(nfd.utf8)` | **true** — the bytes really do differ |
+| `"Projects" == "projects"` | **false** |
+
+`String ==` is canonical equivalence, so **the NFC half of OQ-054 needs no code at all.** This is M6-C read backwards: there, canonical equivalence meant an NFC detector could never fire and detected nothing while its fixtures passed. Here the same semantics do the work for free. It is now **asserted in the suite** rather than relied on quietly, with the differing bytes as the control — the second time this project has depended on these semantics, and the first was a defect.
+
+## Root scanning was never broken either
+
+```
+passed in : /var/folders/…/caseroot
+entry back: /private/var/folders/…/CaseRoot/web
+resolvingSymlinksInPath: /var/folders/…/CaseRoot
+```
+
+**`contentsOfDirectory` returns the filesystem's own spelling** — canonical case, and `/private/var` rather than `/var`. `resolvingSymlinksInPath` canonicalises case too. So a repository found by scanning always carries the canonical path, and the first check written for this — two case-differing roots — **passed on the unfixed code**. That is the measurement contradicting the plan that preceded it, which is the habit this project keeps.
+
+## What was actually broken
+
+An **individually added** repository is taken verbatim from the configuration and never goes through either of those. DEC-037 put roots and individual repositories in one list, so the same working tree reached both ways arrives spelled twice:
+
+```
+root + the same repo added individually  → 2 repositories   (before)
+                                         → 1               (after)
+removeSource matching across spellings   → no match         (before)
+                                         → matches          (after)
+```
+
+Two rows for one repository is two watchers, two sweeps, and a reader editing in one row while the other goes stale. And the two spellings differ by **more than case** — `/var` against `/private/var` — which is the argument against fixing this with string arithmetic: a folding rule has to anticipate every way two names for one file can differ, and asking the filesystem does not.
+
+## What the fix is
+
+DEC-069. Identity is **device plus inode** where the path exists — the same mechanism `ScopeReader.FileStamp` already uses — and a folded string only where there is nothing to ask, which reaches only configured sources that have gone missing. Containment is a separate question and gets a separate answer, `resolvingSymlinksInPath`, because an inode cannot express *underneath*.
+
+```
+1598 → 1608 checks
+```
+
+Two of the ten are negative controls: that the two spellings are genuinely different strings, so the deduplication is an observation rather than a tautology; and that Swift's canonical equivalence holds at all.

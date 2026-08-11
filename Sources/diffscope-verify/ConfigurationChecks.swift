@@ -106,6 +106,88 @@ func runConfigurationChecks(_ reportRaw: (String, Bool, String) -> Void) {
                missing.diagnostics.contains { if case .sourceMissing = $0 { return true }; return false })
     }
 
+    print("\n=== DEC-069: one directory is one repository, however it is spelled ===")
+    do {
+        // Which world this machine is in, asked rather than assumed. On a case-sensitive volume the
+        // second spelling is a genuinely different directory that does not exist, there is no
+        // defect to catch, and the arm passes for that reason instead — which the detail says out
+        // loud, because an arm that passes for two different reasons should name the one it used.
+        let probe = scratch.appendingPathComponent("CaseProbe")
+        try? fm.createDirectory(at: probe, withIntermediateDirectories: true)
+        let insensitive = fm.fileExists(atPath: scratch.appendingPathComponent("caseprobe").path)
+
+        let root = scratch.appendingPathComponent("CaseRoot")
+        try? fm.createDirectory(at: root, withIntermediateDirectories: true)
+        _ = makeRepository("web", in: root)
+        let lowered = scratch.appendingPathComponent("caseroot")
+
+        let discovery = RepositoryDiscovery(maximumDepth: 2)
+        let both = discovery.discover(sources: [
+            ConfiguredSource(kind: .root, path: root.path).discoverySource,
+            ConfiguredSource(kind: .root, path: lowered.path).discoverySource,
+        ])
+        // DEC-037 put roots and individually added repositories in the same list, which is what
+        // makes this easy to reach: the same directory named twice, once per source. Two rows means
+        // two watchers and two sweeps over one working tree, and a reader editing in one row while
+        // the other goes stale.
+        report("two spellings of one root list the repository once",
+               both.repositories.count == 1,
+               "\(both.repositories.count) on a case-\(insensitive ? "insensitive" : "sensitive") volume")
+
+        let mixed = discovery.discover(sources: [
+            ConfiguredSource(kind: .root, path: root.path).discoverySource,
+            ConfiguredSource(kind: .repository,
+                             path: lowered.appendingPathComponent("web").path).discoverySource,
+        ])
+        report("and a root plus the same repository added individually is still one",
+               mixed.repositories.count == 1, "\(mixed.repositories.count)")
+
+        // The configuration half. `removeSource` asks which configured source a selected repository
+        // came from, and a source the user typed in one case cannot be removed if discovery
+        // reported another.
+        let source = ConfiguredSource(kind: .root, path: lowered.path)
+        report("a source matches the repository it produced, whatever the spelling",
+               source.contains(repositoryPath: root.appendingPathComponent("web").path),
+               "\(lowered.path) vs \(root.path)/web")
+
+        // A path with no inode still has to have an identity: DEC-052 keeps missing sources rather
+        // than dropping them, so identity cannot depend on the file being there.
+        let absent = scratch.appendingPathComponent("Gone/Away").path
+        report("a path that does not exist still has a decidable identity",
+               PathIdentity.of(absent) == PathIdentity.of(absent.lowercased()),
+               PathIdentity.of(absent))
+
+        // The control. Everything above would also pass if the two spellings were secretly the same
+        // string — so this asserts they are not, which is what makes the deduplication above an
+        // observation rather than a tautology. Before DEC-069 these two produced two rows.
+        let asStrings = Set([root.appendingPathComponent("web").path,
+                             lowered.appendingPathComponent("web").path])
+        report("control: as strings the two spellings are two different paths",
+               asStrings.count == 2, asStrings.sorted().joined(separator: " · "))
+        report("and the identity of one of them is not a path at all",
+               !PathIdentity.of(root.appendingPathComponent("web").path).hasPrefix("/"),
+               PathIdentity.of(root.appendingPathComponent("web").path))
+    }
+
+    print("\n=== the assumption the NFC half rests on, asserted rather than believed ===")
+    do {
+        // M6-C: this project has already been wrong about Swift's comparison semantics once, in the
+        // other direction — `String ==` is canonical equivalence, so an NFC test written the
+        // obvious way is always false and the detector silently detected nothing. Here the same
+        // semantics are load-bearing in the opposite sense: they are the whole reason OQ-054's
+        // normalisation half needs no code. If a future Swift changes it, this says so.
+        let nfc = "\u{017C}abka"
+        let nfd = "z\u{0307}abka"
+        report("String == is canonical equivalence, so NFC and NFD compare equal", nfc == nfd)
+        report("and hasPrefix agrees with it", (nfc + "/pkg").hasPrefix(nfd))
+        report("and so does Set membership, which is what a visited-set depends on",
+               Set([nfc]).contains(nfd))
+        // The control: the two really are different bytes, so the equality above is a property of
+        // the comparison and not of the inputs being secretly identical.
+        report("while the bytes themselves differ, which is what makes that a property of ==",
+               Array(nfc.utf8) != Array(nfd.utf8))
+    }
+
     print("\n=== identically named repositories stay distinguishable (DEC-037) ===")
     do {
         let labels = disambiguatedNames(for: [

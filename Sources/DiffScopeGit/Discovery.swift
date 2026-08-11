@@ -19,7 +19,18 @@ public struct DiscoveredRepository: Sendable, Equatable {
     public let url: URL
     public let discoveredVia: URL
 
-    public var identity: String { url.standardizedFileURL.path }
+    /// DEC-069. The dedupe key, and **not** a path: a repository reached through a root and again
+    /// through an individually added source arrives spelled two different ways — different case,
+    /// or `/var` against `/private/var` — and two rows for one working tree means two watchers, two
+    /// sweeps, and a reader editing in one while the other goes stale.
+    ///
+    /// Scanning was never the problem: `contentsOfDirectory` hands back the filesystem's own
+    /// spelling. An individually added repository is taken verbatim from the configuration, which
+    /// is where the two spellings meet (M9-F).
+    public var identity: String { PathIdentity.of(url.path) }
+    /// What the list is ordered by. `identity` is a device and an inode, and sorting by those would
+    /// order the rail by whatever the filesystem happened to allocate.
+    public var sortKey: String { url.standardizedFileURL.path }
     public var displayName: String { url.lastPathComponent }
 }
 
@@ -94,7 +105,7 @@ public struct RepositoryDiscovery: Sendable {
         }
 
         return DiscoveryResult(
-            repositories: found.values.sorted { $0.identity < $1.identity },
+            repositories: found.values.sorted { $0.sortKey < $1.sortKey },
             diagnostics: diagnostics
         )
     }

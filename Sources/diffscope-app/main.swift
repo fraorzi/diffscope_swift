@@ -2265,7 +2265,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         guard panel.runModal() == .OK else { return }
         for url in panel.urls {
             let source = ConfiguredSource(kind: kind, path: url.standardizedFileURL.path)
-            guard !state.configuration.sources.contains(source) else { continue }
+            // DEC-069: the same directory, not the same string. `contains` compared the two paths
+            // exactly, so a folder already configured under another spelling — a different case, or
+            // reached through a symlinked parent — was added a second time and then listed twice.
+            guard !state.configuration.sources.contains(where: {
+                $0.kind == source.kind && PathIdentity.same($0.path, source.path)
+            }) else { continue }
             state.configuration.sources.append(source)
         }
         if let problem = configStore.save(state.configuration) {
@@ -2441,9 +2446,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// when the empty state is showing.
     @objc private func removeSource() {
         let selectedPath = state.selectedRepository?.url.path
+        // DEC-069. Discovery reports the filesystem's spelling and the configuration holds the
+        // user's, and the two need not agree: a root typed in one case, or a path under `/var`
+        // against the `/private/var` the scan returns, matched nothing here — so the reader was
+        // told to *select a repository to remove the source it came from* while one was selected.
         let match = state.configuration.sources.first { source in
             guard let selectedPath else { return false }
-            return selectedPath == source.path || selectedPath.hasPrefix(source.path + "/")
+            return source.contains(repositoryPath: selectedPath)
         } ?? state.sourceProblems.first?.source
 
         guard let match else {

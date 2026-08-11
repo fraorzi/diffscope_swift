@@ -6,15 +6,16 @@ Everything raised and not yet decided. Each entry carries a status as defined in
 
 Questions are grouped by area. Identifiers are stable; resolved questions are struck through and annotated with the decision that closed them rather than deleted.
 
-**Audited 2026-08-11** against the decision log and the code. **Twenty-four entries were marked Open while a decision, a measurement or a shipped implementation had already answered them** — a document that says *undecided* about something built three milestones ago sends a fresh agent to re-decide it, which is the failure this document exists to prevent. Each is now struck through with what closed it: OQ-003, 004, 005, 008, 010, 017, 026, 028, 031, 033, 036, 037, 038, 039, 040, 042, 043, 044, 045, 048, 049, 050, 051, 052.
+**Audited 2026-08-11** against the decision log and the code, and **OQ-054 was fixed the same day** (DEC-069). **Twenty-four entries were marked Open while a decision, a measurement or a shipped implementation had already answered them** — a document that says *undecided* about something built three milestones ago sends a fresh agent to re-decide it, which is the failure this document exists to prevent. Each is now struck through with what closed it: OQ-003, 004, 005, 008, 010, 017, 026, 028, 031, 033, 036, 037, 038, 039, 040, 042, 043, 044, 045, 048, 049, 050, 051, 052.
 
 **One entry appeared twice**, Open in one section and struck through in another (OQ-049). That is the same drift in miniature.
 
-**Eight are genuinely open. Five more are part-answered** and now say which part.
+**Seven are genuinely open. Five more are part-answered** and now say which part.
+
+**OQ-054 was closed the same day by DEC-069** — the audit called it the most consequential entry still open, and building the fix found that both halves of its stated problem were wrong while a narrower real defect sat underneath. See its entry, and M9-F.
 
 | Genuinely open | Why it stays open |
 |---|---|
-| **OQ-054** case-folding and NFC in path matching | Confirmed unaddressed by this audit. **The most consequential one**, because it fails silently — auto-refresh stops following a file and nothing says so |
 | **OQ-032** caching | Specified in `16-…` §6, never decided. What blocks it is that nothing has been slow enough to need it |
 | **OQ-041** tree versus flat list | DEC-033's grouping is a middle position, not an answer. Left open on purpose |
 | **OQ-034** distribution · **OQ-035** sandboxing | Shipping questions. A tester build is not a distribution |
@@ -110,10 +111,22 @@ Both mitigations were unavailable, which is why this had to be measured rather t
 
 ~~**OQ-051 — `git status` and `git diff` disagree under an active EOL filter.**~~ **Resolved by DEC-041: the file list follows `git status`.** The measurement below is the case that forced it — status reports ` M` while diff reports zero lines — and the resolution is that the list keeps saying *changed* while the diff view **discloses the filter and says the two sides are byte-equal**. Hiding the row would be the tool deciding the reader is wrong about their own repository. F8 is what carries the disclosure, and it fires *even when the sides are byte-equal*, which is this case exactly.
 
-**OQ-054 — Case-folding and normalization in path matching.** Status: **Open, and confirmed unaddressed** by the audit of 2026-08-11 — the only `lowercased()` in the Git layer is the extension test in `FileGrouping`, which is not path matching. Raised by measurement.
-Measured: writing via `src/foo.ts` when disk holds `src/Foo.TS` makes FSEvents report the **on-disk** case. Git is case-sensitive, macOS's default filesystem is case-insensitive but case-preserving, so a mismatch means auto-refresh (DEC-007) silently stops updating that file. Path matching needs case-folded **and** NFC-normalized comparison — the latter realistic given Polish filenames and the NFD content already measured in this corpus.
+~~**OQ-054 — Case-folding and normalization in path matching.**~~ **Resolved by DEC-069, 2026-08-11 — and this entry was wrong about the mechanism, wrong about the remedy, and right that something was broken.** Measured in `22-experiment-log.md` → **M9-F**. Kept in full below, because the corrections are worth more than the conclusion.
 
-**This is the most consequential entry still open**, because its failure mode is silence: the reader sees a diff that has simply stopped following the file, with nothing on screen saying so. Everything else still open is either a deferral (OQ-015, OQ-056) or a question about shipping rather than about correctness (OQ-034, OQ-035).
+**What it claimed, and what was measured:**
+
+- *"auto-refresh silently stops updating that file"* — **cannot happen.** `RepositoryWatcher.deliver` ORs the event flags and signals `.changed` for the **whole repository**; no FSEvents path is ever compared with a Git path. The entry was written against a per-file watching design, and DEC-007 with DEC-027 built a per-repository one.
+- *"needs case-folded **and** NFC-normalized comparison"* — **the normalisation half needs no code.** Swift's `String ==`, `hasPrefix` and `Set` membership are canonical equivalence, so NFC and NFD forms already compare and hash equal. That is now asserted in the suite rather than relied on quietly: it is the second time this project has depended on those semantics and the first (M6-C) was a defect.
+- The filesystem itself is **case-insensitive and normalization-insensitive for lookup**, so *reading* a file never fails for either reason. Only Swift-side comparison can break, and only on case.
+- **Root scanning was never broken.** `contentsOfDirectory` returns the filesystem's own spelling and `resolvingSymlinksInPath` canonicalises case — so the first check written for this passed on the unfixed code.
+
+**What was actually broken**, and it is narrow: an **individually added** repository is taken verbatim from the configuration and goes through neither of those. DEC-037 put roots and individual repositories in one list, so the same working tree reached both ways produced **two rows** — two watchers, two sweeps, and a reader editing in one while the other went stale. `removeSource` and the add-source dedupe compared paths exactly and failed the same way. The spellings differ by more than case: `/var` against `/private/var` for the same file.
+
+**DEC-069's answer is to stop computing identity from the string and ask the filesystem** — device plus inode where the path exists, a folded string only where there is nothing to ask.
+
+**The original text, retained:**
+
+Measured: writing via `src/foo.ts` when disk holds `src/Foo.TS` makes FSEvents report the **on-disk** case. Git is case-sensitive, macOS's default filesystem is case-insensitive but case-preserving, so a mismatch means auto-refresh (DEC-007) silently stops updating that file. Path matching needs case-folded **and** NFC-normalized comparison — the latter realistic given Polish filenames and the NFD content already measured in this corpus.
 
 ~~**OQ-055 — A built-in terminal.**~~ Status: **Resolved 2026-07-31 — build it**, recorded as **DEC-053** on 2026-08-01 once gate T0 had passed, and extended by **DEC-067** on 2026-08-10 to several sessions in tabs across a full-width drawer. The product owner put it at the front of the queue. Plan and gate: [26-terminal-plan.md](26-terminal-plan.md); measurement: `22-experiment-log.md` → T0. The analysis below is kept because its cost estimate is what the plan is built on.
 

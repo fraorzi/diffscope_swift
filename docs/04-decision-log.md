@@ -2895,3 +2895,60 @@ This is a strictly stronger guard than DEC-049's, not a different one. Every ter
 ### Revisit trigger
 
 Reopen if a worktree read ever needs to be on a latency-critical path — today it happens when a reader selects a file or a refresh fires, and 20 ms is invisible there. Also reopen if a partial, **non-empty** read is ever observed being certified: that would mean the window is still too short rather than absent, and the delay is the number to change.
+
+---
+
+## DEC-069 — Path identity is asked of the filesystem, not computed from the string
+
+- **Date:** 2026-08-11 · **Topic:** OQ-054; DEC-018 discovery, DEC-037 multiple sources, DEC-052 configuration · **Status:** Accepted · **Closes OQ-054**
+
+### Context
+
+OQ-054 had been open since Phase 3.5, raised by measurement, and asked for **case-folded and NFC-normalized** path matching. It stated the consequence as: a case mismatch means **auto-refresh silently stops updating that file**.
+
+Measured before anything was built, and **the entry was wrong in both halves**:
+
+- **The watcher never matches paths.** `RepositoryWatcher.deliver` ORs the event flags and signals `.changed` for the whole repository. No FSEvents path is ever compared with a Git path, so the stated failure mode cannot occur. The entry was written against a per-file watching design that was never built.
+- **Normalisation needs no code.** Swift's `String ==`, `hasPrefix` and `Set` membership are **canonical equivalence** — `"\u{017C}abka" == "z\u{0307}abka"` is `true`, and so are the prefix and set forms. This is M6-C pointing the other way: there, canonical equivalence made an NFC detector silently detect nothing; here it makes half of OQ-054 free.
+
+The filesystem was measured too: **case-insensitive and normalization-insensitive for lookup, normalization-preserving for storage.** So *reading* a file never fails for these reasons — the kernel resolves it. Only Swift-side comparison breaks, and only on case.
+
+**And root scanning was never broken either.** `contentsOfDirectory` returns the filesystem's own spelling, and `resolvingSymlinksInPath` canonicalises case as well as resolving links — both measured. A repository found by scanning always carries the canonical path.
+
+What is left after all of that is narrow, real, and easy to reach under DEC-037, which put roots and individually added repositories in the same list:
+
+- **An individually added repository is taken verbatim from the configuration.** The same working tree reached once by scanning and once by being added directly arrives spelled two ways, and `identity` was `standardizedFileURL.path` — a string. **Two rows for one repository**: two watchers, two sweeps, and a reader editing in one row while the other goes stale.
+- **Two spellings differ in more ways than case.** `NSTemporaryDirectory()` gives `/var/folders/…` while `contentsOfDirectory` gives `/private/var/folders/…` for the same file, and `standardizedFileURL` resolves neither. A rule written in string arithmetic has to anticipate every such difference.
+- **`removeSource` compared the two strings exactly**, so a source the user typed in another case could not be removed — the window said *select a repository to remove the source it came from* while one was selected.
+- **Adding a folder already configured under another spelling added it twice.**
+
+### Options considered
+
+1. **Ask the filesystem.** Identity is device plus inode where the path exists, which is the filesystem's own answer to *are these the same file*, and settles case, normalisation and symlinked ancestors in one question.
+2. **Fold the string** — `precomposedStringWithCanonicalMapping.lowercased()` everywhere. One function, no filesystem calls, works for paths that do not exist. Rejected as the guess: it is wrong on a case-**sensitive** volume, where folding merges two directories that really are different, and it does nothing about `/var` versus `/private/var`.
+3. **Fold, gated on `volumeSupportsCaseSensitiveNames`.** Correct per volume and cheaper than option 1, but still string identity, so it still misses two paths reaching one directory through a link.
+4. **Key by first-commit hash.** Rejected here for the reason `Configuration.swift` already gives for `baseOverrides`: a Git call per repository at startup, to answer a question a `stat` answers.
+
+### Final decision
+
+**Option 1, with option 2 as the fallback where there is nothing to ask.**
+
+- **`PathIdentity.of(_:)`** returns `"<device>:<inode>"` where the path exists — the same mechanism `ScopeReader.FileStamp` already uses — and a lowercased standardised path where it does not. DEC-052 keeps a configured source that has gone missing, and its identity still has to be decidable; that is the only case the fallback reaches, and the only consequence of being wrong there is two missing sources reported as one.
+- **`PathIdentity.resolved(_:)`** is the separate answer for *containment*, because an inode cannot express *underneath*. It is `resolvingSymlinksInPath().standardizedFileURL.path` — measured to return the canonical case and resolve symlinked ancestors, which is the same pair of differences expressed as a string.
+- **`DiscoveredRepository.identity` becomes the dedupe key and stops being a path**, so the list gains `sortKey` — ordering the rail by an inode would order it by whatever the filesystem happened to allocate.
+
+**Deliberately not applied**, so a later reader knows these were considered:
+
+- **`ChangedFile.path` comparisons** and the `FileGrouping` prefix tests. Both sides come from Git, so the spelling is identical by construction, and folding there would only hide a real defect.
+- **The watcher's `node_modules` test.** DEC-027 states that exclusion is a CPU concern and not a correctness one.
+
+### Consequences
+
+- **One `stat` per identity comparison**, on a path already being stat-ed by discovery. Not on any per-file path — identity is decided per repository and per configured source.
+- **`identity` is no longer readable as a path in a debugger.** `sortKey` is, and the checks print both.
+- **`baseOverrides` keeps its recorded fragility** (`Configuration.swift`), narrowed. Case and symlinked ancestors were one instance of *the same repository reached two ways*; a bind mount or a copy is another, and that one still wants the first-commit hash this entry rejected on cost.
+- **Ten checks**, including two negative controls: that the two spellings really are different strings, so the deduplication is an observation rather than a tautology; and that Swift's canonical equivalence holds, since the normalisation half of the fix is entirely that assumption. 1598 → 1608.
+
+### Revisit trigger
+
+Reopen if the application ever has to decide identity for a path on a volume it cannot stat — a network mount that is offline, or a security-scoped bookmark that has not been resolved (OQ-035 makes that likely). The fallback is a guess, and that is the case where it would start mattering.

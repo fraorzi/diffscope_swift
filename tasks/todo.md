@@ -1149,3 +1149,45 @@ between fifteen observations and zero, and it passed.
   versions here are 52,000 bytes, so `FileStamp` was running on `mtime` alone and nobody had noticed.
 - **Report the shape, not the count.** `1 blended of 200` costs the next reader a re-run.
   `0/52000 bytes, 0 A-lines + 0 B-lines` costs them nothing.
+
+## Step 47 — DEC-069: OQ-054, and what it turned out to be
+
+- [x] Checks written first and seen to fail: three of four failed on the unfixed code
+- [x] DEC-069 written before the code
+- [x] `PathIdentity.of` — device plus inode where the path exists, folded string where it does not;
+      `PathIdentity.resolved` for containment, because an inode cannot express *underneath*
+- [x] Applied at `DiscoveredRepository.identity`, `ConfiguredSource.contains`, the add-source
+      dedupe and `removeSource`; `sortKey` added, since the rail cannot be ordered by an inode
+- [x] Swift's canonical equivalence asserted with the differing bytes as its control
+- [x] `22-…` → M9-F; OQ-054 closed with the correction visible; `21-…` §0
+- [x] 1598 → 1608 checks
+
+### Step 47 — the entry was wrong twice and right once
+
+**The failure mode it named cannot happen.** OQ-054 said a case mismatch means auto-refresh silently
+stops following a file. The watcher does not match paths at all — it ORs the event flags and signals
+`.changed` for the whole repository. The entry was written against a per-file watching design;
+DEC-007 and DEC-027 built a per-repository one, and nobody went back to the question.
+
+**Half the remedy was already free.** It asked for case-folded *and* NFC-normalized comparison.
+Swift's `String ==`, `hasPrefix` and `Set` membership are canonical equivalence, so NFC and NFD
+already compare and hash equal. **This is M6-C read backwards** — there the same semantics made an
+NFC detector incapable of firing, and the fixtures passed anyway. Asserted now, with the differing
+bytes as the control, because it is load-bearing in the opposite direction.
+
+**And the first check written for it passed on the unfixed code.** `contentsOfDirectory` returns the
+filesystem's own spelling and `resolvingSymlinksInPath` canonicalises case, so root scanning was
+never affected. The defect was one source kind: an individually added repository, taken verbatim
+from the configuration. Under DEC-037 — roots *and* individual repositories in one list — the same
+working tree reached both ways produced two rows.
+
+### Step 47 — why identity is not a string
+
+The two spellings differ by more than case: `NSTemporaryDirectory()` gives `/var/folders/…` and
+`contentsOfDirectory` gives `/private/var/folders/…` for the same file, and `standardizedFileURL`
+resolves neither. A folding rule has to anticipate every way two names for one file can differ.
+A `stat` does not — and it stays right on a case-**sensitive** volume, where folding would merge two
+directories that really are different.
+
+The cost of that choice, stated: `identity` is no longer readable as a path, so `sortKey` exists for
+the rail's ordering and the checks print both.

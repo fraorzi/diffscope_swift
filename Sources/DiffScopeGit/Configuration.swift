@@ -31,6 +31,14 @@ public struct ConfiguredSource: Sendable, Equatable, Codable {
     public var discoverySource: DiscoverySource {
         DiscoverySource(url: url, kind: kind == .root ? .root : .individualRepository)
     }
+
+    /// Whether a discovered repository came from this source — the source itself, or anything under
+    /// it. Lifted out of the window (`removeSource`) so the rule is one function that the suite can
+    /// ask directly, rather than a predicate inside an `@objc` method nothing can reach.
+    public func contains(repositoryPath: String) -> Bool {
+        PathIdentity.same(repositoryPath, path)
+            || PathIdentity.resolved(repositoryPath).hasPrefix(PathIdentity.resolved(path) + "/")
+    }
 }
 
 /// What a configured source turned out to be on disk, checked at load rather than assumed.
