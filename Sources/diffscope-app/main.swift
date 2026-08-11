@@ -1795,10 +1795,157 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                             + "images=\(drawn)\n").utf8))
                     self.snapshot(named: "rendered-svg") {
                         guard held else { exit(53) }
-                        self.emptyStateSelftest()
+                        self.scaleSelftest()
                     }
                 }
             }
+        }
+    }
+
+    private struct ScaleCase {
+        let name: String
+        let old: [UInt8]
+        let new: [UInt8]
+        /// What the case is for, printed beside its numbers so a fast run cannot be mistaken for a
+        /// fast layout — a raw fallback carries one segment, and the loop this measures is over
+        /// segments.
+        let asks: String
+    }
+
+    /// DEC-059 left one thing unmeasured: unified composes its document **in JavaScript, from both
+    /// sides, on every render**, and nobody had run that on a large or a minified file. `16-…` §1.3
+    /// carries rendering numbers from a prototype — five thousand lines, side by side, taken before
+    /// this layout existed — and §3 has no row for composition at all.
+    ///
+    /// Each case is measured in **both** layouts on the same model, so the number reported is what
+    /// unified costs over the layout that shipped first. An absolute millisecond is a fact about
+    /// this machine under this load; the ratio is the claim (M8-N).
+    private func scaleSelftest() {
+        func ordinary(lines: Int, changeEvery: Int) -> (old: [UInt8], new: [UInt8]) {
+            let old = (1...lines).map { "const value\($0) = \($0);\n" }.joined()
+            let new = (1...lines).map {
+                $0 % changeEvery == 0 ? "const value\($0) = \($0 + 1);\n" : "const value\($0) = \($0);\n"
+            }.joined()
+            return ([UInt8](old.utf8), [UInt8](new.utf8))
+        }
+
+        let big = ordinary(lines: 50_000, changeEvery: 200)
+        // Under DEC-050's gates on purpose: this is the only shape that reaches `projectSegments`
+        // with a segment count worth the name. Everything larger falls back to raw, where one
+        // fallback segment makes the loop free and a check of it vacuous.
+        let dense = ordinary(lines: 3_000, changeEvery: 5)
+        let minifiedOld = (1...60_000).map { "a\($0)=\($0)" }.joined(separator: ";") + ";\n"
+        let minifiedNew = minifiedOld.replacingOccurrences(of: "a30000=30000", with: "a30000=30001")
+
+        let cases = [
+            ScaleCase(name: "50k-lines", old: big.old, new: big.new,
+                      asks: "many blocks, many runs, a line-meta entry per line"),
+            ScaleCase(name: "minified", old: [UInt8](minifiedOld.utf8), new: [UInt8](minifiedNew.utf8),
+                      asks: "one enormous line, and the line scans around a stop"),
+            ScaleCase(name: "dense-under-budget", old: dense.old, new: dense.new,
+                      asks: "the structural path, with segments the projection has to walk"),
+        ]
+        measureScale(cases, index: 0)
+    }
+
+    /// Unified may cost more than side-by-side — it does more arithmetic — but it may not cost a
+    /// *different order* of it, because it is the default layout and every render pays. Two is a
+    /// regression bound with room in it: the three cases measure 0.5–0.6×, and the control below
+    /// puts the ratio in double figures.
+    private static let unifiedCostBound = 2.0
+
+    private func measureScale(_ cases: [ScaleCase], index: Int) {
+        guard index < cases.count else { slowProjectionControl(cases[cases.count - 1]); return }
+        let subject = cases[index]
+        let outcome = buildModel(path: "scale.ts", old: subject.old, new: subject.new,
+                                 mode: .structural)
+        let render = buildRenderModel(model: outcome.model, pinOld: "scaleA\(index)",
+                                      pinNew: "scaleB\(index)", mode: "structural",
+                                      pathTaken: outcome.pathTaken, parser: outcome.parser,
+                                      validation: outcome.validation, notices: outcome.notices)
+        guard let json = try? encodeRenderModel(render) else { exit(57) }
+        push(json)
+        webView.evaluateJavaScript("window.diffscopeSetLayout(\"split\")") { _, _ in
+            self.readTimings { split in
+                self.webView.evaluateJavaScript("window.diffscopeSetLayout(\"unified\")") { _, _ in
+                    self.readTimings { unified in
+                        // Twenty compositions, because a single one reads as `0` or `2` under this
+                        // webview's millisecond clamp and neither number describes how it grows.
+                        self.webView.evaluateJavaScript(
+                            "JSON.stringify(window.diffscopeMeasureCompose(20))"
+                        ) { value, _ in
+                            let repeated = ((try? JSONSerialization.jsonObject(
+                                with: Data(((value as? String) ?? "null").utf8)
+                            )) as? [String: Any]) ?? [:]
+                            func ms(_ value: Any?) -> Double { (value as? NSNumber)?.doubleValue ?? -1 }
+                            func count(_ value: Any?) -> Int { (value as? NSNumber)?.intValue ?? -1 }
+                            let splitTotal = ms(split["total"])
+                            let unifiedTotal = ms(unified["total"])
+                            let ratio = splitTotal > 0 ? unifiedTotal / splitTotal : -1
+                            let within = ratio > 0 && ratio <= Self.unifiedCostBound
+                            FileHandle.standardError.write(Data((
+                                "SELFTEST scale-\(subject.name)=\(within ? "OK" : "MISMATCH") "
+                                    + "path=\(outcome.pathTaken) "
+                                    + String(format: "split=%.0fms unified=%.0fms ratio=%.2fx ",
+                                             splitTotal, unifiedTotal, ratio)
+                                    + String(format: "compose=%.3fms project=%.3fms dispatch=%.0fms ",
+                                             ms(repeated["composeMs"]), ms(repeated["projectMs"]),
+                                             ms(unified["dispatch"]))
+                                    + "lines=\(count(unified["lines"])) runs=\(count(unified["runs"])) "
+                                    + "blocks=\(count(unified["blocks"])) "
+                                    + "segIn=\(count(unified["segmentsIn"])) "
+                                    + "segOut=\(count(unified["segmentsOut"])) "
+                                    + "— \(subject.asks)\n").utf8))
+                            guard within else { exit(58) }
+                            self.measureScale(cases, index: index + 1)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The bound above has only ever seen a projection that is fast. A bound that has never been
+    /// exceeded is a bound nobody has checked — the same argument that put `diffscopeInjectHostileStyle`
+    /// behind the style audit. So the projection is made a hundred times its own work and the arm
+    /// is required to notice, on the case that has segments in it.
+    private func slowProjectionControl(_ subject: ScaleCase) {
+        let outcome = buildModel(path: "scale.ts", old: subject.old, new: subject.new,
+                                 mode: .structural)
+        let render = buildRenderModel(model: outcome.model, pinOld: "slowA", pinNew: "slowB",
+                                      mode: "structural", pathTaken: outcome.pathTaken,
+                                      parser: outcome.parser, validation: outcome.validation,
+                                      notices: outcome.notices)
+        guard let json = try? encodeRenderModel(render) else { exit(57) }
+        push(json)
+        webView.evaluateJavaScript("window.diffscopeSetLayout(\"split\")") { _, _ in
+            self.readTimings { split in
+                self.webView.evaluateJavaScript("window.diffscopeInjectSlowProjection(true)") { _, _ in
+                    self.webView.evaluateJavaScript("window.diffscopeSetLayout(\"unified\")") { _, _ in
+                        self.readTimings { unified in
+                            func ms(_ value: Any?) -> Double { (value as? NSNumber)?.doubleValue ?? -1 }
+                            let splitTotal = ms(split["total"])
+                            let ratio = splitTotal > 0 ? ms(unified["total"]) / splitTotal : -1
+                            let caught = ratio > Self.unifiedCostBound
+                            FileHandle.standardError.write(Data((
+                                "SELFTEST scale-control=\(caught ? "OK" : "MISMATCH") a hundredfold "
+                                    + String(format: "projection moves the ratio to %.1fx, past the %.1fx bound\n",
+                                             ratio, Self.unifiedCostBound)).utf8))
+                            self.webView.evaluateJavaScript("window.diffscopeInjectSlowProjection(false)") { _, _ in
+                                guard caught else { exit(59) }
+                                self.emptyStateSelftest()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func readTimings(_ then: @escaping ([String: Any]) -> Void) {
+        webView.evaluateJavaScript("JSON.stringify(window.diffscopeTimings())") { value, _ in
+            let text = (value as? String) ?? "null"
+            then((try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] ?? [:])
         }
     }
 

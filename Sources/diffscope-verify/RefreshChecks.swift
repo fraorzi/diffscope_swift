@@ -79,13 +79,19 @@ func runRefreshChecks(_ reportRaw: (String, Bool, String) -> Void) {
         queue.sync {}
         lock.lock(); let immediately = fired; lock.unlock()
         report("a burst does not refresh on its leading edge", immediately == 0, "\(immediately)")
-        while Date().timeIntervalSince(started) < 1.5 {
+        // The wait is a multiple of DEC-026's own cap rather than a constant. It used to be 1.5 s,
+        // which is **below** the 2 s cap the debounce is allowed to take: a loaded machine that
+        // delivered the refresh at 1.7 s failed this arm while the code did exactly what DEC-026
+        // specifies. The loop breaks the moment it fires, so the larger number costs nothing.
+        let firingDeadline = Date().addingTimeInterval(RefreshDebounce().maximumDelay * 4)
+        while Date() < firingDeadline {
             lock.lock(); let count = fired; lock.unlock()
             if count > 0 { break }
             usleep(20_000)
         }
         lock.lock(); let eventually = fired; lock.unlock()
-        report("five events one save apart produce exactly one refresh", eventually == 1, "\(eventually)")
+        report("five events one save apart produce exactly one refresh", eventually == 1,
+               String(format: "%d after %.2f s", eventually, Date().timeIntervalSince(started)))
         debounced.stop()
         watcher.stop()
 
@@ -99,7 +105,10 @@ func runRefreshChecks(_ reportRaw: (String, Bool, String) -> Void) {
         usleep(200_000)
         try? "const a = 1;\n".write(to: scratch.appendingPathComponent("live.tsx"),
                                    atomically: true, encoding: .utf8)
-        let liveDeadline = Date().addingTimeInterval(3)
+        // Ten seconds rather than three, for the reason above: the wait is not the claim. FSEvents
+        // delivery plus a 400 ms debounce is well inside three on an idle machine and need not be
+        // on a loaded one, and the loop leaves the moment the signal arrives.
+        let liveDeadline = Date().addingTimeInterval(10)
         while Date() < liveDeadline {
             lock.lock(); let count = live; lock.unlock()
             if count > 0 { break }
@@ -139,7 +148,15 @@ func runRefreshChecks(_ reportRaw: (String, Bool, String) -> Void) {
         /// Reads pins while a writer rewrites the file in place. `pause` is the gap between
         /// writes: zero is a file under continuous rewrite, which is not a real editing pattern
         /// but is the hardest case; 30 ms is a plausible burst of saves.
-        func race(pause: TimeInterval, seconds: TimeInterval) -> (reads: Int, blended: Int, unstable: Int) {
+        ///
+        /// **Bounded by reads, not by the clock.** It used to run for a second and a half, and a
+        /// second and a half buys a different number of observations on a loaded machine than on an
+        /// idle one — so three arms below stated a property of the guard using a bound on the
+        /// machine. That is the shape M8-N took out of `BudgetChecks`, surviving here as a count
+        /// taken inside a fixed window. The deadline that remains is a safety valve: reaching it
+        /// means this machine could not perform the reads at all, which is worth failing over.
+        func race(pause: TimeInterval, reads wanted: Int)
+            -> (reads: Int, blended: Int, unstable: Int, starved: Bool) {
             let stop = DispatchSemaphore(value: 0)
             let writer = Thread {
                 var useA = false
@@ -155,8 +172,8 @@ func runRefreshChecks(_ reportRaw: (String, Bool, String) -> Void) {
             defer { stop.signal() }
 
             var counts = (reads: 0, blended: 0, unstable: 0)
-            let deadline = Date().addingTimeInterval(seconds)
-            while Date() < deadline {
+            let deadline = Date().addingTimeInterval(60)
+            while counts.reads < wanted, Date() < deadline {
                 guard let pair = try? scopes.pinnedPair(for: changed, scope: .unstagedVsIndex, in: scratch)
                 else { continue }
                 counts.reads += 1
@@ -164,13 +181,13 @@ func runRefreshChecks(_ reportRaw: (String, Bool, String) -> Void) {
                 let text = String(decoding: pair.newBytes, as: UTF8.self)
                 if text != versionA && text != versionB { counts.blended += 1 }
             }
-            return counts
+            return (counts.reads, counts.blended, counts.unstable, counts.reads < wanted)
         }
 
-        let hostile = race(pause: 0, seconds: 1.5)
+        let hostile = race(pause: 0, reads: 200)
         print("        continuous rewrite: \(hostile.reads) reads, \(hostile.blended) blended, \(hostile.unstable) refused")
-        report("the racing read happened often enough to mean something", hostile.reads > 10,
-               "\(hostile.reads) reads")
+        report("the racing read happened as often as the arm asked", !hostile.starved,
+               "\(hostile.reads) of 200 reads")
         report("under continuous rewriting, no pin certifies a version that never existed on disk",
                hostile.blended == 0, "\(hostile.blended) blended of \(hostile.reads)")
         report("and a pair that will not settle is reported rather than presented as fact",
@@ -178,7 +195,7 @@ func runRefreshChecks(_ reportRaw: (String, Bool, String) -> Void) {
 
         // The realistic case has to still produce a diff — a guard that refuses everything is not
         // a guard, it is an outage.
-        let realistic = race(pause: 0.03, seconds: 1.5)
+        let realistic = race(pause: 0.03, reads: 100)
         print("        saves 30 ms apart: \(realistic.reads) reads, \(realistic.blended) blended, \(realistic.unstable) refused")
         report("a normal burst of saves still yields usable pins",
                realistic.reads - realistic.unstable > realistic.reads / 2,

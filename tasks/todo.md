@@ -1050,3 +1050,40 @@ Two things are worth writing down for whoever picks this up next, because neithe
 - **Nothing here has been used in anger for a day.** Every claim in this repository is checked or
   photographed, and neither is the same as a reader reviewing their own work with it for a week.
   The next thing worth doing is `25-tester-packet.md`'s job, not another feature.
+
+## Step 44 — the check that flaked, and the layout nobody had measured
+
+- [x] `diffscope-verify` reprints the failed check names under `what failed:` beside the count —
+      the first run of this session reported 1597/1598 and the name was fifteen hundred lines above
+      the summary, in output that had been tailed
+- [x] Eight runs to reproduce it (five idle, three under eight CPU spinners): **it never came back**,
+      and the failing check is therefore unidentified rather than fixed
+- [x] Three arms in `RefreshChecks` re-expressed as bounds on work rather than on the machine —
+      the R-9 race by reads (200 and 100), the debounce wait as a multiple of DEC-026's own cap,
+      the live FSEvents wait at 10 s
+- [x] `scale-*` selftest arms: three inputs, both layouts, the ratio between them, with
+      `diffscopeInjectSlowProjection` as the control
+- [x] `22-experiment-log.md` → M9-C and M9-D; `16-…` §2, §3 and §8
+
+### Step 44 — what the measurement found, which was not what it went looking for
+
+**Unified is cheaper than side-by-side, everywhere** — 0.49× to 0.68×. It populates one editor
+where side-by-side populates two, and the composition it does on top of that costs 1.1 ms on a
+fifty-thousand-line file against a 28 ms dispatch. The suspicion that took the measurement there,
+that `projectSegments`' nested loop would dominate, was wrong about the magnitude: it is the only
+superlinear term and it measures 4.75 ms on the one case that reaches it with segments in it.
+
+**That case had to be built deliberately.** A 50,000-line file and a minified one both fall back to
+raw under DEC-050, and a raw fallback carries **one segment per side** — so both would have walked
+past the loop and reported it free. Every line of the arm prints `path=` for that reason.
+
+**The budget that keeps it safe was not written for this.** DEC-050's 30,000-node gate exists to
+stop the matcher; it also bounds how many segments can ever reach the projection. Recorded as a
+known weakness rather than optimised, with the trigger stated: re-measure if that budget is raised.
+
+### Step 44 — the check that got away
+
+Not a defect found and fixed; a defect **observed and lost**. One run in eight failed, and the
+harness could not say which check. The durable fix is that the run now names its failures, so the
+next occurrence identifies itself. The three arms hardened alongside it are provably load-dependent
+by reading — they may or may not be the one.

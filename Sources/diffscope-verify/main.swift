@@ -59,6 +59,10 @@ func contentHashHex(_ bytes: [UInt8]) -> String { contentHash(bytes) }
 
 var failures = 0
 var checks = 0
+/// Reprinted at the end beside the count. A failure fifteen hundred lines up is a failure nobody
+/// can name from a truncated log, and naming it is the whole of what a run reports — this project
+/// lost one that way, and had to re-run the suite five times to look for it again.
+var failedNames: [String] = []
 
 func report(_ name: String, _ ok: Bool, _ detail: String = "") {
     checks += 1
@@ -66,6 +70,7 @@ func report(_ name: String, _ ok: Bool, _ detail: String = "") {
         print("  PASS  \(name)")
     } else {
         failures += 1
+        failedNames.append(detail.isEmpty ? name : "\(name) — \(detail)")
         print("  FAIL  \(name)\(detail.isEmpty ? "" : " — \(detail)")")
     }
 }
@@ -302,5 +307,10 @@ runAutoGcChecks { name, ok, detail in report(name, ok, detail) }
 runBundleFreshnessCheck { name, ok, detail in report(name, ok, detail) }
 
 print("\n\(checks - failures)/\(checks) checks passed")
-if failures > 0 { print("FAILED"); exit(1) }
+if failures > 0 {
+    print("\nwhat failed:")
+    for name in failedNames { print("  \(name)") }
+    print("FAILED")
+    exit(1)
+}
 print("OK")

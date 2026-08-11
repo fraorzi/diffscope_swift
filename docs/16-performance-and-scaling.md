@@ -63,6 +63,8 @@ Measured as synchronous layout cost, not frame time — `requestAnimationFrame` 
 
 **Not Git. Not the parser. Not rendering.** All three are measured and comfortable.
 
+**Nor the unified layout, measured in M9-D.** It composes its document in JavaScript from both sides on every render, and that composition costs 1.1 ms on a fifty-thousand-line file — about 4% of what handing the document to CodeMirror costs. Unified comes out **cheaper than side-by-side** (0.49–0.68×) because it populates one editor where side-by-side populates two. The one superlinear term, `projectSegments`, is bounded in practice by DEC-050's node budget: a file dense enough to trouble it does not reach the structural path. **Re-measure if that budget is raised.**
+
 **The matcher is the risk.** Precedent: difftastic issue #373 records a moderate-size lockfile consuming 64 GB. Tree matching is superlinear in node count, and JSX produces dense trees.
 
 **Budget on node count, not bytes.** A 200 KB minified file and a 200 KB hand-written file have wildly different node counts and wildly different matching costs.
@@ -78,6 +80,7 @@ Provisional. Each has a defined degradation, and none may be exceeded silently.
 | Node count per file | **30,000** *(measured, M8-A; the estimate was ~50,000)* | Raw fallback, reason stated |
 | Matching work per file | **10,000,000 counted comparisons** ≈ 250 ms *(measured, M8-A; the estimate was a 500 ms deadline)* | Abort matching, raw fallback |
 | Single line length | 50,000 chars *(measured safe in rendering)* | Rendering degradation, not fallback |
+| Unified composition, per render | **≤ 2× the side-by-side render of the same model** *(measured, M9-D: 0.49–0.68×)* | Asserted by the `scale-*` selftest arms, with a hundredfold projection as the control |
 | Launch sweep, all roots | < 1 s to first paint | Progressive fill |
 | Refresh debounce | ~400 ms trailing edge + max cap (DEC-026) | — |
 
@@ -120,5 +123,5 @@ Precedence is specified in [13-error-and-fallback-model.md](13-error-and-fallbac
 - Node-count and matching-time budgets require measurement against the fixture corpus.
 - Re-derive the 2 MB `D` threshold once `D`'s real cost is known (DEC-040).
 - Cold-cache Git behaviour is unmeasured; all figures are warm.
-- Native macOS rendering is unmeasured (X-2 gap).
+- Native macOS rendering is unmeasured (X-2 gap). **Composition is no longer part of this gap** — M9-D measures it in the shipping webview — but frame time still is, and cannot be measured from a selftest: `requestAnimationFrame` is suspended while the window is occluded (T1-A).
 - Whether `D` or the matcher dominates diff latency in practice — this determines whether DEC-039's independence carries a real cost.

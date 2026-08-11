@@ -383,11 +383,22 @@ function buildUnified(model) {
   return doc;
 }
 
+/// The negative control for the scale arm, in the shape `diffscopeInjectHostileStyle` established:
+/// a measurement that has only ever seen a fast projection cannot tell a fast one from an
+/// unmeasured one. Switched on, the projection walks its runs a hundred times over and the arm
+/// must notice.
+let slowProjection = false;
+
 /// Offsets are the engine's, projected. A segment is clipped to each run of its own side and
 /// moved by that run's displacement; a segment spanning two runs comes out as two marks over the
 /// same bytes, which is what the reader should see in a document where those bytes are apart.
 function projectSegments(segments, runs) {
   const out = [];
+  if (slowProjection) {
+    for (let pass = 0; pass < 100; pass += 1) {
+      for (const seg of segments) for (const run of runs) if (seg.start === run.srcEnd) break;
+    }
+  }
   for (const seg of segments) {
     for (const run of runs) {
       const from = Math.max(seg.start, run.srcStart);
@@ -542,6 +553,17 @@ function applySide(view, side) {
                             setChangedLines.of(side.changedLines || [])] });
 }
 
+/// The cost of the last `applyLayout`, in milliseconds, split by the three things that cost
+/// anything. Recorded on every render rather than behind a flag: the numbers are wanted for the
+/// path the reader actually takes, and a second timed path would be a copy of this one — which is
+/// how this project has been wrong before about what the shipped surface does.
+///
+/// **Synchronous work only.** Layout and paint happen after this returns, and the obvious way to
+/// reach them — `requestAnimationFrame` — is suspended whenever the window is occluded, which a
+/// selftest launched from a terminal always is (T1-A). So this measures composition, which is the
+/// question DEC-059 left open, and says nothing about frame time.
+let lastTimings = null;
+
 /// Only the active layout holds a document. Populating both and hiding one would double every
 /// mark in the DOM, and the probes that count marks would agree with themselves while saying
 /// nothing — the shape of failure this project keeps finding in checks that cannot fail.
@@ -549,15 +571,34 @@ function applyLayout(model) {
   const stage = document.getElementById("stage");
   const host = document.getElementById("unified");
   const empty = { text: "", segments: [], changedLines: [] };
+  const clock = () => performance.now();
+  const startedAt = clock();
   if (layout === "unified") {
     if (!unified) unified = makeUnifiedPane(host);
+    const composeAt = clock();
     const doc = buildUnified(model);
+    const projectAt = clock();
     const segments = projectSegments(model.payload.old.segments, unifiedRuns.old)
       .concat(projectSegments(model.payload.new.segments, unifiedRuns.new))
       .sort((a, b) => a.start - b.start || a.end - b.end);
+    const dispatchAt = clock();
     unified.dispatch({ changes: { from: 0, to: unified.state.doc.length, insert: doc } });
     unified.__segments = segments;
     unified.dispatch({ effects: setSegments.of(segments) });
+    const doneAt = clock();
+    lastTimings = {
+      layout: "unified",
+      compose: projectAt - composeAt,
+      project: dispatchAt - projectAt,
+      dispatch: doneAt - dispatchAt,
+      total: doneAt - startedAt,
+      docLength: doc.length,
+      lines: unifiedLines.length,
+      runs: unifiedRuns.old.length + unifiedRuns.new.length,
+      blocks: unifiedHunks.length,
+      segmentsIn: model.payload.old.segments.length + model.payload.new.segments.length,
+      segmentsOut: segments.length,
+    };
     applySide(left, empty);
     applySide(right, empty);
     stage.style.display = "none";
@@ -569,8 +610,25 @@ function applyLayout(model) {
     }
     unifiedLines = [];
     unifiedRuns = { old: [], new: [] };
+    const dispatchAt = clock();
     applySide(left, model.payload.old);
     applySide(right, model.payload.new);
+    const doneAt = clock();
+    // The baseline the unified numbers are stated against: the same model, in the layout that
+    // shipped first. A ratio survives a loaded machine where an absolute millisecond does not.
+    lastTimings = {
+      layout: "split",
+      compose: 0,
+      project: 0,
+      dispatch: doneAt - dispatchAt,
+      total: doneAt - startedAt,
+      docLength: model.payload.old.text.length + model.payload.new.text.length,
+      lines: 0,
+      runs: 0,
+      blocks: 0,
+      segmentsIn: model.payload.old.segments.length + model.payload.new.segments.length,
+      segmentsOut: model.payload.old.segments.length + model.payload.new.segments.length,
+    };
     host.style.display = "none";
     stage.style.display = "flex";
   }
@@ -1175,6 +1233,47 @@ window.diffscopeRender = function (json) {
     restored: model.restore ? model.restore.resolution : null,
   };
   return lastSummary;
+};
+
+/// Deliberately small. `diffscopeProbe` returns `oldText`, `newText` **and** `unifiedText` in
+/// full, and at fifty thousand lines that is megabytes of JSON across the bridge — enough to be
+/// most of what any timing arm would measure. A measurement probe that costs more than the thing
+/// it measures reports the bridge.
+window.diffscopeTimings = function () {
+  return lastTimings;
+};
+
+/// `performance.now()` is clamped to a millisecond in this webview, so a single composition of a
+/// fifty-thousand-line file reads as `0` or `2` and neither number says anything about how the
+/// cost grows. Repeating it is the only way to get under the clamp — the two functions are the
+/// ones `applyLayout` calls, not copies of them, so what is timed is what the reader pays.
+window.diffscopeMeasureCompose = function (iterations) {
+  if (!lastModel) return null;
+  const runs = Math.max(1, Number(iterations) || 1);
+  const composeAt = performance.now();
+  for (let i = 0; i < runs; i += 1) buildUnified(lastModel);
+  const projectAt = performance.now();
+  for (let i = 0; i < runs; i += 1) {
+    projectSegments(lastModel.payload.old.segments, unifiedRuns.old);
+    projectSegments(lastModel.payload.new.segments, unifiedRuns.new);
+  }
+  const doneAt = performance.now();
+  // The module state above is rebuilt from the model on every call, so the last iteration left it
+  // exactly as one render would. Re-rendering anyway, because leaving the document reflecting a
+  // measurement rather than a render is how a probe starts lying about the layout.
+  applyLayout(lastModel);
+  return {
+    iterations: runs,
+    composeMs: (projectAt - composeAt) / runs,
+    projectMs: (doneAt - projectAt) / runs,
+  };
+};
+
+/// Negative control: with this on, the projection is a hundred times its own work and the scale
+/// arm must fail. A bound that has only ever seen the fast path is a bound nobody has checked.
+window.diffscopeInjectSlowProjection = function (enable) {
+  slowProjection = !!enable;
+  return slowProjection;
 };
 
 window.diffscopeProbe = function () {

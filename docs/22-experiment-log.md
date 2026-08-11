@@ -2191,3 +2191,68 @@ Verified by breaking it: renaming `#cwd` in the contract fails the run with `—
 ```
 1407 -> 1413 checks
 ```
+
+# M9-C — a check that failed once, could not be reproduced, and taught the harness to name itself
+
+**Date:** 2026-08-11 · **Method:** the suite run five times idle and three times under eight CPU spinners, with the whole output captured rather than tailed.
+
+The first run of this session reported **1597/1598**. Every run since — five idle, three with eight spinners saturating the machine — reported **1598/1598**. The failing check was never named, because the first run's output had been piped through `tail -20` and the `FAIL` line was fifteen hundred lines above the summary.
+
+That is the finding worth recording, and it is about the harness rather than about any check: **a run that fails announces the count and hides the name.** M8-N was found the same way and only because someone kept the output. So `report` now collects failed names and the run reprints them under `what failed:` beside the count. A truncated log still identifies the check.
+
+## Three arms that state a property of the code using a bound on the machine
+
+Not the culprit — the culprit is unidentified and stays that way honestly — but they are the same defect M8-N took out of `BudgetChecks`, and they are provable by reading rather than by waiting for them to bite.
+
+| Arm | Was | Is |
+|---|---|---|
+| the R-9 race, both shapes | whatever reads fit in 1.5 s | a fixed 200 reads (continuous rewrite) and 100 (saves 30 ms apart), with a 60 s valve |
+| the debounce fires once | waited 1.5 s | waits `4 × maximumDelay`, breaking on the signal |
+| a real write reaches the application | waited 3 s | waits 10 s, breaking on the signal |
+
+The debounce one is the clearest: DEC-026 allows the refresh to take up to the **2 s cap**, and the arm waited **1.5 s** for it. A machine that delivered at 1.7 s failed a check of a specification it was meeting. Nothing waits longer in the ordinary case — every loop leaves the moment the thing it waits for happens.
+
+Bounding by reads also states the claim better. *No pin certifies a version that never existed on disk* is a property of two hundred observations, not of a second and a half; the second and a half was only ever a way of getting some.
+
+```
+idle:            5 runs, 1598/1598
+8 spinners:      3 runs, 1598/1598
+after the change: 200 reads / 0 blended / 200 refused, and 100 / 0 / 0
+```
+
+Both counts are now the same on every run, which is the point: the previous ones moved with the load, and a number that moves cannot be compared with the last one.
+
+# M9-D — what the unified layout costs at fifty thousand lines, and where the cost actually is
+
+**Date:** 2026-08-11 · **Method:** a selftest arm (`scale-*`) that renders three synthetic pairs in **both** layouts on the same model and reports the ratio; composition timed over twenty iterations because this webview clamps `performance.now()` to a millisecond.
+
+DEC-059 made unified the default, and it composes its document in JavaScript from both sides **on every render**. Nobody had run that on a large file. `16-…` §1.3's rendering numbers are from a prototype — five thousand lines, side by side, before this layout existed — and §3 had no row for composition at all.
+
+The expectation going in was that `projectSegments` would be the problem: it is a nested loop over segments × runs, called twice per render. It is the only superlinear term, and it is not the problem.
+
+| Case | Path | split | unified | ratio | compose | project | dispatch |
+|---|---|---|---|---|---|---|---|
+| 50,000 lines, a change every 200 | raw | 49 ms | 30 ms | **0.61×** | 1.100 ms | 0.050 ms | 28 ms |
+| one minified line, ~1 MB | raw | 45 ms | 22 ms | **0.49×** | 0.450 ms | 0.000 ms | 22 ms |
+| 3,000 lines, a change every 5 | **structural** | 31 ms | 21 ms | **0.68×** | 0.350 ms | 4.750 ms | 16 ms |
+
+**Unified is cheaper than side-by-side in all three, and the reason is structural rather than lucky:** split populates two editors with the whole of both sides, unified populates one document. The composition it does on top — a 1 MB string and fifty thousand line-meta entries — costs **1.1 ms**, about 4% of what the dispatch costs.
+
+**The cost is the CodeMirror dispatch, in both layouts**, and unified pays it once.
+
+## The quadratic term is real and is bounded by a decision that was not written for it
+
+The structural case is the only one that reaches `projectSegments` with segments in it: 3,633 segments against 1,800 runs is ~6.5 M inner iterations, and it measures **4.75 ms** — 22% of that render. The two raw cases carry **two** segments between them, because a raw fallback is one segment per side, so they would have let the loop pass untested. That is why the third case exists and why every line reports `path=`.
+
+What keeps it safe is **DEC-050's 30,000-node budget**: a file dense enough to produce many more segments than this does not take the structural path at all. The budget was chosen to stop the matcher, and it happens to bound the projection too.
+
+**So this is recorded as a known weakness rather than optimised.** A merge join over two offset-sorted arrays would make it linear, and there is no measurement today that asks for it. **Re-measure this if DEC-050's node budget is ever raised** — the term grows with the product, so tripling the budget is roughly nine times this cost.
+
+## The arm can fail, and was made to
+
+A bound that has only ever seen the fast path is not a bound. `diffscopeInjectSlowProjection` makes the projection a hundred times its own work, in the shape `diffscopeInjectHostileStyle` established for the style audit: the ratio goes to **90.9×** against a 2.0× bound, and the arm exits non-zero.
+
+## Two things the measurement had to be built around
+
+- **`diffscopeProbe` returns `oldText`, `newText` and `unifiedText` in full.** At fifty thousand lines that is megabytes of JSON across the bridge, which would have been most of what any timing arm measured. `diffscopeTimings` returns numbers only.
+- **Frame time is not measured and cannot be here.** `requestAnimationFrame` is suspended whenever the window is occluded, which a selftest launched from a terminal always is — T1-A, which cost a terminal grid that passed every arm while drawing nothing. These are synchronous composition numbers, which is the question DEC-059 left open, and they say nothing about paint.
