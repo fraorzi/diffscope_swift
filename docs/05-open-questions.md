@@ -6,12 +6,38 @@ Everything raised and not yet decided. Each entry carries a status as defined in
 
 Questions are grouped by area. Identifiers are stable; resolved questions are struck through and annotated with the decision that closed them rather than deleted.
 
+**Audited 2026-08-11** against the decision log and the code. **Twenty-four entries were marked Open while a decision, a measurement or a shipped implementation had already answered them** — a document that says *undecided* about something built three milestones ago sends a fresh agent to re-decide it, which is the failure this document exists to prevent. Each is now struck through with what closed it: OQ-003, 004, 005, 008, 010, 017, 026, 028, 031, 033, 036, 037, 038, 039, 040, 042, 043, 044, 045, 048, 049, 050, 051, 052.
+
+**One entry appeared twice**, Open in one section and struck through in another (OQ-049). That is the same drift in miniature.
+
+**Eight are genuinely open. Five more are part-answered** and now say which part.
+
+| Genuinely open | Why it stays open |
+|---|---|
+| **OQ-054** case-folding and NFC in path matching | Confirmed unaddressed by this audit. **The most consequential one**, because it fails silently — auto-refresh stops following a file and nothing says so |
+| **OQ-032** caching | Specified in `16-…` §6, never decided. What blocks it is that nothing has been slow enough to need it |
+| **OQ-041** tree versus flat list | DEC-033's grouping is a middle position, not an answer. Left open on purpose |
+| **OQ-034** distribution · **OQ-035** sandboxing | Shipping questions. A tester build is not a distribution |
+| **OQ-056** Git write operations | Version two, and it reopens DEC-003 explicitly or not at all |
+| **OQ-001** the product name | Packaging has already adopted the placeholder |
+| **OQ-015** worktrees and submodules | Deferred; neither exists in the population |
+
+| Part-answered | What is left |
+|---|---|
+| **OQ-012** cost of status collection | Cold-cache behaviour, still entirely unmeasured; and scale past ~100 repositories |
+| **OQ-014** nested repositories and monorepos | Workspace packages are grouped; a nested repository would simply not be seen |
+| **OQ-025** external editor | Sandbox implications, and what *open this line* means for a deleted region |
+| **OQ-029** large, generated, minified, binary | Only `generated` — `FixtureCatalog` counts that gap by name |
+| **OQ-030** file-level matching | Renames are consumed; nothing says what a *wrong* one would look like |
+
 ---
 
 ## Product and naming
 
-**OQ-001 — Product name.** Status: Open.
+**OQ-001 — Product name.** Status: Open, **and packaging has already adopted the placeholder.**
 `diffscope` is a placeholder working name used for the directory. Final naming affects the bundle identifier, app name, and any distribution. Low urgency, but must be settled before packaging work in Phase 8.
+
+**Phase 8 arrived without this being settled.** `Scripts/package.sh` ships `DiffScope.app` in `DiffScope-<version>.zip` with a drawn icon, and `25-tester-packet.md` calls the product DiffScope to a stranger. That is the placeholder being used, not the question being answered — recorded here so the name is renamed deliberately if it is renamed at all, rather than discovered to be load-bearing later. It reaches the bundle identifier, the icon, the packet and the repository name.
 
 ~~**OQ-002 — Target users beyond the product owner.**~~ **Resolved by DEC-020.** Personal tool; distribution deliberately left undecided. Critical consequence carried forward: licensing of Phase 3 candidates must still be evaluated against possible future distribution, because adopting a strongly copyleft engine would quietly foreclose that option.
 
@@ -19,7 +45,7 @@ Questions are grouped by area. Identifiers are stable; resolved questions are st
 
 ## Losslessness and trust model
 
-**OQ-003 — The exact core invariant.** Status: **Recommendation ready, awaiting decision.** See [research/losslessness-invariant.md](research/losslessness-invariant.md) for the full analysis and the corpus measurements that settle it. Summary of the recommendation: compare on bytes, snap display outward to grapheme boundaries, never normalize, and enforce five stated invariants (reconstruction, coverage-by-containment, equality honesty, fallback visibility, mode agreement). New sub-questions OQ-042 through OQ-045 spun out below.
+~~**OQ-003 — The exact core invariant.**~~ **Resolved by DEC-021**, which took the recommendation below in full: comparison on bytes, display snapped outward to grapheme boundaries, no normalization anywhere, and the five invariants stated as INV-1 … INV-5. Enforced rather than asserted — `validate()` runs on every model, T-10's grapheme snapping is `snapToGraphemeBoundaries`, and the ŻABKA fixture is the negative control the recommendation was derived from. The recommendation is kept below because it is the argument, and the argument is what a future agent needs before reopening any of it.
 
 Original framing retained for context:
 The brief asks whether "every changed byte" is the correct invariant. It is very likely not, because bytes interact badly with encoding, byte-order marks, CRLF versus LF, Unicode normalization (NFC versus NFD — directly relevant given Polish text in the product owner's projects), and grapheme clusters.
@@ -31,23 +57,17 @@ Provisional two-part formulation under evaluation:
 
 Open sub-questions: what exactly is the canonical minimal diff computed over — bytes, Unicode scalars, or grapheme clusters; whether coverage should be checked at analysis time for every file or only in tests; what the runtime cost is; and what the application does when the check fails in production (fall back and warn, versus refuse to display).
 
-**OQ-004 — Behavior when a file is not valid UTF-8, or has mixed or unknown encoding.** Status: Open.
-Decoding bytes to text is potentially lossy and must be tracked explicitly. Related to OQ-003 and to binary-file handling.
+~~**OQ-004 — Behavior when a file is not valid UTF-8, or has mixed or unknown encoding.**~~ **Resolved by DEC-021 and DEC-051.** The premise — "decoding bytes to text is potentially lossy and must be tracked" — was answered by never decoding: comparison is on bytes, so no encoding is ever assumed and nothing is lost to a wrong guess. Where the bytes cannot be *shown* as text, `Degradation.binary` (**F9**) carries it, and its documentation says so explicitly: *invalid UTF-8 is mapped here*. DEC-051 gives it rank 1 in the precedence order, so a file that is both undecodable and, say, oversize reports the more specific reason.
 
-**OQ-005 — Runtime cost and failure policy of the coverage check.** Status: Research required.
-Depends on OQ-003. If coverage checking is affordable at runtime it becomes a live safety net; if not, it is a test-time-only guarantee, which is materially weaker. Preliminary finding: reconstruction and containment checks are linear with sorted intervals; the cost centre is computing the canonical diff itself.
+~~**OQ-005 — Runtime cost and failure policy of the coverage check.**~~ **Resolved by DEC-022, DEC-040 and DEC-043**, in that order. DEC-022 makes the check live rather than test-time; DEC-040 sets the threshold above which the independent `D` is not computed; DEC-043 replaced that file-size threshold with a **bound on counted work**, and a file that exceeds it is labelled **unverified** rather than silently skipped. The preliminary finding below held: the cost centre is `D` itself.
 
-**OQ-042 — Which canonical diff algorithm defines `D`.** Status: Open. Raised by the invariant research.
-The coverage invariant is stated relative to a fixed, deterministic byte-level diff. Myers over bytes is the obvious candidate. It need not be the algorithm used for presentation — only for validation.
+~~**OQ-042 — Which canonical diff algorithm defines `D`.**~~ **Resolved by DEC-039.** `D` is **Myers over bytes**, implemented independently of the presentation path — the independence being the point, since a validator sharing code with the thing it validates agrees with its defects. Minimality is checked against a dynamic-programming LCS reference over 600 random inputs rather than assumed.
 
-**OQ-043 — Runtime coverage-check size threshold and above-threshold behavior.** Status: Open.
-Options: skip the check and mark the file explicitly as unverified, or force raw mode above the threshold. Marking as unverified is the more honest option; silently skipping is not acceptable.
+~~**OQ-043 — Runtime coverage-check size threshold and above-threshold behavior.**~~ **Resolved by DEC-040, then re-specified by DEC-043.** The honest option below was taken: above the bound the file is labelled **unverified** and the partition assertions still run. DEC-043 changed what the bound *is* — counted work rather than file size — because a bound on bytes refuses a large simple file while admitting a small pathological one.
 
-**OQ-044 — Which invisible-difference classes ship in version one.** Status: Open.
-Normalization differences are measured present in this corpus and cheap to detect. Zero-width and bidi controls are cheap. Homoglyph detection requires the Unicode confusables table and is a larger commitment.
+~~**OQ-044 — Which invisible-difference classes ship in version one.**~~ **Resolved by DEC-023.** Three ship: `normalization-form`, `invisible-control` and `whitespace-lookalike`. Homoglyph detection did not, for the reason given below — the confusables table is a larger commitment than the value. Measured in M6-C, which is worth reading before touching the detector: Swift's `String ==` is canonical equivalence, so the obvious NFC test is always false and the detector silently detected nothing while its fixtures passed.
 
-**OQ-045 — Confirm the structural layer never sees normalized text.** Status: Open, recommended answer "never".
-Needs stating as an explicit engine rule, so that no future agent introduces normalization as a matching optimization. A parser or matcher that normalizes identifiers or string literals internally would report a changed string as unchanged.
+~~**OQ-045 — Confirm the structural layer never sees normalized text.**~~ **Confirmed, and the answer is "never" — DEC-021, DEC-024.** It is now an engine rule rather than an intention: comparison is on bytes end to end, the byte partition is the primitive the structural layer is built over, and `21-agent-handoff.md` §6 lists normalisation first among the questions that must not be silently re-decided — *not reopenable; disqualified by measurement*. The ŻABKA fixture is what makes a future violation fail rather than merely be discouraged.
 
 ---
 
@@ -57,10 +77,15 @@ Needs stating as an explicit engine rule, so that no future agent introduces nor
 
 ~~**OQ-007 — Base-branch detection.**~~ **Resolved by DEC-009.** Cascade: `origin/HEAD` → unique local `main`/`master` → prompt. Detected value displayed and overridable per repository, stored in application config, never in the repository. Sub-question still open: what key override storage uses, given that absolute paths are fragile across moves and renames.
 
-**OQ-008 — Detached HEAD handling.** Status: Open, **downgraded**.
-Detached HEAD remains worth handling, but **no repository in the current population is detached** — verified 2026-07-26. It is therefore a hypothetical case, not a tested-against-reality one. The real case is OQ-050.
+~~**OQ-008 — Detached HEAD handling.**~~ **Built and checked.** `RepositoryHead.detached(String)` in `DiffScopeGit/Repository.swift` reads as *detached at &lt;sha&gt;* in the repository row, and the suite asserts it by name. It remains a hypothetical case in this population, which is why it is closed by a check rather than by a measurement.
 
-**OQ-050 — Unborn HEAD (empty repository) handling.** Status: Open. **Blocking.** Supersedes the detached-HEAD framing of OQ-008.
+~~**OQ-050 — Unborn HEAD (empty repository) handling.**~~ **Built and checked**, and all three of its open parts are answered — by implementation against DEC-012's rule that an unknown is stated rather than fabricated, not by a new decision:
+
+- **What the list shows.** `RepositoryHead.unborn(intendedBranch:)` says there are no commits *and* names the branch that would be created. The suite asserts exactly that sentence.
+- **Which scopes are offered.** `Scopes.swift` gates on the unborn case directly, and the interface disables an unavailable scope **with its reason on the line** (M8-K).
+- **Reliable detection.** `git rev-parse --verify HEAD` failing is the signal, exactly as this entry proposed — not `symbolic-ref`, which is the trap recorded below.
+
+The original text is kept in full because the trap it records is the general lesson: **a Git command whose stdout looks meaningful while stderr carries the error.**
 `carrefour-inapp` has `.git/HEAD` pointing at `refs/heads/main` with **zero refs and zero commits**; everything is untracked.
 
 The trap: `git symbolic-ref -q HEAD` **succeeds with exit 0** and returns `refs/heads/main`. The standard detached-HEAD detection idiom therefore reports a branch that does not exist. Any base-detection or scope logic built on it is confidently wrong rather than merely unhelpful.
@@ -71,8 +96,7 @@ Open: what the repository list shows for branch and ahead-count (DEC-012 require
 
 ~~**OQ-009 — Which comparison scopes ship in version one.**~~ **Resolved by DEC-008.** Core four: all local vs `HEAD`; unstaged vs index; staged vs `HEAD`; branch vs merge-base of detected base branch. Branch-vs-branch, commit-vs-commit, and commit-vs-parent deferred. Note this promotes OQ-007 (base-branch detection) to blocking.
 
-**OQ-010 — Git access mechanism.** Status: Research required (Phase 3), **in progress**.
-Git CLI invocation versus libgit2 bindings versus a language-native implementation. Correctness, performance on the 1.5 GB repository, and packaging implications all bear on this. Explicitly not to be assumed. Interim position only: the CLI is currently better evidenced, because its read-only behavior has been established by measurement and because Raw mode must agree with `git diff` output by definition. No equivalent evidence exists yet for libgit2, whose licence and linking exception also need exact treatment under DEC-020.
+~~**OQ-010 — Git access mechanism.**~~ **Resolved by DEC-042: the CLI**, with `--no-optional-locks` on every invocation. The interim position below became the decision, and the measurement is why: `status` on the 1.5 GB repository is **46 ms** by CLI against **264 ms** by libgit2 (5.7×), the bindings are healthier, the licence is simpler, and Raw mode has to agree with `git diff` by definition — which a reimplementation would have to earn and the CLI has for free.
 
 ~~**OQ-046 — Auto-gc exposure.**~~ **Resolved by measurement, 2026-08-09 — the answer is no.** Measured two ways in `22-experiment-log.md` → **M8-M**: a scratch repository with the thresholds brought down to it (`gc.auto=1`, `gc.autoPackLimit=1`, foreground) where three full sweeps of the registry change nothing while a single `git commit` fires immediately, and the largest real repository in the corpus — 6,115 loose objects, **91% of git's default threshold** — unchanged after the read-only operations. The eager-threshold arm is now a permanent check, so an operation added to the registry that does trigger maintenance fails the suite.
 
@@ -80,16 +104,18 @@ Both mitigations were unavailable, which is why this had to be measured rather t
 
 ~~**OQ-047 — Filter-regime policy.**~~ **Resolved by DEC-025.** The Git layer produces the byte pair `git diff` would use, with filters applied consistently to both sides and disclosed when applied. Requires the `eol-filter-active` fixture, since 0 of 21 repositories currently have filters active.
 
-**OQ-049 — How to obtain cleaned bytes read-only.** Status: Open. **Blocking for filtered repositories.** Raised by the DEC-025 amendment.
-`git diff` compares both sides in cleaned (ODB) form, but no read-only plumbing emits cleaned bytes for a worktree file: `cat-file --filters` applies the smudge direction, `hash-object` returns only an OID. Four candidate approaches exist; at least one involves executing repository-configured filter commands, which is a security consideration in its own right — repository content would be choosing what runs.
+~~**OQ-049 — How to obtain cleaned bytes read-only.**~~ **Resolved by DEC-028: you do not.** A filtered file falls back to raw **with the filter disclosed**, because every approach that produces cleaned bytes runs a command the *repository* configures — repository content choosing what executes. `cat-file --textconv` was subsequently removed from the read-only registry for the same reason, with `GitOperation.forbiddenArguments` standing guard: R-8 proved it does not *write*, and running repository-configured commands is a different property from writing.
 
-**OQ-051 — `git status` and `git diff` disagree under an active EOL filter.** Status: Open. Raised by measurement.
-Measured: status reports ` M` while diff reports zero lines, persisting after an index-refreshing status. The changed-file list (DEC-012, DEC-017) and the diff view would contradict each other, which is precisely the kind of internal inconsistency that destroys trust. Needs a defined resolution — which of the two the file list follows, and what is disclosed.
+**This entry appeared twice in this document**, Open here and struck through under *Diff engine specifics*, which is the drift the audit of 2026-08-11 found. Its home is here, with Git behaviour; the other is a cross-reference.
 
-**OQ-054 — Case-folding and normalization in path matching.** Status: Open. Raised by measurement.
+~~**OQ-051 — `git status` and `git diff` disagree under an active EOL filter.**~~ **Resolved by DEC-041: the file list follows `git status`.** The measurement below is the case that forced it — status reports ` M` while diff reports zero lines — and the resolution is that the list keeps saying *changed* while the diff view **discloses the filter and says the two sides are byte-equal**. Hiding the row would be the tool deciding the reader is wrong about their own repository. F8 is what carries the disclosure, and it fires *even when the sides are byte-equal*, which is this case exactly.
+
+**OQ-054 — Case-folding and normalization in path matching.** Status: **Open, and confirmed unaddressed** by the audit of 2026-08-11 — the only `lowercased()` in the Git layer is the extension test in `FileGrouping`, which is not path matching. Raised by measurement.
 Measured: writing via `src/foo.ts` when disk holds `src/Foo.TS` makes FSEvents report the **on-disk** case. Git is case-sensitive, macOS's default filesystem is case-insensitive but case-preserving, so a mismatch means auto-refresh (DEC-007) silently stops updating that file. Path matching needs case-folded **and** NFC-normalized comparison — the latter realistic given Polish filenames and the NFD content already measured in this corpus.
 
-**OQ-055 — A built-in terminal.** Status: **Resolved 2026-07-31 — build it**, recorded as **DEC-053** on 2026-08-01 once gate T0 had passed. The product owner put it at the front of the queue. Plan and gate: [26-terminal-plan.md](26-terminal-plan.md); measurement: `22-experiment-log.md` → T0. The analysis below is kept because its cost estimate is what the plan is built on.
+**This is the most consequential entry still open**, because its failure mode is silence: the reader sees a diff that has simply stopped following the file, with nothing on screen saying so. Everything else still open is either a deferral (OQ-015, OQ-056) or a question about shipping rather than about correctness (OQ-034, OQ-035).
+
+~~**OQ-055 — A built-in terminal.**~~ Status: **Resolved 2026-07-31 — build it**, recorded as **DEC-053** on 2026-08-01 once gate T0 had passed, and extended by **DEC-067** on 2026-08-10 to several sessions in tabs across a full-width drawer. The product owner put it at the front of the queue. Plan and gate: [26-terminal-plan.md](26-terminal-plan.md); measurement: `22-experiment-log.md` → T0. The analysis below is kept because its cost estimate is what the plan is built on.
 
 Asked for directly: a terminal inside the application that handles text editing in the input line the way Warp does — Option+←/→ by word, Cmd+←/→ to line ends, Option+Delete by word — which ordinary terminal emulators handle poorly because they pass keys through a line discipline instead of editing a real text field.
 
@@ -128,8 +154,7 @@ Asked for directly, and **this is the one decision the product cannot drift into
 
 **Revisit:** this is a version-two scope decision, and taking it up means reopening DEC-003 explicitly with a new decision entry, per the rule in `21-agent-handoff.md` §6 that read-only must not be silently re-decided. See also [[OQ-055]]: the terminal **has since been built** (DEC-053), so the sideways grant is now real — a user can commit from inside the application today. That does not answer any question below. What it changes is the framing: the argument for staging as a feature is no longer "the product cannot write", it is "a hunk-accurate staging surface is safer and clearer than a command line", which is a better argument and a different one.
 
-**OQ-048 — Confirm `--no-optional-locks` coverage.** Status: Open.
-Verified for `status`. It is a top-level Git option so it should apply generally, but every command the application issues must be confirmed rather than assumed, and the read-only proof in the test plan must enforce this.
+~~**OQ-048 — Confirm `--no-optional-locks` coverage.**~~ **Confirmed, and enforced rather than confirmed once.** The flag is not passed per call site: `GitRunner.readOnlyGlobalArguments` prepends it to **every** invocation, and two checks hold that — one asserting the runner always passes it, one asserting the auto-gc registry does. Coverage of the commands themselves comes from the closed operation registry plus R-8, which snapshots `.git` before and after all 18 registered operations, so a new Git call without a proof fails the suite. That is the "must be confirmed rather than assumed" this entry asked for, made structural.
 
 ---
 
@@ -140,25 +165,33 @@ Verified for `status`. It is a top-level Git option so it should apply generally
 **OQ-012 — Cost of status collection.** Status: Partially resolved by DEC-006 (eager parallel sweep at launch, refresh on focus). Remaining sub-questions below are still Open.
 Measured 2026-07-26 (warm cache): full sequential `git status` sweep of all 21 repositories takes 326 ms; slowest single repository is 70 ms; reading all branch names from `.git/HEAD` takes 52 ms. Repository history size does **not** predict status cost — the 1.5 GB repository is not the slowest by much, because cost tracks working-tree file count. See the correction recorded in `00-index.md`.
 
-Consequence: an eager sweep at launch is affordable at this scale, and the earlier concern about a severe long tail does not hold. Still open: behavior as repository count grows well beyond 21; cold-cache behavior (unmeasured, Phase 3.5 spike candidate); whether status is refreshed on window focus; and what the list displays while a repository is still being measured.
+Consequence: an eager sweep at launch is affordable at this scale, and the earlier concern about a severe long tail does not hold.
+
+Two of the four sub-questions are answered: **status is refreshed on window focus** (DEC-006, built 2026-07-31 and listed in `23b-…` as closed), and **the list shows what is cheap to know while a repository is still being measured** — per-file badges from the extension, a `stat` and a 4 KB probe, with anything needing a full read left to the diff view (DEC-033 as amended).
+
+**Still open:** behaviour as repository count grows well beyond 21 — `16-…` §4 says re-measure past ~100 — and **cold-cache behaviour, which remains entirely unmeasured**; every figure in this project is warm.
 
 ~~**OQ-013 — Clean repositories in the list.**~~ **Resolved by DEC-012.** All repositories shown, with two independent signals: uncommitted file count and commits-ahead-of-base. Measurement showed "clean" does not imply "nothing to review" — `5bonsai__website__nextjs` has zero uncommitted changes but is 2 commits ahead of base. Sorting and grouping of the list remain a Phase 4 UX question.
 
-**OQ-014 — Nested repositories and monorepos.** Status: Open.
-Zero nested repositories exist today, but 12 of 21 are pnpm monorepos. Open: whether workspace packages are surfaced in any way, and how a nested repository would be presented if one appeared.
+**OQ-014 — Nested repositories and monorepos.** Status: **Half answered.**
+Zero nested repositories exist today, but 12 of 21 are pnpm monorepos.
+
+**Workspace packages are surfaced** — DEC-033 as amended groups the changed-file list by declared package where one exists and by parent directory otherwise, with headers suppressed where grouping buys nothing. That shape came from measurement rather than from the specification: all 12 `pnpm-workspace.yaml` files were read and **none declares `packages:`**, so the specified per-package grouping would have put one meaningless header above every list.
+
+**Still open:** how a nested repository would be presented if one appeared. DEC-018 stops descent at the first repository found, so today one would simply not be seen.
 
 **OQ-015 — Git worktrees and submodules.** Status: Deferred pending prioritization.
 Neither exists in the current population. Likely deferrable past version one, but must be an explicit decision rather than an oversight, and must not crash or silently misreport if encountered.
 
 ~~**OQ-016 — Refresh model.**~~ **Resolved by DEC-007.** Auto-refresh, debounced ~400 ms, preserving file selection and scroll anchor; file watching for the currently open repository only. Debounce value remains provisional. Two sub-questions spun out as still-open: OQ-038 (scroll anchoring) and OQ-039 (atomic-replace saves).
 
-**OQ-017 — Behavior when the configured root does not exist.** Status: Open.
+~~**OQ-017 — Behavior when the configured root does not exist.**~~ **Resolved by DEC-036, then generalised by DEC-052.** A missing source is **named rather than dropped**: DEC-036 settled the single-root case, and DEC-052 made configuration a JSON file the user can read holding any number of roots plus individual repositories, each missing one reported by path. The empty state offers a picker **with no suggested path** — the `~/WebstormProjects` default is gone, per the no-editor-specific-defaults rule.
 
-**OQ-038 — Semantics of scroll-anchor preservation across refresh.** Status: Open. Raised by DEC-007.
-"Preserve scroll position" cannot mean a pixel or line offset, because the content changes underneath. Anchoring must be semantic — plausibly to the nearest unchanged region, or to an edit index, or to a stable structural node. Needs specification in Phase 4/5, including behavior when the anchor itself is deleted by the incoming change.
+~~**OQ-038 — Semantics of scroll-anchor preservation across refresh.**~~ **Resolved by DEC-034, and measured in M7-C.** Anchoring is semantic, as this entry required: anchors come from the **canonical diff's matched blocks**, one per line, identified by a 3-line content hash plus an occurrence index. The behaviour when the anchor is deleted is a resolution the model reports rather than hides (`exact`, `noPreviousAnchor`, and the degraded cases), and the drift clause is checked rather than argued — twenty refreshes with no change resolve to one position.
 
-**OQ-039 — File-watching behavior for atomic-replace saves.** Status: Research required (Phase 3.5). Raised by DEC-007.
-JetBrains IDEs commonly save by writing a temporary file and renaming over the target. The resulting file-system events differ from in-place writes and can defeat naive watchers. Must be verified against actual WebStorm save behavior on macOS 26, including how many events a single save produces (which bears on the debounce value).
+**Read M7-C before touching it.** DEC-034's own words were *"the nearest segment labeled unchanged"*, and implemented literally that gives **Raw zero anchors**, because Raw is one fallback segment over the whole file.
+
+~~**OQ-039 — File-watching behavior for atomic-replace saves.**~~ **Resolved by measurement, and it is in `16-…` §1.4.** A single atomic-replace save produces **5 events**, spanning 11.1 ms at p50 and 13.3 ms at maximum — which is what DEC-026's 400 ms quiet period is sized against, with a 2 s cap for continuous saving. 40,000 file creations produced 40,041 events and **zero drops**; the drop path is therefore forced through `deliver(flags:)` in the suite, because untriggered means untested.
 
 ---
 
@@ -174,8 +207,8 @@ JetBrains IDEs commonly save by writing a temporary file and renaming over the t
 
 Two sub-questions spun out as still open:
 
-- **OQ-040 — Separation of the two color systems.** Status: Open. Syntax highlighting and change indication now coexist, while DEC-016 forbids change meaning from depending on color. Their visual separation must be designed in Phase 4, not tuned late.
-- **OQ-041 — File tree versus flat file list.** Status: Open. Not settled by DEC-017; relevant given 12 of 21 repositories are pnpm monorepos, where a flat list of changed files can be long and deeply nested.
+- ~~**OQ-040 — Separation of the two color systems.**~~ **Resolved by DEC-035, and delivered by DEC-066.** The separation is not a hue budget but a division of carriers: **syntax gets colour, change gets shape** — a sign column, a glyph, an underline, a background texture — so a change never depends on a hue that syntax is also using. DEC-066's token table is what made it implementable in one pass, and the **greyscale column** of `ChangeLanguage.dc.html` is where it gets checked before any code is written. It has already caught three things during the design review (`27-…` §3), including added and removed lines sharing a glyph and a texture, distinguished by hue alone in a layout that has no panes. The check is live too: the style audit reads the **computed style of the live document** and fails a mark distinguished by colour alone, with a hostile injection as its control.
+- **OQ-041 — File tree versus flat file list.** Status: Open, and **deliberately left open** — see `21-agent-handoff.md` §0. Not settled by DEC-017; relevant given 12 of 21 repositories are pnpm monorepos, where a flat list of changed files can be long and deeply nested. DEC-033's grouping (see OQ-014) is the middle position currently shipping — headers where a package or parent directory earns one — and it is not the same thing as a tree, which is why this stays open rather than being quietly closed by it.
 
 ~~**OQ-022 — Accessibility commitments for version one.**~~ **Resolved by DEC-016.** No meaning by color alone; full keyboard operation; respect system contrast and reduced-motion. Screen-reader support deferred with the gap documented honestly.
 
@@ -183,17 +216,22 @@ Two sub-questions spun out as still open:
 
 ~~**OQ-024 — Theming.**~~ **Resolved by DEC-019.** Follow macOS system light/dark with a built-in syntax theme per appearance. Consequence: both variants must independently satisfy the DEC-016 contrast and color-independence commitments, and theme changes must be handled while the application is running.
 
-**OQ-025 — External editor invocation mechanism.** Status: Research required (Phase 3 / 3.5). Scope narrowed by DEC-015.
-DEC-015 settled the *shape* — a configurable command template defaulting to WebStorm. Still open: which invocation mechanism is actually reliable on macOS 26 (URL scheme versus command-line launcher, including the case where the launcher is not installed); failure behavior when the editor is absent; sandboxing implications of launching an external process; and what "open this line" means when the line exists only on the old side of a deleted region.
+**OQ-025 — External editor invocation mechanism.** Status: **Mostly answered; one part still open.**
+DEC-015 settled the *shape* — a configurable command template defaulting to WebStorm, overridable through `DIFFSCOPE_EDITOR` and now through a Settings window, never populated from repository content.
+
+**Answered:** the mechanism is the command-line launcher with `{file}` and `{line}` substituted; **failure when the editor is absent is shown in the status line** rather than swallowed, and F13 reports both its arms. Building that fixture found an unrelated defect worth keeping on record — the template was substituted *before* being split, so a path containing a space became three arguments.
+
+**Still open:** the sandboxing implications of launching another application (which is OQ-035's territory), and what *open this line* should mean when the line exists only on the old side of a deleted region. ⌘⏎ opens at the line the reader is on, which is well-defined everywhere else.
 
 ---
 
 ## Diff engine specifics
 
-**OQ-026 — Move detection in version one.** Status: Open, **risk materially reduced by DEC-024**.
-Moves carry a known trap: a move that discards its internal delta is a losslessness violation. Under the byte-partition model a move regroups segments and cannot replace them, so the trap is structurally impossible rather than merely prohibited. What remains open is whether move *detection* ships in v1 at all, on cost and quality grounds rather than safety grounds. Domain research recommends modelling a move as `Move { fromRange, toRange, innerDiff }` with `innerDiff` empty **iff** the moved bytes are identical.
+~~**OQ-026 — Move detection in version one.**~~ **Resolved by DEC-038: it ships, for byte-identical moves only.** Which is the domain recommendation below taken at its narrowest — `innerDiff` empty **iff** the moved bytes are identical, and nothing shipped for the case where it would not be. Measured in M6-D: 120 of 120 corpus files recognise a relocation with **0 false moves**, and the rejection floor is *counted* (`movesBelowFloor`) rather than silent, because git's silent floor is the thing DEC-038 exists to avoid.
 
-**OQ-052 — Position coordinate system is a stack-level disqualifier.** Status: Open. **High impact.** Raised by measurement.
+Two things this entry did not anticipate. The first `moved` label came from reconciliation and **claimed a move while seeing one side only**, so it could not check the condition DEC-038 names; it is gone, replaced by a deliberate search. And moved-and-modified content presents as delete plus add — accepted in DEC-038, recorded as a known weakness rather than hidden.
+
+~~**OQ-052 — Position coordinate system is a stack-level disqualifier.**~~ **Resolved by DEC-042 and DEC-044**, and it did the job this entry was raised to do: it **disqualified a stack**. Swift's tree-sitter binding is byte-native, which is most of why DEC-042 chose a Swift core over a full-web architecture whose UTF-16 conversion surface would have been permanent and whose failure mode is silent. DEC-044 then confined the one conversion that remains to **one function on the Swift side**, independently tested — `21-…` §7 still lists it as the single place X-1's hazard survives, which is the honest status for a hazard that is contained rather than eliminated.
 **[Fact]** Both JavaScript bindings for tree-sitter report **UTF-16 code units while their type definitions describe them as bytes**: `node-tree-sitter` computes `ts_node_start_byte(node) / 2`, `web-tree-sitter` uses `byte_to_code_unit(byte) { return byte >> 1 }` with `TSInputEncodingUTF16LE`. The C, Rust, and **Swift** bindings are genuinely byte-native.
 
 On a corpus that is 51% non-ASCII, this produces **silent** partition corruption rather than a loud error — exactly the failure shape DEC-024 exists to prevent. TypeScript and oxc-in-Node also report UTF-16.
@@ -207,40 +245,40 @@ This is not merely a parser criterion; it constrains the **stack** decision (OQ-
 **OQ-027 (original framing) — Repeated identical nodes.** Status: Superseded.
 Multiple near-identical JSX siblings make matching genuinely ambiguous. Domain research found that **76% of commits contain at least one instance** (TOSEM 2024), and JSX makes it worse — so this is the common case, not an edge case. Policy needed: ambiguity must lower confidence and trigger visible degradation rather than produce an arbitrary confident pairing. Candidate tie-breakers from the literature: identity of neighbouring siblings, then ancestor edit distance at increasing depth. Ordering must be deterministic and documented (see T-7).
 
-**OQ-028 — Invalid, incomplete, or conflicted source.** Status: Open.
-Half-typed JSX during editing, and merge-conflict markers. Parser error recovery quality is a Phase 3.5 spike candidate.
+~~**OQ-028 — Invalid, incomplete, or conflicted source.**~~ **Both halves built, and the spike was run.** Merge-conflict markers are detected in `SyntaxPartition` and mapped to **F2** — no usable tree for the whole file — rather than being parsed into nonsense. Half-typed source is covered by tree-sitter's error recovery, whose quality was the spike: **~38.4% of bytes fall outside `ERROR` regions on truncated files**, accepted as a quality ceiling and recorded as such, with `parseErrorRegions` reporting F1 with region and byte counts so a partial parse is stated rather than inferred. The spike is also what disqualified two alternatives: oxc returns an **empty program** for 94.77% of truncated TSX while appearing to succeed, and Babel throws on 91.67%.
 
-**OQ-029 — Large, generated, minified, and binary files.** Status: Open.
-Thresholds, degradation strategy, and detection method. Must degrade visibly, never silently.
+**OQ-029 — Large, generated, minified, and binary files.** Status: **Three of four answered; `generated` is the one still open.**
+**Thresholds and detection are DEC-050 and DEC-051**, both measured in M8-A: 2 MB before parsing, 30,000 nodes before matching, 10,000,000 counted comparisons during it, with the gate on **node count rather than bytes** because a 200 KB minified file and a 200 KB hand-written one buy wildly different amounts of work. Binary is F9, and every breach states its reason in the interface — the "visibly, never silently" this entry asked for.
 
-**OQ-030 — File-level matching: renames, moves, deletions, untracked files.** Status: Open.
-Including files that are both renamed and modified, and how much to trust Git's own rename detection.
+**What is not decided is what `generated` should mean**, and `FixtureCatalog` records that gap by name rather than by omission: `generated-file` is a P0 case listed as *not proven — OQ-029 is open*, because a fixture would freeze an answer nobody has chosen. **Closing this entry means answering that, and the catalog will stop reporting a gap when it is answered.**
 
-**OQ-031 — Performance budgets.** Status: Research required.
-No numbers exist yet. Needs targets for repository list population, scope switching, and diff rendering, measured against the actual repository population — notably the 1.5 GB repository and the 63-changed-file working tree.
+**OQ-030 — File-level matching: renames, moves, deletions, untracked files.** Status: **Partly answered by what ships.**
+Git's own rename detection is consumed: `ChangedFile` carries `originalPath` beside `path`, `ChangeKind` has `renamed` (rendered `→`), and added, deleted, untracked, type-changed and unmerged are all distinguished. **Still open, and unchanged by that:** how much to trust the detection — a rename is a similarity heuristic, and nothing in this product yet says what it would show if git called two unrelated files a rename.
 
-**OQ-032 — Caching strategy.** Status: Open. Depends on OQ-031 and the pinned-source-pair model.
+~~**OQ-031 — Performance budgets.**~~ **Answered — `16-performance-and-scaling.md` §3 is the table, and it is measurement rather than estimate.** Every number this entry asked for exists against the real population: the launch sweep (326 ms sequential across 21 repositories, parallel in practice), scope switching and the Git floor (§1.1), and rendering. **Both original estimates were replaced by measurement and both were wrong** (M8-A): matching cost is roughly **quadratic** in node count rather than linear, and the budget had to be **counted work** rather than elapsed time, because a wall-clock deadline makes the diff depend on machine load. Composition of the unified layout was the last unmeasured piece and is now in §3 too (M9-D).
+
+**OQ-032 — Caching strategy.** Status: **Specified, never decided.** `16-…` §6 says what it would be — keyed by the **pinned content-hash pair**, which makes invalidation exact rather than heuristic, with parse results, per-repository status and merge-base as the candidates, and an explicit rule that the cache may never be the reason a diff shows old content. **None of it is built, and no decision entry exists.** OQ-031 no longer blocks it; what blocks it is that nothing has been slow enough to need it.
 
 ---
 
 ## Technical and delivery
 
-**OQ-033 — The entire technology stack.** Status: Research required (Phase 3). **No stack has been chosen and none may be assumed.**
-DEC-002 removed the cross-platform criterion but did not select a stack. Native macOS toolkits, Electron, Tauri, and others remain open candidates, as do all Git, parser, matcher, diff, and rendering components.
+~~**OQ-033 — The entire technology stack.**~~ **Resolved by DEC-042: Swift shell and engine, tree-sitter via the C API, CodeMirror 6 in a `WKWebView`, Git CLI.** Every component this entry listed was chosen against measurement, and M0 existed specifically so that measurement could *invalidate* the choice before anything was built on it. The rejected candidates and their reasons are in `21-…` §5 — the interesting ones being rejections on **silent** failure modes rather than on performance: oxc returning an empty program for 94.77% of truncated TSX while appearing to succeed, and a full-web architecture whose UTF-16 conversion surface would fail without saying so.
 
-**OQ-034 — Distribution and updating.** Status: Open.
-App Store versus outside distribution; code signing and notarization; whether an update mechanism is needed. Depends partly on OQ-002.
+**OQ-034 — Distribution and updating.** Status: Open, and **deliberately left open** — see `21-agent-handoff.md` §0. App Store versus outside distribution; code signing and notarization; whether an update mechanism is needed. Depends partly on OQ-002.
 
-**OQ-035 — Sandboxing.** Status: Open. **Difficulty raised by DEC-037.**
+What exists is a **tester build, not a distribution**: `Scripts/package.sh` produces an **unsigned** `DiffScope.app` with a zip and a SHA-256, and `25-tester-packet.md` goes with it. It proves independence rather than assuming it — the bundle is copied to a temporary directory and the full selftest is run from `/`, so a build that quietly read from the checkout fails there rather than on someone else's machine. None of that answers signing, notarization or updating.
+
+**OQ-035 — Sandboxing.** Status: Open, and **deliberately left open** — see `21-agent-handoff.md` §0. **Difficulty raised by DEC-037**, and raised again by DEC-053: the built-in terminal spawns interactive shells, which is a larger sandbox surface than the Git subprocess `17-…` §3 weighs. Nothing forces the question while distribution is undecided (OQ-034), and §3 explains why it can stay open without blocking version one.
 A tool that reads arbitrary directories and launches an external editor has real tension with the App Sandbox. Interacts with OQ-034.
 
 DEC-037 makes this materially harder: with multiple user-chosen roots *plus* individually added repositories anywhere, a sandboxed application must obtain user-granted access **per location** and persist it across launches via security-scoped bookmarks — including handling revocation and stale bookmarks. One root would have meant one grant. This is now a first-order input to the sandboxing decision rather than a detail.
 
-**OQ-036 — Licensing of candidate dependencies.** Status: Research required (Phase 3).
-Particularly relevant for any engine that would be embedded or forked. Commercial-use implications depend on OQ-002.
+~~**OQ-036 — Licensing of candidate dependencies.**~~ **Answered — `17-security-privacy-and-licensing.md` §4 is the register**, and every shipped dependency is MIT: tree-sitter and its TypeScript grammar, CodeMirror 6, xterm.js 6.0.0 and its fit addon. The entry's own warning was the one that mattered: adopting a strongly copyleft engine would have quietly foreclosed distribution, and **GumTree is LGPL-3.0** — so its algorithms were implemented from the publications and no source was ported (DEC-030), on the ground that algorithms are not copyrightable and implementations are. What remains under §4.3 is a **maintenance** risk rather than a licensing one: the grammar's last release was 2024-11-11, and MIT keeps forking available as the mitigation.
 
-**OQ-037 — Test infrastructure.** Status: Research required.
-Constrained by DEC-002: the diff engine must run headlessly in CI. Property-based and invariant-based testing approaches to be evaluated in Phase 6.
+~~**OQ-037 — Test infrastructure.**~~ **Answered by what exists: `diffscope-verify`**, headless, exit 1 on failure, **1598 checks over 55 fixtures**. Both approaches this entry named are in it. *Invariant-based*: T-0 … T-11 apply to **every** fixture automatically, on both the raw and structural paths, with no per-case expectation file. *Property-based*: the canonical diff is checked for minimality against a dynamic-programming LCS reference over 600 randomly generated pairs.
+
+Three habits are worth more than the count, and each was paid for: **T-1 and T-3 are implemented independently of the partition code**, because X-1 found a defect that passes T-0 and T-1 and fails only T-3; **R-8 is a snapshot of `.git` before and after every Git operation**, so a new Git call without a proof fails the run; and **fixture bytes are verified against recorded hashes**, because editors silently repair CRLF and NFD.
 
 ---
 

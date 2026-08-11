@@ -230,6 +230,10 @@ This test should run against **every** Git operation the application can issue, 
 
 R-9 is a correctness test, not a UI test. Modify a file *while* analysis is in flight and assert the result is either the pre-change pin or the post-change pin, never a blend of the two.
 
+**Two requirements this section learned the hard way (M9-E).** *Blend* must include a **short or empty** read, not only a mix of the two versions: every blend ever observed here was a zero-length file caught between `truncate` and its rewrite, and an arm looking for interleaved content would have called it clean. And **the race must be bounded by reads, never by elapsed time** — bounded by 1.5 seconds it sampled fifteen, and fifteen observations cannot see a defect that occurs four times in a thousand. State the count the arm needs; let the clock be a safety valve only.
+
+The fixture's two versions should also differ in **length**, which these do not: at 52,000 bytes each, the size term of the stat bracket could never discriminate between them and only `mtime` was doing any work.
+
 ## 6. Corpus sourcing
 
 Fixtures should be drawn from **real code in the actual repositories** wherever possible, reduced to the smallest pair that still exercises the case. Synthetic fixtures miss the things that make real code hard: the decomposed `Ż`, the CRLF HTML packages, deeply nested monorepo paths, generated files.

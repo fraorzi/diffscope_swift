@@ -2256,3 +2256,55 @@ A bound that has only ever seen the fast path is not a bound. `diffscopeInjectSl
 
 - **`diffscopeProbe` returns `oldText`, `newText` and `unifiedText` in full.** At fifty thousand lines that is megabytes of JSON across the bridge, which would have been most of what any timing arm measured. `diffscopeTimings` returns numbers only.
 - **Frame time is not measured and cannot be here.** `requestAnimationFrame` is suspended whenever the window is occluded, which a selftest launched from a terminal always is — T1-A, which cost a terminal grid that passed every arm while drawing nothing. These are synchronous composition numbers, which is the question DEC-059 left open, and they say nothing about paint.
+
+# M9-E — the pin guard certified an empty file, and the check that should have caught it sampled fifteen reads
+
+**Date:** 2026-08-11 · **Method:** the R-9 race bounded by reads instead of by a clock (M9-C), the blend arm made to report the **shape** of what it let through, then the same race run before and after DEC-068's change.
+
+## What M9-C's bound exposed the moment it was applied
+
+The R-9 arm ran for **1.5 seconds**. On this machine that buys **15 reads**, and on those fifteen it asserted *no pin certifies a version that never existed on disk*. Bounding it by reads instead took it to 200, and blends appeared on the third run.
+
+```
+before, time-bounded (8 runs):    15, 15, 16, 16, 15, 16, 15, 16 reads — 0 blended
+after, read-bounded (6 runs):     200 reads each — 0, 0, 0, 0, 1, 4 blended
+```
+
+**Five blends in 1,200 reads, ~0.4%, and clustered** — four in one run and none in four others, which is what phase-locking between a reader and a writer looks like rather than an independent per-read probability.
+
+M8-H had measured this guard's two halves leaking at **6 in 20** and **3 in 8,095**. Fifteen observations could not have detected anything in that range. **The arm was not weak, it was under-sampled**, and the count was invisible because it was never printed — only the elapsed window was chosen, and the reads it bought were whatever the machine managed.
+
+## The shape is what identified it, and it took one line to get
+
+`1 blended of 200` sends the next reader back to re-run the suite. So the arm now says what it saw:
+
+```
+4 blended of 200 — 0/52000 bytes, 0 A-lines + 0 B-lines · (×3)
+```
+
+**Every blend was a zero-length file.** Not a torn mix of the two versions — the whole file, empty.
+
+The mechanism follows immediately. A non-atomic in-place save truncates and then writes; in the window between, the file is genuinely zero bytes **and genuinely quiescent**. Three stats agree the size is 0, both reads return nothing, every term of DEC-049's guard is satisfied. The guard asks *did anything change while I looked*, and nothing did — the file was empty for the whole of a very short look.
+
+Two things hid it further. Both fixture versions are exactly **52,000 bytes**, so `FileStamp`'s size term could never discriminate between them and only `mtime` was doing any work. And the defect's presentation is the loudest one available: a file caught mid-save renders as **the whole file deleted**.
+
+## After DEC-068
+
+The confirming read is separated from the first by `settleRetryDelay` — 20 ms, already in the type, already sized against a measured 11 ms atomic save. A transient state now has to persist across a window to be certified; a real one does.
+
+| | before | after |
+|---|---|---|
+| continuous rewrite, blended | 5 in 1,200 reads | **0 in 1,600** |
+| continuous rewrite, refused | ~199 of 200 | 200 of 200 |
+| saves 30 ms apart, refused | 0 of 100 | **~30 of 100** |
+| whole suite | not timed | 113 s |
+
+**The cost is in the third row and it is the honest trade.** A 20 ms window is one a write can land in, so a burst of saves refuses about three pins in ten where it previously refused none. The arm that exists to object to this — *a normal burst of saves still yields usable pins* — passes with ~70% settling against its >50% floor. A guard that refused everything would be an outage, and this is not that.
+
+**The suite was not timed before the change, so no delta is claimed.** 113 s is what it costs now.
+
+## What stands as the negative control
+
+The pre-change measurement is the control, in the form M8-H used: **remove the separation and the blends return at 0.4%**, measured over 1,200 reads rather than argued. No new arm was added for it, because a recorded rate from the same harness is the stronger evidence and the code to produce it is one line away in either direction.
+
+**0 in 1,600 reads is good evidence, not proof.** At the pre-change rate, 1,600 reads would have been expected to produce about six. Clustering makes the arithmetic softer than that — the failures are bursty rather than independent — so the honest statement is that the shape that produced every observed blend is now impossible, and the rate is consistent with that.

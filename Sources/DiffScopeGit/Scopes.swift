@@ -357,7 +357,16 @@ public struct ScopeReader: Sendable {
             bytes = try readSide(source, in: repository)
             let after = stamp(of: url)
             if before != nil, before == after {
-                // The second read is what catches a write already in flight when the first stat ran.
+                // The second read is what catches a write already in flight when the first stat ran,
+                // and DEC-068 is why it happens **later** rather than immediately. Taken back to
+                // back, both looks land inside the same instant, and a file between `truncate` and
+                // its rewrite is zero bytes and genuinely quiescent for the whole of it: three
+                // stats agree the size is 0, both reads return nothing, every term here is
+                // satisfied, and the pin certifies an empty file. Measured at 4 per 1,000 reads —
+                // and it presents as *the whole file deleted*, which is the loudest way this
+                // product can be wrong. Spanning a window instead of an instant means a transient
+                // state has to persist to be believed, and a real one does.
+                Thread.sleep(forTimeInterval: ScopeReader.settleRetryDelay)
                 let confirmation = try readSide(source, in: repository)
                 if confirmation == bytes, stamp(of: url) == after { return (bytes, true) }
             }

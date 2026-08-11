@@ -56,7 +56,7 @@ Built by `runGitChecks` and `runRefreshChecks` against scratch repositories, sin
 | R-6 | Ahead-count is unknown, never a fabricated zero | `GitChecks` | |
 | R-7 | All four scopes select the right blob pairs | `GitChecks` | |
 | R-8 | **No Git operation writes** — `.git` snapshotted before and after each | `GitChecks` | Runs over the whole closed registry, so a new operation without a proof fails. Extended in M8-B: `forbiddenArguments` also rejects any operation that would *execute* repository-configured commands, which is a different property from not writing |
-| R-9 | A file changed mid-analysis never yields a blended pair | `RefreshChecks` | Hostile writer rewriting in place; the naive content-comparison guard let 3 blends through in 8,095 reads |
+| R-9 | A file changed mid-analysis never yields a blended pair | `RefreshChecks` | Hostile writer rewriting in place; the naive content-comparison guard let 3 blends through in 8,095 reads, the stat bracket alone 6 in 20, and the two together **4 per 1,000** until DEC-068 separated the confirming read in time (M9-E). The arm is bounded by **reads**, not by a clock — at 1.5 s it sampled 15, which could not have seen any of those rates |
 | R-10, R-11 | Scan depth honoured; symlink cycles and root escapes refused | `GitChecks` | |
 | R-12 | Unborn HEAD, and the idiom that reports it wrongly | `GitChecks` | Not in the original plan; added when `carrefour-inapp` turned out to be unborn rather than detached |
 

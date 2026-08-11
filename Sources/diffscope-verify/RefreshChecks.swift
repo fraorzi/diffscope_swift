@@ -145,6 +145,10 @@ func runRefreshChecks(_ reportRaw: (String, Bool, String) -> Void) {
 
         let scopes = ScopeReader()
         let changed = ChangedFile(path: path, originalPath: nil, kind: .untracked)
+        /// The first few blends, described rather than counted. Populated by `race` below, and read
+        /// by the arm that reports it — hostile runs first, so what it prints is its own.
+        var shapes: [String] = []
+
         /// Reads pins while a writer rewrites the file in place. `pause` is the gap between
         /// writes: zero is a file under continuous rewrite, which is not a real editing pattern
         /// but is the hardest case; 30 ms is a plausible burst of saves.
@@ -179,7 +183,20 @@ func runRefreshChecks(_ reportRaw: (String, Bool, String) -> Void) {
                 counts.reads += 1
                 if !pair.stable { counts.unstable += 1; continue }
                 let text = String(decoding: pair.newBytes, as: UTF8.self)
-                if text != versionA && text != versionB { counts.blended += 1 }
+                if text != versionA && text != versionB {
+                    counts.blended += 1
+                    // **What it was**, not merely that there was one. `1 blended of 200` sends the
+                    // next reader back to re-run the suite; the shape says immediately whether the
+                    // guard let through a torn mix of the two versions or a short read of one, and
+                    // those have different causes. Both sides are the same length here, so the
+                    // stat bracket's size term cannot discriminate and only `mtime` is working.
+                    if shapes.count < 3 {
+                        let full = versionA.count
+                        let aLines = text.components(separatedBy: "const a = 1;").count - 1
+                        let bLines = text.components(separatedBy: "const b = 2;").count - 1
+                        shapes.append("\(text.count)/\(full) bytes, \(aLines) A-lines + \(bLines) B-lines")
+                    }
+                }
             }
             return (counts.reads, counts.blended, counts.unstable, counts.reads < wanted)
         }
@@ -189,7 +206,9 @@ func runRefreshChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("the racing read happened as often as the arm asked", !hostile.starved,
                "\(hostile.reads) of 200 reads")
         report("under continuous rewriting, no pin certifies a version that never existed on disk",
-               hostile.blended == 0, "\(hostile.blended) blended of \(hostile.reads)")
+               hostile.blended == 0,
+               "\(hostile.blended) blended of \(hostile.reads)"
+                   + (shapes.isEmpty ? "" : " — \(shapes.joined(separator: " · "))"))
         report("and a pair that will not settle is reported rather than presented as fact",
                hostile.unstable > 0, "\(hostile.unstable) unstable of \(hostile.reads)")
 

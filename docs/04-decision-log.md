@@ -2077,7 +2077,9 @@ Reopen if line-count-changing reformats (Prettier's print width) prove common en
 
 - **Date:** 2026-07-27
 - **Topic:** Resolves the read half of test R-9. Refines DEC-007's pinning.
-- **Status:** Accepted
+- **Status:** Accepted · **Strengthened twice — see the M8-H addendum below, and DEC-068 (2026-08-11)**
+
+> **Amended by DEC-068.** This entry's guard asks *did anything change while I looked*, and takes both looks at the same instant. A file caught between `truncate` and its rewrite is zero bytes and genuinely quiescent, so every term here is satisfied and the pin certifies an empty file — measured at **4 per 1,000 reads** once the R-9 arm was bounded by reads rather than by a second and a half. DEC-068 separates the confirming read from the first in time. Nothing below is withdrawn.
 
 ### Context
 
@@ -2851,3 +2853,45 @@ The adopted design draws the terminal as a **drawer across the window** with a *
 ### Revisit trigger
 
 Reopen if tabs turn out to want their own working directories *persisted* across launches — that is configuration, and DEC-052's file would have to carry it. Also reopen if the drawer wants to be a panel that detaches, which is DEC-005's territory rather than this entry's.
+
+---
+
+## DEC-068 — A pin's confirming read is separated from the first read in time
+
+- **Date:** 2026-08-11 · **Topic:** DEC-049's settle guard · **Status:** Accepted · **Amends DEC-049**
+
+### Context
+
+DEC-049 refuses a pin taken from a file that is still being written, and M8-H strengthened it after measuring that each half of the guard leaks on its own: content comparison alone let **3 blends through in 8,095 reads**, the stat bracket alone let **6 through in 20 under load**. The combination — three stats that must agree, two reads that must be byte-identical — was believed to close both holes.
+
+It does not close one, and the reason it was never seen is the check rather than the code. The R-9 arm ran for **1.5 seconds**, which on this machine buys **15 reads**, and it asserted *no pin certifies a version that never existed on disk* on those fifteen. Bounding the same arm by **reads** instead (M9-C) took it to 200, and blends appeared immediately: **4 per 1,000 reads under continuous rewrite**, clustered rather than spread, which is what phase-locking between a reader and a writer looks like.
+
+**Every one of them was a zero-length file** — `0/52000 bytes, 0 A-lines + 0 B-lines`, reported by the arm itself now that it says what it saw.
+
+The mechanism is not subtle once the shape is known. A non-atomic in-place save truncates and then writes. In the window between those, the file is genuinely zero bytes and genuinely **quiescent**: three stats agree that the size is 0, both reads return nothing, and every term of the guard is satisfied. The guard asks *did anything change while I looked*, and nothing did — the file was empty for the whole of a very short look.
+
+Two things hid it further. Both sides of the fixture are exactly 52,000 bytes, so `FileStamp`'s **size** term could never discriminate between them and only `mtime` was doing any work. And the presentation of the defect is the loudest one available: a file caught mid-save renders as **the whole file deleted**.
+
+### Options considered
+
+1. **Separate the confirming read from the first read in time.** The guard already owns a delay — `settleRetryDelay`, 20 ms, sized against a measured 11 ms atomic save — and uses it only *between* failed attempts. Putting it *inside* an attempt makes the two reads span a window rather than an instant, so any transient state has to persist across it to be certified.
+2. **Confirm only empty reads.** Zero cost on the normal path, and it closes exactly what was measured. Rejected as too narrow: it fixes the shape rather than the cause. A writer that emits in chunks produces non-empty partial states, and the same argument that certified 0 bytes would certify 30,000 of them.
+3. **Refuse a zero-length worktree read outright.** Rejected: a deliberately emptied file exists, and this would make it permanently unreadable — a guard that refuses a legitimate state is an outage, which is the objection R-9's second arm exists to raise.
+4. **Require the file to be quiescent by clock** — `mtime` older than the read by some margin. Rejected: it needs a margin nothing has measured, and it fails differently rather than better on a filesystem with coarse timestamps.
+
+### Final decision
+
+**Option 1.** `settledRead` sleeps `settleRetryDelay` between the read and its confirmation, so the pair spans a window instead of an instant. A state that is transient cannot survive it; a state that is real does.
+
+This is a strictly stronger guard than DEC-049's, not a different one. Every term it already checked, it still checks.
+
+### Consequences
+
+- **A worktree read costs at least one settle delay.** On a quiet file that is ~20 ms added to selecting a file and to each refresh — against a 46 ms `git status`, and imperceptible next to it.
+- **During an active save burst it costs more, and refuses more.** Each attempt now has a 20 ms window a write can land in, so more attempts fail and the retry loop runs further. The arm that exists to catch this — *a normal burst of saves still yields usable pins* — is the one to watch, and the measured settle rate is in `22-experiment-log.md` → **M9-E**.
+- **The check that missed it is fixed independently** (M9-C): the R-9 arms are bounded by reads rather than by a second and a half, and the blend arm now reports the **shape** of what got through rather than only the count. `1 blended of 200` sends the next reader back to re-run the suite; `0/52000 bytes` names the cause.
+- **DEC-049 and M8-H stay as they are.** Both were right about what they measured, and neither claimed this window. The amendment pointer goes on DEC-049.
+
+### Revisit trigger
+
+Reopen if a worktree read ever needs to be on a latency-critical path — today it happens when a reader selects a file or a refresh fires, and 20 ms is invisible there. Also reopen if a partial, **non-empty** read is ever observed being certified: that would mean the window is still too short rather than absent, and the delay is the number to change.

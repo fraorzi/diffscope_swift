@@ -1087,3 +1087,65 @@ Not a defect found and fixed; a defect **observed and lost**. One run in eight f
 harness could not say which check. The durable fix is that the run now names its failures, so the
 next occurrence identifies itself. The three arms hardened alongside it are provably load-dependent
 by reading — they may or may not be the one.
+
+## Step 45 — the open-questions audit
+
+- [x] `05-open-questions.md` audited against `04-decision-log.md` and the code
+- [x] **24 entries struck through** with what closed them — OQ-003, 004, 005, 008, 010, 017, 026,
+      028, 031, 033, 036, 037, 038, 039, 040, 042, 043, 044, 045, 048, 049, 050, 051, 052
+- [x] OQ-049's **duplicate** resolved: it was Open under Git behaviour and struck through under
+      diff-engine specifics, in the same document
+- [x] Five part-answered entries now say which part is left (OQ-012, 014, 025, 029, 030)
+- [x] A header table: eight genuinely open, five part-answered, each with its reason
+- [x] `21-…` §0 and its file map updated
+
+### Step 45 — what the audit found beyond the bookkeeping
+
+**OQ-054 is the one that matters, and it is untouched.** Case-folding and NFC in path matching: the
+only `lowercased()` in the Git layer is `FileGrouping`'s extension test, which is not path matching.
+The measured hazard stands — FSEvents reports the **on-disk** case, so a write via `src/foo.ts` to a
+disk holding `src/Foo.TS` stops reaching the watcher, and **auto-refresh silently stops updating
+that file**. It is the only entry left open whose failure mode is silence rather than absence.
+
+**Two entries were closed by implementation rather than by a decision**, and are marked that way
+rather than given a retrospective DEC: OQ-008 and OQ-050, both built against DEC-012's rule that an
+unknown is stated rather than fabricated, both asserted by name in the suite.
+
+**OQ-001 was closed by nobody and adopted by everybody.** Phase 8 arrived, `package.sh` ships
+`DiffScope.app`, and the tester packet calls the product DiffScope to a stranger. The placeholder is
+now in the bundle identifier, the icon, the packet and the repository name. Left open, with that
+said out loud, so a rename is a decision rather than a discovery.
+
+**`FixtureCatalog` is why OQ-029 stays half open.** `generated-file` is a P0 case recorded as *not
+proven — OQ-029 is open*. The catalog and this document agree, which is the mechanism working:
+closing the entry is what lets the fixture exist.
+
+## Step 46 — DEC-068: the pin guard was certifying an empty file
+
+- [x] Measured: **5 blends in 1,200 reads** once M9-C's read bound replaced the 1.5 s window
+- [x] The blend arm reports the **shape**, which named the cause in one run — every blend was
+      `0/52000 bytes`, a zero-length file
+- [x] DEC-068 written; DEC-049 carries its amendment pointer and nothing in it was rewritten
+- [x] `settledRead` sleeps `settleRetryDelay` between the read and its confirmation
+- [x] **0 blends in 1,600 reads** since; the *usable pins* arm settles ~70% against its >50% floor
+- [x] `22-…` → M9-E, `26-coverage-audit.md`, `15-…` §5.2, `21-…` §0
+
+### Step 46 — the check was not weak, it was under-sampled
+
+M8-H measured this guard's two halves leaking at **6 in 20** and **3 in 8,095**, and then the arm
+that guards the combination sampled **fifteen reads**. Nothing was wrong with what it asserted. What
+was wrong is that it chose an *elapsed window* and accepted whatever reads the machine managed
+inside it — and never printed how many that was. `hostile.reads > 10` was the only thing standing
+between fifteen observations and zero, and it passed.
+
+**The window and the sample size are different quantities, and only one of them is the evidence.**
+
+### Step 46 — three things that generalise
+
+- **A blend includes a short or empty read.** An arm looking for interleaved content would have
+  called every one of these clean. The guard's own claim is *a version that never existed on disk*,
+  and an empty file caught between `truncate` and its rewrite is exactly that.
+- **A fixture whose two sides are the same length disables the size term of any stat guard.** Both
+  versions here are 52,000 bytes, so `FileStamp` was running on `mtime` alone and nobody had noticed.
+- **Report the shape, not the count.** `1 blended of 200` costs the next reader a re-run.
+  `0/52000 bytes, 0 A-lines + 0 B-lines` costs them nothing.
