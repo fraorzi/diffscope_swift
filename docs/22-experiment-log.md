@@ -2374,3 +2374,71 @@ DEC-069. Identity is **device plus inode** where the path exists — the same me
 ```
 
 Two of the ten are negative controls: that the two spellings are genuinely different strings, so the deduplication is an observation rather than a tautology; and that Swift's canonical equivalence holds at all.
+
+# M9-G — M9-D's ratio was a fact about one environment, and the packaging step said so
+
+**Date:** 2026-08-11 · **Method:** the same `scale-*` arms run from the packaged bundle, from `/`, with nothing from the checkout — which is what `Scripts/package.sh` does to prove independence — three times over, beside the checkout numbers.
+
+**This corrects M9-D. Nothing there is deleted; the numbers were real and the conclusion drawn from them was too narrow.**
+
+M9-D concluded that **unified is cheaper than side-by-side, 0.49–0.68×**, and the arm gated on a 2× bound. The first time `package.sh` ran after that landed, **it refused to package**, on `scale-50k-lines=MISMATCH … ratio=7.82x`.
+
+## The same arm, in two environments
+
+| | checkout | packaged, from `/` |
+|---|---|---|
+| split, 50k lines | 48–49 ms | **239, 243, 250 ms** |
+| unified, 50k lines | 21–31 ms | **370, 383, 387 ms** |
+| ratio | 0.61–0.68× | **1.49–1.59×** |
+| `compose`, 20 iterations | 1.150 ms | **0.000, 0.000, 0.050 ms** |
+
+**Unified is not cheaper than side-by-side. It is cheaper in the checkout.** Both layouts are five to eight times slower in the packaged run, and unified is the more expensive of the two there.
+
+## Why the gate failed, which is not why it looks like it failed
+
+The failing run measured `split=49ms unified=383ms`. Three re-runs in the same environment measured `split≈245ms`. **The failure came from an anomalously fast baseline, not from a slow unified** — unified was ~380 ms in all four.
+
+A ratio absorbs a loaded machine only when **both sides share a bottleneck**, which is the condition M8-N relied on and stated. These two do not: side-by-side populates two editors and unified populates one, and whatever varies by 5× here reaches them differently. **M8-N's technique was applied where its premise does not hold.**
+
+## And the composition numbers cannot carry an assertion either
+
+`compose` reads 1.150 ms in the checkout and **0.000** twice in the packaged runs, from the same twenty-iteration loop. That is **T1-A in a new place**: an occluded WebKit view is not a reliable clock, and the packaged selftest is always occluded. An assertion built on those numbers would be a check that cannot fail in precisely the environment where the gate runs — the defect class this project keeps finding.
+
+## What the arm asserts now
+
+Only what the composition **produced**, all of it arithmetic on the input rather than a number copied from a previous run:
+
+- one merged block per change — `blocks == sourceLines / changeEvery`
+- one extra line per block, because the changed line appears on both sides — `lines == sourceLines + blocks`
+- at most three runs per block: the context before it, the old side, the new side
+- **`segOut >= segIn`** — the projection may split a segment across runs and may never lose one, which is INV-2's shape at the layout boundary
+- the path actually taken, so a raw fallback cannot be mistaken for a structural run
+
+Timings stay in the output as a **record**, unasserted. The slow-projection control was removed with the bound it existed to validate; a control for a gate that no longer exists is dead code, and this project has a documented allergy to that.
+
+## The generalisation
+
+**A measurement taken in one environment is not a bound.** M9-D measured honestly and then gated on the result without ever running the arm where the gate would run — and the packaging step, which exists to catch exactly this class of difference, caught it on its first attempt. That is the gate working; the cost was one refused build.
+
+## Addendum, same day — the probe disagreed with itself, and the arm stopped gating
+
+M9-G above moved the assertion off the timings and onto quantities that are **arithmetic on the input**: one block per change, one extra line per block, three runs per block, `segOut >= segIn`. Those cannot flake.
+
+They flaked.
+
+```
+morning, checkout:   scale-minified … lines=2   runs=2  blocks=1  segIn=2   segOut=2
+afternoon, checkout: scale-minified … lines=10  runs=4  blocks=1  segIn=77  segOut=79
+```
+
+Same binary path, same synthetic input, same machine. And `scale-50k-lines` read **unified=380 ms in the checkout** in the afternoon against **21–31 ms** in the morning — so M9-D's fast numbers are not reproducible even in the environment they were taken in, which is a stronger statement than M9-G made.
+
+`segIn=77` is explicable on its own — `buildModel` returns `structuralDiff`'s **fallback partition** when the node budget bites, and that carries many segments, where `trivialModel` carries one per side. What is not explicable is the same input reporting `2` earlier. **A deterministic quantity does not change between runs; a probe reading it does.**
+
+So the arm now **reports and does not gate**. It prints its numbers, where two runs side by side show a human what moved, and nothing in it decides whether a build ships.
+
+**This is deliberately not a threshold widened until it stopped complaining.** The gate was withdrawn because the instrument behind it is not trustworthy, and an untrustworthy gate is worse than none: it fails builds for reasons nobody can explain, and the pressure is always to loosen it rather than to fix it.
+
+**Open, and the next thing to do here:** find why the probe disagrees with itself. The suspects are the order of `evaluateJavaScript` completions against `applyLayout`'s writes to `lastTimings`, and whether `readTimings` can observe a render other than the one it asked for. Until that is answered, **do not quote the numbers in M9-D as costs** — quote them as what one run of an instrument of unknown reliability reported.
+
+**What survives all of it**, because it does not depend on the timers: `projectSegments` is the only superlinear term in the composition, and DEC-050's node budget bounds its input. That was read off the code and is still true.

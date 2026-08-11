@@ -383,22 +383,11 @@ function buildUnified(model) {
   return doc;
 }
 
-/// The negative control for the scale arm, in the shape `diffscopeInjectHostileStyle` established:
-/// a measurement that has only ever seen a fast projection cannot tell a fast one from an
-/// unmeasured one. Switched on, the projection walks its runs a hundred times over and the arm
-/// must notice.
-let slowProjection = false;
-
 /// Offsets are the engine's, projected. A segment is clipped to each run of its own side and
 /// moved by that run's displacement; a segment spanning two runs comes out as two marks over the
 /// same bytes, which is what the reader should see in a document where those bytes are apart.
 function projectSegments(segments, runs) {
   const out = [];
-  if (slowProjection) {
-    for (let pass = 0; pass < 100; pass += 1) {
-      for (const seg of segments) for (const run of runs) if (seg.start === run.srcEnd) break;
-    }
-  }
   for (const seg of segments) {
     for (const run of runs) {
       const from = Math.max(seg.start, run.srcStart);
@@ -1267,13 +1256,6 @@ window.diffscopeMeasureCompose = function (iterations) {
     composeMs: (projectAt - composeAt) / runs,
     projectMs: (doneAt - projectAt) / runs,
   };
-};
-
-/// Negative control: with this on, the projection is a hundred times its own work and the scale
-/// arm must fail. A bound that has only ever seen the fast path is a bound nobody has checked.
-window.diffscopeInjectSlowProjection = function (enable) {
-  slowProjection = !!enable;
-  return slowProjection;
 };
 
 window.diffscopeProbe = function () {
