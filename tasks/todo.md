@@ -1191,3 +1191,33 @@ directories that really are different.
 
 The cost of that choice, stated: `identity` is no longer readable as a path, so `sortKey` exists for
 the rail's ordering and the checks print both.
+
+## Step 48 — the tester packet catches up, and stops being a hand copy of the keyboard map
+
+- [x] `⌘O` → `⌘⏎` for open-in-editor: DEC-065 moved it and the packet said `⌘O` for two milestones
+- [x] `⌘2 Structural with ⌘1 Raw` → `⌘1` and `⌘3`; the packet contradicted its own mode list
+- [x] Three "known missing" items removed because they are no longer missing — the mode pill
+      reporting only the selection (fixed by DEC-058), *no search* (DEC-062), *it looks plain*
+      (the whole adopted design, DEC-059…067)
+- [x] *No branch or commit picker* narrowed: the History lens compares commits, ⇧⌘B sets the base
+- [x] Added: what a reader sees when a file is mid-save (DEC-068), the two kinds of pill, motion
+      and its reduced-motion switch, and screen readers as a stated gap rather than an omission
+- [x] **A check that every keystroke the packet prints is one `KeyboardMap` binds**, with an
+      unbound shortcut as its control. 1608 → 1610
+
+### Step 48 — the packet was a third transcription, and it drifted
+
+DEC-057 made the keyboard map data because `12-…` §9's table and the menu bar were two copies of
+one thing and disagreed for three milestones. The tester packet is a **third** copy, written by
+hand, and it drifted the same way the moment DEC-065 re-cut the map: `⌘O` for open-in-editor
+survived in the document that goes to a **stranger who is about to press it**.
+
+Nothing could have caught it. `runTesterPacketChecks` asserted that certain sentences were present —
+the config path, the Gatekeeper step, `git commit`, `~/.zshrc` — and nothing about the keystrokes.
+Now every modifier run in the packet has to be a shortcut `KeyboardMap` actually composes.
+
+**The check caught its own first version.** The key position started as *any character except
+whitespace and punctuation*, to avoid Markdown link syntax — and `⌃⌘]` is a real binding, so it
+failed immediately. Excluding `,` would have broken `⌘,` in the same way. The key position is now
+any character at all, and whether a token is a shortcut is decided by the map rather than by a guess
+about punctuation.

@@ -54,12 +54,16 @@ If it finds nothing it says so, and says why.
 
 ## What you are looking at
 
-Three columns, a bar of grey pills at the top of the diff, and a status line.
+A title bar with the repository's name and path, three columns, two rows of pills, and a status line along the bottom.
+
+**The pills come in two kinds and it is worth knowing which is which.** The ones you press — scope, mode, lens — are controls. The ones that appear on their own above the diff are the app telling you how far to trust what it is showing, and those are the ones described under *What the grey pills mean*.
 
 - **Left:** your repositories. `3△` means three changed files; `↑5` means five commits ahead of the base branch. **`↑?` means it could not work the number out** — it says unknown rather than showing a zero it does not believe.
 - **Middle:** the changed files, grouped by folder. The glyph says what happened — `+` added, `−` deleted, `→` renamed, a pencil modified — and the numbers on the right are lines gained and lost, or the word `binary` where a line count would mean nothing. A `raw`, `bin` or `big` tag means that file will not get the clever treatment — unsupported file type, binary, or too large.
 - **Right:** the diff, in one column. Removed and added lines carry `−` and `+` in their own narrow column between the two line numbers; the colours only reinforce that. **⌥⌘→ switches to two columns** — old on the left, new on the right — which is the better shape for a large restructure.
-- **The grey pills** are the app telling you how much it trusts what it is showing. Worth reading; see below.
+- **The pills above the diff** are the app telling you how much it trusts what it is showing. Worth reading; see below.
+
+**It animates a little** — panes collapsing, a lens changing, a hit scrolling into view. If you have *Reduce motion* switched on in System Settings ▸ Accessibility ▸ Display, all of it stops and nothing else changes. If you have that setting on and still see something move, that is worth reporting.
 
 **Three view modes** — ⌘1 Structural, ⌘2 Expanded, ⌘3 Raw. Raw is a plain textual diff with no cleverness, and it is the control: if you doubt what Structural shows you, switch to Raw and compare. **All three show the same differences.** Structural groups and labels them; it never removes any.
 
@@ -111,12 +115,14 @@ If the only pill says `mode: structural`, everything went normally.
 An hour, roughly in this order.
 
 1. **Open a repository where you know what you changed.** Does the diff tell you the truth?
-2. **The case the app exists for:** find or make a change that removes a wrapper element around several lines. Compare ⌘2 Structural with ⌘1 Raw. That difference is the whole product.
+2. **The case the app exists for:** find or make a change that removes a wrapper element around several lines. Compare ⌘1 Structural with ⌘3 Raw. That difference is the whole product.
 3. **Run a formatter on a file** — Prettier, or reindent it. Those changes should be grouped as formatting, with a count, and expandable.
 4. **Compare the three modes on the same file.** Look specifically for something visible in Raw and missing in Structural.
 5. **Walk a long file with ⌘↓.** Does it stop at every change, or skip one? On a big working tree, walk the whole file list from the keyboard and tell us if anything makes you reach for the mouse — that is a claim we make and would like broken.
 6. **Open a non-code file** — a `.css`, a `.md`, an image, an SVG. Each should explain itself rather than looking broken. An image or an SVG is **compared by being drawn**: Before / After, Blend, Split and a pixel comparison, with the modes that cannot work here disabled and saying why. The one worth checking is an image you re-exported without changing: it should say *the two files render identically — 0 pixels differ, the bytes differ* rather than showing you two identical pictures and leaving you to wonder.
 7. **Edit a file in your editor while the app is open on it.** It should update within a second or two, and you should not lose your scroll position.
+
+   **If you save repeatedly** — a formatter on save, or a file being written continuously — the status line may say *`<file>` is being written — showing it once the file settles*, and the diff will hold still for a moment. **That is deliberate and it is the app being careful, not stuck.** A file caught halfway through a save can be read as half of the old version and half of the new one, and showing you that would be showing you a version that never existed on disk. It waits and then shows you the finished file. If it ever says this and then *stays* stuck after you stop typing, that is worth reporting.
 8. **Open the terminal with ⌃`** — this is the newest part and the least tested. Things worth trying, roughly in order of how much they would annoy you if they were wrong:
    - Type a command with a long path or a quoted string and **edit it with the keys you actually use**: Option+←/→ by word, Cmd+←/→ to the ends of the line, Option+Delete to rub out a word. That is the reason the terminal exists.
    - Press **Tab** in the middle of a path. The shell takes the line back and completes it the way it does in your own terminal; the pill on the left says so while that lasts.
@@ -127,7 +133,7 @@ An hour, roughly in this order.
    - **⌥⌘T opens a second shell** in the same drawer, ⌃⌘] and ⌃⌘[ move between them and ⌃⌘W closes one. Each tab says where *its own* shell is; a dotted underline on a tab means that shell is not in the repository you are looking at. Run something long in one and keep working in the other — the two scrollbacks should never mix.
 9. **Point it at your own editor** — ⌘, opens Settings, where the command is a template with `{file}` and `{line}`. Break it on purpose: the failure must be visible rather than nothing happening, and Settings remembers the last attempt.
 
-**Using a different editor?** ⌘O defaults to WebStorm. To use another, launch the app from Terminal with your own command:
+**Using a different editor?** ⌘⏎ defaults to WebStorm, and ⌘, is the place to change it. If you would rather set it for one session without touching the settings, launch the app from Terminal with your own command:
 
 ```bash
 DIFFSCOPE_EDITOR="/usr/bin/open -a Visual\ Studio\ Code {file}" /Applications/DiffScope.app/Contents/MacOS/DiffScope
@@ -141,15 +147,14 @@ DIFFSCOPE_EDITOR="/usr/bin/open -a Visual\ Studio\ Code {file}" /Applications/Di
 
 Already recorded. Reporting them costs you time and tells us nothing new.
 
-- **No type-to-find in the file list.** Arrow keys and ⌘[ / ⌘] walk it; there is no filter field and no search.
-- **No branch or commit picker.** The four scopes are all there is.
+- **No type-to-find in the file list.** ⌥↑ / ⌥↓ walk it and there is no filter field. (Searching *inside* the diff does exist — ⌘F and ⇧⌘F.)
+- **No arbitrary branch or commit comparison.** The four scopes are what you get, plus the base branch you can set with ⇧⌘B. The History lens lets you compare a commit with your working tree, or two commits with each other, but there is no "compare any two refs" picker.
 - Code that **moved and was also edited** shows as a deletion plus an addition, not as a move. Deliberate: a move is only claimed when both sides are identical, because a move that swallowed an edit would hide it.
 - A reformat that **changes the number of lines** is never grouped as formatting.
 - **Reordered object properties** are marked as possibly-behaviour-affecting, not formatting. Intentional — property order is observable.
-- The mode pill can say `mode: structural` next to a notice saying structural analysis was unavailable. It reports what you selected, not which path ran.
 - In files over about 2000 lines, a refresh puts you back within a few lines of where you were, not exactly.
-- ⌘O opens the file but not at the right line unless you set `DIFFSCOPE_EDITOR` to a command containing `{line}`.
-- It looks plain. The visual design is a separate piece of work that has not happened yet.
+- ⌘⏎ opens the file but not at the right line unless the editor command contains `{line}`.
+- **No screen-reader support.** Everything works from the keyboard and nothing relies on colour, but the app has not been tested with VoiceOver and does not claim to work with it.
 - **In the terminal:** ↑ and ↓ walk only the commands you typed in *this* session, not your shell's own history — ⌃R gets you that, from the shell itself. There are no Warp-style command blocks and no completion of our own; Tab hands the line to your shell instead.
 - Opening the terminal takes about a third of a second, because it runs your real shell startup files. Each shell also leaves an `ssh-agent` behind if your configuration starts one — that is your setup doing what it always does, not the app.
 

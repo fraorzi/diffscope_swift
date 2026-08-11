@@ -1,3 +1,4 @@
+import DiffScopeShell
 import Foundation
 
 /// G2 of `23-release-gates.md`: a design can be pasted in without touching behaviour, and **cannot
@@ -448,6 +449,48 @@ func runTesterPacketChecks(_ reportRaw: (String, Bool, String) -> Void) {
                packet.contains("~/.zshrc") && packet.lowercased().contains("never edit"))
         report("and it no longer claims the application cannot change a repository",
                !packet.contains("It cannot commit"))
+
+        // DEC-057 made the keyboard map data and generated the menu from it, so the menu cannot
+        // disagree with the map. The packet is a **third** transcription of the same map, by hand,
+        // and it drifted exactly as §9's table did before DEC-057: DEC-065 moved open-in-editor
+        // from ⌘O to ⌘⏎ and the packet went on saying ⌘O for two milestones, while a second line
+        // had Structural on ⌘2 and Raw on ⌘1 — contradicting the packet's own mode list.
+        //
+        // A keystroke printed for a stranger who is about to press it is worth the same treatment
+        // as a row of the coverage table.
+        let shortcuts = Set(KeyboardMap.bindings.map(\.shortcut))
+        // Keys the packet names that are deliberately **not** the application's. `⌃C` is the one
+        // that matters: the packet tells the tester to press it to stop a command, and it reaches
+        // the shell through the terminal rather than being bound here. Listing it is the honest
+        // form — the alternative is a check that quietly skips anything it does not recognise.
+        let shellKeys: Set<String> = ["⌃C", "⌃R"]
+        var unknown: [String] = []
+        // `⌘⏎`, `⌥⌘→`, `⇧⌘↑`, `⌃\``: a modifier run followed by one character, which is what
+        // `KeyboardBinding.shortcut` composes. The key position is **any** character rather than a
+        // list of acceptable ones — the first version excluded `]` to avoid Markdown link syntax
+        // and promptly failed on `⌃⌘]`, which is a real binding. Excluding `,` would have broken
+        // `⌘,` the same way. Whether a token is a shortcut is decided by the map, not by a guess
+        // about punctuation.
+        let pattern = try! NSRegularExpression(pattern: "[⌃⌥⇧⌘]+.")
+        let range = NSRange(packet.startIndex..., in: packet)
+        for match in pattern.matches(in: packet, range: range) {
+            guard let found = Range(match.range, in: packet) else { continue }
+            let token = String(packet[found])
+            if shortcuts.contains(token) || shellKeys.contains(token) { continue }
+            unknown.append(token)
+        }
+        report("every keystroke the packet prints is one the application actually binds",
+               unknown.isEmpty, Set(unknown).sorted().joined(separator: " "))
+        // The control: a check that only ever sees a correct packet would pass on any packet. A
+        // shortcut nothing binds has to be caught, or the assertion above is decoration.
+        let hostile = packet + "\n\nPress ⌘J to do the thing.\n"
+        var caughtHostile = false
+        for match in pattern.matches(in: hostile, range: NSRange(hostile.startIndex..., in: hostile)) {
+            guard let found = Range(match.range, in: hostile) else { continue }
+            let token = String(hostile[found])
+            if !shortcuts.contains(token), !shellKeys.contains(token) { caughtHostile = true }
+        }
+        report("control: a keystroke nothing binds is caught", caughtHostile)
     }
 
     // T4: eleven documents promised something that stopped being true when the terminal landed.
