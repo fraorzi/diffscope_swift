@@ -1443,3 +1443,46 @@ Same underlying number, and the decision log decides which sentence it may becom
 `uncertain` remains `confidence < confidenceFloor`, decided in the engine at 0.8 — a renderer that
 chose its own threshold would be redefining what counts as certain, which is why the flag rides on
 the contract rather than the number.
+
+## Step 56 — the two lists say what they are, and the `+` opens the map
+
+- [x] `REPOSITORIES` over the repository list, with the `+` that adds a source
+- [x] `CHANGED FILES` over the file list, with the number of files in scope beside it
+- [x] Both captions composed by `ChromeLabels` in `DiffScopeShell`, so the check suite links the
+      file the window draws from
+- [x] Collapsed (DEC-060): the word goes, the count stays — and `fitsCollapsedPane` says so in
+      characters while the collapse arm says it in points
+- [x] DEC-071 written before the code; `24-design-contract.md` gained the chrome's own view table
+      in the same commit, with a check requiring every `NSView` subclass in the app to be in it
+- [x] 1610 → **1628 checks**, three of them negative controls
+
+### Step 56 — the `+` is the first instance of a rule, not a button
+
+Adding a source already had bindings: `⇧⌘O` and `⇧⌘R`, drawn in the Sources menu from
+`KeyboardMap.bindings` since DEC-057. A button is a **third** surface for the same function, and the
+tester packet is the record of what a third hand-written copy of the keyboard map does — it told a
+stranger to press `⌘O` for two milestones after DEC-065 moved that key.
+
+So the menu the button pops up is built from `KeyboardMap.bindings(in: .sources)` and names nothing
+itself. Generalised in DEC-071: **a pointer affordance may only open a function the keyboard map
+already has.** DEC-016 calls a function reachable only by pointer a defect; a control reaching
+something the map does not have is that defect with the surfaces swapped. A check reads the method's
+body and refuses an `NSMenuItem(title:` in it, with a hand-titled item as the control.
+
+### Step 56 — what the pane says when it is 44 points wide
+
+`REPOSITORIES` does not fit a collapsed rail, and a header that draws `REPOS` says nothing about
+what it counts. `···` was the other candidate and is worse: it announces that a header is here.
+
+So the rule is **the word goes and the count stays**, and it is a function rather than a taste —
+`fitsCollapsedPane` is asserted over every count from 0 to 10,000, with a header that kept its word
+as the negative control. Above 999 the count reads `999+` rather than being clipped, because a
+clipped number lies about its own magnitude while `999+` states exactly what is known.
+
+### Step 56 — the count in the header is not the count in the status line, and both are right
+
+The status line says `63 files · Unstaged`; the header says `63`. That repetition is deliberate and
+is DEC-058's shape: the header answers *how many of these*, beside the list it counts, and the status
+line answers *what just happened*, at the edge a reader glances at. The trap it walks past is the row
+count — the tree has 63 changed files under nine group headers, so a header counting **rows** would
+have said 72. The arm asserts against `state.files`, not against the drawn list.

@@ -100,6 +100,10 @@ enum Theme {
     static let titleBarHeight: CGFloat = 44
     static let statusBarHeight: CGFloat = 24
     static let trafficLightInset: CGFloat = 78
+    /// The column header over each list (DEC-071). Shorter than the status line, because it holds one
+    /// upper-cased word at the smallest size and a count beside it — a bar as tall as the title's
+    /// would read as a second title bar.
+    static let paneHeaderHeight: CGFloat = 22
 
     /// The segmented pills (the adopted design): a trough, one raised segment in it, and a dashed
     /// outline where a segment cannot be chosen.

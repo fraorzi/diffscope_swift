@@ -111,6 +111,23 @@ Added after this contract was first written, and missing from it until M8-P — 
 | `--ds-term-black` … `--ds-term-bright-white` | The sixteen colours a program addresses by index | **Yes**, as a set: a palette collapsed toward the background makes some programs unreadable |
 | `--ds-term-fg`, `--ds-term-bg`, `--ds-term-cursor`, `--ds-term-selection` | The four values xterm.js reads outside the palette | **Yes**, and **as a set**: any one left undeclared is a colour the emulator invents |
 
+### The chrome AppKit draws
+
+Two thirds of the window is not a webview and emits no classes at all, so the table above could never describe it. Every view the chrome draws itself is here instead, and a check requires each `NSView` subclass in `Sources/diffscope-app` to appear in this table — the same discipline as the class list, arrived at the same way: the contract claimed to describe the window and described one webview in it.
+
+| View | Means | Load-bearing |
+|---|---|---|
+| `ChromeBar` | A band with one hairline edge: the title bar's at the bottom, the status line's at the top, a pane header's at the bottom | No — the surface. The hairline is a seam, not a fact |
+| `SelectedRowView` | The selected row, drawn from `--ds-row-selected` **and** `--ds-row-ring` (DEC-066) | **Yes.** The ring is the half that survives greyscale; AppKit's own highlight is a solid accent fill that also repaints the row's text white |
+| `PillControl` | The scope, mode and lens switches: a trough with one raised pill in it | **Yes**, and the disabled state above all — an unavailable scope is drawn with a **dashed** outline and its reason, never greyed and silent (`12-…` §3) |
+| `ChipView` | A short fact in a bordered pill: a repository's ahead-count, a file's `raw`/`bin`/`big` note | **Yes**, and `↑ unknown` is drawn **dashed** because an unknown count is a different kind of thing from a small one, not a quieter one |
+| `TerminalPane` | The drawer, its tab strip and the web view in each tab (DEC-067) | **Yes** — see the terminal table above for what it emits |
+| The pane headers (DEC-071) | `REPOSITORIES` with the `+` that adds a source, and `CHANGED FILES` with the number of files in scope | **Yes for the count.** DEC-058 has been paid three times for a fact stated far from the thing it is about; the caption may be restyled, and collapsed it is dropped in favour of the count (DEC-060) |
+
+**Chrome copy is composed in `DiffScopeShell/ChromeLabels.swift`**, which holds no AppKit, so the check suite links the file the window draws from. A caption written inline in `main.swift` is a claim only a picture can check — and `fitsCollapsedPane` is the reason the rule is worth a file: whether `REPOSITORIES` fits a 44 pt rail is not a matter of taste.
+
+The `+` button is the first instance of a rule that outlives it: **a pointer affordance may only open a function the keyboard map already has.** Its menu is built from `KeyboardMap.bindings(in: .sources)`, so the titles and key equivalents are the menu bar's own. DEC-016 calls a function reachable only by pointer a defect; a button reaching something the map does not have is the same defect with the surfaces swapped.
+
 ### Surfaces that render (DEC-063)
 
 An image or an SVG is compared by being drawn, and the drawing is a surface with its own rules.

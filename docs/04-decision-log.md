@@ -3016,3 +3016,43 @@ Both are needed. A key equivalent delivered through the menu — which is how �
 ### Revisit trigger
 
 Reopen if a region ever gains focus by a route that is neither `moveFocus` nor a key event — a drag, or a programmatic focus change following a refresh. The flag would then be stale in the direction that hides the ring, which is the safer of the two but still wrong.
+
+---
+
+## DEC-071 — The two lists carry headers, and a pointer route may only open a binding the map already has
+
+- **Date:** 2026-08-12 · **Topic:** the adopted design's `REPOSITORIES` and `CHANGED FILES` column headers, and the `+` beside the first of them · **Status:** Accepted
+
+### Context
+
+`ReviewScreen.dc.html` draws each sidebar under a header: `REPOSITORIES` with a `+` at its right edge, and `CHANGED FILES` with the number of files in it. What was built has neither. Both tables set `headerView = nil`, so the two lists are unlabelled columns of text, and the only count anywhere in the window is in the status line — one sentence for the whole window (`63 files · Unstaged`), at the opposite edge from the list it is counting.
+
+That is the defect DEC-058 paid for three times: a fact displayed far from the thing it is about, or in a tooltip, is a fact the reader does not have. The count belongs beside what it counts.
+
+The `+` raises a second question, which is why this entry is one decision and not two. Adding a source is already a function with a binding — `⇧⌘O` and `⇧⌘R`, drawn in the Sources menu from `KeyboardMap.bindings` since DEC-057. A button is a **third** surface for it, and the packet's drift (M8-P) is the record of what a third hand-written copy of the keyboard map does.
+
+### Options considered
+
+1. **`NSTableView`'s own header view.** Rejected: it is one row per column styled by the system, it scrolls with the column, and it cannot hold a button — so the `+` would have to go somewhere else anyway.
+2. **A header band above each scroll view, on that pane's own surface.** A `ChromeBar` with a bottom hairline, which is the same view the title bar and the status line already are.
+3. **No headers; keep the counts in the status line.** Rejected. The status line carries the scope, the watcher, and the last thing that happened; it is the line a reader glances at, not the label of a list.
+
+### Final decision
+
+**Option 2.** The caption and the count are composed by `ChromeLabels` in `DiffScopeShell` — an AppKit-free target the check suite links — for the reason `KeyboardMap` lives there: a sentence the interface makes should be checkable without a window.
+
+**The `+` opens a menu built from `KeyboardMap.bindings(in: .sources)`.** It invents no titles and no shortcuts; each item shows the same key equivalent the menu bar shows, because it *is* the same binding. Generalised, and this is the half of the entry that outlives the button: **a pointer affordance may only open a function the keyboard map already has.** A control that reaches something the map does not is a function reachable only by pointer, which DEC-016 calls a defect.
+
+**Collapsed (DEC-060), the word goes and the count stays.** A 44 pt rail and a 34 pt spine cannot hold `REPOSITORIES`; the repositories header collapses to the number of repositories and the changed-files header to the number of files. `···` was rejected — it says a header is here and says nothing about what it counts. Above 999 the collapsed count reads `999+` rather than being clipped by the label, so the number never lies about its own magnitude, and `fitsCollapsedPane` is asserted over 0…10,000.
+
+### Consequences
+
+- **Each list says what it is**, and the changed-file count sits above the files rather than in the status line.
+- **The status line keeps its own sentence.** The count now appears twice, in two voices; that is deliberate and is the DEC-058 shape — the list's header answers *how many of these*, the status line answers *what just happened*.
+- **`ChromeLabels` is where chrome copy goes from now on.** Anything the window says about itself is composed there and checked headlessly; the header captions are the first four strings in it.
+- **The `+` cannot drift from the menu bar**, because it is drawn from the same array. A binding removed from the map removes the item.
+- **A new pointer affordance is now a checkable claim**: every menu the chrome pops up is built from `KeyboardMap`, and the check suite refuses a title composed by hand.
+
+### Revisit trigger
+
+Reopen if a header ever needs to carry an action that is *not* a keyboard function — a filter, a sort, a mode — because that is the point at which the rule above stops being free and becomes a constraint on the design.

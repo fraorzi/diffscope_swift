@@ -104,6 +104,17 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var searchScope: SearchScope = .changedFiles
     /// The sentence stating which convention the uncommitted counts use (`12-…` §2).
     var conventionLabel: NSTextField!
+    /// The two column headers (DEC-071). Held because both change with the collapse state and the
+    /// changed-file count changes with every reload — the caption and the count are two labels
+    /// rather than one string so the count can sit at the pane's other edge, where the eye compares
+    /// it against the row counts underneath.
+    var repoHeaderCaption: NSTextField!
+    var fileHeaderCaption: NSTextField!
+    var fileHeaderCount: NSTextField!
+    /// The bars themselves, held for the selftest: *drawn where the pane is* is the assertion, and
+    /// M8-D's blank lists are what happens when only the string is checked.
+    var repoHeaderBar: NSView!
+    var fileHeaderBar: NSView!
     var rendererReady = false
     var pendingModel: String?
     var watcher: RepositoryWatcher?
@@ -267,6 +278,21 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
         let middleScroll = scrollWrapping(fileTable, surface: Theme.panelFiles)
 
+        // The two column headers (DEC-071). Each says what its pane is, and either counts what is
+        // in it or offers the one action that adds to it.
+        repoHeaderCaption = paneHeaderLabel()
+        fileHeaderCaption = paneHeaderLabel()
+        fileHeaderCount = paneHeaderLabel()
+        fileHeaderCount.alignment = .right
+        let repoHeader = buildPaneHeader(caption: repoHeaderCaption,
+                                         trailing: buildAddSourceButton(),
+                                         surface: Theme.panelRepositories)
+        let fileHeader = buildPaneHeader(caption: fileHeaderCaption, trailing: fileHeaderCount,
+                                         surface: Theme.panelFiles)
+        repoHeaderBar = repoHeader
+        fileHeaderBar = fileHeader
+        updatePaneHeaders()
+
         // `12-…` §2: the uncommitted count *"must state which convention it uses"*. On screen,
         // under the counts it describes, rather than in a tooltip or a document the reader does
         // not have. The sentence comes from the Git layer, beside the operation it is about.
@@ -289,25 +315,46 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // explains what that list's counts mean, and it is a sentence — in a 24 pt bar it wrapped
         // to two lines and pushed the bar out of shape. `12-…` §2 asks for it *shown*, so it is
         // not a tooltip either.
-        let leftStack = NSStackView(views: [repoScroll, conventionLabel])
+        let leftStack = NSStackView(views: [repoHeader, repoScroll, conventionLabel])
         // The caption under the repository list sits on the list's own surface, not on the
         // window's: it belongs to that pane and the seam would say otherwise (`--ds-panel-repos`).
         leftStack.wantsLayer = true
         leftStack.layer?.backgroundColor = Theme.panelRepositories.cgColor
         leftStack.orientation = .vertical
-        leftStack.alignment = .leading
+        // Centred rather than leading-aligned since the header arrived: the header spans the pane
+        // and the list is inset from it, so there is no single leading edge left to align to. The
+        // inset is expressed once, as each member's width against the pane's.
+        leftStack.alignment = .centerX
         leftStack.spacing = Theme.space2
-        leftStack.edgeInsets = NSEdgeInsets(top: 0, left: Theme.space3, bottom: Theme.space3, right: Theme.space3)
+        leftStack.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: Theme.space3, right: 0)
         // Without this the scroll view's own content width becomes the pane's floor, and a 44 px
         // rail comes out at 87: the constraint said 44, the constant read 44, and the window drew
         // twice that. A check on the constant would have agreed with the wrong number.
         repoScroll.translatesAutoresizingMaskIntoConstraints = false
         repoScroll.widthAnchor.constraint(equalTo: leftStack.widthAnchor,
                                           constant: -2 * Theme.space3).isActive = true
+        conventionLabel.widthAnchor.constraint(equalTo: leftStack.widthAnchor,
+                                               constant: -2 * Theme.space3).isActive = true
+        // The header takes the whole pane, because the hairline under it is the seam between the
+        // header and the list: a rule stopping 6 pt short of the divider reads as a mistake.
+        repoHeader.widthAnchor.constraint(equalTo: leftStack.widthAnchor).isActive = true
         repoFocusRing = repoScroll
         fileFocusRing = middleScroll
         diffFocusRing = webView
         let leftScroll = leftStack
+
+        // The file pane is the header plus the list, in the same shape. The list keeps the full
+        // pane width — the spine is 34 pt when collapsed (DEC-060) and an inset would take a third
+        // of it.
+        let filePane = NSStackView(views: [fileHeader, middleScroll])
+        filePane.wantsLayer = true
+        filePane.layer?.backgroundColor = Theme.panelFiles.cgColor
+        filePane.orientation = .vertical
+        filePane.alignment = .centerX
+        filePane.spacing = 0
+        middleScroll.translatesAutoresizingMaskIntoConstraints = false
+        middleScroll.widthAnchor.constraint(equalTo: filePane.widthAnchor).isActive = true
+        fileHeader.widthAnchor.constraint(equalTo: filePane.widthAnchor).isActive = true
 
         // The lens control sits with the other two (DEC-061). The design draws it inside the pane
         // header; it lives here instead because a control in the webview cannot act — the page
@@ -398,7 +445,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         split.isVertical = true
         split.dividerStyle = .thin
         split.addArrangedSubview(leftScroll)
-        split.addArrangedSubview(middleScroll)
+        split.addArrangedSubview(filePane)
         split.addArrangedSubview(vertical)
 
         // Auto layout inside the split, rather than frame proportions. NSSplitView distributes by
@@ -410,7 +457,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // (DEC-060): a rail is 44 px wide and a floor of 140 would quietly refuse to draw it.
         var widthConstraints: [NSLayoutConstraint] = []
         var minimumConstraints: [NSLayoutConstraint] = []
-        for (pane, width) in [(leftScroll, Theme.repositoryPaneWidth), (middleScroll, Theme.filePaneWidth)] {
+        for (pane, width) in [(leftScroll, Theme.repositoryPaneWidth), (filePane, Theme.filePaneWidth)] {
             pane.translatesAutoresizingMaskIntoConstraints = false
             let constraint = pane.widthAnchor.constraint(equalToConstant: width)
             // 999, not 600: the divider stays draggable (that needs a priority below required),
@@ -1671,6 +1718,46 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         guard ok else { exit(61) }
         // Left as the reader would have it after a click, which is how the pictures below should
         // look: no ring anywhere.
+        paneHeaderSelftest()
+    }
+
+    /// DEC-071, expanded. The strings are checked headlessly in `runChromeChecks`; what only the
+    /// window can answer is whether the header is **drawn over the pane it belongs to** — M8-D's two
+    /// lists were correct, populated and 0 pt wide, and every check passed.
+    private func paneHeaderSelftest() {
+        let repoPane = repoTable.enclosingScrollView?.superview?.frame ?? .zero
+        let filePane = fileTable.enclosingScrollView?.superview?.frame ?? .zero
+        let repoBar = repoHeaderBar.frame
+        let fileBar = fileHeaderBar.frame
+        let files = state.files.count
+
+        // Width against the pane, not against a constant: the constraint says the pane's width and
+        // the pane is what the split view did with it, and those disagreed by a factor of two the
+        // last time anything in here was measured from the constant.
+        let spanned = abs(repoBar.width - repoPane.width) < 1 && abs(fileBar.width - filePane.width) < 1
+        let tall = abs(repoBar.height - Theme.paneHeaderHeight) < 1
+            && abs(fileBar.height - Theme.paneHeaderHeight) < 1
+        // The captions the reader actually has, against the same function the check suite asks.
+        let expectedRepo = ChromeLabels.repositoriesHeader(count: state.repositories.count,
+                                                          collapsed: false)
+        let expectedFiles = ChromeLabels.changedFilesHeader(count: files, collapsed: false)
+        let worded = repoHeaderCaption.stringValue == expectedRepo.caption
+            && fileHeaderCaption.stringValue == expectedFiles.caption
+            && fileHeaderCount.stringValue == expectedFiles.count
+        // And the count is the file list's own count, not a number that happens to be there: the
+        // tree has 63 changed files under nine group headers, so a header counting *rows* would say
+        // 72 here. That is the mistake this line exists to catch.
+        let counted = fileHeaderCount.stringValue == "\(files)" && files == state.fileRows.compactMap(\.file).count
+
+        let ok = spanned && tall && worded && counted
+        FileHandle.standardError.write(Data(
+            ("SELFTEST pane-headers=\(ok ? "OK" : "MISMATCH") "
+                + "repos=\"\(repoHeaderCaption.stringValue)\"@\(Int(repoBar.width))×\(Int(repoBar.height)) "
+                + "of pane \(Int(repoPane.width)) "
+                + "files=\"\(fileHeaderCaption.stringValue)\" count=\"\(fileHeaderCount.stringValue)\""
+                + "@\(Int(fileBar.width))×\(Int(fileBar.height)) of pane \(Int(filePane.width)) "
+                + "rows=\(state.fileRows.count) filesInScope=\(files)\n").utf8))
+        guard ok else { exit(64) }
         collapseSelftest()
     }
 
@@ -1709,12 +1796,34 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             let paneOrigin = self.repoTable.enclosingScrollView?.convert(NSPoint.zero, to: nil).x ?? 0
             let indent = fieldInWindow.minX - paneOrigin
             let indented = indent >= 0 && indent <= Theme.space4
+            // DEC-071, collapsed: the word goes and the count stays. Both halves matter — a header
+            // that kept `REPOSITORIES` in a 44 pt rail draws `REPOS` and means nothing, and one
+            // that dropped the count leaves a pane with no statement of its size at all.
+            let railHeader = ChromeLabels.repositoriesHeader(count: self.state.repositories.count,
+                                                            collapsed: true)
+            let spineHeader = ChromeLabels.changedFilesHeader(count: self.state.files.count,
+                                                              collapsed: true)
+            let headersWorded = self.repoHeaderCaption.stringValue == railHeader.caption
+                && self.fileHeaderCaption.stringValue == spineHeader.caption
+                && self.fileHeaderCount.stringValue == spineHeader.count
+            // Drawn inside the collapsed pane, which is the assertion `fitsCollapsedPane` makes in
+            // characters and this makes in points.
+            func fits(_ label: NSTextField, _ pane: CGFloat) -> Bool {
+                label.intrinsicContentSize.width <= pane
+            }
+            let headersFit = fits(self.repoHeaderCaption, railDrawn)
+                && fits(self.fileHeaderCount, spineDrawn)
             FileHandle.standardError.write(Data(
-                ("SELFTEST collapse=\(ok && indented ? "OK" : "MISMATCH") rail=\(railDrawn) "
+                ("SELFTEST collapse=\(ok && indented && headersWorded && headersFit ? "OK" : "MISMATCH") "
+                    + "rail=\(railDrawn) "
                     + "spine=\(spineDrawn) indent=\(indent) "
                     + "repoRow=\(field?.stringValue ?? "nil")@\(fieldInWindow.width) "
-                    + "fileRow=\(firstLabel(fileCell)?.stringValue ?? "nil")\n").utf8))
-            guard ok, indented else { exit(48) }
+                    + "fileRow=\(firstLabel(fileCell)?.stringValue ?? "nil") "
+                    + "railHeader=\"\(self.repoHeaderCaption.stringValue)\""
+                    + "@\(Int(self.repoHeaderCaption.intrinsicContentSize.width))pt "
+                    + "spineHeader=\"\(self.fileHeaderCaption.stringValue)|\(self.fileHeaderCount.stringValue)\""
+                    + "@\(Int(self.fileHeaderCount.intrinsicContentSize.width))pt\n").utf8))
+            guard ok, indented, headersWorded, headersFit else { exit(48) }
             self.windowSnapshot(named: "collapsed") { self.lensSelftest() }
         }
     }
@@ -2066,6 +2175,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     private func emptyStateSelftest() {
         state.repositories = []
         repoTable.reloadData()
+        updatePaneHeaders()
         showEmptyState(problems: [])
         window.contentView?.layoutSubtreeIfNeeded()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
@@ -2286,6 +2396,95 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         return bar
     }
 
+    /// One label of a column header (DEC-071). Small, quiet and upper-cased by the string it is
+    /// given: the caption is a label for a pane, not a sentence, so it takes the faintest of the
+    /// three inks and the smallest of the three sizes.
+    private func paneHeaderLabel() -> NSTextField {
+        let field = NSTextField(labelWithString: "")
+        field.font = Theme.font(Theme.textSizeTiny, weight: .semibold)
+        field.textColor = Theme.inkFaint
+        field.lineBreakMode = .byClipping
+        field.translatesAutoresizingMaskIntoConstraints = false
+        return field
+    }
+
+    /// A column header for one of the two lists: what the pane is at one edge, and either what is in
+    /// it or the one action that adds to it at the other.
+    ///
+    /// The same `ChromeBar` the title bar and the status line are, on **the pane's own surface** — a
+    /// header drawn on the window's surface would read as belonging to the window rather than to the
+    /// list under it, which is the seam DEC-066's two panel tokens exist to draw.
+    private func buildPaneHeader(caption: NSTextField, trailing: NSView,
+                                 surface: NSColor) -> NSView {
+        let stack = NSStackView(views: [caption, spacerView(), trailing])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = Theme.space2
+        // The caption starts where the rows start: the pane's inset plus the cell's own, so the
+        // header's first letter and the first letter of every row below it share a left edge.
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: Theme.space3 + Theme.space2, bottom: 0,
+                                        right: Theme.space3)
+
+        let bar = ChromeBar(surface: surface, edge: .bottom)
+        bar.addSubview(stack)
+        bar.translatesAutoresizingMaskIntoConstraints = false
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            bar.heightAnchor.constraint(equalToConstant: Theme.paneHeaderHeight),
+            stack.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
+            stack.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+        ])
+        return bar
+    }
+
+    /// The `+` on the repositories header (DEC-071): a pointer route to the two Sources bindings,
+    /// and **nothing else**. The menu is composed from `KeyboardMap.bindings(in: .sources)`, so the
+    /// titles and the key equivalents are the menu bar's own — a button that named them itself would
+    /// be the third hand-written copy of the keyboard map, which is exactly the drift M8-P found in
+    /// the tester packet.
+    private func buildAddSourceButton() -> NSButton {
+        let button = NSButton(title: "+", target: self, action: #selector(showAddSourceMenu(_:)))
+        button.isBordered = false
+        button.font = Theme.font(Theme.textSize, weight: .semibold)
+        button.contentTintColor = Theme.inkQuiet
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.setButtonType(.momentaryChange)
+        button.toolTip = KeyboardMap.bindings(in: .sources)
+            .filter { $0.id.hasPrefix("sources.add") }
+            .map { "\($0.title)  \($0.shortcut)" }
+            .joined(separator: "\n")
+        return button
+    }
+
+    @objc private func showAddSourceMenu(_ sender: NSButton) {
+        let menu = NSMenu()
+        for binding in KeyboardMap.bindings(in: .sources)
+        where binding.id.hasPrefix("sources.add") {
+            guard let action = selector(for: binding.id) else { continue }
+            let item = NSMenuItem(title: binding.title, action: action,
+                                  keyEquivalent: keyEquivalent(binding.key))
+            item.keyEquivalentModifierMask = modifierFlags(binding.modifiers)
+            item.target = self
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil,
+                   at: NSPoint(x: 0, y: sender.bounds.height + Theme.space2), in: sender)
+    }
+
+    /// The headers' text, from `ChromeLabels` (DEC-071). Called wherever either number can change:
+    /// a scan, a reload, and a collapse — the third because collapsing is what drops the word and
+    /// keeps the count.
+    private func updatePaneHeaders() {
+        let repositories = ChromeLabels.repositoriesHeader(count: state.repositories.count,
+                                                          collapsed: reposCollapsed)
+        let files = ChromeLabels.changedFilesHeader(count: state.files.count,
+                                                   collapsed: filesCollapsed)
+        repoHeaderCaption.stringValue = repositories.caption
+        fileHeaderCaption.stringValue = files.caption
+        fileHeaderCount.stringValue = files.count
+    }
+
     /// The status line, at the bottom edge where the design puts it. A line that reports what just
     /// happened belongs where a reader glances, not between the controls and the thing they
     /// control.
@@ -2402,6 +2601,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             guard count == 0, !sources.isEmpty, unusable.count < sources.count else { return false }
             self.state.repositories = []
             self.repoTable.reloadData()
+            self.updatePaneHeaders()
             self.emptyStateDetail.stringValue =
                 noRepositoriesFoundMessage(paths: sources.map(\.path),
                                            depth: self.discovery.maximumDepth)
@@ -2417,6 +2617,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             DispatchQueue.main.async {
                 self.state.repositories = []
                 self.repoTable.reloadData()
+                self.updatePaneHeaders()
                 self.showEmptyState(problems: unusable)
             }
             return
@@ -2434,6 +2635,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 self.state.repositoryLabels = labels
                 self.hideEmptyState()
                 self.repoTable.reloadData()
+                self.updatePaneHeaders()
                 var summary = String(format: "%d repositories from %d sources · swept in %.0f ms",
                                      outcome.snapshots.count, sources.count - unusable.count,
                                      outcome.elapsedSeconds * 1000)
@@ -2583,6 +2785,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         filePaneMinimum?.constant = filesCollapsed ? Theme.spineWidth : Theme.paneMinimumWidth
 
         conventionLabel.isHidden = reposCollapsed
+        updatePaneHeaders()
         repoTable.reloadData()
         fileTable.reloadData()
         // The dividers are moved through the split view's own API as well as by constraint.
@@ -3501,6 +3704,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         if case let .unavailable(reason) = availability {
             state.files = []
             state.fileRows = []
+            updatePaneHeaders()
             fileTable.reloadData()
             statusLabel.stringValue = "\(state.scope.title) unavailable — \(reason)"
             return
@@ -3517,6 +3721,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         state.fileRows = fileListRows(state.files,
                                       workspacePackages: declaredWorkspacePackages(in: repository.url))
         state.annotations = [:]
+        updatePaneHeaders()
         fileTable.reloadData()
         annotateFiles(of: repository)
         // DEC-010/DEC-011: the age is the signal, not the date. The application never fetches, so
