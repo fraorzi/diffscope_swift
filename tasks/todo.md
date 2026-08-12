@@ -1285,3 +1285,22 @@ per-line direction, which is the stronger indicator and is already asserted.
 
 **A default nobody sends is not a default.** Worth checking the others: anything the shell holds as
 initial state and the page holds independently is the same trap.
+
+## Step 51 — DEC-070: the focus ring stops being permanent
+
+- [x] `navigatingByKeyboard`, false at launch; a keystroke lights the ring, a click puts it out
+- [x] Set at the action in `moveFocus` **and** at the event by a `.keyDown` monitor — a key
+      equivalent through the menu does not reach a local monitor, so neither alone is enough
+- [x] `focus-ring` arm: lit after ⌥⌘2, dark after a click. `keyboard=0/2/0 after a click=0/0/0`
+- [x] DEC-070 clarifies DEC-016 rather than weakening it
+
+### Step 51 — the first version of the check could not see the mechanism
+
+It set the flag through a synthesized key event and read `0/0/0`: the keyboard walk drives
+`performKeyEquivalent` directly, and **a local event monitor never sees that**. So the check was
+watching a path the application does not take under test. Fixed by marking keyboard navigation at
+the *action* — which is also the honest place, since ⌥⌘1–3 arriving in `moveFocus` **is** keyboard
+navigation regardless of how the event was delivered.
+
+What remains uncovered, and is written down rather than implied: a synthesized click cannot traverse
+the monitor either, so the mouse half of the arm asserts the drawing rather than the trigger.

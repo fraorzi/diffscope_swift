@@ -121,6 +121,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var sideBySideMenuItem: NSMenuItem?
     /// DEC-059: the window opens unified, so this starts false.
     var sideBySide = false
+    /// DEC-070. Starts false: a window that has just opened has been touched by nobody, and the
+    /// first thing most readers do is click.
+    var navigatingByKeyboard = false
+    private var keyMonitor: Any?
+    private var mouseMonitor: Any?
     /// DEC-060: each region collapses on its own. Collapsed is **reduced, not hidden** — the rail
     /// still says which repositories there are and which have work in them, the spine still says
     /// how many files changed and how big each change is.
@@ -479,6 +484,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
         window.contentView = container
         window.makeKeyAndOrderFront(nil)
+        watchForKeyboardNavigation()
         // The drawer starts closed, and the divider has to say so. `NSSplitView` sets its arranged
         // subviews' frames itself — a height constraint on one of them is a suggestion it ignores —
         // so the only lever that works is `setPosition`, and it works on a laid-out split. One turn
@@ -1487,7 +1493,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                 // picture into a black rectangle — which is exactly how six
                                 // rounds went into "why do the panes stop two thirds down".
                                 self.setTerminalVisible(false, startingShell: false)
-                                self.windowSnapshot(named: "keyboard") { self.collapseSelftest() }
+                                self.windowSnapshot(named: "keyboard") { self.focusRingSelftest() }
                             }
                         }
                     }
@@ -1611,6 +1617,42 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// is the worst case for width, and the question a check cannot answer is whether the rail and
     /// the spine still say anything — three letters and a kind glyph are the smallest claims in
     /// the window.
+    /// DEC-070. The walk above has been pressing keys for sixty-three files, so a ring must be lit
+    /// on whichever region has focus — that is DEC-016's commitment and it has to survive this
+    /// change. Then a click, and it must go out.
+    ///
+    /// **The click is the control.** A ring that is simply always drawn passes the first half of
+    /// this arm perfectly, which is exactly what shipped: the ring was lit whenever a region held
+    /// first responder, including for a reader who had touched nothing but the mouse.
+    private func focusRingSelftest() {
+        moveFocus(to: fileTable, named: "files")
+        func ringWidths() -> [CGFloat] {
+            [repoFocusRing, fileFocusRing, diffFocusRing].map { $0?.layer?.borderWidth ?? -1 }
+        }
+        let lit = ringWidths()
+        let litSomewhere = lit.contains { $0 >= Theme.focusRingWidth }
+
+        // What a click does, without a click. A synthesized `NSEvent` sent through `sendEvent` does
+        // **not** traverse `addLocalMonitorForEvents`, so the monitor itself cannot be exercised
+        // from here — it is covered by a reader with a real mouse and nothing else. What this half
+        // asserts is the drawing, which is where the defect was: the ring used to be lit whenever a
+        // region held first responder, so it would fail here however the flag got cleared.
+        navigatingByKeyboard = false
+        updateFocusRings()
+        let afterClick = ringWidths()
+        let allDark = afterClick.allSatisfy { $0 == 0 }
+
+        let ok = litSomewhere && allDark
+        FileHandle.standardError.write(Data(
+            ("SELFTEST focus-ring=\(ok ? "OK" : "MISMATCH") "
+                + "keyboard=\(lit.map { String(format: "%.0f", $0) }.joined(separator: "/")) "
+                + "after a click=\(afterClick.map { String(format: "%.0f", $0) }.joined(separator: "/"))\n").utf8))
+        guard ok else { exit(61) }
+        // Left as the reader would have it after a click, which is how the pictures below should
+        // look: no ring anywhere.
+        collapseSelftest()
+    }
+
     private func collapseSelftest() {
         guard press(key: "0", modifiers: [.control, .command]) else { exit(48) }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
@@ -2837,6 +2879,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// from doing nothing, since a table with no selection draws no focus ring worth the name.
     private func moveFocus(to responder: NSResponder, named name: String) {
         window.makeFirstResponder(responder)
+        // Reaching here **is** keyboard navigation: ⌥⌘1–3 are the only callers. The event monitor
+        // cannot be relied on for this — a key equivalent delivered through the menu, which is how
+        // these arrive, does not pass through `addLocalMonitorForEvents`. Marking it at the action
+        // rather than at the event also means the selftest exercises the real path instead of
+        // setting the flag behind the application's back.
+        navigatingByKeyboard = true
         updateFocusRings()
         let position = responder === fileTable ? filePositionText().map { " · \($0)" } ?? "" : ""
         statusLabel.stringValue = "keyboard: \(name)\(position)"
@@ -3134,6 +3182,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// and **nothing drew it** — a value a designer could change to no effect, which is the failure
     /// the token checks exist to prevent, arriving on the side of the window those checks cannot
     /// see.
+    /// DEC-070: **only while the reader is using the keyboard**, which is what AppKit does with its
+    /// own focus rings and what this drew instead of. A ring that is lit whenever a region holds
+    /// first responder is lit permanently — including for someone who has touched nothing but the
+    /// mouse, and who has no use for the answer.
+    ///
+    /// DEC-016 asks for full keyboard operation with the focus *visible*, and that is unchanged:
+    /// the ring appears on the first keystroke and stays for as long as the keyboard is in use.
     private func updateFocusRings() {
         let focused = window.firstResponder
         for (view, owner) in [(repoFocusRing, repoTable as NSResponder),
@@ -3141,8 +3196,29 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                               (diffFocusRing, webView as NSResponder)] {
             guard let view else { continue }
             view.wantsLayer = true
-            view.layer?.borderWidth = focused === owner ? Theme.focusRingWidth : 0
+            view.layer?.borderWidth =
+                (navigatingByKeyboard && focused === owner) ? Theme.focusRingWidth : 0
             view.layer?.borderColor = Theme.focusRing.cgColor
+        }
+    }
+
+    /// A click puts it out, a keystroke lights it. Deliberately not `isFullKeyboardAccessEnabled`:
+    /// that setting says whether Tab *reaches* every control, which is a different question from
+    /// whether the person is using the keyboard right now.
+    private func watchForKeyboardNavigation() {
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, !self.navigatingByKeyboard else { return event }
+            self.navigatingByKeyboard = true
+            self.updateFocusRings()
+            return event
+        }
+        mouseMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.leftMouseDown, .rightMouseDown]
+        ) { [weak self] event in
+            guard let self, self.navigatingByKeyboard else { return event }
+            self.navigatingByKeyboard = false
+            self.updateFocusRings()
+            return event
         }
     }
 

@@ -2971,3 +2971,48 @@ Measured, it was **about five in ten**, and it put the suite on the floor of the
 Two thirds of every attempt sat inside a window a write could land in, so the retry loop ran to exhaustion and the pair was reported unstable. At 5 ms the guarantee is unchanged — **no blend in 800 reads under continuous rewriting** — and an ordinary burst of saves keeps **91–94%** of its pins instead of half.
 
 `ScopeReader.settleConfirmDelay` is now its own constant, so the two quantities cannot be confused again. **The general form: a constant that already exists is not a measurement, and borrowing one because it is nearby is how a number ends up sized for the wrong thing.**
+
+---
+
+## DEC-070 — The focus ring is drawn only while the reader is using the keyboard
+
+- **Date:** 2026-08-11 · **Topic:** DEC-016's visible-focus commitment; `12-…` §9's 2 px ring · **Status:** Accepted · **Clarifies DEC-016**
+
+### Context
+
+`12-…` §9 asks for a 2 px focus ring on the focused region's own border, and DEC-016 commits to full keyboard operation with the focus **visible**. What was built draws the ring whenever a region holds first responder — which is always, since something always does.
+
+The product owner reported it as the first thing they noticed: *"widzę też jakieś niebieskie obramowania, czy to są focusy? nie podobają mi się i nigdy nie widziałem w apce natywnej focusów."*
+
+They are right about the native behaviour, and it is worth being exact about why. AppKit **does** draw focus rings; it draws them when the reader is navigating by keyboard and not when they are using the mouse. A ring that is lit permanently is answering a question nobody asked — the mouse user already knows where they are, because they just clicked there.
+
+So this is not a disagreement with DEC-016. It is DEC-016 being implemented as *always* rather than *when it helps*.
+
+### Options considered
+
+1. **Draw it only while the keyboard is in use.** A keystroke lights it, a click puts it out. What AppKit does.
+2. **Remove it.** What was literally asked for, and it drops DEC-016's commitment: a reader working from the keyboard would have no way to tell which of three regions the arrows are talking to. Rejected, and offered to the owner as an option rather than decided for them.
+3. **Keep it always, styled down** — thinner, in a neutral rather than the system accent. Rejected: still present for a mouse user, so it answers the objection with cosmetics.
+4. **Follow `NSApp.isFullKeyboardAccessEnabled`.** Rejected as the wrong question: that setting says whether Tab *reaches* every control, not whether this person is using the keyboard right now.
+
+### Final decision
+
+**Option 1**, chosen by the product owner. `navigatingByKeyboard` starts **false** — a window that has just opened has been touched by nobody, and the first thing most readers do is click.
+
+It is set in two places, deliberately:
+
+- **At the action**, in `moveFocus` — ⌥⌘1–3 are its only callers, so arriving there *is* keyboard navigation.
+- **At the event**, by a local monitor on `.keyDown`, for everything else; a click on either mouse button clears it.
+
+Both are needed. A key equivalent delivered through the menu — which is how ⌥⌘1–3 arrive — **does not pass through `addLocalMonitorForEvents`**, so the monitor alone would never light the ring for the one gesture the ring exists to explain.
+
+### Consequences
+
+- **A mouse-only reader never sees a focus ring**, which is the whole of the request.
+- **DEC-016 is unchanged and still met**: the focus is visible whenever the keyboard is what is moving it.
+- **The selftest can only reach half of it.** A synthesized `NSEvent` sent through `sendEvent` does not traverse a local monitor, so the arm exercises the real path for the keyboard half (through `moveFocus`) and asserts the *drawing* for the mouse half. The monitor is covered by a reader with a real mouse and nothing else — recorded rather than papered over.
+- **The arm's second half is the control.** The ring as it shipped would pass the first assertion perfectly and fail the second, because it was drawn whenever a region held first responder.
+
+### Revisit trigger
+
+Reopen if a region ever gains focus by a route that is neither `moveFocus` nor a key event — a drag, or a programmatic focus change following a refresh. The flag would then be stale in the direction that hides the ring, which is the safer of the two but still wrong.
