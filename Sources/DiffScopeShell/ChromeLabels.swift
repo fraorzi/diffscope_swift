@@ -50,6 +50,43 @@ public enum ChromeLabels {
             : PaneHeaderText(caption: "CHANGED FILES", count: compactCount(count))
     }
 
+    /// A block in the chrome: a caption, the fact, and the keystroke that changes it (DEC-072).
+    ///
+    /// `dashed` is part of the text because it is part of the statement: a dashed rim says *this is
+    /// a different kind of thing from its neighbours*, which is the same sentence `PillControl`
+    /// says about a scope that cannot be chosen and `ChipView` says about a count that is unknown.
+    /// Deciding it here makes it a claim the suite can ask about rather than a branch in a `draw`.
+    public struct BlockText: Equatable, Sendable {
+        public let caption: String
+        public let detail: String
+        public let shortcut: String
+        public let dashed: Bool
+
+        public init(caption: String, detail: String, shortcut: String, dashed: Bool) {
+            self.caption = caption
+            self.detail = detail
+            self.shortcut = shortcut
+            self.dashed = dashed
+        }
+    }
+
+    /// The scope row's own caption.
+    public static let scopeCaption = "SCOPE"
+
+    /// The base block at the right end of the scope row. `detail` is `baseDetail` from the Git
+    /// layer — the ref, whether the reader chose it, and the age of its newest commit.
+    ///
+    /// **Dashed unless the base is what is being compared.** `newest commit 9 weeks old` beside
+    /// `HEAD ↔ working tree` reads as a statement about what is on screen, and it is not one: it is
+    /// a fact about a ref nothing on screen is currently compared against.
+    public static func baseBlock(detail: String, comparingAgainstBase: Bool) -> BlockText {
+        BlockText(caption: "Base", detail: detail,
+                  // From the map, never typed here (DEC-071): this string is a keystroke a reader
+                  // is about to press.
+                  shortcut: KeyboardMap.binding(id: "sources.baseBranch")?.shortcut ?? "",
+                  dashed: !comparingAgainstBase)
+    }
+
     /// Whether a header can be drawn in a collapsed pane at all. Stated as a function rather than
     /// left to the picture, because "it looked clipped" is not something a later reader can check —
     /// and because the failure it guards is a pane that says `REPOSITOR` and means nothing.

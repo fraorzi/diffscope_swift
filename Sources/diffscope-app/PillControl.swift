@@ -1,4 +1,5 @@
 import AppKit
+import DiffScopeShell
 
 /// The segmented control the adopted design draws: a trough with one raised pill in it.
 ///
@@ -175,6 +176,77 @@ final class PillControl: NSView {
         guard segments.indices.contains(index), segments[index].enabled else { return }
         selectedSegment = index
         if let action { NSApp.sendAction(action, to: target, from: self) }
+    }
+}
+
+/// A block in the chrome: a caption, the fact, and the keystroke that changes it (DEC-072).
+///
+/// The base is the one input to the comparison a reader chooses rather than reads, and prose cannot
+/// say that. Clicking it runs the same command `⇧⌘B` runs — the button is a route to a binding, not
+/// a second implementation of it (DEC-071).
+///
+/// **The rim is dashed when the fact is not the one on screen**, which is `ChipView`'s dashed
+/// unknown count and `PillControl`'s dashed unavailable scope saying the same thing in the same
+/// shape: a distinction that survives greyscale (DEC-035).
+final class FactBlock: NSView {
+    private let captionLabel = NSTextField(labelWithString: "")
+    private let separator = NSTextField(labelWithString: "|")
+    private let detailLabel = NSTextField(labelWithString: "")
+    private let shortcutLabel = NSTextField(labelWithString: "")
+    private var dashed = true
+
+    weak var target: AnyObject?
+    var action: Selector?
+
+    init() {
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        for (field, colour) in [(captionLabel, Theme.inkQuiet), (separator, Theme.inkFaint),
+                                (detailLabel, Theme.ink), (shortcutLabel, Theme.inkFaint)] {
+            field.font = Theme.font(Theme.textSizeTiny,
+                                    weight: field === captionLabel ? .semibold : .regular)
+            field.textColor = colour
+            field.lineBreakMode = .byTruncatingTail
+        }
+        let stack = NSStackView(views: [captionLabel, separator, detailLabel, shortcutLabel])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = Theme.space2
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: Theme.space3),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -Theme.space3),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+            heightAnchor.constraint(equalToConstant: Theme.pillHeight),
+        ])
+        setContentHuggingPriority(.required, for: .horizontal)
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { nil }
+
+    /// Everything the block says, in one call, from one composition (`ChromeLabels`).
+    func show(_ text: ChromeLabels.BlockText) {
+        captionLabel.stringValue = text.caption
+        detailLabel.stringValue = text.detail
+        shortcutLabel.stringValue = text.shortcut
+        toolTip = "\(text.caption): \(text.detail) — \(text.shortcut)"
+        dashed = text.dashed
+        needsDisplay = true
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let rim = NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5),
+                               xRadius: Theme.chipRadius, yRadius: Theme.chipRadius)
+        if dashed { rim.setLineDash([3, 2], count: 2, phase: 0) }
+        (dashed ? Theme.borderStrong : Theme.hairline).setStroke()
+        rim.lineWidth = 1
+        rim.stroke()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let action else { return }
+        NSApp.sendAction(action, to: target, from: self)
     }
 }
 

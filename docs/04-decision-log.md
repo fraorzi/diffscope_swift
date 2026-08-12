@@ -3056,3 +3056,43 @@ The `+` raises a second question, which is why this entry is one decision and no
 ### Revisit trigger
 
 Reopen if a header ever needs to carry an action that is *not* a keyboard function — a filter, a sort, a mode — because that is the point at which the rule above stops being free and becomes a constraint on the design.
+
+---
+
+## DEC-072 — The scope row spans the window, and the base is a block that says it can be changed
+
+- **Date:** 2026-08-12 · **Topic:** where the scope control lives, and how scope 4's base is drawn · **Status:** Accepted · **Refines DEC-010, DEC-011**
+
+### Context
+
+The four scopes are drawn as a pill control **inside the diff pane**, in a band with the mode and lens switches, and scope 4's base is a line of plain text under them. The design draws a `SCOPE` row across the whole window between the title bar and the panes, with a block at its right end reading `Base | origin/master · newest commit 9 weeks old ⇧⌘B`.
+
+The placement is not decoration. **Changing the scope changes the middle pane** — the whole changed-file list — and only then what the diff pane shows. A control drawn inside the diff pane says it belongs to the diff pane; this one governs the window.
+
+The base is the second half. It is the one input to the comparison the reader chooses (⇧⌘B, DEC-011), and it is currently the only such input drawn as prose. Plain text says *this is a fact*; the design's block says *this is a fact you can change*, with the keystroke on it.
+
+### Options considered
+
+1. **Leave the pills where they are and restyle the base.** Rejected: it keeps a window-wide control inside one pane, which is the thing the design is fixing.
+2. **A full-width row between the title bar and the panes.** The scope, what it compares, and the base, in the order a reader asks them.
+3. **Fold the scope into the title bar, beside the repository name.** Rejected: the title bar answers *which repository*, and it already carries the traffic lights and the search field. A bar that says four things is harder to read than two bars that each say one.
+
+### Final decision
+
+**Option 2.** A `ChromeBar` with a bottom hairline, above the three panes and below the title bar, holding `SCOPE`, the pill control, what the chosen scope compares, and the base block at the far end. The mode and lens switches stay in the diff pane's band for now.
+
+**The base block is dashed when the scope is not `vs base`.** This is the entry's substantive half. `newest commit 9 weeks old` sitting in the same row as `HEAD ↔ working tree` reads as a statement about what is on screen, and it is not one — it is a fact about a ref nothing on screen is currently compared against. A **dashed rim** says so in the vocabulary the window already has: `PillControl` dashes a scope that cannot be chosen and `ChipView` dashes an ahead-count that is unknown, both because DEC-035 requires a distinction to survive greyscale. Solid rim: this block describes the comparison you are looking at. Dashed: it describes a ref you are not.
+
+**`baseDetail` is split out of `baseSummary`** in the Git layer, so the block's three parts and the status line's one sentence are the same composition rather than two. The block's keystroke comes from `KeyboardMap.binding(id: "sources.baseBranch")`, under DEC-071's rule.
+
+### Consequences
+
+- **The scope is drawn where its effect is.** The file list is directly under the row that decides its contents.
+- **`#showing` in the diff pane is unchanged.** It still receives the same sentence, which is the DEC-058 shape: the chrome says what the window is comparing, the pane says what the reader is looking at.
+- **`ConfigurationChecks`'s "the base row is drawn under the scope control" is re-expressed rather than dropped.** Its intent — the base is *displayed*, not folded into the status line or a tooltip — is restated against the block.
+- **One more thing in the window is drawn dashed**, and the vocabulary is now three deep: a scope that cannot be chosen, a count that is unknown, a base that is not being compared. All three mean *this is a different kind of thing from its neighbours*, and all three survive a greyscale screenshot.
+- **`FactBlock` is a view the chrome draws**, so it is in `24-…` §3's chrome table in the same commit, which the check now requires.
+
+### Revisit trigger
+
+Reopen if the row gains a third control. Two — the pills and the base block — is a row a reader parses at a glance; the moment something else needs a window-wide home, the question of whether this is a *scope* row or a *comparison* row has to be answered rather than assumed.

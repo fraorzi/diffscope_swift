@@ -100,6 +100,8 @@ enum Theme {
     static let titleBarHeight: CGFloat = 44
     static let statusBarHeight: CGFloat = 24
     static let trafficLightInset: CGFloat = 78
+    /// The scope row across the window (DEC-072): a 24 pt pill with the row's own padding around it.
+    static let scopeBarHeight: CGFloat = 36
     /// The column header over each list (DEC-071). Shorter than the status line, because it holds one
     /// upper-cased word at the smallest size and a count beside it — a bar as tall as the title's
     /// would read as a second title bar.

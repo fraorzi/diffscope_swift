@@ -1486,3 +1486,46 @@ is DEC-058's shape: the header answers *how many of these*, beside the list it c
 line answers *what just happened*, at the edge a reader glances at. The trap it walks past is the row
 count — the tree has 63 changed files under nine group headers, so a header counting **rows** would
 have said 72. The arm asserts against `state.files`, not against the drawn list.
+
+## Step 57 — the scope row spans the window, and the base becomes a block
+
+- [x] `SCOPE`, the four pills, and what the chosen scope compares, in a `ChromeBar` across the
+      window between the title bar and the three panes
+- [x] `Base | main · newest commit today ⇧⌘B` as a `FactBlock` at the right end, clickable, running
+      the same command ⇧⌘B runs
+- [x] `baseDetail` split out of `baseSummary` in the Git layer, so the block and the status line are
+      one composition rather than two voices
+- [x] The block is **dashed** unless the base is what is being compared
+- [x] DEC-072 before the code; `24-…` gained the row and `FactBlock` in the same commit
+- [x] 1628 → **1637 checks**; the `scope-row` arm asserts the frames, not the constraints
+
+### Step 57 — why the row is where it is
+
+Changing the scope changes the **file list**, and only then what the diff pane draws. The control sat
+inside the diff pane, on the far side of the list it governs. A row across the window puts it above
+the thing it changes, which is the same argument DEC-058 made four times about facts and the things
+they are about.
+
+The mode and lens switches stay in the diff pane's band. They *are* about that pane.
+
+### Step 57 — the dashed rim is the decision, not the styling
+
+`newest commit today` sitting in the same row as `HEAD ↔ working tree` reads as a statement about
+what is on screen. It is not one: it is a fact about a ref nothing on screen is being compared
+against. So the block is drawn **dashed** whenever the scope is not `vs base` — and whenever a
+History selection has named its own two sides, which is the same condition read honestly.
+
+Dashed already means *this is a different kind of thing* twice in this window: `PillControl` dashes a
+scope that cannot be chosen, `ChipView` dashes an ahead-count that is unknown. Both for DEC-035's
+reason — it survives greyscale. This is the third, and `ChromeLabels.baseBlock` decides it, so
+whether the rim is dashed is a claim the suite asks about rather than a branch inside `draw`.
+
+### Step 57 — reading a picture, again
+
+The crop tool used to look at step 56's window measures its offsets **from the centre**, so
+`--cropOffset 0 0` returned the middle of the window while looking exactly like a top-left crop. That
+is M9-G's lesson in its third costume: not a downscaled picture this time, and not the wrong moment,
+but the wrong *region*, arrived at by trusting a flag's name. `Scripts`-adjacent throwaway: a six-line
+Swift cropper that takes pixels from the top-left and prints what it cut, in the scratch directory.
+**A tool that can silently return a different rectangle than you asked for is a measurement
+instrument, and it needs the same suspicion as the numbers.**

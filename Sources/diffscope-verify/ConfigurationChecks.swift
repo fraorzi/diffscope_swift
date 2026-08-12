@@ -486,8 +486,15 @@ func runScopeChecks(_ reportRaw: (String, Bool, String) -> Void) {
         let shell = (try? String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
                                      .appendingPathComponent("Sources/diffscope-app/main.swift"),
                                  encoding: .utf8)) ?? ""
-        report("the base row is drawn under the scope control rather than folded into the status line",
+        // The intent is unchanged and the surface moved (DEC-072): the base must be **displayed**,
+        // not folded into the status line and not left in a tooltip. It is a block in the scope row
+        // now, so that is what this asks about — restated rather than loosened, which is the rule
+        // for a check whose subject has changed.
+        report("what the scope compares is drawn beside the control, not folded into the status line",
                shell.contains("comparisonLabel.stringValue"))
+        report("and the base is a block in the scope row, drawn from one composition",
+               shell.contains("baseBlock.show(ChromeLabels.baseBlock(")
+                   && shell.contains("detail: detail"))
 
         report("an unresolved base points at the way to fix it",
                baseSummary(ref: nil, chosenByUser: false, committerDate: nil, now: now)

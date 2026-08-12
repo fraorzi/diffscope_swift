@@ -1,3 +1,4 @@
+import DiffScopeGit
 import DiffScopeShell
 import Foundation
 
@@ -61,6 +62,49 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("negative control: an uncompacted five-digit count is caught",
                !ChromeLabels.fitsCollapsedPane(
                    ChromeLabels.PaneHeaderText(caption: "", count: "48291")))
+    }
+
+    print("\n=== the base is a block that says it can be changed (DEC-072) ===")
+    do {
+        let now = ISO8601DateFormatter().date(from: "2026-08-12T12:00:00Z")!
+        func ago(_ days: Int) -> String {
+            ISO8601DateFormatter().string(from: now.addingTimeInterval(-Double(days) * 86400))
+        }
+        // One composition, two presentations. The block draws the caption itself, so the sentence
+        // and the block must be the same string with a word in front of it — otherwise the row and
+        // the status line drift, which is what happened to the tester packet's keyboard map.
+        let detail = baseDetail(ref: "origin/master", chosenByUser: false,
+                                committerDate: ago(63), now: now)
+        report("the block's detail is the status line's sentence without its first word",
+               detail == "origin/master · newest commit 9 weeks old"
+                   && baseSummary(ref: "origin/master", chosenByUser: false,
+                                  committerDate: ago(63), now: now) == "base " + detail,
+               detail)
+        report("a ref the reader chose still says so in the block",
+               baseDetail(ref: "release", chosenByUser: true, committerDate: ago(1), now: now)
+                   == "release (yours) · newest commit 1 day old")
+        report("and an undetermined base is named rather than left blank",
+               baseDetail(ref: nil, chosenByUser: false, committerDate: nil, now: now)
+                   == "not determined")
+
+        let comparing = ChromeLabels.baseBlock(detail: detail, comparingAgainstBase: true)
+        let idle = ChromeLabels.baseBlock(detail: detail, comparingAgainstBase: false)
+        report("the block names itself", comparing.caption == "Base", comparing.caption)
+        // The substance of DEC-072: `newest commit 9 weeks old` beside `HEAD ↔ working tree` reads
+        // as a statement about what is on screen. The dashed rim says it is not — in the same shape
+        // the window already uses for an unavailable scope and an unknown count, so it survives a
+        // greyscale screenshot (DEC-035).
+        report("it is solid while the base is what is being compared", !comparing.dashed)
+        report("and dashed while it is not", idle.dashed)
+
+        // The keystroke on it is the map's, not a string typed beside it (DEC-071).
+        let shortcuts = Set(KeyboardMap.bindings.map(\.shortcut))
+        report("the keystroke drawn on the block is one the map composes",
+               shortcuts.contains(comparing.shortcut)
+                   && comparing.shortcut == KeyboardMap.binding(id: "sources.baseBranch")?.shortcut,
+               comparing.shortcut)
+        report("negative control: a keystroke the map does not have is not among them",
+               !shortcuts.contains("⌘J"))
     }
 
     print("\n=== the contract describes the chrome it cannot see ===")

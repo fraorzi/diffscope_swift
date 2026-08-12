@@ -132,7 +132,20 @@ public func stalenessDescription(of iso8601: String?, now: Date = Date()) -> Str
 /// reason `changedLines` lives in the engine.
 public func baseSummary(ref: String?, chosenByUser: Bool, committerDate: String?,
                         now: Date = Date()) -> String {
-    guard let ref else { return "base: not determined — choose one with ⇧⌘B" }
+    guard ref != nil else { return "base: not determined — choose one with ⇧⌘B" }
+    return "base " + baseDetail(ref: ref, chosenByUser: chosenByUser,
+                                committerDate: committerDate, now: now)
+}
+
+/// The same fact without the word in front of it (DEC-072).
+///
+/// The scope row draws the base as a **block** — a caption, this, and the keystroke that changes it
+/// — while the status line and `#showing` want one sentence. Splitting the composition rather than
+/// writing the block's version in the window is the point: two places wording the same fact is how
+/// `25-…` came to print `⌘O` for two milestones after DEC-065 moved that key.
+public func baseDetail(ref: String?, chosenByUser: Bool, committerDate: String?,
+                       now: Date = Date()) -> String {
+    guard let ref else { return "not determined" }
     // **"newest commit", not "last fetched".** The age is the committer date of the ref tip, and
     // `11-…` §Scope-4 records that the time of the last fetch is not reliably recoverable. The
     // obvious wording would be the one the reader wants and a factual misstatement (DEC-059's
@@ -140,7 +153,7 @@ public func baseSummary(ref: String?, chosenByUser: Bool, committerDate: String?
     let age = stalenessDescription(of: committerDate, now: now).map { " · newest commit \($0)" }
         // Unknown is said, never guessed at: a missing date is not a fresh one.
         ?? " · newest-commit age unknown"
-    return "base \(ref)\(chosenByUser ? " (yours)" : "")\(age)"
+    return "\(ref)\(chosenByUser ? " (yours)" : "")\(age)"
 }
 
 /// What the empty state says when the reader has chosen folders and nothing was found in them (G3).

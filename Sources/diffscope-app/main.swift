@@ -88,6 +88,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var comparisonLabel: NSTextField!
     var titleBar: NSView!
     var statusBar: NSView!
+    /// The scope row and the base block in it (DEC-072). Held because the block changes with the
+    /// repository, the scope and the reader's own override, and because the selftest asks where it
+    /// was drawn rather than what it was asked for.
+    var scopeBar: NSView!
+    var baseBlock: FactBlock!
     var titleRepositoryLabel: NSTextField!
     var titlePathLabel: NSTextField!
     var lensControl: PillControl!
@@ -378,18 +383,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         searchField.sendsWholeSearchString = true
         searchField.widthAnchor.constraint(equalToConstant: Theme.emptyStateMaximumWidth / 2).isActive = true
 
-        let controls = NSStackView(views: [scopeControl, modeControl, lensControl])
-        controls.orientation = .horizontal
-        controls.spacing = Theme.space6
-
-        // The band is the scope bar and the row under it that says what this scope compares. The
-        // status line has left it for the bottom of the window, where the design puts it: a line
-        // that reports what just happened belongs at the edge a reader glances at, not between the
-        // controls and the thing they control.
-        let band = NSStackView(views: [controls, comparisonLabel])
-        band.orientation = .vertical
-        band.alignment = .leading
-        band.spacing = Theme.space2
+        // The scope and what it compares have left this band for a row of their own, across the
+        // window (DEC-072): changing the scope changes the *file list*, so the control belongs
+        // above the lists rather than inside the pane on the other side of them.
+        let band = NSStackView(views: [modeControl, lensControl])
+        band.orientation = .horizontal
+        band.alignment = .centerY
+        band.spacing = Theme.space6
 
         // The right pane is a view with two constraints, not a stack. A stack view inside a split
         // view asks for its *fitting* height, and a fitting height built from a control band and a
@@ -480,6 +480,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         vertical.widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.diffPaneMinimumWidth).isActive = true
 
         titleBar = buildTitleBar()
+        scopeBar = buildScopeRow()
         statusBar = buildStatusBar()
 
         let drawer = NSSplitView()
@@ -495,10 +496,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // frame height and left the rest of the window empty.
         let container = NSView()
         container.addSubview(titleBar)
+        container.addSubview(scopeBar)
         container.addSubview(drawer)
         container.addSubview(statusBar)
         container.addSubview(emptyState)
         titleBar.translatesAutoresizingMaskIntoConstraints = false
+        scopeBar.translatesAutoresizingMaskIntoConstraints = false
         statusBar.translatesAutoresizingMaskIntoConstraints = false
         drawer.translatesAutoresizingMaskIntoConstraints = false
         emptyState.translatesAutoresizingMaskIntoConstraints = false
@@ -506,10 +509,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             titleBar.topAnchor.constraint(equalTo: container.topAnchor),
             titleBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             titleBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            // Across the window, under the title bar and over the three panes (DEC-072).
+            scopeBar.topAnchor.constraint(equalTo: titleBar.bottomAnchor),
+            scopeBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            scopeBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             statusBar.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             statusBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             statusBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            drawer.topAnchor.constraint(equalTo: titleBar.bottomAnchor),
+            drawer.topAnchor.constraint(equalTo: scopeBar.bottomAnchor),
             drawer.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
             drawer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             drawer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
@@ -1718,6 +1725,38 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         guard ok else { exit(61) }
         // Left as the reader would have it after a click, which is how the pictures below should
         // look: no ring anywhere.
+        scopeRowSelftest()
+    }
+
+    /// DEC-072, in the window. Two things only a laid-out window can answer: the row spans it, and
+    /// the row is **above the panes** rather than inside one of them — which is the whole of the
+    /// decision, and is a fact about frames rather than about a stack view's membership.
+    private func scopeRowSelftest() {
+        let content = window.contentView?.bounds ?? .zero
+        let row = scopeBar.frame
+        let panes = splitView.convert(splitView.bounds, to: nil)
+        let rowInWindow = scopeBar.convert(scopeBar.bounds, to: nil)
+        let block = baseBlock.convert(baseBlock.bounds, to: nil)
+        let pills = scopeControl.convert(scopeControl.bounds, to: nil)
+
+        let spans = abs(row.width - content.width) < 1
+        // AppKit's origin is bottom-left, so *above* is a larger minY. Asked of the drawn frames
+        // rather than of the constraints: the constraint is what was asked for.
+        let abovePanes = rowInWindow.minY >= panes.maxY - 1
+        // Both controls inside the row they were put in, and neither of them zero — M8-D's lists
+        // were correct, populated and 0 pt wide.
+        let inside = rowInWindow.contains(block) && rowInWindow.contains(pills)
+            && block.width > 1 && pills.width > 1
+        let ok = spans && abovePanes && inside
+
+        FileHandle.standardError.write(Data(
+            ("SELFTEST scope-row=\(ok ? "OK" : "MISMATCH") "
+                + "row=\(Int(row.width))×\(Int(row.height))@\(Int(rowInWindow.minY)) "
+                + "of \(Int(content.width))pt panesTop=\(Int(panes.maxY)) "
+                + "pills=[\(Int(pills.minX)),\(Int(pills.minY)) \(Int(pills.width))×\(Int(pills.height))] "
+                + "base=[\(Int(block.minX)),\(Int(block.minY)) \(Int(block.width))×\(Int(block.height))] "
+                + "\"\(baseBlock.toolTip ?? "")\"\n").utf8))
+        guard ok else { exit(65) }
         paneHeaderSelftest()
     }
 
@@ -2394,6 +2433,62 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             stack.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
         ])
         return bar
+    }
+
+    /// The scope row (DEC-072): what the window is comparing, across the window.
+    ///
+    /// Above the three panes rather than inside the diff pane, because **changing the scope changes
+    /// the file list** — the middle pane — and only then what the diff pane draws. A control inside
+    /// the diff pane says it belongs to the diff pane.
+    private func buildScopeRow() -> NSView {
+        let caption = NSTextField(labelWithString: ChromeLabels.scopeCaption)
+        caption.font = Theme.font(Theme.textSizeTiny, weight: .semibold)
+        caption.textColor = Theme.inkFaint
+        caption.translatesAutoresizingMaskIntoConstraints = false
+
+        baseBlock = FactBlock()
+        baseBlock.target = self
+        baseBlock.action = #selector(setBaseBranch)
+        updateBaseBlock(for: nil)
+
+        let stack = NSStackView(views: [caption, scopeControl, comparisonLabel,
+                                        spacerView(), baseBlock])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.spacing = Theme.space4
+        stack.edgeInsets = NSEdgeInsets(top: 0, left: Theme.space6, bottom: 0, right: Theme.space6)
+        // The comparison text yields before the two controls do: it is a sentence with a shorter
+        // form (`HEAD ↔ working tree`) and the pills and the base cannot be shortened at all.
+        comparisonLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let bar = ChromeBar(surface: Theme.chrome, edge: .bottom)
+        bar.addSubview(stack)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            bar.heightAnchor.constraint(equalToConstant: Theme.scopeBarHeight),
+            stack.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
+            stack.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+        ])
+        return bar
+    }
+
+    /// The base block's three parts, from one composition in the Git layer (DEC-072). `nil` is the
+    /// state before a repository is selected, and it says *not determined* rather than nothing —
+    /// an empty block would look like a base that has no name.
+    private func updateBaseBlock(for repository: RepositorySnapshot?) {
+        let detail = baseDetail(
+            ref: repository?.baseRefUsed,
+            chosenByUser: repository.map {
+                state.configuration.baseOverrides[$0.url.standardizedFileURL.path] != nil
+            } ?? false,
+            committerDate: repository?.baseRefCommitterDate)
+        // A History selection names its own two sides, so the base is not what is being compared
+        // then either — the dashed rim is about what is on screen, not about which scope is armed.
+        baseBlock.show(ChromeLabels.baseBlock(
+            detail: detail,
+            comparingAgainstBase: repository != nil && state.scope == .branchVsMergeBase
+                && state.historyPair == nil))
     }
 
     /// One label of a column header (DEC-071). Small, quiet and upper-cased by the string it is
@@ -3704,6 +3799,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         if case let .unavailable(reason) = availability {
             state.files = []
             state.fileRows = []
+            updateBaseBlock(for: repository)
             updatePaneHeaders()
             fileTable.reloadData()
             statusLabel.stringValue = "\(state.scope.title) unavailable — \(reason)"
@@ -3736,6 +3832,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // A greyed-out segment with its reason in a tooltip is the defect DEC-058 named: a tooltip
         // is invisible until pointed at, and a reader walking the window from the keyboard never
         // sees it. `12-…` §3 asks for the reason to be *stated*, so it goes on the line.
+        updateBaseBlock(for: repository)
         let reasons = unavailable.isEmpty ? "" : " · unavailable: " + unavailable.joined(separator: ", ")
         comparisonLabel.stringValue = state.historyPair.map {
             scopes.historyComparisonDescription(old: $0.old, new: $0.new) + " · from History"
