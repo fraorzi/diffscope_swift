@@ -19,13 +19,22 @@ public struct ParserStateReport: Codable, Sendable, Equatable {
     /// What the reader needs beyond the state itself: why it was not parsed, or how much of it was
     /// not. `nil` only for the fully-parsed case, where there is nothing further to say.
     public let detail: String?
+    /// **Which grammar read the file**, where one did. The adopted design names it (`parser
+    /// tree-sitter tsx ok`), and it is worth naming: every supported file — `.ts`, `.tsx`, `.js`,
+    /// `.jsx` — is read by the **TSX** grammar, so a reader looking at plain JavaScript is being
+    /// told, correctly, that it was parsed as TSX. That is a disclosure rather than a detail.
+    public let grammar: String?
 
-    public init(state: String, detail: String?) {
+    public init(state: String, detail: String?, grammar: String? = nil) {
         self.state = state
         self.detail = detail
+        self.grammar = grammar
     }
 
-    public static let parsed = ParserStateReport(state: "parsed", detail: nil)
+    public static let parsed = ParserStateReport(state: "parsed", detail: nil,
+                                                 grammar: ParserStateReport.tsxGrammar)
+    /// One name, in one place. The application vendors exactly this grammar (`CTreeSitterTSX`).
+    public static let tsxGrammar = "tree-sitter tsx"
 
     /// The words the reader sees. Composed here and **carried across the wire** rather than
     /// assembled in JavaScript: the renderer draws it, the headless probe reads it, and a sentence
@@ -37,15 +46,17 @@ public struct ParserStateReport: Codable, Sendable, Equatable {
         case "partial": label = "partially parsed"
         default: label = "not parsed"
         }
-        return detail.map { "parser: \(label) — \($0)" } ?? "parser: \(label)"
+        let base = grammar.map { "parser: \(label) — \($0)" } ?? "parser: \(label)"
+        return detail.map { "\(base) — \($0)" } ?? base
     }
 
-    private enum CodingKeys: String, CodingKey { case state, detail, chipText }
+    private enum CodingKeys: String, CodingKey { case state, detail, grammar, chipText }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode(state, forKey: .state)
         try container.encodeIfPresent(detail, forKey: .detail)
+        try container.encodeIfPresent(grammar, forKey: .grammar)
         try container.encode(chipText, forKey: .chipText)
     }
 
@@ -53,6 +64,7 @@ public struct ParserStateReport: Codable, Sendable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         state = try container.decode(String.self, forKey: .state)
         detail = try container.decodeIfPresent(String.self, forKey: .detail)
+        grammar = try container.decodeIfPresent(String.self, forKey: .grammar)
     }
 
     /// The state that follows from what the structural path actually did.
@@ -76,8 +88,11 @@ public struct ParserStateReport: Codable, Sendable, Equatable {
         }
         if unparsedRegions > 0 {
             let regions = unparsedRegions == 1 ? "1 region" : "\(unparsedRegions) regions"
+            // A partial parse still names its grammar: the reader is being told which grammar read
+            // the part that *was* read.
             return ParserStateReport(state: "partial",
-                                     detail: "\(regions), \(unparsedBytes) bytes shown without a structural claim")
+                                     detail: "\(regions), \(unparsedBytes) bytes shown without a structural claim",
+                                     grammar: ParserStateReport.tsxGrammar)
         }
         // A condition that is not about parsing — F8's filter, F6's unverified — leaves the parser
         // state alone. Reporting "not parsed" for a file that parsed perfectly would make the

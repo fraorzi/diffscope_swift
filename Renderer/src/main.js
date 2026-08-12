@@ -1378,6 +1378,27 @@ function emptyDiffState(model) {
     : `no structural changes; ${plural(marks.length, "formatting difference")}`;
 }
 
+/// One sentence about how far the alignment can be trusted, from the segments themselves.
+///
+/// `uncertain` is `confidence < confidenceFloor`, decided in the engine (0.8) rather than here — a
+/// renderer that picked its own threshold would be redefining what counts as certain, which is why
+/// the flag rides on the contract instead of the number.
+function confidenceSummary(model) {
+  if (model.payload.kind !== "text") return "";
+  let aligned = 0;
+  let low = 0;
+  for (const side of [model.payload.old, model.payload.new]) {
+    for (const seg of side.segments) {
+      if (seg.confidence == null) continue;
+      aligned += 1;
+      if (seg.uncertain) low += 1;
+    }
+  }
+  if (aligned === 0) return "";
+  if (low === 0) return "confidence: high";
+  return `confidence: ${low} of ${aligned} alignments below the floor`;
+}
+
 function renderNotices(model) {
   const bar = document.getElementById("notices");
   bar.innerHTML = "";
@@ -1396,6 +1417,13 @@ function renderNotices(model) {
   // `12-…` §5.2's parser-state indicator. Composed in Swift (`ParserStateReport.chipText`) so the
   // two surfaces that show it cannot word it differently, and so it is checkable without a webview.
   if (model.parser) items.push(model.parser.chipText);
+  // Confidence — DEC-017 lists it among the mandatory trust indicators, and DEC-045 says outright
+  // that dropping the *ambiguity* indicator leaves it untouched. So this is the confidence the
+  // engine computed, not the matcher ambiguity that decision withdrew, and it is worded that way:
+  // the adopted design's "1 ambiguous alignment — both readings kept" is exactly the phrase
+  // DEC-045 retired.
+  const confidence = confidenceSummary(model);
+  if (confidence) items.push(confidence);
   // The pill says what the reader selected *and* what is actually on screen when they differ —
   // `23b-…` §2: it read `mode: structural` beside a notice saying structural analysis was
   // unavailable, because it reported the selection alone.

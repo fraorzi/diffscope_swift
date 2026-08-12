@@ -1414,3 +1414,32 @@ The shared line-height token stays as a guard — two things that must match sho
 take different defaults — and the comment beside it says outright that it repaired nothing
 observable. **A number taken before the thing settles is a number about the timing.** That is the
 same lesson as M9-G, in a second place, on the same day.
+
+## Step 55 — the trust pills say more, in the words the decisions allow
+
+- [x] `parser: parsed — tree-sitter tsx` — the chip names the grammar that read the file
+- [x] `confidence: high`, or `confidence: N of M alignments below the floor`
+- [x] `ParserStateReport` gains `grammar`, encoded and decoded; the check that pinned the old
+      wording is updated with its intent restated rather than loosened
+
+### Step 55 — naming the grammar is a disclosure, not a detail
+
+Every supported extension — `.ts`, `.tsx`, `.js`, `.jsx` — is read by the **TSX** grammar. A reader
+looking at plain JavaScript is now told, correctly, that it was parsed as TSX. That is worth saying
+out loud rather than leaving as an implementation fact.
+
+### Step 55 — where the design's wording could not be used
+
+The adopted design writes **`1 ambiguous alignment — both readings kept`**. That is precisely the
+indicator **DEC-045 withdrew**: ambiguity detection stays as a guard on anchoring, and no ambiguity
+indicator is built, because the safety rationale lapsed once structural labels were reconciled
+against the canonical byte diff.
+
+But the same entry says, in its consequences, *"Confidence display (a separate DEC-017 item) is
+untouched by this."* So the fact is shown in the language of **confidence**, which DEC-017 lists
+among the mandatory trust indicators, and not in the language of ambiguity, which DEC-045 retired.
+Same underlying number, and the decision log decides which sentence it may become.
+
+`uncertain` remains `confidence < confidenceFloor`, decided in the engine at 0.8 — a renderer that
+chose its own threshold would be redefining what counts as certain, which is why the flag rides on
+the contract rather than the number.

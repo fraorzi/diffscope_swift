@@ -54,8 +54,13 @@ func runTrustSurfaceChecks(_ reportRaw: (String, Bool, String) -> Void) {
 
         let clean = ParserStateReport.of(structuralRequested: true, structuralUsed: true,
                                          degradation: nil)
-        report("a file that parsed says so with nothing further",
-               clean == .parsed && clean.chipText == "parser: parsed", clean.chipText)
+        // "Nothing further" means no *failure* detail. It names the grammar that read the file,
+        // which the adopted design asks for and which is a disclosure in its own right: every
+        // supported extension is read by the TSX grammar, so a reader looking at plain JavaScript
+        // is being told, correctly, that it was parsed as TSX.
+        report("a file that parsed says so, and names the grammar that read it",
+               clean == .parsed && clean.chipText == "parser: parsed — tree-sitter tsx",
+               clean.chipText)
 
         // The negative control, and the reason the indicator is worth building at all: before it,
         // a reader inferred the parse state from the presence of a notice. A filter is a notice
