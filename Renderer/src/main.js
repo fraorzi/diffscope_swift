@@ -1292,6 +1292,39 @@ window.diffscopeMeasureCompose = function (iterations) {
   };
 };
 
+/// What the page thinks it has to fill. The AppKit frames said the web view fills its pane
+/// (`diffWeb=798×731`) while the picture showed the panes ending half way down with black beneath —
+/// so the disagreement is inside the document, and this is the only way to see it.
+window.diffscopeHeights = function () {
+  const el = id => document.getElementById(id);
+  const editor = left.dom.querySelector(".cm-editor");
+  const scroller = left.dom.querySelector(".cm-scroller");
+  // Rectangles, not heights. A height says how big something is and not **where it stops**, and
+  // the question here is what occupies the band between the last line of code and the bottom of
+  // the pane. Reading that off a downscaled screenshot is what M8-K warns about.
+  function rect(node) {
+    if (!node) return "absent";
+    const box = node.getBoundingClientRect();
+    return `${Math.round(box.top)}→${Math.round(box.bottom)}`;
+  }
+  return {
+    innerHeight: window.innerHeight,
+    body: rect(document.body),
+    stage: rect(el("stage")),
+    left: rect(left.dom),
+    scroller: rect(scroller),
+    content: rect(left.dom.querySelector(".cm-content")),
+    track: rect(el("track")),
+    unified: rect(el("unified")),
+    lens: rect(el("lens")),
+    rendered: rect(el("rendered")),
+    // Everything the body holds, in order, with what it is — the one that is taking the space will
+    // be in this list whether or not anybody thought to ask about it by name.
+    children: [...document.body.children].map(node =>
+      `${node.id || node.tagName.toLowerCase()}:${rect(node)}`).join(" "),
+  };
+};
+
 window.diffscopeProbe = function () {
   return {
     pin: currentPin,

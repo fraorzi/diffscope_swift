@@ -1304,3 +1304,38 @@ navigation regardless of how the event was delivered.
 
 What remains uncovered, and is written down rather than implied: a synthesized click cannot traverse
 the monitor either, so the mouse half of the arm asserts the drawing rather than the trigger.
+
+## Step 52 — the black gap that was not there, and the frames that now say so
+
+- [x] Every snapshot line prints the pane frames: drawer, both drawer panes, the three-pane split,
+      the diff pane and its web view
+- [x] `diffscopeHeights()` returns **rectangles** for every child of `body`, so the page can be
+      asked what occupies a band rather than only how tall things are
+
+### Step 52 — I was wrong, and the measurements are why
+
+Reported from a screenshot: the lower half of the window is black, the panes stop half way down.
+Three independent measurements say otherwise and they sum to the window exactly:
+
+```
+drawer=1400×789@24  panes=1400×788@0  drawerPanes=1400×788@0, 1400×0@789
+diffPane=798×788@0  diffWeb=798×731@0
+page: file-header 0→28  notices 28→60  stage 60→715  track 715→731   of 731
+```
+
+The terminal host is **zero** high, the panes take the whole drawer, the web view fills the pane and
+the document fills the web view. There is no gap to find.
+
+**The mistake was reading a crop whose coordinate mapping I never checked.** M8-K's lesson is *look
+at the picture at full resolution*; this was the same error one door along — full resolution, wrong
+region. A frame printed beside the picture would have settled it in one run, which is why every
+snapshot now prints one.
+
+**What is actually there** is a ten-line file in a pane 731 pt tall, so six hundred points of empty
+editor. The adopted design never looks like that because its file fills the pane **and** the pane is
+closed by a bottom bar — `4 formatting differences — indentation only` with `Expand ⌘E`. That bar
+does not exist here, and it is on the gap list rather than being a defect of its own.
+
+**One diagnostic earned its place twice:** logging `terminal.webView.frame` reported `1400×0` and
+looked like proof the drawer was shut, while saying nothing about the pane holding it. The host is
+what takes the space, so the host is what is printed.

@@ -1625,6 +1625,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// this arm perfectly, which is exactly what shipped: the ring was lit whenever a region held
     /// first responder, including for a reader who had touched nothing but the mouse.
     private func focusRingSelftest() {
+        webView.evaluateJavaScript("JSON.stringify(window.diffscopeHeights())") { value, _ in
+            FileHandle.standardError.write(Data(
+                ("SELFTEST page-heights \((value as? String) ?? "nil") "
+                    + "against a web view of \(Int(self.webView.frame.height))pt\n").utf8))
+        }
         moveFocus(to: fileTable, named: "files")
         func ringWidths() -> [CGFloat] {
             [repoFocusRing, fileFocusRing, diffFocusRing].map { $0?.layer?.borderWidth ?? -1 }
@@ -2124,7 +2129,25 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let expected = view.bounds.size
         // Printed on every snapshot: `empty.png` came out 2800×138 and nobody could see that from
         // the file name. A picture that says how big it is cannot silently become a strip.
+        //
+        // The panes go with it. `setTerminalVisible(false, …)` carries a comment about the three
+        // panes stopping two thirds down the window with the rest left blank — it happened once,
+        // was fixed, and a picture cannot say whether it has come back unless it prints where the
+        // panes actually were.
+        func box(_ rect: NSRect) -> String {
+            "\(Int(rect.width))×\(Int(rect.height))@\(Int(rect.minY))"
+        }
         let size = "\(Int(expected.width))×\(Int(expected.height))pt"
+            + " drawer=\(box(terminalSplit?.frame ?? .zero))"
+            + " panes=\(box(splitView?.frame ?? .zero))"
+            // The **host**, not the web view inside it. Logging the web view said `1400×0` and
+            // looked like proof the drawer was closed, while the pane holding it kept its share of
+            // the split — which is exactly the difference between a pane that is gone and one that
+            // is merely empty.
+            + " drawerPanes=\((terminalSplit?.arrangedSubviews ?? []).map { box($0.frame) }.joined(separator: ","))"
+            + " terminalWeb=\(box(terminal.webView.frame))"
+            + " diffPane=\(box(webView.superview?.frame ?? .zero))"
+            + " diffWeb=\(box(webView.frame))"
 
         if let composited = CGWindowListCreateImage(
             .null, .optionIncludingWindow, CGWindowID(window.windowNumber),
