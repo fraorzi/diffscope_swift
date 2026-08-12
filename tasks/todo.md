@@ -1377,3 +1377,40 @@ Until this bar existed the grouped count lived on the **fold markers alone**, so
 scrolled past them had no statement of how much had been grouped — while DEC-017 permits grouping
 *only while the count is shown*. The bar says it in one place that does not move, and the button
 calls `expandAll`, the same command ⌘E calls, so the two cannot come to disagree.
+
+## Step 54 — the SHOWING row, facts on the hunk headers, and a measurement that fooled me three times
+
+- [x] `#showing`: what is being compared, which layout is drawing it, and — in unified only — what
+      `+` and `−` mean. The sentence is composed in the Git layer and pushed in
+- [x] Hunk headers carry the facts of their block: `M1`, `formatting only — whitespace`,
+      `reordering — may change behaviour`, the disclosure names, `one alignment left ambiguous`
+- [x] `diffscopeHeights().rows` reports where the gutter rows and the lines actually are
+- [x] The geometry is asked **after a turn of the run loop**, and only then is it stable
+
+### Step 54 — what the design says that the engine cannot
+
+The header the design draws is `@@ 12–25 · wrapper removed, children preserved`. *Wrapper removed*
+is not available and is not invented. What **is** available turned out to include one of the
+design's own phrases: *one alignment left ambiguous* is `uncertain`, counted.
+
+The numeric form stays rather than becoming the design's single range, because `−12,4 +12,5` says
+which side each count belongs to and `12–25` cannot.
+
+### Step 54 — three readings, all wrong, all mine
+
+The gutter looked misaligned in a screenshot. It was not.
+
+1. **Read from a downscaled image**, where 15 px and 17 px rows are indistinguishable from
+   antialiasing. M8-K's rule is *look at full resolution*; I had already broken it once today by
+   looking at full resolution at the **wrong region**.
+2. **Measured before the layout settled.** Asked immediately after `setLayout`, the numbers flip
+   between runs on identical input — 61,89,106… one run and 65,80,95… the next. Every conclusion
+   drawn from them was a conclusion about timing.
+3. **Two "fixes" credited to the wrong cause.** A shared `line-height` appeared to repair it and a
+   `line-height` on the hunk widget appeared to undo the repair; neither did anything. Asked after
+   a turn of the run loop, the rows agree to the pixel and agree **identically across runs**.
+
+The shared line-height token stays as a guard — two things that must match should not be able to
+take different defaults — and the comment beside it says outright that it repaired nothing
+observable. **A number taken before the thing settles is a number about the timing.** That is the
+same lesson as M9-G, in a second place, on the same day.

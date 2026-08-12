@@ -32,6 +32,14 @@
              border: var(--ds-hairline-width) solid var(--ds-border-strong); }
   .ds-chip-alert { border-style: dashed; font-weight: var(--ds-weight-emphasis); }
 
+  /* What is being compared, said in the pane where the reader is looking rather than only in the
+     chrome above it. The legend for the sign column belongs here too: `+` and `−` are the only
+     carrier of direction once there are no panes (DEC-059), so the pane says what they mean. */
+  #showing { padding: var(--ds-space-2) var(--ds-space-4); color: var(--ds-dim);
+             font-size: var(--ds-text-size-small);
+             border-bottom: var(--ds-hairline-width) solid var(--ds-border); }
+  #showing:empty { display: none; }
+
   #stage { display: flex; flex: 1; min-height: 0; }
   /* One horizontal position for two panes that scroll together (`12-…` §5.4). A range input
      rather than a scrollbar, because a scrollbar cannot be reached from the keyboard. */
@@ -218,6 +226,9 @@
      distinction that survives greyscale, so the tints below only reinforce it. */
   /* The hunk header: where the *change* is, once, above a block whose lines each say where they
      are. Restyle it freely — it is orientation, not a difference. */
+  /* No `line-height` here, deliberately: the widget's height is whatever its content needs, and
+     the gutter allocates a row for it. An earlier attempt to pin it was chasing a drift that was
+     never there — see the note on `.cm-gutterElement` below. */
   .ds-hunk { padding: var(--ds-space-1) var(--ds-space-4); color: var(--ds-dim);
              background: var(--ds-fold);
              border-top: var(--ds-hairline-width) solid var(--ds-border);
@@ -270,6 +281,13 @@
      CodeMirror from the highlight style in `main.js`; the colours stay here, so the one-file rule
      holds for the syntax theme too. */
   .cm-content { caret-color: var(--ds-syn-cursor); }
+  /* A gutter row and the line it belongs to are the same row, so they read one value.
+     **This is a guard, not a repair.** It was added chasing an apparent drift — gutter rows 17 px
+     against the content's 15 — which turned out to be a measurement taken before CodeMirror had
+     re-measured: asked after the layout settles, the two agree to the pixel and agree identically
+     across runs. The rule stays because two things that must match should not be able to take
+     different defaults, and it is recorded here that it fixed nothing observable. */
+  .cm-editor .cm-line, .cm-editor .cm-gutterElement { line-height: var(--ds-line-height); }
   .cm-activeLine { background: var(--ds-syn-active-line); }
   .cm-selectionBackground, ::selection { background: var(--ds-syn-selection); }
   .tok-keyword { color: var(--ds-syn-keyword); }
@@ -291,6 +309,7 @@
 <body>
   <div id="file-header"><span id="file-path"></span><span id="file-name"></span></div>
   <div id="notices"></div>
+  <div id="showing"></div>
   <div id="stage">
     <div id="left"></div>
     <div id="right"></div>

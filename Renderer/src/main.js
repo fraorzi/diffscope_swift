@@ -453,6 +453,43 @@ function unifiedBlocks(model, oldText, newText) {
   return blocks;
 }
 
+/// What can be said about one merged block, **read off the segments inside it**.
+///
+/// The adopted design writes prose here — *wrapper removed, children preserved*. The engine has no
+/// notion of a wrapper, so that sentence is not available and is not invented (`24-…` §1). What is
+/// available is every fact the segments carry, and one of the design's own phrases turns out to be
+/// among them: *one alignment left ambiguous* is `uncertain`, counted.
+function blockFacts(model, block) {
+  if (model.payload.kind !== "text") return [];
+  const inside = [];
+  for (const [side, from, to] of [["old", block.oldStart, block.oldEnd],
+                                  ["new", block.newStart, block.newEnd]]) {
+    for (const seg of model.payload[side].segments) {
+      if (seg.end > from && seg.start < to) inside.push(seg);
+    }
+  }
+  const facts = [];
+  const moves = [...new Set(inside.filter(s => s.label === "moved" && s.link != null)
+                                  .map(s => s.link + 1))].sort((a, b) => a - b);
+  if (moves.length) facts.push(moves.map(n => "M" + n).join(" "));
+
+  const changed = inside.filter(s => s.label === "changed" || s.label === "moved");
+  if (changed.length && changed.every(s => s.group === "formatting-only")) {
+    const kinds = [...new Set(changed.map(s => s.classification).filter(Boolean))].sort();
+    facts.push("formatting only" + (kinds.length ? " — " + kinds.join(", ") : ""));
+  } else if (inside.some(s => s.group === "potentially-behavior-affecting")) {
+    facts.push("reordering — may change behaviour");
+  }
+
+  const disclosures = [...new Set(inside.map(s => s.disclosure).filter(Boolean))].sort();
+  if (disclosures.length) facts.push(disclosures.join(", "));
+
+  const ambiguous = inside.filter(s => s.uncertain).length;
+  if (ambiguous === 1) facts.push("one alignment left ambiguous");
+  else if (ambiguous > 1) facts.push(ambiguous + " alignments left ambiguous");
+  return facts;
+}
+
 function buildUnified(model) {
   const oldText = model.payload.old.text;
   const newText = model.payload.new.text;
@@ -494,7 +531,8 @@ function buildUnified(model) {
     emit("old", block.oldStart, block.oldEnd, "−");
     emit("new", block.newStart, block.newEnd, "+");
     hunks.push({ at, oldFirst, oldCount: oldNumber - oldFirst,
-                 newFirst, newCount: newNumber - newFirst });
+                 newFirst, newCount: newNumber - newFirst,
+                 facts: blockFacts(model, block) });
     oldCursor = block.oldEnd;
     newCursor = block.newEnd;
   }
@@ -598,7 +636,10 @@ function directionDecorations(state) {
   const items = [];
   for (const hunk of unifiedHunks) {
     if (hunk.at > state.doc.length) continue;
-    const text = `@@ −${hunk.oldFirst},${hunk.oldCount} +${hunk.newFirst},${hunk.newCount} @@`;
+    // The numeric form stays: it is what every reader of a unified diff already knows, and the
+    // design's single range cannot say which side a count belongs to. The facts follow it.
+    const text = `@@ −${hunk.oldFirst},${hunk.oldCount} +${hunk.newFirst},${hunk.newCount} @@`
+      + (hunk.facts && hunk.facts.length ? " · " + hunk.facts.join(" · ") : "");
     items.push({ from: hunk.at,
                  deco: Decoration.widget({ widget: new HunkWidget(text), block: true, side: -1 }) });
   }
@@ -781,6 +822,36 @@ function cell(className, text) {
 
 /// The file header. Pushed rather than derived: the renderer is handed a model, and a model does
 /// not carry the path it came from — the shell is the side that knows which file the reader chose.
+/// The `SHOWING` row (the adopted design). The comparison is pushed by the shell — the sentence is
+/// composed in the Git layer so that it can be checked — and the layout and the sign-column legend
+/// are the page's own, because the page is what knows which of the two it is drawing.
+let comparison = "";
+
+function updateShowing() {
+  const row = document.getElementById("showing");
+  if (!row) return;
+  if (!comparison) { row.textContent = ""; return; }
+  const parts = ["SHOWING " + comparison, layout === "unified" ? "unified" : "side by side"];
+  // Only where it is true. In two panes the side a line is on carries the direction, and a legend
+  // for a column that is not there would be an instruction to look at nothing.
+  if (layout === "unified") parts.push("+ added, − removed in the sign column");
+  const before = row.textContent;
+  row.textContent = parts.join(" · ");
+  // The shell pushes the comparison on its own schedule, **not** inside a render — so this row can
+  // appear under an editor that has already measured itself, and CodeMirror keeps the line heights
+  // it computed against the taller pane: the gutter drifts 33 px a row against the content's 30.
+  // Whoever changes the height is who has to say so.
+  if (before !== row.textContent) {
+    for (const view of [left, right, unified]) if (view) view.requestMeasure();
+  }
+}
+
+window.diffscopeSetComparison = function (text) {
+  comparison = String(text || "");
+  updateShowing();
+  return comparison;
+};
+
 window.diffscopeSetFile = function (path) {
     const cut = String(path || "").lastIndexOf("/");
     document.getElementById("file-path").textContent = cut < 0 ? "" : path.slice(0, cut + 1);
@@ -1041,6 +1112,9 @@ window.diffscopeShowRendered = function (json) {
 window.diffscopeSetLayout = function (name) {
   layout = name === "unified" ? "unified" : "split";
   if (lastModel) window.diffscopeRender(lastModel);
+  // Also when there is no model yet: the row names the layout, and switching with nothing open
+  // would otherwise leave it describing the layout the reader just left.
+  else updateShowing();
   return layout;
 };
 
@@ -1367,10 +1441,19 @@ window.diffscopeRender = function (json) {
   anchors = model.anchors || [];
   expanded = new Set();
   stopIndex = -1;
+  // **Before** the layout, not after. Both of these change the page's height — the row appears,
+  // the bar appears — and an editor populated first is an editor measured against a height that is
+  // about to change: CodeMirror kept the line heights it had computed and the gutter drifted out of
+  // step with the code, 33 px a row against the content's 30. Settle the geometry, then fill it.
+  updateFooter(model);
+  updateShowing();
   applyLayout(model);
   restoreAnchor(model.restore);
   updateTrack();
-  updateFooter(model);
+  // And say so anyway. Anything else that resizes the pane — the drawer opening, the window — has
+  // the same hazard, and this is the one line that makes the editor re-measure rather than trust
+  // what it worked out earlier.
+  for (const view of [left, right, unified]) if (view) view.requestMeasure();
 
   lastSummary = {
     ok: true,
@@ -1452,6 +1535,15 @@ window.diffscopeHeights = function () {
     unified: rect(el("unified")),
     lens: rect(el("lens")),
     rendered: rect(el("rendered")),
+    // Where the gutter rows sit against where the lines sit. Reading this off a screenshot has
+    // misled me twice in one session; the numbers cannot.
+    rows: (() => {
+      const view = layout === "unified" ? unified : left;
+      if (!view) return "no view";
+      const tops = node => [...view.dom.querySelectorAll(node)]
+        .slice(0, 8).map(el => Math.round(el.getBoundingClientRect().top)).join(",");
+      return "gutter=" + tops(".cm-gutterElement") + " lines=" + tops(".cm-line");
+    })(),
     // Everything the body holds, in order, with what it is — the one that is taking the space will
     // be in this list whether or not anybody thought to ask about it by name.
     children: [...document.body.children].map(node =>

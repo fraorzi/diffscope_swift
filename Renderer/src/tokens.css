@@ -27,6 +27,10 @@
   /* ---- Typography ------------------------------------------------------- */
   --ds-font: ui-monospace, SFMono-Regular, Menlo, monospace;
   --ds-text-size: 12px;
+  /* One line height for the code and for the gutter rows beside it, so the two cannot take
+     different defaults. A guard rather than a repair — the drift it was written for turned out to
+     be a measurement taken before the layout settled. */
+  --ds-line-height: 1.25;
   --ds-text-size-small: 11px;
   --ds-text-size-tiny: 10px;
   --ds-weight-emphasis: 600;

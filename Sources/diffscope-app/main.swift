@@ -991,6 +991,16 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                     ("SELFTEST unified=\(ok ? "OK" : "MISMATCH") signs=\(signs) added=\(added) "
                         + "removed=\(removed) lines=\(lines) "
                         + "glyphs=\(probe["signGlyphs"] as? String ?? "?")\n").utf8))
+                // **After a turn of the run loop.** Asked immediately, this reports whatever line
+                // heights CodeMirror had before it re-measured, and the answer flips between runs
+                // on identical input — which is the scale arm's lesson in a second place: a number
+                // taken before the thing settles is a number about the timing, not the layout.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                    self.webView.evaluateJavaScript("JSON.stringify(window.diffscopeHeights())") { h, _ in
+                        FileHandle.standardError.write(Data(
+                            ("SELFTEST unified-geometry \((h as? String) ?? "nil")\n").utf8))
+                    }
+                }
                 self.snapshot(named: "unified") {
                     guard ok else { exit(24) }
                     // Back to two panes: every arm after this one probes two documents, and the
@@ -3530,6 +3540,21 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                           committerDate: repository.baseRefCommitterDate)
             : state.scope.comparisonDescription)
         statusLabel.stringValue = "\(state.files.count) files · \(state.scope.title)\(ageText)\(reasons)"
+        // The same sentence, into the page (the adopted design's `SHOWING` row). The diff pane is
+        // where a reader is actually looking, and until now *what is being compared* was only in
+        // the chrome above it — a fact stated once, far from the thing it describes.
+        //
+        // Pushed rather than derived: `comparisonDescription` and `baseSummary` are composed in the
+        // Git layer precisely so a sentence the interface assembles cannot go unchecked, and
+        // rebuilding it in JavaScript would be a second voice for the same fact.
+        pushComparison(comparisonLabel.stringValue)
+    }
+
+    private func pushComparison(_ text: String) {
+        guard let json = try? JSONSerialization.data(withJSONObject: [text]),
+              let argument = String(data: json, encoding: .utf8) else { return }
+        webView.evaluateJavaScript(
+            "window.diffscopeSetComparison(\(argument.dropFirst().dropLast()))") { _, _ in }
     }
 
     private func showDiff(for file: ChangedFile, restoringStop stop: Int? = nil) {

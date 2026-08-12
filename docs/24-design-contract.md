@@ -70,6 +70,7 @@ Classes marked **load-bearing** carry a difference. They may be restyled and may
 | `ds-chip-alert` | A chip that reports the tool catching itself | **Yes** |
 | `#file-header`, `#file-path`, `#file-name` | Which file this is, above everything said about it | **Yes.** The path is what tells two files of the same name apart, and DEC-058 has already paid three times for putting a displayed fact in a tooltip |
 | `#notices` | The bar carrying every notice — INV-4 made visible | **Yes** |
+| `#showing` | What is being compared, which layout is drawing it, and — in unified only — what `+` and `−` mean | **Yes.** The comparison was stated only in the chrome, far from the pane the reader is looking at, and the sign column is the *sole* carrier of direction once there are no panes (DEC-059), so the pane names it. The sentence is composed in the Git layer and pushed in, never assembled here: `comparisonDescription` and `baseSummary` exist so that a sentence the interface makes can be checked |
 | `ds-notice` | An inline notice inside the document | **Yes** |
 | `#unrenderable` | Shown when the content is not text that can be displayed, and why | **Yes** |
 | `ds-hunk` | `@@ −12,4 +12,5 @@` above each change block in unified | No — orientation, not a difference. After a fold, the number columns say where each *line* is and this says where the *change* is |
