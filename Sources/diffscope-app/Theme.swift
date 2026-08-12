@@ -137,6 +137,16 @@ enum Theme {
     static let diffPaneMinimumWidth: CGFloat = 300
     static let windowWidth: CGFloat = 1400
     static let windowHeight: CGFloat = 860
+    /// A floor the window cannot go under, whoever is asking — the reader dragging a corner, or
+    /// AppKit satisfying a constraint. Hiding the split view for the empty state collapsed the
+    /// content to **69 pt**, which is the two bars and nothing between them: both buttons were laid
+    /// out at `y = −28`, off the top of a window that had shrunk under them, and the photograph of
+    /// the first screen a stranger meets came out as a 2800×138 strip holding only the caption.
+    static let windowMinimumWidth: CGFloat = 720
+    static let windowMinimumHeight: CGFloat = 420
+    /// The floor that actually holds the content view up. A split view has no height of its own, so
+    /// the drawer needs one — see the constraint's own note in `buildWindow`.
+    static let drawerMinimumHeight: CGFloat = 320
     static let emptyStateMaximumWidth: CGFloat = 460
     static let emptyStateTitleSize: CGFloat = 20
     /// The terminal pane (DEC-054). Starting height and floor, both as constraints so the divider

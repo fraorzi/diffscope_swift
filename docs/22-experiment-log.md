@@ -2442,3 +2442,53 @@ So the arm now **reports and does not gate**. It prints its numbers, where two r
 **Open, and the next thing to do here:** find why the probe disagrees with itself. The suspects are the order of `evaluateJavaScript` completions against `applyLayout`'s writes to `lastTimings`, and whether `readTimings` can observe a render other than the one it asked for. Until that is answered, **do not quote the numbers in M9-D as costs** — quote them as what one run of an instrument of unknown reliability reported.
 
 **What survives all of it**, because it does not depend on the timers: `projectSegments` is the only superlinear term in the composition, and DEC-050's node budget bounds its input. That was read off the code and is still true.
+
+# M9-H — the empty state photographed at last, the window server composites the web views, and DEC-068's delay was sized for the wrong thing
+
+**Date:** 2026-08-11 · **Method:** frames printed rather than reasoned about, then the window captured through the window server instead of `cacheDisplay`, then the pin guard's separation measured against the save cadence it competes with.
+
+## The empty state's picture had no empty state in it
+
+`empty.png` was **2800×138 px** — a strip holding three lines of caption and neither button. The arm that writes it asserted `!emptyState.isHidden`, which was true throughout. Step 41 had added that photograph specifically to see *whether a 1 px rim reads at all*, and the rim was never in it.
+
+Printing the frames answered it in one run:
+
+```
+empty-state=MISMATCH content=1400×69pt buttons=2 [539,-28 132×24] [683,-28 178×24] inside=false
+```
+
+Both buttons existed, were laid out, had size — and sat at **y = −28**, above a content view that had collapsed to **69 pt**: the title bar and the status bar with nothing between them.
+
+**The cause is not the snapshot.** `showEmptyState` hid the split view; the drawer is an `NSSplitView` and takes the height it is given rather than having one; with its content hidden the drawer's fitting height went to zero, and **the content view followed it down**. The empty state is pinned to that container, so its buttons went off the top.
+
+`window.contentMinSize` does **not** reach this, and trying it first was the useful mistake: it bounds the *window*, and the window was never what shrank. What fixes it is not hiding the split view at all — `emptyState` is added last, is opaque and is pinned to four edges, so it already covers what is underneath. Hiding it bought nothing and cost the layout its height. A minimum height on the drawer stays as a floor.
+
+**This is a product defect, not a test defect.** A reader who removes their last folder would have watched the window fold up to a strip.
+
+## The window server composites what `cacheDisplay` cannot
+
+Every full-window photograph this project has taken has a black rectangle where the diff is, because `cacheDisplay` cannot capture a `WKWebView` — so the surface the design is mostly about has never appeared in a picture of the window. `CGWindowListCreateImage` composites what is on screen, web views included:
+
+```
+snapshot=keyboard.png via=window-server 2800×1714px of 1400×857pt — the web views are in it
+```
+
+It needs screen-recording permission and does not always succeed — an occluded window has nothing composited to hand back, which is **T1-A's hazard again**, and the selftest is always occluded when launched from a terminal. So both paths remain and **every snapshot line states which one it used and how big the result was**. A picture that quietly changes meaning between runs is worse than one that admits what it is.
+
+Two false starts worth keeping. The blank-detector first called anything with **three or fewer** distinct sampled colours blank, and threw away the real capture of the empty state — a flat surface with a little text on it is legitimately almost one colour; what a denied permission returns is *exactly* one. And a 16×16 sampling grid on a 2800 px image is a 175 px stride, which walks straight past the only pixels that prove the picture is real.
+
+## DEC-068's delay was borrowed, not measured
+
+The confirming read was separated by `settleRetryDelay` = 20 ms, because that constant already existed. It is sized against a **whole save** (~11 ms measured). The window the separation must outlast is `truncate` → first byte: microseconds.
+
+Against a 30 ms save cadence, 20 ms meant two thirds of every attempt sat where a write could land, the retry loop ran to exhaustion, and the guard refused about **half** the pins — 42, 46, 48 and 52 of 100, with the last failing the floor that says a guard refusing everything is an outage. DEC-068's own consequences had estimated "three in ten".
+
+```
+20 ms · saves 30 ms apart · refused of 100:  42, 46, 48, 52
+ 5 ms · saves 30 ms apart · refused of 100:   6,  8,  9,  9
+both  · continuous rewrite · blended:         0 of 800
+```
+
+`settleConfirmDelay` is now its own constant at 5 ms. The guarantee is untouched and the cost falls from half the pins to about one in fifteen.
+
+**The generalisation, which is the point:** a constant that already exists is not a measurement. Borrowing one because it is nearby is how a number ends up sized for the wrong quantity — and it survived review here precisely because it looked like reuse rather than a choice.

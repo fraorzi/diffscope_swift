@@ -209,6 +209,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             backing: .buffered, defer: false
         )
         window.title = "DiffScope"
+        // Without this the window follows its content down: showing the empty state hides the split
+        // view, the drawer has nothing left to give it height, and the content collapses to the two
+        // bars — 69 pt — taking the empty state's buttons off the top of the screen with it. A
+        // reader who removes their last folder would have watched the window fold up.
+        window.contentMinSize = NSSize(width: Theme.windowMinimumWidth,
+                                       height: Theme.windowMinimumHeight)
         // The title bar is ours (the adopted design). The system draws the traffic lights and
         // nothing else; the row underneath them says which repository is open and where it is,
         // which is the first question a reader has and was previously only in a list row.
@@ -455,6 +461,16 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             drawer.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
             drawer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             drawer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            // The drawer has no height of its own — a split view takes the height it is given. So
+            // when the empty state hides the split view inside it, the drawer's fitting height goes
+            // to zero, and **the content view follows it down**: 1400×69 pt, the two bars with
+            // nothing between them. The empty state is pinned to that container, so its buttons
+            // were laid out at `y = −28`, off the top of the window, and the photograph of the
+            // first screen a stranger meets came out a 2800×138 strip holding only the caption.
+            //
+            // `window.contentMinSize` does not reach this: it bounds the *window*, and the window
+            // was never the thing that shrank.
+            drawer.heightAnchor.constraint(greaterThanOrEqualToConstant: Theme.drawerMinimumHeight),
             emptyState.topAnchor.constraint(equalTo: container.topAnchor),
             emptyState.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             emptyState.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -1963,29 +1979,111 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         state.repositories = []
         repoTable.reloadData()
         showEmptyState(problems: [])
+        window.contentView?.layoutSubtreeIfNeeded()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             let shown = !self.emptyState.isHidden
+            func buttons(in view: NSView) -> [NSButton] {
+                if let button = view as? NSButton { return [button] }
+                return view.subviews.flatMap(buttons(in:))
+            }
+            let found = buttons(in: self.emptyState)
+            let content = self.window.contentView?.bounds ?? .zero
+            // `emptyState.isHidden == false` was the whole of this arm, and it passed while the
+            // photograph came out **2800×138** — a strip holding the caption and neither button.
+            // The rim is a **1 px border**: it cannot be checked by any means except looking, so
+            // the arm now asserts the buttons are drawn, non-empty, and inside the picture that is
+            // about to be taken. Not hidden is not the same as on screen.
+            let drawn = found.filter { $0.frame.width > 1 && $0.frame.height > 1 }
+            let placed = drawn.map { $0.convert($0.bounds, to: nil) }
+            let inside = !placed.isEmpty && placed.allSatisfy { content.contains($0) }
+            let ok = shown && drawn.count == 2 && inside
             FileHandle.standardError.write(Data(
-                ("SELFTEST empty-state=\(shown ? "OK" : "MISMATCH") "
-                    + "buttons carry the design's rim\n").utf8))
-            self.windowSnapshot(named: "empty") { exit(shown ? 0 : 56) }
+                ("SELFTEST empty-state=\(ok ? "OK" : "MISMATCH") "
+                    + "content=\(Int(content.width))×\(Int(content.height))pt "
+                    + "buttons=\(drawn.count) "
+                    + placed.map { "[\(Int($0.minX)),\(Int($0.minY)) \(Int($0.width))×\(Int($0.height))]" }
+                        .joined(separator: " ")
+                    + " inside=\(inside)\n").utf8))
+            self.windowSnapshot(named: "empty") { exit(ok ? 0 : 56) }
         }
     }
 
+    /// A pixel grid coarse enough to be cheap and fine enough to catch a picture that is one
+    /// colour. Used to tell a real capture from the blank one a denied screen-recording permission
+    /// hands back without saying so.
+    private func looksBlank(_ image: CGImage) -> Bool {
+        let rep = NSBitmapImageRep(cgImage: image)
+        // 64 rather than 16 across. A sixteenth of 2800 px is a 175 px stride, which on the empty
+        // state — a large flat surface with three lines of text in the middle — walks straight past
+        // the only pixels that are not the background, and the real capture was thrown away as
+        // blank. The grid has to be finer than the smallest thing that proves the picture is real.
+        let stepX = max(1, rep.pixelsWide / 64)
+        let stepY = max(1, rep.pixelsHigh / 64)
+        var seen = Set<Int>()
+        for x in stride(from: 0, to: rep.pixelsWide, by: stepX) {
+            for y in stride(from: 0, to: rep.pixelsHigh, by: stepY) {
+                guard let colour = rep.colorAt(x: x, y: y) else { continue }
+                let key = Int(colour.redComponent * 255) << 16
+                    | Int(colour.greenComponent * 255) << 8
+                    | Int(colour.blueComponent * 255)
+                seen.insert(key)
+                // **One** colour, not three. The first version called anything with three or fewer
+                // distinct samples blank, and rejected the real capture of the empty state — a
+                // large flat surface with a little text on it is legitimately almost one colour.
+                // What a denied permission hands back is *exactly* one.
+                if seen.count > 1 { return false }
+            }
+        }
+        return true
+    }
+
+    /// **The window, as the window server composites it** — which is the only way to get the diff
+    /// and the chrome into one picture.
+    ///
+    /// `cacheDisplay` cannot capture a `WKWebView`. Every full-window photograph this project has
+    /// ever taken therefore has a black rectangle where the diff is, and the interface the design
+    /// is mostly about has never appeared in a picture of the window at all. Six rounds once went
+    /// into "why do the panes stop two thirds down" before anyone printed a frame; this is the same
+    /// blind spot from the other side.
+    ///
+    /// The window server needs screen-recording permission and says so by handing back nothing, or
+    /// something blank, rather than by failing — so both are checked, the method used is printed,
+    /// and the `cacheDisplay` picture remains the fallback **with its limitation stated in the log
+    /// line**. A snapshot that quietly changed meaning between runs would be worse than none.
     private func windowSnapshot(named name: String, then next: @escaping () -> Void) {
         guard let dir = ProcessInfo.processInfo.environment["DIFFSCOPE_SNAPSHOT_DIR"],
               let view = window.contentView else { next(); return }
-        let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds)
-        if let rep {
-            view.cacheDisplay(in: view.bounds, to: rep)
-            let url = URL(fileURLWithPath: dir).appendingPathComponent("\(name).png")
-            do {
-                try rep.representation(using: .png, properties: [:])?.write(to: url)
-                FileHandle.standardError.write(Data("SELFTEST snapshot=\(url.path)\n".utf8))
-            } catch {
-                FileHandle.standardError.write(
-                    Data("SELFTEST snapshot=FAILED \(url.path) — \(error)\n".utf8))
+        let url = URL(fileURLWithPath: dir).appendingPathComponent("\(name).png")
+        let expected = view.bounds.size
+        // Printed on every snapshot: `empty.png` came out 2800×138 and nobody could see that from
+        // the file name. A picture that says how big it is cannot silently become a strip.
+        let size = "\(Int(expected.width))×\(Int(expected.height))pt"
+
+        if let composited = CGWindowListCreateImage(
+            .null, .optionIncludingWindow, CGWindowID(window.windowNumber),
+            [.boundsIgnoreFraming, .bestResolution]
+        ), !looksBlank(composited) {
+            let rep = NSBitmapImageRep(cgImage: composited)
+            if let png = rep.representation(using: .png, properties: [:]),
+               (try? png.write(to: url)) != nil {
+                FileHandle.standardError.write(Data(
+                    ("SELFTEST snapshot=\(url.path) via=window-server "
+                        + "\(rep.pixelsWide)×\(rep.pixelsHigh)px of \(size) — the web views are in it\n").utf8))
+                next(); return
             }
+        }
+
+        guard let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { next(); return }
+        view.cacheDisplay(in: view.bounds, to: rep)
+        do {
+            try rep.representation(using: .png, properties: [:])?.write(to: url)
+            FileHandle.standardError.write(Data(
+                ("SELFTEST snapshot=\(url.path) via=cacheDisplay "
+                    + "\(rep.pixelsWide)×\(rep.pixelsHigh)px of \(size) — "
+                    + "the diff and terminal panes are black; grant screen recording for a real one\n").utf8))
+        } catch {
+            FileHandle.standardError.write(
+                Data("SELFTEST snapshot=FAILED \(url.path) — \(error)\n".utf8))
         }
         next()
     }
@@ -2171,7 +2269,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 + "or use Sources ▸ Remove Source."
         }
         emptyState.isHidden = false
-        splitView.isHidden = true
+        // **The split view is covered, not hidden.** `emptyState` is added to the container last
+        // and pinned to all four edges, so it is opaque and on top; hiding what is underneath buys
+        // nothing and costs the drawer its height, which the content view then follows down to the
+        // two bars. That is what put the empty state's buttons at `y = −28`.
         statusLabel.stringValue = problems.isEmpty ? "no folders chosen" : "no reachable sources"
     }
 
@@ -2199,7 +2300,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 noRepositoriesFoundMessage(paths: sources.map(\.path),
                                            depth: self.discovery.maximumDepth)
             self.emptyState.isHidden = false
-            self.splitView.isHidden = true
+            // Covered, not hidden — the same reason as in `showEmptyState`.
             self.statusLabel.stringValue = "no repositories found"
             return true
         }

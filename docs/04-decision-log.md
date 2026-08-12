@@ -2858,7 +2858,7 @@ Reopen if tabs turn out to want their own working directories *persisted* across
 
 ## DEC-068 — A pin's confirming read is separated from the first read in time
 
-- **Date:** 2026-08-11 · **Topic:** DEC-049's settle guard · **Status:** Accepted · **Amends DEC-049**
+- **Date:** 2026-08-11 · **Topic:** DEC-049's settle guard · **Status:** Accepted · **Amends DEC-049** · **Its delay corrected the same day — see the addendum at the end of this entry**
 
 ### Context
 
@@ -2952,3 +2952,22 @@ What is left after all of that is narrow, real, and easy to reach under DEC-037,
 ### Revisit trigger
 
 Reopen if the application ever has to decide identity for a path on a volume it cannot stat — a network mount that is offline, or a security-scoped bookmark that has not been resolved (OQ-035 makes that likely). The fallback is a guess, and that is the case where it would start mattering.
+
+### Addendum to DEC-068, 2026-08-11 — the separation is 5 ms, not 20, and reusing the retry delay was the error
+
+The decision above is unchanged: the confirming read is separated from the first in time. **What was wrong is the number, and why it was chosen.**
+
+`settleRetryDelay` is 20 ms and is sized against a **whole save** — one measured atomic replace spans ~11 ms. The separation inside a read has to outlast something else entirely: the window between `truncate` and the first byte of the rewrite, which is microseconds. Reusing the constant was convenient rather than measured, and this entry's consequences said the cost would be "about three pins in ten".
+
+Measured, it was **about five in ten**, and it put the suite on the floor of the arm that exists to object:
+
+```
+20 ms · saves 30 ms apart · refused of 100:  42, 46, 48, 52   ← the last one failed the >50% floor
+ 5 ms · saves 30 ms apart · refused of 100:   6,  8,  9,  9
+20 ms · continuous rewrite · blended:        0 of 800
+ 5 ms · continuous rewrite · blended:        0 of 800
+```
+
+Two thirds of every attempt sat inside a window a write could land in, so the retry loop ran to exhaustion and the pair was reported unstable. At 5 ms the guarantee is unchanged — **no blend in 800 reads under continuous rewriting** — and an ordinary burst of saves keeps **91–94%** of its pins instead of half.
+
+`ScopeReader.settleConfirmDelay` is now its own constant, so the two quantities cannot be confused again. **The general form: a constant that already exists is not a measurement, and borrowing one because it is nearby is how a number ends up sized for the wrong thing.**

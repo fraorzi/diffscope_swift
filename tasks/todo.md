@@ -1221,3 +1221,37 @@ whitespace and punctuation*, to avoid Markdown link syntax — and `⌃⌘]` is 
 failed immediately. Excluding `,` would have broken `⌘,` in the same way. The key position is now
 any character at all, and whether a token is a shortcut is decided by the map rather than by a guess
 about punctuation.
+
+## Step 49 — the first screen is photographed, the window server composites, and a borrowed constant is repaid
+
+- [x] `empty.png` was **2800×138** — a strip with the caption and neither button. Frames printed:
+      `content=1400×69pt buttons=2 [539,-28 …] [683,-28 …] inside=false`
+- [x] Cause: `showEmptyState` hid the split view, the drawer lost its height, and the **content view
+      followed it down**. Fixed by covering rather than hiding, with a drawer floor behind it
+- [x] The empty-state arm asserts the buttons are **drawn, non-empty and inside the picture**,
+      not merely `!isHidden`
+- [x] `windowSnapshot` asks the **window server** first, so the web views are in the picture, and
+      every snapshot line states its method and size
+- [x] DEC-068's separation moved from the borrowed 20 ms to a measured 5 ms — refusals during a
+      burst of saves fall from ~50% to ~7%, blends stay 0 in 800 reads
+
+### Step 49 — three ways this was the same mistake
+
+**A check that asserted the wrong noun.** `!emptyState.isHidden` was true the whole time the
+photograph was empty. Not hidden is not on screen, and the rim it was taken for is a 1 px border
+that no assertion can reach — only a picture can.
+
+**A fix aimed at the wrong object.** `window.contentMinSize` was the first attempt and did nothing,
+because it bounds the *window* and the window never shrank. The content view did, following its own
+children. Worth keeping in the record: the mistake named the real mechanism.
+
+**A constant borrowed instead of measured.** `settleRetryDelay` existed and was 20 ms, so DEC-068
+used it — but it is sized against a whole save, and what the separation must outlast is a truncate
+window of microseconds. It survived review because it looked like reuse rather than a choice.
+
+### Step 49 — what is still not true
+
+The window-server capture **does not always succeed**: an occluded window has nothing composited,
+and a selftest launched from a terminal is always occluded. Both paths remain and each picture says
+which one it used. So there is now a way to get chrome and diff into one image, but not a guarantee
+of one on every run.

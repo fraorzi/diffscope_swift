@@ -312,6 +312,16 @@ public struct ScopeReader: Sendable {
     /// inside the budget; a file genuinely being written without pause never settles, and that is
     /// reported rather than papered over.
     public static let settleRetryDelay: TimeInterval = 0.02
+    /// DEC-068's separation between a read and its confirmation — **a different quantity from the
+    /// retry spacing above, and it was a mistake to reuse that one for it.**
+    ///
+    /// The retry delay is sized against a whole save (~11 ms measured). What this one has to outlast
+    /// is the window between `truncate` and the first byte of the rewrite, which is microseconds.
+    /// Twenty milliseconds against a 30 ms save cadence meant two thirds of every attempt sat inside
+    /// a window a write could land in, and the guard refused **about half** the pins during an
+    /// ordinary burst of saves — measured 42, 46, 48 and 52 refused of 100, straddling the floor
+    /// that says a guard which refuses everything is an outage.
+    public static let settleConfirmDelay: TimeInterval = 0.005
 
     /// Identity and last-write time, taken either side of a read. Nanosecond `mtime` on APFS, so
     /// a write that overlapped the read moves it — re-reading and comparing *content* is not
@@ -366,7 +376,7 @@ public struct ScopeReader: Sendable {
                 // and it presents as *the whole file deleted*, which is the loudest way this
                 // product can be wrong. Spanning a window instead of an instant means a transient
                 // state has to persist to be believed, and a real one does.
-                Thread.sleep(forTimeInterval: ScopeReader.settleRetryDelay)
+                Thread.sleep(forTimeInterval: ScopeReader.settleConfirmDelay)
                 let confirmation = try readSide(source, in: repository)
                 if confirmation == bytes, stamp(of: url) == after { return (bytes, true) }
             }
