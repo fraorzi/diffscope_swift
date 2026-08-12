@@ -690,6 +690,17 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         rendererReady = true
+        // DEC-059 makes unified the default layout. The shell has always agreed — `sideBySide` is
+        // `false` from launch and the menu item drew itself unchecked — and **nobody ever told the
+        // page**, whose own default is `split`. So the reader got two panes side by side while
+        // every other part of the application said one, and the only thing that ever set the layout
+        // was the menu item they had to toggle twice to get the default back.
+        //
+        // The selftest could not catch it: its unified arm calls `diffscopeSetLayout("unified")`
+        // first and then asks what the layout is. A check that sets the thing it is about to read
+        // is asking what it asked for.
+        webView.evaluateJavaScript(
+            "window.diffscopeSetLayout(\"\(sideBySide ? "split" : "unified")\")") { _, _ in }
         if let pending = pendingModel { push(pending); pendingModel = nil }
         guard ProcessInfo.processInfo.environment["DIFFSCOPE_SELFTEST"] != nil else { return }
         let old = [UInt8]("const a = \"Z\u{0307}ABKA\";\n".utf8)
@@ -700,10 +711,24 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         push(json)
         webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
             let text = (value as? String) ?? "nil"
+            // The layout is asked for here, at the first render, **before anything has set it** —
+            // which is the only moment the *default* can be observed. Every later arm sets the
+            // layout it is about to inspect.
             let ok = text.contains("pinA:pinB") && text.contains("\u{0307}")
+                && text.contains("\"layout\":\"unified\"")
             FileHandle.standardError.write(Data("SELFTEST probe=\(ok ? "OK" : "MISMATCH") \(text.prefix(160))\n".utf8))
             if !ok { exit(4) }
-            self.runStructuralSelftest()
+            // The default has now been observed, which is the only thing that had to happen while
+            // it was untouched. Every arm below reads the **two-pane** DOM — `.cm-lineNumbers`,
+            // `.ds-gutter-changed`, `oldText`/`newText` — because they were all written while the
+            // application started in split by accident. `runUnifiedSelftest` is the one that tests
+            // the other layout, and it sets and restores it around itself.
+            //
+            // Setting it here rather than in each arm keeps the subject of every arm explicit:
+            // one place decides which layout the rest of the walk is about.
+            webView.evaluateJavaScript("window.diffscopeSetLayout(\"split\")") { _, _ in
+                self.runStructuralSelftest()
+            }
         }
     }
 

@@ -174,8 +174,42 @@ function decorationsFor(state, segments, side) {
 /// The unified document's decorations: the same marks over projected offsets, plus one line
 /// decoration per removed or added line. `Decoration.set` sorts, which matters here because a
 /// line decoration and a mark can start at the same offset and a builder would refuse them.
+/// Folds, projected into the composed document.
+///
+/// **They were missing entirely.** `decorationsForUnified` built marks and direction lines and
+/// nothing else, so a collapsed range — the one presentation act that puts content out of sight,
+/// and the one DEC-017 allows only because it states its count and opens on ⌘E — simply did not
+/// appear in unified. It went unnoticed because the shell never actually started in unified
+/// (DEC-059's default was never sent to the page), so the layout that hid folds was one nobody
+/// reached without pressing a key twice.
+///
+/// A fold is offered only where both sides are byte-equal, and unified emits exactly those regions
+/// as context **from the old side** — so the old range is the one to project, and it lands in the
+/// context run between two blocks.
+function foldsForUnified(state) {
+  const items = [];
+  const max = state.doc.length;
+  folds.forEach((fold, index) => {
+    if (expanded.has(index)) return;
+    for (const run of unifiedRuns.old) {
+      const from = Math.max(fold.oldStart, run.srcStart);
+      const to = Math.min(fold.oldEnd, run.srcEnd);
+      if (to <= from) continue;
+      const start = Math.max(0, Math.min(run.docStart + (from - run.srcStart), max));
+      const end = Math.max(start, Math.min(run.docStart + (to - run.srcStart), max));
+      if (end <= start) continue;
+      const widget = new FoldWidget(fold.lines, index, fold.label,
+                                    fold.kind === "formatting" ? "ds-fold-formatting" : "");
+      items.push({ from: start, to: end, deco: Decoration.replace({ widget, block: true }) });
+    }
+  });
+  return items;
+}
+
 function decorationsForUnified(state, segments) {
-  const items = markItems(state, segments).concat(directionDecorations(state));
+  const items = markItems(state, segments)
+    .concat(directionDecorations(state))
+    .concat(foldsForUnified(state));
   return Decoration.set(items.map(item => item.deco.range(item.from, item.to ?? item.from)), true);
 }
 

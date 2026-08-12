@@ -1255,3 +1255,33 @@ The window-server capture **does not always succeed**: an occluded window has no
 and a selftest launched from a terminal is always occluded. Both paths remain and each picture says
 which one it used. So there is now a way to get chrome and diff into one image, but not a guarantee
 of one on every run.
+
+## Step 50 — the default layout was never sent, and unified was missing two things because of it
+
+- [x] `didFinish` now tells the page which layout to use, so DEC-059's unified default actually
+      reaches the reader. Nothing had ever sent it: the renderer's own default is `split`, the
+      shell's `sideBySide` was `false`, and the two never spoke
+- [x] The **first** probe asserts the layout before anything sets it — the only moment a *default*
+      can be observed
+- [x] Folds are drawn in unified. `decorationsForUnified` built marks and direction lines and
+      nothing else, so a collapsed range did not exist in that layout at all
+- [x] The rest of the walk sets `split` explicitly, because those arms read the two-pane DOM
+
+### Step 50 — reported by the product owner, and every check had passed
+
+The window opened side by side while the menu said unified, DEC-059 said unified, and
+`27-…` §4a said the layout was built and outstanding nothing.
+
+**The unified arm could not have caught it.** It calls `diffscopeSetLayout("unified")` and then asks
+what the layout is — a check that sets the thing it is about to read is asking what it asked for.
+The same shape as the constraint constants in M9-A and the mode pill in M8-K, and the third time
+this project has found it.
+
+**And the defect hid two more behind it.** With unified never reached, nobody noticed that it draws
+no folds and no changed-line gutter marks. Folds are now projected through the old-side runs — the
+regions a fold covers are byte-equal, and unified emits exactly those as context from the old side,
+so the mapping is exact. The gutter marks stay a split feature: in unified the sign column carries
+per-line direction, which is the stronger indicator and is already asserted.
+
+**A default nobody sends is not a default.** Worth checking the others: anything the shell holds as
+initial state and the page holds independently is the same trap.
