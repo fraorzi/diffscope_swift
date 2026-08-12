@@ -1339,3 +1339,41 @@ does not exist here, and it is on the gap list rather than being a defect of its
 **One diagnostic earned its place twice:** logging `terminal.webView.frame` reported `1400×0` and
 looked like proof the drawer was shut, while saying nothing about the pane holding it. The host is
 what takes the space, so the host is what is printed.
+
+## Step 53 — the right margin and the bar that closes the pane
+
+- [x] `ds-note` after each line: `M1` and its pair on the other side, the disclosure name,
+      `formatting`, `reordered`, `uncertain`, and `inserted` / `removed` on a one-sided block
+- [x] `#diff-footer`: how many formatting differences and of what kind, how many lines are folded,
+      and an `Expand ⌘E` button that runs the **same** command the keystroke runs
+- [x] Both described in `24-design-contract.md` in the same commit that adds them — the contract
+      check refused the build until they were
+- [x] The formatting-collapse arm asserts the bar's text and the note, not only the fold markers
+
+### Step 53 — what the design asks for that the engine cannot say
+
+The adopted design writes **`wrapper removed`** in this margin. The engine has no such notion:
+`label`, `classification`, `group`, `disclosure` and `link` are the entire vocabulary (DEC-046,
+DEC-038). A margin that said *wrapper removed* would be the renderer making a claim the engine never
+made, which `24-…` §1 forbids outright — so it is **not** drawn, and the contract entry says why.
+
+`inserted` / `removed` **is** drawn, because it is derivable: a merged block whose old side is empty
+added lines and took none away.
+
+### Step 53 — the note is not at the right edge, and that was measured
+
+The design right-aligns these against the pane. That needs `position: relative` on `.cm-line`, and
+that rule **breaks CodeMirror's line measurement**: the gutter drifts out of step with the code —
+line 2's number eighteen pixels below line 2, gutter rows 33–56 px apart against a steady 30 px of
+content. Found by looking at the picture, confirmed by removing the rule and watching the numbers
+snap back.
+
+Alignment of the two number columns is how a reader says *where*; the note's exact position is not.
+So the note sits after the code, in the shape `ds-badge` already uses.
+
+### Step 53 — DEC-017's count now stays put
+
+Until this bar existed the grouped count lived on the **fold markers alone**, so a reader who had
+scrolled past them had no statement of how much had been grouped — while DEC-017 permits grouping
+*only while the count is shown*. The bar says it in one place that does not move, and the button
+calls `expandAll`, the same command ⌘E calls, so the two cannot come to disagree.

@@ -852,7 +852,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         push(json)
         webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
             let text = (value as? String) ?? "nil"
+            // DEC-017 allows grouping **only while the count is shown**, and until the footer
+            // existed that count lived on the fold markers alone — so a reader who had scrolled
+            // past them saw nothing. The bar is where it now stays put, so the bar is asserted.
             let grouped = !text.contains("\"formattingFoldMarks\":0") && text.contains("formatting-only changes")
+                && text.contains("formatting differences") && text.contains("unchanged lines folded")
+                // The note beside the line, from `group` on the segment (the adopted design).
+                && text.contains("\"formatting\"")
             FileHandle.standardError.write(
                 Data("SELFTEST formatting-collapse=\(grouped ? "OK" : "MISMATCH") groups=\(render.formattingCollapses.count) \(text.suffix(200))\n".utf8))
             if !grouped { exit(16) }

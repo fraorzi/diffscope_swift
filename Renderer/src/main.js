@@ -81,6 +81,27 @@ class FoldWidget extends WidgetType {
   ignoreEvent() { return false; }
 }
 
+/// A note at the end of a line, not at the right edge of the pane.
+///
+/// The adopted design right-aligns these against the pane. Doing that needs the line to be a
+/// containing block, and `position: relative` on `.cm-line` **breaks CodeMirror's line
+/// measurement**: the gutter drifted out of step with the code, line 2's number sitting eighteen
+/// pixels below line 2. Measured by removing the rule and watching the numbers snap back.
+///
+/// Alignment of the number columns is load-bearing — it is how a reader says *where* — and the
+/// note's exact position is not. So the note follows the code inline, in the shape `ds-badge`
+/// already uses for the same reason.
+class NoteWidget extends WidgetType {
+  constructor(text) { super(); this.text = text; }
+  eq(other) { return other.text === this.text; }
+  toDOM() {
+    const el = document.createElement("span");
+    el.className = "ds-note";
+    el.textContent = this.text;
+    return el;
+  }
+}
+
 class DisclosureWidget extends WidgetType {
   constructor(text) { super(); this.text = text; }
   eq(other) { return other.text === this.text; }
@@ -166,9 +187,58 @@ function markItems(state, segments) {
   return items;
 }
 
+/// The right margin (the adopted design). One short note per line, saying what the marks on it
+/// already mean but in words: which move a line belongs to, that a difference is invisible, that a
+/// change is formatting, that an alignment was not certain.
+///
+/// **Everything here is read off the model and nothing is invented.** The design also writes
+/// *wrapper removed* in this margin, and the engine has no such notion — `label`, `classification`,
+/// `group`, `disclosure` and `link` are the whole vocabulary (DEC-046, DEC-038). A margin that said
+/// *wrapper removed* would be the renderer making a claim the engine never made, which is the one
+/// thing `24-design-contract.md` §1 forbids outright.
+///
+/// A note is an **annotation of a mark that is already there**, never the only carrier of anything:
+/// the sign column, the underline and the texture all still say it (DEC-035).
+function noteItems(state, segments) {
+  const byLine = new Map();
+  const max = state.doc.length;
+  function add(line, text) {
+    const notes = byLine.get(line) || [];
+    if (!notes.includes(text)) notes.push(text);
+    byLine.set(line, notes);
+  }
+  for (const seg of segments) {
+    const from = Math.max(0, Math.min(seg.start, max));
+    if (seg.end <= from) continue;
+    const line = state.doc.lineAt(from).number;
+    // `link` pairs the two sides of one move and both sides carry the same value, so the same
+    // number appears on both — which is the whole point of printing it.
+    // `M1` upward, as the design numbers them. `link` is an identity, not an ordinal — nothing
+    // else displays it — so shifting it by one costs nothing and reads as a label rather than as
+    // an array index.
+    if (seg.label === "moved" && seg.link != null) add(line, "M" + (seg.link + 1));
+    if (seg.disclosure) add(line, seg.disclosure);
+    if (seg.group === "formatting-only") add(line, "formatting");
+    if (seg.group === "potentially-behavior-affecting") add(line, "reordered");
+    if (seg.uncertain) add(line, "uncertain");
+  }
+  const items = [];
+  for (const [number, notes] of byLine) {
+    if (number < 1 || number > state.doc.lines) continue;
+    const line = state.doc.line(number);
+    items.push({
+      from: line.to,
+      deco: Decoration.widget({ widget: new NoteWidget(notes.join(" · ")), side: 1 }),
+    });
+  }
+  return items;
+}
+
 function decorationsFor(state, segments, side) {
-  const items = markItems(state, segments).concat(foldsFor(state, side));
-  return Decoration.set(items.map(item => item.deco.range(item.from, item.to)), true);
+  const items = markItems(state, segments)
+    .concat(noteItems(state, segments))
+    .concat(foldsFor(state, side));
+  return Decoration.set(items.map(item => item.deco.range(item.from, item.to ?? item.from)), true);
 }
 
 /// The unified document's decorations: the same marks over projected offsets, plus one line
@@ -206,8 +276,27 @@ function foldsForUnified(state) {
   return items;
 }
 
+/// `inserted` / `removed` on a block that has only one side — the design writes it, and unlike
+/// *wrapper removed* it is derivable: a merged block whose old side is empty added lines and took
+/// none away. Block-level, so it goes on the block's first line rather than on every line of it.
+function blockNotes(state) {
+  const items = [];
+  for (const hunk of unifiedHunks) {
+    if (hunk.at > state.doc.length) continue;
+    const word = hunk.oldCount === 0 ? "inserted" : (hunk.newCount === 0 ? "removed" : null);
+    if (!word) continue;
+    items.push({
+      from: state.doc.lineAt(hunk.at).to,
+      deco: Decoration.widget({ widget: new NoteWidget(word), side: 1 }),
+    });
+  }
+  return items;
+}
+
 function decorationsForUnified(state, segments) {
   const items = markItems(state, segments)
+    .concat(noteItems(state, segments))
+    .concat(blockNotes(state))
     .concat(directionDecorations(state))
     .concat(foldsForUnified(state));
   return Decoration.set(items.map(item => item.deco.range(item.from, item.to ?? item.from)), true);
@@ -554,6 +643,13 @@ function updateTrack() {
 }
 link(left, right);
 link(right, left);
+
+// The same command the keystroke runs, not a second implementation of it — ⌘E and this button must
+// not be able to disagree about what expanding means.
+document.getElementById("diff-footer-expand")?.addEventListener("click", () => {
+  window.diffscopeCommand("expandAll");
+  if (lastModel) updateFooter(lastModel);
+});
 
 document.getElementById("track")?.addEventListener("input", event => {
   const position = Number(event.target.value);
@@ -1131,6 +1227,43 @@ window.diffscopeCommand = function (name) {
   }
 };
 
+/// The bar across the bottom of the pane (the adopted design): what was grouped away, and the one
+/// keystroke that opens it.
+///
+/// DEC-017 permits grouping **only while the count is shown**, and until now the count lived on the
+/// fold markers alone — so a reader who had scrolled past them had no idea anything was grouped.
+/// This says it in one place that does not move.
+///
+/// The wording follows the classifications actually present rather than the design's fixed
+/// *indentation only*: `whitespace` and `quote-style` are different claims and the engine
+/// distinguishes them (DEC-046), so the bar says which it found.
+function updateFooter(model) {
+  const bar = document.getElementById("diff-footer");
+  const text = document.getElementById("diff-footer-text");
+  if (!bar || !text) return;
+  if (model.payload.kind !== "text") { bar.hidden = true; return; }
+
+  let formatting = 0;
+  const kinds = new Set();
+  for (const side of [model.payload.old, model.payload.new]) {
+    for (const seg of side.segments) {
+      if (seg.group !== "formatting-only") continue;
+      formatting += 1;
+      if (seg.classification) kinds.add(seg.classification);
+    }
+  }
+  const hidden = (model.collapses || []).reduce((sum, fold) => sum + fold.lines, 0);
+
+  const parts = [];
+  if (formatting > 0) {
+    parts.push(`${formatting} formatting difference${formatting === 1 ? "" : "s"}`
+      + (kinds.size ? " — " + [...kinds].sort().join(", ") : ""));
+  }
+  if (hidden > 0) parts.push(`${hidden} unchanged lines folded`);
+  bar.hidden = parts.length === 0;
+  text.textContent = parts.join(" · ");
+}
+
 function groupCounts(model) {
   const counts = new Map();
   const moves = new Set();
@@ -1237,6 +1370,7 @@ window.diffscopeRender = function (json) {
   applyLayout(model);
   restoreAnchor(model.restore);
   updateTrack();
+  updateFooter(model);
 
   lastSummary = {
     ok: true,
@@ -1352,6 +1486,9 @@ window.diffscopeProbe = function () {
     addedLines: document.querySelectorAll(".ds-line-add").length,
     removedLines: document.querySelectorAll(".ds-line-del").length,
     formattingMarks: document.querySelectorAll(".ds-formatting").length,
+    notes: [...document.querySelectorAll(".ds-note")].map(el => el.textContent),
+    footer: document.getElementById("diff-footer")?.hidden === false
+      ? (document.getElementById("diff-footer-text")?.textContent || "") : "",
     foldMarks: document.querySelectorAll(".ds-fold").length,
     formattingFoldMarks: document.querySelectorAll(".ds-fold-formatting").length,
     foldLabels: [...document.querySelectorAll(".ds-fold")].map(el => el.textContent),

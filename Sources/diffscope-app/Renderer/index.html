@@ -118,6 +118,25 @@
                   border-right: var(--ds-hairline-width) solid var(--ds-border); }
   #right { border-right: none; }
   .cm-editor { height: 100%; background: var(--ds-code); color: var(--ds-plain); }
+
+  /* The right margin (the adopted design). A note annotates a mark that is already on the line —
+     the sign column, the underline and the texture all still carry the meaning (DEC-035), so this
+     may be clipped on a narrow pane without anything being lost. `position: relative` on the line
+     is what the note is placed against. */
+  .ds-note { margin-left: var(--ds-space-4); color: var(--ds-faint);
+             font-size: var(--ds-text-size-tiny); white-space: nowrap; user-select: none; }
+
+  /* Closes the pane the way the design does: what was grouped away, and one keystroke to open it. */
+  #diff-footer { flex: none; display: flex; align-items: center; justify-content: space-between;
+                 gap: var(--ds-space-4); padding: var(--ds-space-3) var(--ds-space-4);
+                 border-top: var(--ds-hairline-width) solid var(--ds-border);
+                 background: var(--ds-chrome);
+                 color: var(--ds-dim); font-size: var(--ds-text-size-small); }
+  #diff-footer[hidden] { display: none; }
+  #diff-footer button { font: inherit; color: var(--ds-text); background: var(--ds-bg);
+                        border: var(--ds-hairline-width) solid var(--ds-border);
+                        border-radius: var(--ds-radius-chip);
+                        padding: var(--ds-space-1) var(--ds-space-3); }
   .cm-editor .cm-scroller { overflow: auto; font: var(--ds-text-size) var(--ds-font); }
 
   #unrenderable { display: none; padding: var(--ds-space-6); white-space: pre-wrap;
@@ -277,6 +296,7 @@
     <div id="right"></div>
   </div>
   <input id="track" type="range" min="0" max="0" value="0" aria-label="Horizontal position">
+  <div id="diff-footer" hidden><span id="diff-footer-text"></span><button id="diff-footer-expand" type="button">Expand ⌘E</button></div>
   <div id="unified"></div>
   <div id="lens"></div>
   <div id="rendered"></div>
