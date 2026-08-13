@@ -2085,6 +2085,84 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 + "base=[\(Int(block.minX)),\(Int(block.minY)) \(Int(block.width))×\(Int(block.height))] "
                 + "\"\(baseBlock.toolTip ?? "")\"\n").utf8))
         guard ok else { exit(65) }
+        glassSelftest()
+    }
+
+    /// `28-…` item 6: the switches are made of the **system's own material**, not of a drawing that
+    /// looks like it.
+    ///
+    /// **The material cannot be photographed on this machine.** `cacheDisplay` renders an
+    /// `NSGlassEffectView` as a flat fill exactly as it renders a `WKWebView` as black, and the
+    /// window-server path needs screen-recording permission and an unoccluded window, which a
+    /// terminal-launched selftest is not. So this asserts what a picture could not settle anyway:
+    /// that the view is **real AppKit** and not something this project drew, that it covers the
+    /// chosen segment and *only* it, and that it is absent where a raised pill would be a lie.
+    ///
+    /// The second of those is not hypothetical. The first version handed the glass straight to
+    /// `NSGlassEffectContainerView.contentView`, which fills itself with the view it is given — so
+    /// the thumb became the size of the whole control and the picture showed one solid pill across
+    /// all four scopes with the labels behind it.
+    private func glassSelftest() {
+        guard #available(macOS 26, *) else {
+            FileHandle.standardError.write(Data(
+                "SELFTEST glass=SKIPPED this system has no NSGlassEffectView; the pill is drawn\n".utf8))
+            statusBarSelftest()
+            return
+        }
+        let controls: [(String, PillControl)] = [
+            ("scope", scopeControl), ("mode", modeControl),
+            ("lens", lensControl), ("layout", layoutControl),
+        ]
+        var failures: [String] = []
+        var described: [String] = []
+        for (name, control) in controls {
+            let report = control.glassReport
+            let box = control.bounds
+            let fits = report.frame.width > 1 && report.frame.height > 1
+                && report.frame.width < box.width - 1
+                && box.insetBy(dx: -1, dy: -1).contains(report.frame)
+            if !report.present { failures.append("\(name): no glass at all") }
+            if report.className != "NSGlassEffectView" {
+                failures.append("\(name): \(report.className), not the system's own")
+            }
+            if report.hidden { failures.append("\(name): glass present and not drawn") }
+            if !fits {
+                failures.append("\(name): thumb \(Int(report.frame.width))pt of a "
+                    + "\(Int(box.width))pt control")
+            }
+            // The one thing a flat capture cannot rule out: a chosen segment with no title on it.
+            // The label is inside the glass, which is where the API puts content and where no
+            // picture taken here can show it — so it is asked for by name, by frame and by
+            // ancestry rather than looked at.
+            let expected = control.segments.indices.contains(control.selectedSegment)
+                ? control.segments[control.selectedSegment].title : ""
+            if report.label != expected {
+                failures.append("\(name): glass says \"\(report.label)\", chosen is \"\(expected)\"")
+            }
+            if !report.labelInGlass { failures.append("\(name): the title is not inside the glass") }
+            if report.labelFrame.width < 1 || report.labelFrame.height < 1 {
+                failures.append("\(name): the title is \(Int(report.labelFrame.width))×"
+                    + "\(Int(report.labelFrame.height))pt")
+            }
+            described.append("\(name)=\(Int(report.frame.width))×\(Int(report.frame.height))"
+                + "@\(Int(report.frame.minX))\"\(report.label)\"")
+        }
+        // The control: a selection that cannot be chosen is never raised. Set it, read it, put it
+        // back — the dashed outline is what says *unavailable*, and glass under a dashed outline
+        // would read as *chosen and unavailable* at once.
+        let wasEnabled = scopeControl.glassReport.hidden == false
+        scopeControl.setEnabled(false, forSegment: scopeControl.selectedSegment)
+        scopeControl.layoutSubtreeIfNeeded()
+        let hiddenWhenDisabled = scopeControl.glassReport.hidden
+        scopeControl.setEnabled(true, forSegment: scopeControl.selectedSegment)
+        scopeControl.layoutSubtreeIfNeeded()
+
+        let ok = failures.isEmpty && wasEnabled && hiddenWhenDisabled
+        FileHandle.standardError.write(Data(
+            ("SELFTEST glass=\(ok ? "OK" : "MISMATCH") \(described.joined(separator: " ")) "
+                + "control: an unavailable choice is not raised=\(hiddenWhenDisabled) "
+                + "\(failures.joined(separator: " | "))\n").utf8))
+        guard ok else { exit(66) }
         statusBarSelftest()
     }
 
@@ -2119,13 +2197,21 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // The sentence, against the same function the suite asks — including the age, which is what
         // separates *watching* from *watching, and this is how old it is*.
         //
-        // **Against a second either side**, because the age is a clock: the label is written on the
-        // tick and read here, and the first version of this arm failed on `3s` against `4s`. That is
-        // M9-G's lesson pointed at my own assertion — a number taken across a boundary is a number
-        // about the timing.
+        // **Against every age the label could honestly be showing**, which is 0 up to the elapsed
+        // time. The age is a clock and the label is written *on a tick*: the arm's first version
+        // failed on `3s` against `4s` and was widened to a second either side, and that was still a
+        // window sized against a guess. It fails again here for the same reason with a bigger gap —
+        // the keyboard walk holds the run loop for 63 files, so no tick fires while it runs and the
+        // label read straight afterwards is several seconds behind the clock.
+        //
+        // What this arm is for is that the sentence **comes from `ChromeLabels.watcherStatus`**
+        // rather than from a string written by hand in the window (DEC-075). Bounding the set by
+        // the elapsed time keeps that whole and stops the check being about the scheduler: a label
+        // that has never been written, or one from an older refresh epoch, is still outside it.
         let seconds = lastRefresh.map { Int(Date().timeIntervalSince($0)) }
-        let acceptable = (seconds.map { [$0 - 1, $0, $0 + 1] } ?? [nil].compactMap { $0 })
+        let acceptable = (seconds.map { Array(0...max(0, $0 + 1)) } ?? [])
             .map { ChromeLabels.watcherStatus(watchState, refreshedSecondsAgo: $0) }
+            + (seconds == nil ? [ChromeLabels.watcherStatus(watchState, refreshedSecondsAgo: nil)] : [])
         let saidIt = acceptable.contains(watchLabel.stringValue)
             && watchLabel.stringValue.hasPrefix("● Watching")
             && watchLabel.stringValue.contains("refreshed")
@@ -2136,6 +2222,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 + "watch=\"\(watchLabel.stringValue)\"@\(Int(watch.maxX)) "
                 + "modes=[\(Int(modes.minX)),\(Int(modes.width))] centred=\(centred) "
                 + "layout=\(Int(layout.minX)) wrap=\(Int(wrap.minX)) "
+                // **Every term of `ok`, not three of six.** This arm printed `drawn` and `clear` and
+                // left `saidIt` and `didNotGrow` out, so a failure said `MISMATCH` and nothing about
+                // which claim had failed — the M9-C lesson (*if a check ever fails once, keep the
+                // whole output*) applied to the arm's own line.
+                + "saidIt=\(saidIt) didNotGrow=\(didNotGrow) legendWhole=\(legendWhole) "
+                + "expected=\(acceptable) "
                 + "legend=\"\(legendView?.stringValue ?? "nil")\" needs \(Int(legendNeeds))pt "
                 + "has \(Int(legendHas))pt drawn=\(drawn) clear=\(clear)\n").utf8))
         guard ok else { exit(69) }

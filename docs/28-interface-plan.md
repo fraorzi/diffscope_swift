@@ -89,10 +89,16 @@ The arm asks for the **round trip**, not for either direction: `2 → 0 → 2` f
 
 ### Tranche 3 — the controls (the owner's word: *liquid glass*)
 
-**6. Real glass, not an imitation** (DEC-077)
+**6. Real glass, not an imitation** (DEC-077) — **built, and one half of its acceptance test cannot be met on this machine**
 `NSGlassEffectView` is real AppKit on macOS 26: `contentView`, `cornerRadius`, `tintColor`, `style` (`.regular` / `.clear`), and **`NSGlassEffectContainerView` with `spacing`, which merges neighbouring glass views as they approach** — that is the morph the owner is asking for, and the system does it.
 The package targets `.macOS(.v13)`, so this goes behind `if #available(macOS 26, *)` with the drawn pill as the fallback. **Do not draw a fake blur on older systems** — the owner asked for the real thing or nothing.
 *Done when:* the three switches are glass on this machine, the fallback still draws on 13, and a picture of each is in the walkthrough.
+
+*How it landed.* **Four** switches, not three — scope, mode, lens and layout are all `PillControl`. The raised pill is an `NSGlassEffectView` with `style = .regular` and the chosen segment's title as its `contentView`, inside an `NSGlassEffectContainerView` whose `spacing` comes from `Theme.glassMergeSpacing`. Everything is behind `guard #available(macOS 26, *)`, the drawn pill is still the branch that runs below it, and a check refuses `NSVisualEffectView`, a blur filter or a blending mode anywhere in the chrome — the owner asked for the real thing or nothing.
+
+**`contentView` is *filled* by the view it is given, on both classes.** Handing the container the glass directly made the thumb the size of the whole control: one solid pill across all four scopes with the labels behind it. The container's `contentView` is a plain transparent host and the thumb is placed inside it by frame.
+
+**The picture cannot be taken here, and this is the gap to close with the owner.** `cacheDisplay` renders an `NSGlassEffectView` as a flat fill exactly as it renders a `WKWebView` as black, and the window-server path needs screen-recording permission and an unoccluded window, which a terminal-launched selftest is not. So the arm asserts what a photograph could not settle anyway — that the view is **real AppKit** (`NSGlassEffectView`, by class name), that it covers the chosen segment and only it, that it is not raised when that segment is unavailable, and that the title is inside the glass with the right words and a non-zero frame, which is the one failure a flat capture could be hiding. **Ask the owner for a screenshot of the scope row in both appearances.**
 
 **7. A switch shows one option, not all of them** (DEC-077)
 Clicking opens a popover with the rest. Applies to scope, mode, lens and layout.

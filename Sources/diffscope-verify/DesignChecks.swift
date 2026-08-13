@@ -127,6 +127,49 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
                shell.contains("chooseFolder.keyEquivalent = \"\\r\""))
     }
 
+    print("\n=== the switches are made of glass, or of nothing pretending to be (DEC-077) ===")
+    do {
+        let pill = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/PillControl.swift"),
+                                encoding: .utf8)) ?? ""
+        report("PillControl.swift exists", !pill.isEmpty)
+        // The real API, not a lookalike. `NSGlassEffectView` is AppKit's own on macOS 26 and the
+        // container is what merges neighbouring glass — the morph the owner asked for is the
+        // system's, and a project that wrote its own would be imitating a material again.
+        report("the thumb is the system's own material",
+               pill.contains("NSGlassEffectView()") && pill.contains("thumb.style = .regular"))
+        report("and it is inside a container, which is what merges neighbours",
+               pill.contains("NSGlassEffectContainerView()")
+                   && pill.contains("container.spacing = Theme.glassMergeSpacing"))
+        // The package targets macOS 13. Everything above is behind the availability gate and the
+        // drawn pill is still what runs below it.
+        report("it is gated on the system that has it",
+               pill.contains("guard #available(macOS 26, *) else { return }"))
+        report("and the drawn pill is still the fallback, not a deleted branch",
+               pill.contains("Theme.controlThumb.setFill()")
+                   && pill.contains("guard glassThumb == nil else { continue }"))
+
+        // **The owner asked for the real thing or nothing.** No blur, no vibrancy, no gradient
+        // standing in for a material the system does not have — on any of the three surfaces the
+        // chrome draws.
+        let appSources = ["PillControl.swift", "Theme.swift", "main.swift", "TerminalPane.swift",
+                          "ImageComparison.swift"]
+        var imitations: [String] = []
+        for name in appSources {
+            let text = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/\(name)"),
+                                    encoding: .utf8)) ?? ""
+            for word in ["NSVisualEffectView", "CIGaussianBlur", "blendingMode"]
+            where text.contains(word) { imitations.append("\(name): \(word)") }
+        }
+        report("nothing imitates the material where the system has none",
+               imitations.isEmpty, imitations.joined(separator: ", "))
+        report("negative control: an imitation would be caught",
+               "let v = NSVisualEffectView()".contains("NSVisualEffectView"))
+        // And the control for the gate: a use that is not behind `#available` is what would crash
+        // the fallback system rather than merely look wrong there.
+        report("negative control: an ungated use is caught",
+               !"let thumb = NSGlassEffectView()".contains("#available(macOS 26"))
+    }
+
     print("\n=== the two panes share one horizontal position (12-… §5.4) ===")
     do {
         let script = (try? String(contentsOf: rendererDir.appendingPathComponent("main.js"),

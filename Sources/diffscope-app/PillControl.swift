@@ -31,8 +31,32 @@ final class PillControl: NSView {
     var action: Selector?
 
     var selectedSegment: Int = 0 {
-        didSet { needsDisplay = true }
+        didSet { needsDisplay = true; layoutGlass() }
     }
+
+    // MARK: - Glass (DEC-077, `28-…` item 6)
+
+    /// The raised pill, as the **system's own material** where the system has one.
+    ///
+    /// `NSGlassEffectView` is real AppKit on macOS 26 and this is the whole of using it: the thumb
+    /// is a glass view whose `contentView` is the selected segment's label, so the text is rendered
+    /// *inside* the glass rather than under it — the header is explicit that only `contentView` is
+    /// guaranteed a place inside the effect, and a label added as a plain subview has no promised
+    /// z-order against it.
+    ///
+    /// The container is here for the reason its documentation gives — it batches sibling glass and
+    /// merges views that come within `spacing` of each other — and it is the seam `28-…` items 7
+    /// and 8 need: a popover's glass approaching this control's is the morph the owner asked for,
+    /// and the system does it rather than an animation this project would have to write.
+    ///
+    /// **Nothing imitates it below macOS 26.** The package targets `.macOS(.v13)`, where these
+    /// stored properties are `nil` and `draw(_:)` fills the pill exactly as it did before. A drawn
+    /// approximation of a material is the one thing the owner asked not to have.
+    private var glassContainer: NSView?
+    private var glassHost: NSView?
+    private var glassThumb: NSView?
+    private let glassLabel = NSTextField(labelWithString: "")
+    private let glassLabelHost = NSView()
 
     init(labels: [String]) {
         super.init(frame: .zero)
@@ -41,6 +65,81 @@ final class PillControl: NSView {
         translatesAutoresizingMaskIntoConstraints = false
         setContentHuggingPriority(.required, for: .horizontal)
         setContentCompressionResistancePriority(.required, for: .horizontal)
+        buildGlass()
+    }
+
+    private func buildGlass() {
+        guard #available(macOS 26, *) else { return }
+        glassLabel.alignment = .center
+        glassLabel.font = Theme.prose(Theme.textSizeSmall, weight: .semibold)
+        glassLabel.textColor = Theme.ink
+        glassLabelHost.addSubview(glassLabel)
+
+        let thumb = NSGlassEffectView()
+        thumb.cornerRadius = Theme.pillRadius - Theme.pillInset
+        thumb.style = .regular
+        thumb.contentView = glassLabelHost
+
+        // **`contentView` is filled by the view it is given, on both of these.** Handing the glass
+        // itself to the container made the thumb the size of the whole control: a solid pill across
+        // all four scopes with the labels behind it. `contentView` is the *host* of the glass, not
+        // the glass — the container's own words are "descendant views to merge together" — so a
+        // plain transparent view goes here and the thumb is placed inside it by frame.
+        let host = NSView()
+        let container = NSGlassEffectContainerView()
+        container.spacing = Theme.glassMergeSpacing
+        container.contentView = host
+        host.addSubview(thumb)
+
+        addSubview(container)
+        glassContainer = container
+        glassHost = host
+        glassThumb = thumb
+    }
+
+    /// The thumb is placed by hand rather than by constraints, for the reason `frame(ofSegment:)`
+    /// exists: a segment's width is its title's width, which Auto Layout would have to be told
+    /// about in a second place. The container fills the control and the thumb sits in it.
+    private func layoutGlass() {
+        guard let container = glassContainer, let host = glassHost, let thumb = glassThumb else { return }
+        container.frame = bounds
+        host.frame = bounds
+        let box = frame(ofSegment: selectedSegment)
+        thumb.frame = box
+        glassLabelHost.frame = NSRect(origin: .zero, size: box.size)
+        glassLabel.stringValue = segments.indices.contains(selectedSegment)
+            ? segments[selectedSegment].title : ""
+        let labelHeight = glassLabel.intrinsicContentSize.height
+        glassLabel.frame = NSRect(x: 0, y: (box.height - labelHeight) / 2,
+                                  width: box.width, height: labelHeight)
+        // A segment that cannot be chosen is never raised — the trough's dashed outline is what
+        // says so, and glass under a dashed outline would read as *chosen and unavailable*.
+        let selectable = segments.indices.contains(selectedSegment)
+            && segments[selectedSegment].enabled
+        container.isHidden = !selectable
+    }
+
+    /// The glass thumb's frame in the control's own coordinates, and whether it is drawn at all.
+    /// Read by the selftest: the material itself cannot be photographed on a machine without screen
+    /// recording — `cacheDisplay` does not capture it any more than it captures a `WKWebView` — so
+    /// what is asserted is that a **real** `NSGlassEffectView` exists, that it covers the selected
+    /// segment and nothing else, and that it is absent where it should be.
+    /// The label goes with it, because the one thing a flat capture cannot rule out is a chosen
+    /// segment whose title is not drawn at all: it lives *inside* the glass, which is where the
+    /// API asks for it and where nothing this project draws can be seen to put it.
+    var glassReport: (present: Bool, hidden: Bool, frame: NSRect, className: String,
+                      label: String, labelFrame: NSRect, labelInGlass: Bool) {
+        guard let thumb = glassThumb, let container = glassContainer else {
+            return (false, true, .zero, "none", "", .zero, false)
+        }
+        return (true, container.isHidden, thumb.frame, String(describing: type(of: thumb)),
+                glassLabel.stringValue, glassLabel.frame,
+                glassLabel.isDescendant(of: thumb) && !glassLabel.isHiddenOrHasHiddenAncestor)
+    }
+
+    override func layout() {
+        super.layout()
+        layoutGlass()
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { nil }
@@ -51,6 +150,10 @@ final class PillControl: NSView {
         guard segments.indices.contains(index) else { return }
         segments[index].enabled = enabled
         needsDisplay = true
+        // The glass follows: a segment that has just become unavailable must stop being raised in
+        // the same pass that starts drawing its dashed outline, or the control says *chosen* and
+        // *unavailable* at once. `needsDisplay` alone does not run `layout()`.
+        layoutGlass()
     }
 
     func setToolTip(_ tip: String?, forSegment index: Int) {
@@ -99,6 +202,10 @@ final class PillControl: NSView {
         for (index, segment) in segments.enumerated() {
             let box = frame(ofSegment: index)
             if index == selectedSegment, segment.enabled {
+                // Drawn **only where there is no glass to use** — macOS 25 and earlier. Above that
+                // the thumb is an `NSGlassEffectView` and drawing a second pill under it would put
+                // an opaque fill behind a material whose whole business is what is behind it.
+                guard glassThumb == nil else { continue }
                 let pill = NSBezierPath(roundedRect: box.insetBy(dx: 0, dy: 0),
                                         xRadius: Theme.pillRadius - Theme.pillInset,
                                         yRadius: Theme.pillRadius - Theme.pillInset)

@@ -1988,3 +1988,46 @@ the same fact in the matcher's words. The chip is gone: DEC-017's disclosed coun
 line it is on. Found by looking at the picture, which is the only place the two appeared together.
 
 1673 → 1680 checks.
+
+## Step 71 — `28-…` item 6: the switches are made of the system's glass
+
+- [x] the raised pill is `NSGlassEffectView` (`style = .regular`, `cornerRadius` from the pill
+      tokens) with the chosen segment's title as its `contentView`
+- [x] inside `NSGlassEffectContainerView`, `spacing` from `Theme.glassMergeSpacing` — the merge is
+      the system's, and it is the seam items 7 and 8 will need
+- [x] all of it behind `guard #available(macOS 26, *)`; the drawn pill still runs below that
+- [x] a check refuses `NSVisualEffectView`, a blur filter or a blending mode anywhere in the chrome
+- [x] a live arm: real AppKit by class name, covering the chosen segment and only it, not raised
+      when that segment is unavailable, title inside the glass with the right words
+
+### Step 71 — `contentView` is filled by what you give it
+
+Handing `NSGlassEffectContainerView.contentView` the glass view directly makes the glass the size of
+the container — the picture showed **one solid pill across all four scopes with the labels behind
+it**. The container's `contentView` is the *host* of the glass, not the glass: a plain transparent
+view goes there and the thumb is placed inside it by frame.
+
+### Step 71 — the material cannot be photographed on this machine
+
+`cacheDisplay` renders an `NSGlassEffectView` as a flat fill, exactly as it renders a `WKWebView` as
+black; the window-server path needs screen-recording permission **and** an unoccluded window, and a
+terminal-launched selftest is neither. So half of item 6's acceptance test cannot be met here and it
+is written down as unmet rather than declared done.
+
+What the arm asserts instead is what a photograph could not have settled: the class is AppKit's own,
+the thumb covers the chosen segment and nothing more, it is not raised when that segment is
+unavailable — and **the title is inside the glass, with the right words and a non-zero frame**,
+which is the one failure a flat capture could have been hiding. **Ask the owner for a screenshot of
+the scope row in both appearances.**
+
+### Step 71 — and the keyboard walk's own arm had been red
+
+`status-bar` was failing before any of this work — pre-existing on `410bc41`, and not mentioned in
+the handoff. It compares the watcher's sentence against `ChromeLabels.watcherStatus` for the current
+age **within a second either side**, and the keyboard walk holds the run loop for 63 files, so no
+tick fires while it runs and the label read straight afterwards is three seconds behind the clock.
+The window is now every age from zero to the elapsed time, which keeps what the arm is for — the
+sentence comes from `ChromeLabels` and not from a string written by hand — and stops it being a
+check about the scheduler. Its log line also printed three of `ok`'s six terms; it prints all six.
+
+1680 → 1688 checks.

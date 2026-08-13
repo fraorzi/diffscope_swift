@@ -133,6 +133,12 @@ enum Theme {
     static let pillInset: CGFloat = 2
     static let pillPadding: CGFloat = 12
 
+    /// How close two glass views have to be before `NSGlassEffectContainerView` merges them
+    /// (macOS 26, DEC-077). The system does the morph; this is the only number it takes, and it is
+    /// here rather than at the call site so the three switches cannot merge at three distances.
+    /// Sized against `pillPadding`: two controls a segment's padding apart read as one control.
+    static let glassMergeSpacing: CGFloat = 12
+
     /// A chip in a row: the ahead-count, a file's note. `--ds-border-strong` outlines the dashed
     /// one, which is the *unknown* count and has to read as a different kind of thing.
     static let borderStrong = dynamic(dark: hex(0x6c6c76), light: hex(0x8f8f99))
