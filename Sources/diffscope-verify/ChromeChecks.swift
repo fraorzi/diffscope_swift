@@ -64,34 +64,52 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
                    ChromeLabels.PaneHeaderText(caption: "", count: "48291")))
     }
 
-    print("\n=== every pill prints its key, and an empty scope says so (DEC-073) ===")
+    print("\n=== no keystroke is drawn in the chrome, and every one still works (DEC-077) ===")
     do {
-        // The map was visible only in the menu bar. A reader looking at the control had no way to
-        // learn its key without opening a menu — DEC-016 is about being able to *use* the keyboard,
-        // and this is about being able to find out that you can.
-        let scopeHints = ChromeLabels.pillHints(bindingIDs: ["scope.allLocal", "scope.unstaged",
-                                                            "scope.staged", "scope.base"])
-        report("the scope pills print the keys the map binds",
-               scopeHints == ["⇧⌘1", "⇧⌘2", "⇧⌘3", "⇧⌘4"], scopeHints.joined(separator: " "))
-        let modeHints = ChromeLabels.pillHints(bindingIDs: ["mode.structural", "mode.expanded",
-                                                           "mode.raw"])
-        report("and so do the mode pills, in the order DEC-065 numbers them",
-               modeHints == ["⌘1", "⌘2", "⌘3"], modeHints.joined(separator: " "))
-        let lensHints = ChromeLabels.pillHints(bindingIDs: ["lens.diff", "lens.blame", "lens.history"])
-        report("and the lens pills", lensHints == ["⌃⌘D", "⌃⌘B", "⌃⌘H"],
-               lensHints.joined(separator: " "))
+        // DEC-073 put the keys on the pills so the map would be discoverable. The owner asked for
+        // them off the screen, so the rule is inverted and **the intent is restated rather than
+        // dropped**: a keystroke may still be *composed* — a tooltip, the menu bar — and it must
+        // still come from `KeyboardMap`. What may not happen is a modifier run written by hand.
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        var offenders: [String] = []
+        for file in ["Sources/diffscope-app/main.swift", "Sources/diffscope-app/PillControl.swift",
+                     "Sources/DiffScopeShell/ChromeLabels.swift",
+                     "Sources/DiffScopeGit/Configuration.swift", "Sources/DiffScopeGit/Scopes.swift"] {
+            let source = (try? String(contentsOf: root.appendingPathComponent(file),
+                                      encoding: .utf8)) ?? ""
+            // The rule is about **copy the reader sees**. Three things are deliberately outside it:
+            // comments, which quote keys constantly; the selftest's own log lines, which are written
+            // to stderr for a developer; and the arm that enforces this very rule, whose character
+            // set is an instrument rather than a sentence. Named individually, so an exemption is a
+            // decision rather than a regular expression nobody can read.
+            var insideDiagnostic = false
+            for line in source.split(separator: "\n", omittingEmptySubsequences: false) {
+                let text = String(line)
+                if text.contains("SELFTEST") { insideDiagnostic = true }
+                if insideDiagnostic, text.contains(".utf8))") { insideDiagnostic = false; continue }
+                guard !insideDiagnostic else { continue }
+                guard !text.trimmingCharacters(in: .whitespaces).hasPrefix("//"),
+                      !text.contains("\"⌃⌥⇧⌘\""),
+                      text.contains("\"") else { continue }
+                if text.contains(where: { "⌃⌥⇧⌘".contains($0) }) {
+                    offenders.append("\(file): \(text.trimmingCharacters(in: .whitespaces))")
+                }
+            }
+        }
+        report("no modifier run is written by hand in any string the chrome shows",
+               offenders.isEmpty, offenders.prefix(3).joined(separator: " | "))
 
-        // Every hint drawn is a keystroke the map composes, checked as a set rather than one by one:
-        // a pill printing a key nothing binds teaches a reader a keystroke that does nothing.
-        let shortcuts = Set(KeyboardMap.bindings.map(\.shortcut))
-        report("no pill prints a key the map does not have",
-               (scopeHints + modeHints + lensHints).allSatisfy { shortcuts.contains($0) })
-        // The control. A binding that does not exist has to produce **nothing** rather than a
-        // plausible-looking string.
-        report("negative control: a hint for a binding the map does not have is empty",
-               ChromeLabels.pillHint(bindingID: "scope.invented").isEmpty)
+        // And the map itself is untouched — removing a hint is a promise that the keyboard still
+        // works, and the promise is worth a check on both sides.
+        report("the four scope keys are still bound",
+               ["scope.allLocal", "scope.unstaged", "scope.staged", "scope.base"]
+                   .allSatisfy { KeyboardMap.binding(id: $0)?.key.isEmpty == false })
+        report("and `12-…` §9 still has every row bound", KeyboardMap.unboundFunctions().isEmpty,
+               KeyboardMap.unboundFunctions().map(\.rawValue).joined(separator: ", "))
+        report("negative control: a hand-written modifier run is caught",
+               "let tip = \"press ⌘J\"".contains(where: { "⌃⌥⇧⌘".contains($0) }))
 
-        // The four scopes, and the third state the window could not draw: available and empty.
+        // The four scopes, and the third state the window draws: available and empty.
         report("an empty scope says which one it is and what is empty about it",
                ChromeLabels.scopeState(shortTitle: ComparisonScope.stagedVsHead.shortTitle,
                                        emptyDescription: ComparisonScope.stagedVsHead.emptyDescription)
@@ -100,58 +118,10 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
                Set(ComparisonScope.allCases.map(\.emptyDescription)).count
                    == ComparisonScope.allCases.count,
                ComparisonScope.allCases.map(\.emptyDescription).joined(separator: " | "))
-        // The pills' four words are the scopes' own, so the control and the sentence cannot come to
-        // call the same scope two things.
         report("the pill's word and the empty sentence's word are the same word",
                ComparisonScope.allCases.map(\.shortTitle)
                    == ["All local", "Unstaged", "Staged", "vs base"],
                ComparisonScope.allCases.map(\.shortTitle).joined(separator: " "))
-        report("negative control: the empty state is not the unavailable state's sentence",
-               ChromeLabels.scopeState(shortTitle: "Staged", emptyDescription: "nothing staged")
-                   != "Staged — no upstream to compare against")
-    }
-
-    print("\n=== the base is a block that says it can be changed (DEC-072) ===")
-    do {
-        let now = ISO8601DateFormatter().date(from: "2026-08-12T12:00:00Z")!
-        func ago(_ days: Int) -> String {
-            ISO8601DateFormatter().string(from: now.addingTimeInterval(-Double(days) * 86400))
-        }
-        // One composition, two presentations. The block draws the caption itself, so the sentence
-        // and the block must be the same string with a word in front of it — otherwise the row and
-        // the status line drift, which is what happened to the tester packet's keyboard map.
-        let detail = baseDetail(ref: "origin/master", chosenByUser: false,
-                                committerDate: ago(63), now: now)
-        report("the block's detail is the status line's sentence without its first word",
-               detail == "origin/master · newest commit 9 weeks old"
-                   && baseSummary(ref: "origin/master", chosenByUser: false,
-                                  committerDate: ago(63), now: now) == "base " + detail,
-               detail)
-        report("a ref the reader chose still says so in the block",
-               baseDetail(ref: "release", chosenByUser: true, committerDate: ago(1), now: now)
-                   == "release (yours) · newest commit 1 day old")
-        report("and an undetermined base is named rather than left blank",
-               baseDetail(ref: nil, chosenByUser: false, committerDate: nil, now: now)
-                   == "not determined")
-
-        let comparing = ChromeLabels.baseBlock(detail: detail, comparingAgainstBase: true)
-        let idle = ChromeLabels.baseBlock(detail: detail, comparingAgainstBase: false)
-        report("the block names itself", comparing.caption == "Base", comparing.caption)
-        // The substance of DEC-072: `newest commit 9 weeks old` beside `HEAD ↔ working tree` reads
-        // as a statement about what is on screen. The dashed rim says it is not — in the same shape
-        // the window already uses for an unavailable scope and an unknown count, so it survives a
-        // greyscale screenshot (DEC-035).
-        report("it is solid while the base is what is being compared", !comparing.dashed)
-        report("and dashed while it is not", idle.dashed)
-
-        // The keystroke on it is the map's, not a string typed beside it (DEC-071).
-        let shortcuts = Set(KeyboardMap.bindings.map(\.shortcut))
-        report("the keystroke drawn on the block is one the map composes",
-               shortcuts.contains(comparing.shortcut)
-                   && comparing.shortcut == KeyboardMap.binding(id: "sources.baseBranch")?.shortcut,
-               comparing.shortcut)
-        report("negative control: a keystroke the map does not have is not among them",
-               !shortcuts.contains("⌘J"))
     }
 
     print("\n=== the status line says what the watcher is doing, and prints the map's keys (DEC-075) ===")
@@ -184,34 +154,6 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // print a negative age, for the same reason `stalenessDescription` says *dated in the future*.
         report("negative control: a negative age is not printed as one",
                ChromeLabels.refreshedAgo(seconds: -5) == "just now")
-
-        // **The legend disagrees with the design, on purpose.** The design writes `⌥↑↓ change`;
-        // DEC-065 gives ⌥↑↓ to files and ⌘↑↓ to changes, and a legend printed from a picture rather
-        // than from the map is the tester packet's defect on a surface every reader sees.
-        let legend = ChromeLabels.keyLegend()
-        report("the legend prints the keys the map actually binds",
-               legend == "⌘↑↓ change · ⌥↑↓ file · ⌘⏎ open in editor", legend)
-        report("and not the key the design drew for changes", !legend.contains("⌥↑↓ change"), legend)
-
-        // Every modifier run in it is a shortcut the map composes — the same rule, and the same
-        // check, as the tester packet's.
-        let shortcuts = Set(KeyboardMap.bindings.map(\.shortcut))
-        let pattern = try! NSRegularExpression(pattern: "[⌃⌥⇧⌘]+[^ ]")
-        var unknown: [String] = []
-        for match in pattern.matches(in: legend,
-                                     range: NSRange(legend.startIndex..., in: legend)) {
-            guard let found = Range(match.range, in: legend) else { continue }
-            let token = String(legend[found])
-            // `⌘↑↓` is one run standing for two bindings, so both are asked for.
-            let candidates = token.hasSuffix("↑") || token.hasSuffix("↓")
-                ? [String(token.dropLast()) + "↑", String(token.dropLast()) + "↓"]
-                : [token]
-            if !candidates.allSatisfy({ shortcuts.contains($0) }) { unknown.append(token) }
-        }
-        report("every keystroke the legend prints is one the map composes", unknown.isEmpty,
-               unknown.joined(separator: " "))
-        report("negative control: a keystroke nothing binds would be caught",
-               !shortcuts.contains("⌥⌘↑"))
 
         report("the layout is offered as words, not as glyphs nobody can name",
                ChromeLabels.layoutTitles == ["Unified", "Side by side"],

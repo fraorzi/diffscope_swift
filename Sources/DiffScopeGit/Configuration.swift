@@ -132,7 +132,9 @@ public func stalenessDescription(of iso8601: String?, now: Date = Date()) -> Str
 /// reason `changedLines` lives in the engine.
 public func baseSummary(ref: String?, chosenByUser: Bool, committerDate: String?,
                         now: Date = Date()) -> String {
-    guard ref != nil else { return "base: not determined — choose one with ⇧⌘B" }
+    // No keystroke in the sentence (DEC-077). The menu path is discoverable by looking; a modifier
+    // run printed in prose is the thing the owner asked to have off the screen.
+    guard ref != nil else { return "base: not determined — choose one in Sources ▸ Set Base Branch" }
     return "base " + baseDetail(ref: ref, chosenByUser: chosenByUser,
                                 committerDate: committerDate, now: now)
 }

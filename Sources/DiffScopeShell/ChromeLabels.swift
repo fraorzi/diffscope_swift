@@ -73,20 +73,6 @@ public enum ChromeLabels {
     /// The scope row's own caption.
     public static let scopeCaption = "SCOPE"
 
-    /// The keystroke drawn on a pill (DEC-073), by the identifier of the binding that selects it.
-    ///
-    /// Empty for a binding the map does not have, which is the honest answer: a pill that printed a
-    /// key nothing binds would teach a reader a keystroke that does nothing. The check suite asks
-    /// for exactly that case.
-    public static func pillHint(bindingID: String) -> String {
-        KeyboardMap.binding(id: bindingID)?.shortcut ?? ""
-    }
-
-    /// The hints for a whole control, in the order its segments are drawn.
-    public static func pillHints(bindingIDs: [String]) -> [String] {
-        bindingIDs.map(pillHint(bindingID:))
-    }
-
     /// A scope that is available and empty (DEC-073): `Staged — nothing staged`.
     ///
     /// **The same shape as the unavailable state** the window already draws — `title — reason` — so
@@ -146,28 +132,6 @@ public enum ChromeLabels {
         case 3600..<86_400: return "\(seconds / 3600)h ago"
         default: return "\(seconds / 86_400)d ago"
         }
-    }
-
-    /// The keys the status line prints (DEC-075).
-    ///
-    /// **Composed from the map, and it disagrees with the design on purpose.** The design writes
-    /// `⌥↑↓ change`; DEC-065 gives `⌥↑↓` to *files* and `⌘↑↓` to changes. A legend printed from a
-    /// picture rather than from the map is the tester packet's defect on a surface every reader sees.
-    public static func keyLegend() -> String {
-        [arrowPair(upID: "change.previous", downID: "change.next", label: "change"),
-         arrowPair(upID: "file.previous", downID: "file.next", label: "file"),
-         KeyboardMap.binding(id: "openInEditor").map { "\($0.shortcut) open in editor" }]
-            .compactMap { $0 }
-            .joined(separator: " · ")
-    }
-
-    /// `⌘↑↓ change`: one modifier run, both arrows, one word. `nil` where the two directions do not
-    /// share their modifiers — two keys that differ deserve two entries, and inventing a pair would
-    /// print a keystroke nothing binds.
-    private static func arrowPair(upID: String, downID: String, label: String) -> String? {
-        guard let up = KeyboardMap.binding(id: upID), let down = KeyboardMap.binding(id: downID),
-              up.modifiers == down.modifiers, up.key == "↑", down.key == "↓" else { return nil }
-        return "\(up.modifiers.symbols)↑↓ \(label)"
     }
 
     /// The wrap toggle's own words (`12-…`, DEC-065's ⌥⌘W).

@@ -3268,3 +3268,48 @@ The binding surfaces are the extremes rather than the paper: `--ds-row-selected`
 ### Revisit trigger
 
 Reopen if a surface lighter than `--ds-control-thumb` is added to the dark appearance, or darker than `--ds-row-selected` to the light one. Both are the extremes this pair is sized against, and a new extreme moves the constraint rather than merely adding a row to the check.
+
+---
+
+## DEC-077 — The interface gets quieter: the reader is a frontend developer, not the tool's author
+
+- **Date:** 2026-08-13 · **Topic:** the product owner's second session with the built window · **Status:** Accepted · **Amends DEC-016, DEC-017, DEC-035, DEC-058, DEC-070, DEC-073; amends `24-…` §5's track rule**
+
+### Context
+
+The owner used the finished chrome and reported fourteen things. Read one by one they are a styling list; read together they are one sentence, and the owner wrote it themselves:
+
+> *"wyobraź sobie że tworzysz UI dla juniora ale frontenda a nie experta od algorytmów, diffów, gita"* — and, decisively: *"jeśli coś nie wiadomo czy mi się przyda jako info czy nie, to usuń, najwyżej jak będę miał chęć dodania to osobno poproszę."*
+
+This project has been building for the reader who wants to know **how the tool reached its answer**. `parser: parsed — tree-sitter tsx`, `confidence: high`, `mode: structural`, a keystroke printed on every control, a focus ring, a scroll track that stays visible while disabled — each of those is a decision with a rationale, and each was written for someone auditing the diff engine. The person using it wants to open a repository, look at what changed, and commit.
+
+**The trust apparatus is not the same thing as the trust display.** The invariants, the validator and the 1673 checks are what make the product's claim true; the chips are one way of *saying* it, and DEC-017 chose the loudest one available. That choice is what this entry revisits — not the claim.
+
+### Options considered
+
+1. **Keep everything and restyle it.** Rejected by the owner explicitly: the information density is the complaint, not the colours.
+2. **Remove every technical statement.** Rejected here, and it is the one place this entry pushes back: **INV-4 — *every fallback is marked as a fallback*** — is the core invariant made visible. A file that could not be parsed and is being shown as plain text must say so, or the product's central promise becomes unobservable. That sentence stays, in plain words.
+3. **Quiet by default, in the reader's language, with the detail available on request.** Chosen.
+
+### Final decision
+
+**Option 3.** Specifically, and each of these reverses something recorded:
+
+- **The three trust chips go** (`parser:`, `confidence:`, `mode:`). What replaces them is **nothing at all while everything is normal**, and one plain sentence when it is not: *this file is shown as plain text*, *some parts could not be matched confidently*. DEC-017's requirement is met by the sentence rather than by a permanent readout; DEC-058's parser state is computed exactly as before and is simply not printed while it says *parsed*.
+- **Keystrokes leave the interface** (DEC-073's hints, the status line's legend, the base block's `⇧⌘B`). The map is unchanged and the menu bar still draws it; the pills stop teaching it. A place to look them up belongs in Settings, later.
+- **The focus ring goes** (DEC-070's option 2, which was offered and declined then, and is chosen now). DEC-016's *visible focus* is carried by the selection itself.
+- **A change is a tint over the whole line, and a stronger tint on the bytes that changed** — no underlines. This touches DEC-035, which forbids colour alone, so the rule is restated rather than dropped: **the two tints must differ in luminance**, so the distinction survives greyscale, and the sign column and the gutter mark stay. Underlines were the shape carrier; they are also what makes a line hard to read, which is the complaint.
+- **The switches become popovers**: a control shows the chosen option, and the others appear when it is clicked.
+- **Glass, where the system has it.** `NSGlassEffectView` (macOS 26) is real API — `contentView`, `cornerRadius`, `tintColor`, `style`, and `NSGlassEffectContainerView` for merging neighbours. Under `if #available(macOS 26, *)`, with the drawn pill as the fallback, so nothing imitates a material it does not have.
+- **The horizontal track is hidden when there is nothing to scroll**, reversing `24-…` §5's *quietened, never removed*. The rule was written about a control a reader might need; this one **cannot be used**, and a dead control is worse than an absent one.
+
+### Consequences
+
+- **The window says less and the checks say the same.** Every fact removed from the screen is still computed and still asserted; what changes is who it is shown to.
+- **Six checks are re-expressed, not deleted** — the hint checks, the legend check, the mark-shape check. Each keeps its intent: a keystroke *drawn anywhere* must still be one the map composes, and a mark must still survive greyscale.
+- **The engine is untouched.** Nothing here changes what is compared, aligned or validated.
+- **DEC-017 is narrowed, not withdrawn.** A degradation is still stated; a normal file is now silent about the machinery that read it.
+
+### Revisit trigger
+
+Reopen the first point the moment a reader is surprised by an answer — the chips exist because a tool that aligns code structurally can be wrong in ways a reader cannot see, and *silent and right* and *silent and wrong* look identical. The sentence for a degradation is the floor, and it does not move.

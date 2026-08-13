@@ -81,6 +81,10 @@ enum Theme {
     /// row inside it, so a reader can see *which of the three* has the keyboard.
     static let focusRing = dynamic(dark: hex(0x0a84ff), light: hex(0x0064d2))
     static let focusRingWidth: CGFloat = 2
+    /// The bar marking the selected row (DEC-077). Three points, at the leading edge, in the
+    /// strongest ink — *which repository am I in* is a question the window has to answer from the
+    /// list itself, not only from the title bar.
+    static let selectedEdgeWidth: CGFloat = 3
 
     /// `--ds-button-rim` and `--ds-button-fill`. The empty state is the first screen a stranger
     /// meets, and its two buttons are the only place in the window where a control is the subject
@@ -191,6 +195,12 @@ final class SelectedRowView: NSTableRowView {
         let ring = NSBezierPath(rect: bounds.insetBy(dx: 0.5, dy: 0.5))
         ring.lineWidth = 1
         ring.stroke()
+        // **A bar at the leading edge** (DEC-077). The fill is one step of grey away from the panel
+        // it sits on — deliberately quiet, and the owner could not see which repository was open
+        // without reading the title bar. An edge is the strongest mark that costs no colour, and it
+        // is the one the lens already uses for work that is not committed.
+        Theme.ink.setFill()
+        NSRect(x: 0, y: 0, width: Theme.selectedEdgeWidth, height: bounds.height).fill()
     }
 }
 

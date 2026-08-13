@@ -1768,3 +1768,46 @@ the split has had its turn.
 `FilePane` was a new `NSView` subclass, and the suite refused the build until it was in
 `24-…` §3's chrome table. That check was written in step 56 against a table I had just filled in by
 hand; this is the first time it caught something I had not thought about.
+
+## Step 64 — the first tranche of DEC-077: the window says less, and three things that did not work now do
+
+- [x] **The focus ring is gone** — DEC-070's option 2, offered then and chosen now. The arm is
+      inverted: it asserts that *nothing* draws a ring, on the keyboard and after a click
+- [x] **Keystrokes are off the screen** — the pill hints, the status line's legend, the base block's
+      `⇧⌘B`, and one that had been there since M8: `no search results — ⌘F to search`
+- [x] **The dividers drag again**, and each pane header carries a chevron that folds it
+- [x] **The open repository is the selected row**, with a bar at its leading edge
+- [x] DEC-077 written first; 1673 → **1659 checks** (the hint and legend checks are gone; three new
+      ones took their place)
+
+### Step 64 — why the count went *down*, and what replaced it
+
+Fourteen checks went with the features they described. What replaced them keeps the intent:
+
+**A keystroke may still be composed — a tooltip, the menu bar — and it must still come from
+`KeyboardMap`. What may not happen is a modifier run written by hand.** The check reads every string
+in the five files that compose chrome copy and refuses one containing `⌃⌥⇧⌘`, with the selftest's own
+log lines and the arm's character set exempted by name rather than by a pattern nobody can read.
+
+It found one on its first run: `"no search results — ⌘F to search"`, sitting in the status line since
+M8. The features were removed by hand; the check found the one the hand missed.
+
+### Step 64 — the divider refused to move because the collapse made it obey
+
+The two pane widths are constraints at priority 999 so that ⌃⌘0 cannot be ignored — and that is
+exactly what refused a drag: the split moves the divider, the next layout pass restores the constant,
+and the pane snaps back. The owner saw the resize cursor and nothing else.
+
+`splitViewDidResizeSubviews` now writes the drawn widths **back into the constants**, guarded by a
+flag while a collapse is animating — otherwise the collapse writes its own intermediate widths back
+and fights itself. And because a divider is a thing you have to know to drag, each header carries a
+chevron pointing the way its pane will go.
+
+### Step 64 — `repoSelected=-1`
+
+The repository list had **no selected row at all** while a repository was open: the selection was set
+only when nothing was open, and every sweep replaces the snapshots with new objects. So after the
+first refresh the window was showing a repository's diff with nothing in the list saying which one —
+the owner's *"nie jest zaznaczone repo z którego aktualnie korzystam"*, and it is a defect rather
+than a styling gap. The sweep re-selects by path now, the arm asserts a selected row, and the row is
+marked by a **bar at its leading edge** as well as by a fill one step of grey from the panel.

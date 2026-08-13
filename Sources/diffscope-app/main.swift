@@ -66,7 +66,7 @@ final class AppState {
     var searchIndex: Int?
 }
 
-final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, WKNavigationDelegate, WKScriptMessageHandler {
+final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, NSSplitViewDelegate, WKNavigationDelegate, WKScriptMessageHandler {
     let state = AppState()
     let discovery = RepositoryDiscovery(maximumDepth: 2)
     let reader = RepositoryReader()
@@ -134,6 +134,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// M8-D's blank lists are what happens when only the string is checked.
     var repoHeaderBar: NSView!
     var fileHeaderBar: NSView!
+    /// The two collapse controls (DEC-077). Held because their glyph says which way the pane will go.
+    var repoCollapseButton: NSButton!
+    var fileCollapseButton: NSButton!
     var rendererReady = false
     var pendingModel: String?
     var watcher: RepositoryWatcher?
@@ -161,6 +164,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// how many files changed and how big each change is.
     var reposCollapsed = false
     var filesCollapsed = false
+    /// See `splitViewDidResizeSubviews`.
+    private var collapseInFlight = false
     var reposCollapseMenuItem: NSMenuItem?
     var filesCollapseMenuItem: NSMenuItem?
     var repoPaneWidth: NSLayoutConstraint?
@@ -263,10 +268,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // Labels and keys both from data (DEC-073): the four words are the scopes' own `shortTitle`,
         // and the four keys are the map's. Written out here, they were a second naming of the
         // scopes and a third copy of the keyboard map.
-        scopeControl = PillControl(
-            labels: ComparisonScope.allCases.map(\.shortTitle),
-            hints: ChromeLabels.pillHints(bindingIDs: ["scope.allLocal", "scope.unstaged",
-                                                       "scope.staged", "scope.base"]))
+        scopeControl = PillControl(labels: ComparisonScope.allCases.map(\.shortTitle))
         scopeControl.target = self
         scopeControl.action = #selector(scopeChanged)
         scopeControl.selectedSegment = 0
@@ -274,9 +276,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // Structural first, because it is the default and the mode a reader returns to — and
         // because the menu says ⌘1 Structural (DEC-065). A control whose first segment is Raw while
         // the first digit selects Structural is two orders for one set of three things.
-        modeControl = PillControl(
-            labels: PresentationMode.displayOrder.map(\.title),
-            hints: ChromeLabels.pillHints(bindingIDs: ["mode.structural", "mode.expanded", "mode.raw"]))
+        modeControl = PillControl(labels: PresentationMode.displayOrder.map(\.title))
         modeControl.target = self
         modeControl.action = #selector(modeChanged)
         modeControl.selectedSegment = PresentationMode.displayOrder.firstIndex(of: state.mode) ?? 0
@@ -311,10 +311,23 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         fileHeaderCaption = paneHeaderLabel()
         fileHeaderCount = paneHeaderLabel()
         fileHeaderCount.alignment = .right
-        let repoHeader = buildPaneHeader(caption: repoHeaderCaption,
-                                         trailing: buildAddSourceButton(),
+        // Each header carries the control that folds its own pane (DEC-077). ⌃⌘1 and ⌃⌘2 already
+        // did this; the owner could not find a way to do it with the mouse, and a divider that
+        // shows a resize cursor and refuses to move is worse than no affordance at all.
+        repoCollapseButton = buildCollapseButton(action: #selector(toggleRepositoriesPane),
+                                                 collapsed: reposCollapsed)
+        fileCollapseButton = buildCollapseButton(action: #selector(toggleFilesPane),
+                                                 collapsed: filesCollapsed)
+        let repoTrailing = NSStackView(views: [buildAddSourceButton(), repoCollapseButton])
+        repoTrailing.orientation = .horizontal
+        repoTrailing.spacing = Theme.space2
+        let fileTrailing = NSStackView(views: [fileHeaderCount, fileCollapseButton])
+        fileTrailing.orientation = .horizontal
+        fileTrailing.spacing = Theme.space2
+
+        let repoHeader = buildPaneHeader(caption: repoHeaderCaption, trailing: repoTrailing,
                                          surface: Theme.panelRepositories)
-        let fileHeader = buildPaneHeader(caption: fileHeaderCaption, trailing: fileHeaderCount,
+        let fileHeader = buildPaneHeader(caption: fileHeaderCaption, trailing: fileTrailing,
                                          surface: Theme.panelFiles)
         repoHeaderBar = repoHeader
         fileHeaderBar = fileHeader
@@ -402,9 +415,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // header; it lives here instead because a control in the webview cannot act — the page
         // receives calls, it does not make them — and a control that looks clickable and is not is
         // worse than one in a different place.
-        lensControl = PillControl(
-            labels: ["Diff", "Blame", "History"],
-            hints: ChromeLabels.pillHints(bindingIDs: ["lens.diff", "lens.blame", "lens.history"]))
+        lensControl = PillControl(labels: ["Diff", "Blame", "History"])
         lensControl.target = self
         lensControl.action = #selector(lensChanged)
         lensControl.selectedSegment = 0
@@ -520,6 +531,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             minimum.isActive = true
             minimumConstraints.append(minimum)
         }
+        // **The reader can drag the dividers again** (DEC-077). The two width constraints are held at
+        // 999 so a collapse cannot be ignored — and that is also what refused a drag: the split moves
+        // the divider, the next layout pass restores the constant, and the pane snaps back. The
+        // owner saw the resize cursor and nothing else. So the constants are **written back from the
+        // drawn widths** whenever the split resizes its own subviews, which is the only event that
+        // means *the reader moved this*.
+        split.delegate = self
         repoPaneWidth = widthConstraints[0]
         filePaneWidth = widthConstraints[1]
         repoPaneMinimum = minimumConstraints[0]
@@ -1786,6 +1804,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// **The click is the control.** A ring that is simply always drawn passes the first half of
     /// this arm perfectly, which is exactly what shipped: the ring was lit whenever a region held
     /// first responder, including for a reader who had touched nothing but the mouse.
+    /// DEC-077, and this arm is DEC-070's with its **intent inverted and stated**: the ring is gone,
+    /// so what has to be true is that *nothing* draws one — on the keyboard or after a click.
+    ///
+    /// Kept rather than deleted, because the ring is the kind of thing a later change puts back by
+    /// accident: `updateFocusRings` still runs on every selection change, and a single line setting
+    /// a border width would restore it silently.
     private func focusRingSelftest() {
         webView.evaluateJavaScript("JSON.stringify(window.diffscopeHeights())") { value, _ in
             FileHandle.standardError.write(Data(
@@ -1796,27 +1820,18 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         func ringWidths() -> [CGFloat] {
             [repoFocusRing, fileFocusRing, diffFocusRing].map { $0?.layer?.borderWidth ?? -1 }
         }
-        let lit = ringWidths()
-        let litSomewhere = lit.contains { $0 >= Theme.focusRingWidth }
-
-        // What a click does, without a click. A synthesized `NSEvent` sent through `sendEvent` does
-        // **not** traverse `addLocalMonitorForEvents`, so the monitor itself cannot be exercised
-        // from here — it is covered by a reader with a real mouse and nothing else. What this half
-        // asserts is the drawing, which is where the defect was: the ring used to be lit whenever a
-        // region held first responder, so it would fail here however the flag got cleared.
+        let onKeyboard = ringWidths()
         navigatingByKeyboard = false
         updateFocusRings()
         let afterClick = ringWidths()
-        let allDark = afterClick.allSatisfy { $0 == 0 }
-
-        let ok = litSomewhere && allDark
+        // Both states dark. The keyboard half is the one that used to be lit, so it is the half that
+        // proves the removal rather than merely agreeing with it.
+        let ok = onKeyboard.allSatisfy { $0 == 0 } && afterClick.allSatisfy { $0 == 0 }
         FileHandle.standardError.write(Data(
-            ("SELFTEST focus-ring=\(ok ? "OK" : "MISMATCH") "
-                + "keyboard=\(lit.map { String(format: "%.0f", $0) }.joined(separator: "/")) "
+            ("SELFTEST no-focus-ring=\(ok ? "OK" : "MISMATCH") "
+                + "on the keyboard=\(onKeyboard.map { String(format: "%.0f", $0) }.joined(separator: "/")) "
                 + "after a click=\(afterClick.map { String(format: "%.0f", $0) }.joined(separator: "/"))\n").utf8))
         guard ok else { exit(61) }
-        // Left as the reader would have it after a click, which is how the pictures below should
-        // look: no ring anywhere.
         scopeRowSelftest()
     }
 
@@ -1930,38 +1945,30 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         pillHintSelftest()
     }
 
-    /// DEC-073, in the window. The strings are checked headlessly; what the window answers is
-    /// whether the keys are **drawn** — a hint the control computed and then laid out at zero width
-    /// would pass every check in `runChromeChecks` — and whether an empty scope actually says so
-    /// when the reader presses its key.
+    /// DEC-077, in the window, and it is DEC-073's arm with its **intent restated**: the keys are no
+    /// longer printed anywhere, and every one of them still works.
+    ///
+    /// Both halves matter. Removing a hint is a promise that the keyboard is unchanged, and the only
+    /// way to keep that promise honest is to press the four keys the pills used to advertise.
     private func pillHintSelftest() {
-        let hints = scopeControl.segments.map(\.hint)
-        let expected = ChromeLabels.pillHints(bindingIDs: ["scope.allLocal", "scope.unstaged",
-                                                          "scope.staged", "scope.base"])
-        // The width has to have grown to hold them: `intrinsicContentSize` is what the control asked
-        // for and the frame is what it got, and a hint that is computed and clipped is a hint that
-        // is not there.
-        let asked = scopeControl.intrinsicContentSize.width
-        let drawn = scopeControl.frame.width
-        let roomForHints = drawn >= asked - 1
-
-        guard hints == expected, roomForHints else {
-            FileHandle.standardError.write(Data(
-                ("SELFTEST pill-hints=MISMATCH hints=\(hints) expected=\(expected) "
-                    + "asked=\(Int(asked))pt drawn=\(Int(drawn))pt\n").utf8))
-            exit(66)
+        func labels(in view: NSView) -> [String] {
+            (view as? NSTextField).map { [$0.stringValue] } ?? view.subviews.flatMap(labels(in:))
         }
-        // **The key each pill prints selects that pill.** A hint is a promise about a keystroke, and
-        // the four are pressed one after another rather than one being taken as evidence for the
-        // rest — the first attempt at this arm pressed ⇧⌘3 and landed on Raw.
+        // Every visible string in the two bars the controls live in. A keystroke is a modifier run
+        // followed by a character, which is what `KeyboardBinding.shortcut` composes.
+        let onScreen = (labels(in: scopeBar) + labels(in: statusBar)).filter { !$0.isEmpty }
+        let printed = onScreen.filter { text in
+            text.contains(where: { "⌃⌥⇧⌘".contains($0) })
+        }
+        let silent = printed.isEmpty
+
         pressEachScopeHint(index: 0, reached: []) { reached in
-            let ok = reached == ComparisonScope.allCases
+            let ok = silent && reached == ComparisonScope.allCases
             FileHandle.standardError.write(Data(
-                ("SELFTEST pill-hints=\(ok ? "OK" : "MISMATCH") hints=\(hints.joined(separator: " ")) "
-                    + "asked=\(Int(asked))pt drawn=\(Int(drawn))pt "
+                ("SELFTEST no-keys-on-screen=\(ok ? "OK" : "MISMATCH") "
+                    + "printed=\(printed.joined(separator: " | ")) "
                     + "reached=\(reached.map(\.shortTitle).joined(separator: ","))\n").utf8))
             guard ok else { exit(66) }
-            // Back to the scope everything below this arm was written against.
             guard self.press(key: "1", modifiers: [.shift, .command]) else { exit(66) }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.paneHeaderSelftest() }
         }
@@ -2009,14 +2016,18 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // 72 here. That is the mistake this line exists to catch.
         let counted = fileHeaderCount.stringValue == "\(files)" && files == state.fileRows.compactMap(\.file).count
 
-        let ok = spanned && tall && worded && counted
+        // The open repository has to be the selected row: a sweep replaces the snapshots, and until
+        // DEC-077 nothing re-selected, so the list said nothing about which repository was open.
+        let repositorySelected = state.repositories.isEmpty || repoTable.selectedRow >= 0
+        let ok = spanned && tall && worded && counted && repositorySelected
         FileHandle.standardError.write(Data(
             ("SELFTEST pane-headers=\(ok ? "OK" : "MISMATCH") "
                 + "repos=\"\(repoHeaderCaption.stringValue)\"@\(Int(repoBar.width))×\(Int(repoBar.height)) "
                 + "of pane \(Int(repoPane.width)) "
                 + "files=\"\(fileHeaderCaption.stringValue)\" count=\"\(fileHeaderCount.stringValue)\""
                 + "@\(Int(fileBar.width))×\(Int(fileBar.height)) of pane \(Int(filePane.width)) "
-                + "rows=\(state.fileRows.count) filesInScope=\(files)\n").utf8))
+                + "rows=\(state.fileRows.count) filesInScope=\(files) "
+                + "repoSelected=\(repoTable.selectedRow)\n").utf8))
         guard ok else { exit(64) }
         collapseSelftest()
     }
@@ -2871,6 +2882,26 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         return menu
     }
 
+    /// The chevron that folds a pane. The glyph is the direction the pane will move, so the control
+    /// says what it will do rather than what state it is in — which is the one thing a reader cannot
+    /// work out from a collapsed rail.
+    private func buildCollapseButton(action: Selector, collapsed: Bool) -> NSButton {
+        let button = NSButton(title: collapsed ? "»" : "«", target: self, action: action)
+        button.isBordered = false
+        button.font = Theme.font(Theme.textSizeSmall, weight: .semibold)
+        button.contentTintColor = Theme.inkFaint
+        button.setButtonType(.momentaryChange)
+        button.translatesAutoresizingMaskIntoConstraints = false
+        return button
+    }
+
+    private func updateCollapseButtons() {
+        repoCollapseButton?.title = reposCollapsed ? "»" : "«"
+        fileCollapseButton?.title = filesCollapsed ? "»" : "«"
+        repoCollapseButton?.toolTip = reposCollapsed ? "Show the repository list" : "Fold the repository list"
+        fileCollapseButton?.toolTip = filesCollapsed ? "Show the file list" : "Fold the file list"
+    }
+
     @objc private func showAddSourceMenu(_ sender: NSButton) {
         sourceMenu(additionsOnly: true).popUp(
             positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + Theme.space2), in: sender)
@@ -2918,9 +2949,6 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         left.spacing = Theme.space4
 
         // Right: the layout, the wrap switch, and the keys that move the reader around.
-        // **No key on this one.** ⌥⌘→ is a *toggle* between the two (DEC-059), not two bindings, and
-        // printing the same keystroke on both segments reads as two keys that happen to be equal —
-        // besides costing the legend beside it the width it needs to be drawn in full.
         layoutControl = PillControl(labels: ChromeLabels.layoutTitles)
         layoutControl.selectedSegment = sideBySide ? 1 : 0
         layoutControl.target = self
@@ -2934,15 +2962,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         wrapButton.state = wrapEnabled ? .on : .off
         wrapButton.toolTip = KeyboardMap.binding(id: "wrap")?.shortcut
 
-        let legend = NSTextField(labelWithString: ChromeLabels.keyLegend())
-        legend.font = Theme.font(Theme.textSizeTiny)
-        legend.textColor = Theme.inkFaint
-        legend.lineBreakMode = .byTruncatingTail
-        // The legend is the first thing to give way in a narrow window: the two controls beside it
-        // are aimed at, and it is read once and remembered.
-        legend.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        let right = NSStackView(views: [layoutControl, wrapButton, legend])
+        // The key legend has gone with the hints (DEC-077). The menu bar is where the map lives; a
+        // status line that recites it is three lines of text a reader stops seeing after a day.
+        let right = NSStackView(views: [layoutControl, wrapButton])
         right.orientation = .horizontal
         right.alignment = .centerY
         right.spacing = Theme.space6
@@ -3148,8 +3170,17 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 // said anything. Selecting after the summary, not before, so that whatever the
                 // selection has to say — an unavailable scope, for instance — is what stays on
                 // screen rather than being overwritten by the sweep's own line.
-                if self.state.selectedRepository == nil, !outcome.snapshots.isEmpty {
-                    self.repoTable.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+                // **The open repository is selected in the list** (DEC-077). A sweep replaces every
+                // snapshot with a new object, and the selection was only ever set when there was no
+                // repository open — so after the first refresh the list had *no* selected row while
+                // the window was showing a repository's diff, and the only thing saying which one
+                // was the title bar. Measured: `repoSelected=-1` on a window with 63 changed files.
+                let openPath = self.state.selectedRepository?.url.standardizedFileURL.path
+                let row = outcome.snapshots.firstIndex {
+                    $0.url.standardizedFileURL.path == openPath
+                } ?? (outcome.snapshots.isEmpty ? nil : 0)
+                if let row, self.repoTable.selectedRow != row {
+                    self.repoTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 }
             }
         }
@@ -3270,7 +3301,28 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         applyCollapses()
     }
 
+    /// `NSSplitViewDelegate`. A drag ends here: the split has already moved the divider and set the
+    /// frames, and this makes the constraints agree with what the reader did rather than undoing it.
+    ///
+    /// Guarded by `applyingCollapse`, because a collapse resizes the subviews too — writing the
+    /// animated intermediate widths back into the constants would make the collapse fight itself.
+    func splitViewDidResizeSubviews(_ notification: Notification) {
+        guard !applyingCollapse, (notification.object as? NSSplitView) === splitView else { return }
+        let widths = splitView.arrangedSubviews.map(\.frame.width)
+        guard widths.count == 3 else { return }
+        if !reposCollapsed, widths[0] > Theme.paneMinimumWidth { repoPaneWidth?.constant = widths[0] }
+        if !filesCollapsed, widths[1] > Theme.paneMinimumWidth { filePaneWidth?.constant = widths[1] }
+    }
+
+    /// True while `applyCollapses` is moving the dividers itself.
+    private var applyingCollapse: Bool {
+        get { collapseInFlight }
+        set { collapseInFlight = newValue }
+    }
+
     private func applyCollapses() {
+        applyingCollapse = true
+        defer { DispatchQueue.main.async { self.applyingCollapse = false } }
         // DEC-064: the pane moves, unless the reader has asked the system for less motion — in
         // which case it is simply the other width, with nothing in between. The system setting is
         // the authority; there is no preference of our own to disagree with it.
@@ -3286,6 +3338,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
         conventionLabel.isHidden = reposCollapsed
         updatePaneHeaders()
+        updateCollapseButtons()
         repoTable.reloadData()
         fileTable.reloadData()
         // The dividers are moved through the split view's own API as well as by constraint.
@@ -3936,16 +3989,16 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     ///
     /// DEC-016 asks for full keyboard operation with the focus *visible*, and that is unchanged:
     /// the ring appears on the first keystroke and stays for as long as the keyboard is in use.
+    /// **No ring at all** (DEC-077). DEC-070 narrowed it to keyboard navigation and the owner asked
+    /// for it to go entirely — DEC-070's option 2, offered then and declined, chosen now. DEC-016's
+    /// *visible focus* is carried by the selected row, which is drawn whether or not the region has
+    /// the keyboard.
+    ///
+    /// Kept as a method rather than deleted at its call sites: `navigatingByKeyboard` still says
+    /// whether the reader is on the keyboard, and the selftest asserts that **nothing draws a ring**.
     private func updateFocusRings() {
-        let focused = window.firstResponder
-        for (view, owner) in [(repoFocusRing, repoTable as NSResponder),
-                              (fileFocusRing, fileTable as NSResponder),
-                              (diffFocusRing, webView as NSResponder)] {
-            guard let view else { continue }
-            view.wantsLayer = true
-            view.layer?.borderWidth =
-                (navigatingByKeyboard && focused === owner) ? Theme.focusRingWidth : 0
-            view.layer?.borderColor = Theme.focusRing.cgColor
+        for view in [repoFocusRing, fileFocusRing, diffFocusRing] {
+            view?.layer?.borderWidth = 0
         }
     }
 
@@ -4156,7 +4209,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// its line.
     private func stepHit(by delta: Int) {
         guard !state.searchHits.isEmpty else {
-            statusLabel.stringValue = "no search results — ⌘F to search"
+            statusLabel.stringValue = "no search results"
             return
         }
         let count = state.searchHits.count
