@@ -136,7 +136,7 @@ func runDegradationChecks(_ report: (String, Bool, String) -> Void) {
         check("the disclosure explains the discrepancy, not merely the filter",
               notice.contains("git status") && notice.contains("git diff"), notice)
         check("and still says what remains trustworthy",
-              notice.contains("All textual differences are shown"), notice)
+              notice.contains("Every difference in it is still shown"), notice)
 
         // The state DEC-041 was written about, asserted rather than assumed: git's own two tools
         // disagree here, which is why the file list and the diff view can look inconsistent.

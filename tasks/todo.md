@@ -1961,3 +1961,30 @@ markup**, which is where the one remaining printed keystroke was. A check now re
 in `index.html`, with comments stripped first and that label as its negative control.
 
 1666 → 1672 checks.
+
+## Step 70 — `28-…` item 5: the jargon goes, and INV-4 keeps its one sentence
+
+- [x] `parser:`, `confidence:` and `mode:` are not drawn — every one of them still computed, still
+      encoded, still asserted in `TrustSurfaceChecks`
+- [x] `fallbackNotice` / `discardedNotice` reworded: *This file is shown as plain text — <why>.
+      Every difference in it is still shown.* — `13-…` §6's three parts, DEC-077's words
+- [x] `ParserStateReport.plainSentence` for the one case with no notice behind it: a partial parse
+- [x] confidence speaks only below the floor, in the reader's words
+- [x] the structural selftest arm is **inverted** — it now asserts the chips are absent
+- [x] `12-…` §5.2, `13-…` §6, `25-…`, `24-…` and `28-…` item 5
+
+### Step 70 — the fallback was saying one thing three times
+
+A file that could not be read as code drew the fallback notice, **and** `parser: not parsed — …`,
+**and** `mode: structural — showing raw`. Three overlapping wordings of one fact, each in the
+vocabulary of the part of the machine that produced it. It is one sentence now, and `23b-…` §2's
+defect — the mode pill reporting the selection alone — cannot recur, because the pill is not drawn.
+
+### Step 70 — and the new sentence immediately duplicated an old chip
+
+`2 parts of this file could not be matched confidently` landed beside `uncertain: 2 shown`, which is
+the same fact in the matcher's words. The chip is gone: DEC-017's disclosed count is about
+**grouping**, which hides something, and an uncertain alignment hides nothing — it is marked on the
+line it is on. Found by looking at the picture, which is the only place the two appeared together.
+
+1673 → 1680 checks.

@@ -98,12 +98,14 @@ Nothing uses colour to carry meaning — deliberately, so it still works in a sc
 
 ## What the grey pills mean
 
-If the only pill says `mode: structural`, everything went normally.
+**If there are no pills, everything went normally.** That is the change to look for since the last packet: the window used to report `parser: parsed — tree-sitter tsx`, `confidence: high` and `mode: structural` on every file it opened, and now it says nothing at all unless something is worth saying.
 
 | Pill | Means |
 |---|---|
-| `Structural analysis unavailable — …` | It could not do the clever version for this file and says why. **It fell back to a plain diff and all differences are still shown** |
-| `Structural analysis discarded — it failed its own checks` | It did the clever version, checked its own work, found a mistake, threw it away and showed you the plain diff. Rare — worth reporting |
+| `This file is shown as plain text — …` | It could not do the clever version for this file and says why. **You are looking at a plain diff and every difference is still shown** |
+| `Part of this file is shown as plain text — …` | Most of the file got the clever version and a named part of it did not. The parts that did not are marked in the diff |
+| `This file is shown as plain text — the structural reading failed the tool's own checks` | It did the clever version, checked its own work, found a mistake, threw it away and showed you the plain diff. Rare — worth reporting |
+| `N parts of this file could not be matched confidently` | It lined the two versions up but is not sure about those parts. They are marked |
 | `coverage not verified` | It could not double-check its own output, usually because the two versions are wildly different. **Not verified is not the same as wrong** |
 | `no structural changes; N formatting differences` | Everything that changed here is formatting |
 | `formatting-only: 12 shown` | How much was grouped — grouping is only allowed because the count is shown |

@@ -74,10 +74,18 @@ The arm asks for the **round trip**, not for either direction: `2 → 0 → 2` f
 
 *And it closed DEC-077 in the one place that had been missed.* The button's label was `Expand ⌘E`. The keystroke rule was written about the AppKit chrome and `ChromeLabels`, so nothing was looking at the webview's own markup; a check now refuses a modifier run in it, with that label as its control.
 
-**5. The jargon goes** (DEC-077, narrows DEC-017 and DEC-058)
+**5. The jargon goes** (DEC-077, narrows DEC-017 and DEC-058) — **landed**
 `parser: parsed — tree-sitter tsx`, `confidence: high`, `mode: structural` leave the pane. **Nothing replaces them while everything is normal.**
 *The floor, and it does not move:* when a file could not be parsed and is being shown as plain text, the pane says so **in plain words** — *shown as plain text*, not *fallback (F1)*. That is INV-4, the core invariant made visible, and it is the difference between *silent and right* and *silent and wrong*, which look identical.
 *Done when:* a normal TSX file draws no chip at all; the `unsupported` and `oversize` fixtures each draw one plain sentence; and `TrustSurfaceChecks` asserts the sentence rather than the chip.
+
+*How it landed.* The three chips are not drawn. **Everything behind them is untouched** — `chipText`, `modeChip`, the parser state, the grammar name and the confidence count are all still computed, still encoded and still asserted where they were; what changed is who they are shown to. The structural selftest arm is **inverted**: it used to require `parser: parsed` and `mode: structural` in the document and now requires their absence, which is the harder of the two to keep.
+
+*The floor, and it is now said once.* A file that could not be read as code drew a fallback notice **and** a parser chip **and** a disagreeing mode pill — three overlapping wordings of one fact, in the vocabulary of the thing that produced it. What it draws now is one sentence: *This file is shown as plain text — <why>. Every difference in it is still shown.* The three parts `13-…` §6 requires are all still there; the subject is the file rather than the machinery. `ParserStateReport.plainSentence` covers the one case with no notice behind it — a **partial** parse, where the structural result stands and part of the file sits inside it without a structural claim, and nothing else on screen would say so.
+
+*Silent while normal, in the reader's words when not.* `confidence: high` is gone; below the floor it reads *N parts of this file could not be matched confidently — they are marked in the diff*. The mode pill is gone outright: the case where the selection and the path disagree is exactly the case the fallback sentence describes.
+
+**The controls are the old wordings.** A check that accepted *Structural analysis unavailable* would be a check about nothing, so two of them assert it is absent.
 
 ### Tranche 3 — the controls (the owner's word: *liquid glass*)
 

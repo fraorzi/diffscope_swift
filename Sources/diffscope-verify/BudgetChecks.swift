@@ -156,12 +156,19 @@ func runBudgetChecks(_ reportRaw: (String, Bool, String) -> Void) {
         let notice = fallbackNotice(reason: result.stats.fallbackReason ?? "")
         let render = buildRenderModel(model: result.model, pinOld: "a", pinNew: "b",
                                       mode: "structural", notices: [notice])
-        report("the notice states what was withheld", render.notices.contains { $0.contains("Structural analysis") })
+        // The three parts of `13-…` §6, in DEC-077's words: *what* the window did with the file,
+        // *why*, and *what the reader still gets*. The wording changed with that entry — the
+        // sentence's subject is the file rather than the tool's machinery — and the three parts
+        // did not, because they are what a shorter sentence would drop.
+        report("the notice states what was withheld",
+               render.notices.contains { $0.contains("shown as plain text") })
         report("and why", render.notices.contains { $0.contains("budget") || $0.contains("limit") })
-        // The third part is the one usually omitted and the one this product depends on
-        // (`13-…` §6): the reader has to know the diff is still complete.
         report("and what remains trustworthy",
-               render.notices.contains { $0.contains("All textual differences are shown") },
+               render.notices.contains { $0.contains("Every difference in it is still shown") },
                render.notices.joined(separator: " | "))
+        // And that it says it in the reader's language: the sentence this replaced named the
+        // machinery, which is the whole of what DEC-077 took off the screen.
+        report("and it does not name the machinery to do it",
+               !render.notices.contains { $0.contains("Structural analysis unavailable") })
     }
 }

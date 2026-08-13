@@ -1444,7 +1444,10 @@ function groupCounts(model) {
         const key = "invisible: " + seg.disclosure;
         counts.set(key, (counts.get(key) || 0) + 1);
       }
-      if (seg.uncertain) counts.set("uncertain", (counts.get("uncertain") || 0) + 1);
+      // `uncertain` was counted here too, and drew `uncertain: 2 shown` — beside the sentence that
+      // now says *2 parts of this file could not be matched confidently*. One fact, two wordings,
+      // one of them the matcher's. DEC-017's disclosed count is about **grouping**, which hides
+      // something; an uncertain alignment hides nothing and is marked on the line it is on.
       if (seg.label === "moved" && seg.link != null) moves.add(seg.link);
     }
   }
@@ -1490,8 +1493,13 @@ function confidenceSummary(model) {
     }
   }
   if (aligned === 0) return "";
-  if (low === 0) return "confidence: high";
-  return `confidence: ${low} of ${aligned} alignments below the floor`;
+  // **Nothing while everything is normal** (DEC-077). `confidence: high` was a permanent readout of
+  // a fact that only matters when it is not high, and DEC-017's requirement is met by saying so
+  // when it is not — in the reader's language rather than in the matcher's.
+  if (low === 0) return "";
+  return low === 1
+    ? "One part of this file could not be matched confidently — it is marked in the diff."
+    : `${low} parts of this file could not be matched confidently — they are marked in the diff.`;
 }
 
 function renderNotices(model) {
@@ -1509,20 +1517,22 @@ function renderNotices(model) {
   for (const [group, count] of [...groupCounts(model)].sort()) {
     items.push(`${group}: ${count} shown`);
   }
-  // `12-…` §5.2's parser-state indicator. Composed in Swift (`ParserStateReport.chipText`) so the
-  // two surfaces that show it cannot word it differently, and so it is checkable without a webview.
-  if (model.parser) items.push(model.parser.chipText);
+  // **The three technical chips are gone** (DEC-077). `parser: parsed — tree-sitter tsx`,
+  // `confidence: high` and `mode: structural` were drawn on every normal file, and each was written
+  // for a reader auditing the diff engine rather than for one reading a diff. Every one of those
+  // facts is still computed, still on the wire and still asserted — `chipText` and `modeChip` are
+  // untouched — and none of them is drawn while everything is normal.
+  //
+  // **What stays is the floor, and it does not move.** `12-…` §5.2's parser-state indicator is
+  // still what makes INV-4 visible; it now speaks when there is something to say. The *not parsed*
+  // case is carried by the degradation notice at the top of this list, whose wording is DEC-077's;
+  // `plainSentence` covers the one case that has no notice behind it — a partial parse, where the
+  // structural result stands and part of the file sits inside it without a structural claim.
+  if (model.parser && model.parser.plainSentence) items.push(model.parser.plainSentence);
   // Confidence — DEC-017 lists it among the mandatory trust indicators, and DEC-045 says outright
-  // that dropping the *ambiguity* indicator leaves it untouched. So this is the confidence the
-  // engine computed, not the matcher ambiguity that decision withdrew, and it is worded that way:
-  // the adopted design's "1 ambiguous alignment — both readings kept" is exactly the phrase
-  // DEC-045 retired.
+  // that dropping the *ambiguity* indicator leaves it untouched. Kept, and silent while it is high.
   const confidence = confidenceSummary(model);
   if (confidence) items.push(confidence);
-  // The pill says what the reader selected *and* what is actually on screen when they differ —
-  // `23b-…` §2: it read `mode: structural` beside a notice saying structural analysis was
-  // unavailable, because it reported the selection alone.
-  items.push(model.modeChip || `mode: ${model.mode}`);
   for (const text of items) {
     const chip = document.createElement("span");
     chip.className = "ds-chip" + (text.startsWith("invariant") ? " ds-chip-alert" : "");

@@ -50,7 +50,30 @@ public struct ParserStateReport: Codable, Sendable, Equatable {
         return detail.map { "\(base) — \($0)" } ?? base
     }
 
-    private enum CodingKeys: String, CodingKey { case state, detail, grammar, chipText }
+    /// **What the reader sees since DEC-077**, and `nil` for every state that does not need a
+    /// sentence — which is most of them.
+    ///
+    /// `chipText` above is unchanged and is still computed, encoded and asserted; it is simply no
+    /// longer drawn. The entry's rule is that every fact removed from the screen is still computed
+    /// and still checked, so the two coexist on purpose: one is the machinery's own words, the other
+    /// is what the window says.
+    ///
+    /// Three states, three answers:
+    ///   - **parsed** — nothing. A normal file says nothing about how it was read.
+    ///   - **not parsed** — nothing *here*: a file that could not be read as code carries a
+    ///     degradation notice, and `fallbackNotice` is the sentence. Saying it twice in two
+    ///     wordings is how `23b-…` §2's defect looked from the reader's side.
+    ///   - **partial** — a sentence, because this is the case with **no** notice behind it: the
+    ///     structural result stands and part of the file is inside it without a structural claim.
+    ///     Nothing else on screen says so, and INV-4 is about what is *seen*.
+    public var plainSentence: String? {
+        guard state == "partial", let detail else { return nil }
+        return "Part of this file is shown as plain text — \(detail)."
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case state, detail, grammar, chipText, plainSentence
+    }
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
@@ -58,6 +81,7 @@ public struct ParserStateReport: Codable, Sendable, Equatable {
         try container.encodeIfPresent(detail, forKey: .detail)
         try container.encodeIfPresent(grammar, forKey: .grammar)
         try container.encode(chipText, forKey: .chipText)
+        try container.encodeIfPresent(plainSentence, forKey: .plainSentence)
     }
 
     public init(from decoder: Decoder) throws {
@@ -91,7 +115,7 @@ public struct ParserStateReport: Codable, Sendable, Equatable {
             // A partial parse still names its grammar: the reader is being told which grammar read
             // the part that *was* read.
             return ParserStateReport(state: "partial",
-                                     detail: "\(regions), \(unparsedBytes) bytes shown without a structural claim",
+                                     detail: "\(regions) and \(unparsedBytes) bytes could not be read as code",
                                      grammar: ParserStateReport.tsxGrammar)
         }
         // A condition that is not about parsing — F8's filter, F6's unverified — leaves the parser

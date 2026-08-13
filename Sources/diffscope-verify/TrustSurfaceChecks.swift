@@ -50,7 +50,7 @@ func runTrustSurfaceChecks(_ reportRaw: (String, Bool, String) -> Void) {
                                        degradation: .partialParseError(reason: "…"),
                                        unparsedRegions: 1, unparsedBytes: 9)
         report("one region is one region, not `1 regions`",
-               one.chipText.contains("1 region,"), one.chipText)
+               one.chipText.contains("1 region and"), one.chipText)
 
         let clean = ParserStateReport.of(structuralRequested: true, structuralUsed: true,
                                          degradation: nil)
@@ -104,6 +104,45 @@ func runTrustSurfaceChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("a file that parses in part reports `partial`, and the result still stands",
                broken.stats.parserState.state == "partial" && !broken.stats.usedFallback,
                broken.stats.parserState.chipText)
+
+        // DEC-077: **what the reader is shown**, which is a different question from what the state
+        // is, and this is the one the entry changed. The state, the detail, the grammar and
+        // `chipText` are all still computed and all still asserted above; what follows is the far
+        // shorter list of what reaches the screen.
+        print("\n=== and almost none of it is drawn (DEC-077, and INV-4 is the exception) ===")
+
+        report("a normal file says nothing at all about how it was read",
+               clean.stats.parserState.plainSentence == nil, clean.stats.parserState.chipText)
+        // Raw is a choice, not a degradation. `not-parsed` is the honest state for it and there is
+        // nothing to disclose: the reader asked for the file exactly as it is.
+        report("nor does a file the reader asked for in Raw",
+               ParserStateReport.of(structuralRequested: false, structuralUsed: false,
+                                    degradation: nil).plainSentence == nil)
+        // The floor, and it does not move. A file that could not be read as code carries a
+        // degradation, and the degradation's notice is the sentence — one sentence, in the
+        // reader's language, saying what the window did, why, and that nothing was dropped.
+        let unsupportedNotice = unsupported.stats.degradation?.notice ?? ""
+        report("a file that could not be read as code says so in plain words (INV-4)",
+               unsupportedNotice.contains("This file is shown as plain text")
+                   && unsupportedNotice.contains("Every difference in it is still shown"),
+               unsupportedNotice)
+        report("and it does not say it twice, in two wordings",
+               unsupported.stats.parserState.plainSentence == nil,
+               unsupported.stats.parserState.chipText)
+        // The one case with no notice behind it: the structural result stands and part of the file
+        // is inside it without a structural claim. Nothing else on screen says so.
+        report("a partial parse says which part, because nothing else does",
+               (broken.stats.parserState.plainSentence ?? "")
+                   .hasPrefix("Part of this file is shown as plain text"),
+               broken.stats.parserState.plainSentence ?? "nothing")
+
+        // Two controls. The first is the wording the entry replaced — a check that accepted it
+        // would be a check about nothing; the second is the state that must stay silent.
+        report("negative control: the machinery's own words are no longer the sentence",
+               !unsupportedNotice.contains("Structural analysis unavailable"), unsupportedNotice)
+        report("negative control: a parsed file with a sentence would be caught",
+               ParserStateReport(state: "partial", detail: "1 region and 2 bytes could not be read as code")
+                   .plainSentence != nil)
     }
 
     print("\n=== the mode pill reports the path taken, not only the selection (23b-… §2) ===")

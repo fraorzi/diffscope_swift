@@ -99,17 +99,19 @@ This satisfies DEC-016 structurally: the information survives greyscale and colo
 
 ### 5.2 Required indicators
 
-Not optional features — these are how the invariant becomes visible (DEC-017):
+Not optional features — these are how the invariant becomes visible (DEC-017). **[DEC-077](04-decision-log.md) changes when three of them speak, not whether they exist:** every one is still computed, still carried on the contract and still asserted, and the ones marked *silent while normal* draw nothing until they have something to report. The apparatus is not the display.
 
-| Indicator | Meaning |
-|---|---|
-| Confidence | How certain the structural alignment is |
-| Ambiguity | Match was ambiguous; candidates not arbitrarily resolved (DEC-031) |
-| Parser state | Whether the file parsed, partially parsed, or not at all |
-| Fallback marking | This region is raw, not structural (INV-4) |
-| Unverified | File exceeded the runtime validation threshold (DEC-022) |
-| Invisible difference | Bytes differ but render identically (DEC-023) |
-| Filter active | Git filter in play; structural diff withheld (DEC-028) |
+| Indicator | Meaning | Drawn |
+|---|---|---|
+| Confidence | How certain the structural alignment is | **Silent while normal** — `confidence: high` was a permanent readout of a fact that only matters when it is not high. Below the floor it says so in the reader's words: *N parts of this file could not be matched confidently* |
+| Ambiguity | Match was ambiguous; candidates not arbitrarily resolved (DEC-031) | Withdrawn by DEC-045; the same fact appears as confidence |
+| Parser state | Whether the file parsed, partially parsed, or not at all | **Silent while normal.** A *partial* parse draws a sentence, because it is the one case with no notice behind it; a file that was not parsed at all is covered by the fallback notice, which says it once rather than in three overlapping wordings |
+| Fallback marking | This region is raw, not structural (INV-4) | **Always, and this is the floor DEC-077 does not move**: *This file is shown as plain text — <why>. Every difference in it is still shown.* |
+| Unverified | File exceeded the runtime validation threshold (DEC-022) | Always |
+| Invisible difference | Bytes differ but render identically (DEC-023) | Always |
+| Filter active | Git filter in play; structural diff withheld (DEC-028) | Always |
+
+The mode pill went with them. It reported the reader's selection and, since `23b-…` §2, the path actually taken — and the case where those disagree is exactly the case the fallback sentence describes, so it was a second wording of a sentence already on screen.
 
 ### 5.3 Formatting groups
 

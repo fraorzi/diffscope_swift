@@ -86,6 +86,8 @@ Rationale: a stale pin invalidates everything downstream, so it is checked first
 
 Every visible failure states: **what** was withheld, **why**, and **what remains trustworthy**.
 
-The third element is the one usually omitted and matters most here. "Could not parse this file" leaves the user unsure whether the diff is complete. The correct form is closer to: *"Structural analysis unavailable — file did not parse. All textual differences are shown."*
+The third element is the one usually omitted and matters most here. "Could not parse this file" leaves the user unsure whether the diff is complete. The form shipped is: *"This file is shown as plain text — it could not be read as code. Every difference in it is still shown."*
+
+**The three elements are unchanged; the words are [DEC-077](04-decision-log.md)'s.** Until then the sentence began *"Structural analysis unavailable"* — a statement about the tool's machinery, written for a reader auditing a diff engine. The subject is the file now, and the verb is what the window did with it. This is the one technical statement that entry keeps, and the reason it keeps it is that *silent and right* and *silent and wrong* look identical.
 
 That sentence is the product's trust model in miniature, and it should read the same way everywhere it appears.

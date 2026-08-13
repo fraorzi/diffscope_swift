@@ -7,13 +7,23 @@ import Foundation
 /// file" leaves a reader unsure whether the diff is complete; this product's whole claim is that it
 /// is. Building the sentence in one place is what keeps it reading the same way everywhere — and
 /// makes the three parts checkable rather than a matter of who wrote which string.
+/// **The words are DEC-077's, and the three parts are `13-…`'s.** *Structural analysis unavailable*
+/// is a sentence about the tool's machinery, written for a reader auditing a diff engine; the reader
+/// this is for wants to know what they are looking at. So the subject is the file and the verb is
+/// what the window did with it — and the *why* and the *what remains* are unchanged, because they
+/// are the two parts a shorter sentence would drop.
+///
+/// This is the one technical statement DEC-077 keeps. Everything else the pane said about its own
+/// machinery is gone; this stays because *silent and right* and *silent and wrong* look identical,
+/// and it is INV-4 — every fallback is marked as a fallback — made visible.
 public func fallbackNotice(reason: String) -> String {
-    let why = reason.isEmpty ? "structural analysis was unavailable" : reason
-    return "Structural analysis unavailable — \(why). All textual differences are shown."
+    let why = reason.isEmpty ? "it could not be read as code" : reason
+    return "This file is shown as plain text — \(why). Every difference in it is still shown."
 }
 
 /// The same form for a result that was computed and then thrown away, which is a different event: a
 /// reader who sees this should know the tool caught itself, not that the file was unusual.
 public func discardedNotice(reason: String) -> String {
-    "Structural analysis discarded — it failed its own checks (\(reason)). All textual differences are shown."
+    "This file is shown as plain text — the structural reading failed the tool's own checks "
+        + "(\(reason)). Every difference in it is still shown."
 }

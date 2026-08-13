@@ -898,13 +898,17 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         push(json)
         webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
             let text = (value as? String) ?? "nil"
-            // The parser-state indicator (`12-…` §5.2) has to reach the *document*: it is the
-            // seventh of seven and the last to be built, and its whole purpose is that a reader
-            // no longer infers the parse state from the presence of some other notice.
+            // **Inverted by DEC-077.** The parser-state indicator (`12-…` §5.2) used to have to
+            // reach the document on every file; the entry's requirement is the opposite one, and
+            // it is the harder of the two to keep: a normal file says **nothing** about how it was
+            // read. Every one of those facts is still computed and still asserted in
+            // `TrustSurfaceChecks` — what is checked here is that none of them is drawn.
             let ok = text.contains("pinC:pinD")
                 && text.contains("formatting-only")
-                && text.contains("parser: parsed")
-                && text.contains("mode: structural")
+                && !text.contains("parser: ")
+                && !text.contains("mode: ")
+                && !text.contains("confidence")
+                && !text.contains("shown as plain text")
                 && !text.contains("\"formattingMarks\":0")
             FileHandle.standardError.write(
                 Data("SELFTEST structural=\(ok ? "OK" : "MISMATCH") \(outcome.summary) \(text.suffix(200))\n".utf8))
@@ -1087,15 +1091,20 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         push(json)
         webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
             let text = (value as? String) ?? "nil"
-            // The pill and the parser chip both have to disagree with the reader's selection here,
-            // which is the case `23b-…` §2 recorded and nothing enforced: the reader asked for
-            // structural, the file was never parsed, and the interface used to say `mode:
-            // structural` with no qualification whatsoever.
-            let ok = text.contains("Structural analysis unavailable")
+            // **This is INV-4's floor and the one sentence DEC-077 keeps.** The reader asked for
+            // structural, the file was never read as code, and the pane has to say so in words
+            // they can act on — *silent and right* and *silent and wrong* look identical.
+            //
+            // The pill and the parser chip carried it before (`23b-…` §2: `mode: structural` with
+            // no qualification beside a notice saying structural was unavailable). Both are off
+            // the screen now and neither is missed: the sentence says what the window did with the
+            // file, why, and that nothing was dropped — and it says it **once**, where the two
+            // chips and the notice had said overlapping halves of it in three wordings.
+            let ok = text.contains("This file is shown as plain text")
                 && text.contains("git status")
-                && text.contains("All textual differences are shown")
-                && text.contains("mode: structural — showing raw")
-                && text.contains("parser: not parsed")
+                && text.contains("Every difference in it is still shown")
+                && !text.contains("mode: ")
+                && !text.contains("parser: ")
             FileHandle.standardError.write(
                 Data("SELFTEST degradation=\(ok ? "OK" : "MISMATCH") \(outcome.summary.prefix(80))\n".utf8))
             self.snapshot(named: "degraded") {
