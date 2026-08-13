@@ -1720,3 +1720,51 @@ row's: the box straddled the pane boundary, 1180 px into a file pane that ends a
 as the crop tool that measures its offsets from the centre (step 57). The probe now reports **the
 modal colour of a box and its share** — `#f6f6f8 100% of 300×60 px` is a statement about a surface;
 one pixel is a statement about wherever that pixel happened to land.
+
+## Step 63 — the tertiary ink is re-sized against every surface, and a pane inside a split view stops using constraints
+
+- [x] `--ds-faint` → `#62626b` light, `#9e9ea7` dark (DEC-076), mirrored in `Theme.swift`, bundle rebuilt
+- [x] Step 62's substitutions reverted: the key hints, the legend, the `SCOPE` caption, the base
+      block's keystroke and a repository's path are tertiary again, as the design draws them
+- [x] The contrast check covers the restored pairs and the diff pane's three surfaces; its control is
+      now the **previous value as a literal**, so the fix cannot satisfy the check that caught it
+- [x] A second assertion holds the third ink a step away from the second — 1.34:1 light, 1.13:1 dark
+- [x] **Second defect found and fixed:** the changed-file list stayed 320 pt wide inside a 34 pt
+      collapsed pane. `22-experiment-log.md` → **M9-L**
+- [x] 1670 → **1673 checks**; six clean runs of six
+
+### Step 63 — why 4.7 and not 5.0
+
+The binding surfaces are the extremes, not the paper: `--ds-row-selected` in light and
+`--ds-control-thumb` in dark — the raised thumb is a *light* surface inside a dark window, so an ink
+that clears it must be nearly as bright as `--ds-dim`. At a 5.0 target the dark value lands at
+`#a3a3ac`, **1.06:1 from `--ds-dim`**: three inks that read as two. At 4.7 every surface clears
+4.72:1 and the step survives. Both numbers are in DEC-076, and the check asserts the second one so
+the trade-off cannot be lost by someone tightening the first.
+
+### Step 63 — three wrong answers, then one stack trace
+
+The collapse defect was reasoned about three times and each answer was wrong: a holding priority
+(changed nothing), a stack view with a width constraint (320 in a 34 pt pane, five runs of five), a
+hand layout in `layout()` (never called — a split view resizes by **frame**, which runs autoresizing,
+not layout). A scroll-view subclass logging its own `setFrameSize` with a stack trace answered it in
+one run:
+
+```
+320 -> 34: … NSViewActuallyUpdateFrameFromLayoutEngine … resizeSubviewsWithOldSize: … FilePane.setFrameSize
+```
+
+`NSSplitView` sets a pane's frame directly and the **layout engine goes on valuing that pane's width
+at the number its constraints last agreed on**, then re-applies it to the pane's children. A child
+constrained to its parent's width is laid out against a width the parent no longer has.
+
+**Inside a split view's pane, `bounds` is the only number that is true.** Third payment at this
+boundary — after panes that began at zero width (M8-D) and a width constraint ignored at priority 600
+(M9-A) — and the rule that survives all three is: ask the frame, place by hand, and place again after
+the split has had its turn.
+
+### Step 63 — and the contract check earned its keep
+
+`FilePane` was a new `NSView` subclass, and the suite refused the build until it was in
+`24-…` §3's chrome table. That check was written in step 56 against a table I had just filled in by
+hand; this is the first time it caught something I had not thought about.

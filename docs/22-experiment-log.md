@@ -2563,3 +2563,46 @@ So the collapse arm now measures **twice**: once 0.8 s after ⌃⌘0, and again 
 ## The generalisation
 
 **A layout that has only ever been laid out once is a layout nobody has checked.** Three of this project's interface defects are now instances of it: panes that began at zero width and stayed there, a caption squeezed to zero height beside a growing scroll view, and a collapse that the next layout pass undid. The cheap guard is the same in all three: measure the drawn frame, then make something happen and measure it again.
+
+---
+
+# M9-L — a pane inside `NSSplitView` cannot lay its own children out with Auto Layout
+
+**Date:** 2026-08-12 · **Why:** ⌃⌘0 left the changed-file list at its full 320 pt inside a 34 pt spine. Intermittently at first — about three runs in ten — and then in every run, which is what made it findable.
+
+## What was measured
+
+`applyCollapses` was made to print the frames it had just asked for, on the spot and again half a second later:
+
+```
+panes=44/34/1320  constants=44/34  minimums=44/34  split=1400
+filePane=34  scroll=320  clip=320  table=324  column=320
+```
+
+**The pane collapsed. Its own child did not.** Every constraint held the value it was given; the split view's three panes are 44, 34 and 1320. The scroll view inside the 34 pt pane is 320.
+
+The pane was then rebuilt three ways, each measured:
+
+| Attempt | Result |
+|---|---|
+| `NSStackView` with `scroll.width == pane.width` | list 320 in a 34 pt pane, 5 runs of 5 |
+| A plain view placing its children in `layout()` | identical — `layout()` is never called, because a split view resizes a pane by **setting its frame**, and a frame change runs autoresizing, not layout |
+| Placing them in `setFrameSize` as well, plus autoresizing masks | the list is set to 34 **and put back to 320** before the next pass |
+
+The third attempt is the one that named the cause. A subclassed scroll view logging its own resizes with a stack trace printed exactly one transition:
+
+```
+320 -> 34: … NSViewActuallyUpdateFrameFromLayoutEngine … resizeSubviewsWithOldSize: … FilePane.setFrameSize
+```
+
+**The layout engine and the frame disagree, and both are authoritative for different things.** `NSSplitView` sets a pane's frame directly; the engine goes on valuing that pane's width at what its constraints said before the divider moved, and re-applies that value to the pane's children on the next pass. A constraint tying a child to its parent's width is therefore satisfied against a number the parent no longer has.
+
+## What changed
+
+The pane is a plain view that places its two children from `bounds` — in `layout()`, in `setFrameSize`, and **once more after the split view's own pass has run**, from the same `DispatchQueue.main.async` block that already re-tiles the table for exactly this reason. Six clean runs of six.
+
+## The generalisation
+
+**Inside a split view's pane, `bounds` is the only number that is true.** This project has now paid three times at this boundary: panes that began at zero width and stayed there (M8-D), a width constraint the split ignored at priority 600 (M9-A), and a child laid out against a width its parent had already lost. The rule that survives all three: *ask the frame, place by hand, and re-place after the split has had its turn.*
+
+And the diagnostic that ended it in one run was a **subclass that logged its own `setFrameSize` with a stack trace**. Three rounds of reasoning about which constraint was losing produced three wrong answers; the first stack trace produced the right one.

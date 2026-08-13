@@ -52,7 +52,7 @@
   --ds-text: #16161a;
   --ds-plain: #16161a;
   --ds-dim: #4f4f58;
-  --ds-faint: #6b6b74;
+  --ds-faint: #62626b;
   /* The ink the change marks are drawn in: an alpha over the surface, so a mark reads the same
      way on the code background and on a fold row. */
   --ds-mark: rgba(0, 0, 0, .82);
@@ -191,7 +191,7 @@
     --ds-text: #f2f2f5;
     --ds-plain: #e9e9ee;
     --ds-dim: #a8a8b1;
-    --ds-faint: #86868f;
+    --ds-faint: #9e9ea7;
     --ds-mark: rgba(255, 255, 255, .88);
     --ds-border: #28282d;
     --ds-border-strong: #6c6c76;

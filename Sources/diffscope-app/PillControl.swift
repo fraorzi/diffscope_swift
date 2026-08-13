@@ -132,10 +132,9 @@ final class PillControl: NSView {
                 outline.stroke()
             }
 
-            // `inkQuiet`, not `inkFaint`: measured, the faint step is 4.32:1 on the trough and
-            // 3.47:1 on the thumb in dark — under the 4.5 the design's own review fixed this ink to
-            // (`27-…` §3). The dashed outline is what says *unavailable*; the colour never was.
-            let colour: NSColor = !segment.enabled ? Theme.inkQuiet
+            // Tertiary again since DEC-076 re-sized that ink against the trough and the thumb.
+            // The dashed outline is what says *unavailable*; the colour never was.
+            let colour: NSColor = !segment.enabled ? Theme.inkFaint
                 : index == selectedSegment ? Theme.ink : Theme.inkQuiet
             let weight: NSFont.Weight = index == selectedSegment ? .semibold : .regular
             let attributes: [NSAttributedString.Key: Any] = [
@@ -146,9 +145,7 @@ final class PillControl: NSView {
             let size = text.size(withAttributes: attributes)
             let hint = segment.hint as NSString
             let hintAttributes: [NSAttributedString.Key: Any] = [
-                // Same measurement: a key hint on the trough is 4.32:1 at `inkFaint`. It is set
-                // in the monospace face at 10 pt, which is what keeps it quieter than the title.
-                .font: hintFont, .foregroundColor: Theme.inkQuiet,
+                .font: hintFont, .foregroundColor: Theme.inkFaint,
             ]
             let hintSize = segment.hint.isEmpty ? .zero : hint.size(withAttributes: hintAttributes)
             // Title and key are laid out as one block and then centred together, so the pair stays
@@ -231,9 +228,8 @@ final class FactBlock: NSView {
     init() {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-        // The block sits on the chrome band, where `inkFaint` measures 4.47:1.
-        for (field, colour) in [(captionLabel, Theme.inkQuiet), (separator, Theme.inkQuiet),
-                                (detailLabel, Theme.ink), (shortcutLabel, Theme.inkQuiet)] {
+        for (field, colour) in [(captionLabel, Theme.inkQuiet), (separator, Theme.inkFaint),
+                                (detailLabel, Theme.ink), (shortcutLabel, Theme.inkFaint)] {
             field.font = Theme.font(Theme.textSizeTiny,
                                     weight: field === captionLabel ? .semibold : .regular)
             field.textColor = colour
@@ -318,5 +314,45 @@ final class ChipView: NSView {
         (dashed ? Theme.borderStrong : Theme.hairline).setStroke()
         outline.lineWidth = 1
         outline.stroke()
+    }
+}
+
+/// The changed-file pane: a header over a list, laid out by hand (DEC-071, and the measurement in
+/// step 63).
+///
+/// **A pane inside `NSSplitView` cannot use Auto Layout for its own contents.** The split sets its
+/// arranged subviews' frames directly, so the frame and the layout engine disagree the moment a
+/// divider moves: on ⌃⌘0 the pane's frame went to 34 pt while the engine still valued its width at
+/// 320, and a `width == pane.width` constraint on the list was satisfied against the engine's
+/// number — a full-width file list inside a 34 pt spine, in a window where every check passed.
+///
+/// So this view places its two children in `layout()`, from `bounds`, which is the one number that
+/// is true whoever set it.
+final class FilePane: NSView {
+    var header: NSView?
+    var list: NSView?
+
+    override func layout() {
+        super.layout()
+        place()
+    }
+
+    /// **`setFrameSize`, not only `layout`.** `NSSplitView` resizes a pane by setting its frame, and
+    /// a frame change alone runs *autoresizing* — `layout()` is never asked. The first version of
+    /// this view placed its children in `layout()` and measured a 320 pt list inside a 34 pt pane in
+    /// five runs out of five, which is the same disagreement one level down.
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        place()
+    }
+
+    /// Internal, because the split view's own layout pass runs after this one and puts the list
+    /// back — the same fix-up the table already needs (`applyCollapses`).
+    func place() {
+        guard let header, let list else { return }
+        header.frame = NSRect(x: 0, y: bounds.height - Theme.paneHeaderHeight,
+                              width: bounds.width, height: Theme.paneHeaderHeight)
+        list.frame = NSRect(x: 0, y: 0, width: bounds.width,
+                            height: max(0, bounds.height - Theme.paneHeaderHeight))
     }
 }

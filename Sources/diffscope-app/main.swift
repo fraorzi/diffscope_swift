@@ -373,15 +373,30 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // The file pane is the header plus the list, in the same shape. The list keeps the full
         // pane width — the spine is 34 pt when collapsed (DEC-060) and an inset would take a third
         // of it.
-        let filePane = NSStackView(views: [fileHeader, middleScroll])
+        // **Autoresizing, not constraints, inside a split view's own pane.** `NSSplitView` sets its
+        // arranged subviews' frames directly, and that leaves the frame and the layout engine
+        // disagreeing: the pane's *frame* went to 34 pt on ⌃⌘0 while the engine still valued its
+        // width at 320, so a `width == pane.width` constraint on the scroll view was satisfied
+        // against 320 and the list stayed full width inside a collapsed pane. Measured — panes
+        // 44/34/1320 with the scroll view at 320 inside the 34. An autoresizing mask follows the
+        // frame the split sets, which is the only number that is true here.
+        let filePane = FilePane(frame: NSRect(x: 0, y: 0, width: Theme.filePaneWidth,
+                                              height: Theme.windowHeight))
         filePane.wantsLayer = true
         filePane.layer?.backgroundColor = Theme.panelFiles.cgColor
-        filePane.orientation = .vertical
-        filePane.alignment = .centerX
-        filePane.spacing = 0
-        middleScroll.translatesAutoresizingMaskIntoConstraints = false
-        middleScroll.widthAnchor.constraint(equalTo: filePane.widthAnchor).isActive = true
-        fileHeader.widthAnchor.constraint(equalTo: filePane.widthAnchor).isActive = true
+        filePane.header = fileHeader
+        filePane.list = middleScroll
+        // Autoresizing masks as well as the explicit placement: the mask is what AppKit applies when
+        // the parent's frame changes, and the placement is what gets the first frames right. Setting
+        // the frames alone was not enough — the list was put back to 320 between two `layout` calls,
+        // by an engine that still held constraints derived from the frame it was created with.
+        for child in [fileHeader, middleScroll] as [NSView] {
+            child.translatesAutoresizingMaskIntoConstraints = true
+        }
+        fileHeader.autoresizingMask = [.width, .minYMargin]
+        middleScroll.autoresizingMask = [.width, .height]
+        filePane.addSubview(fileHeader)
+        filePane.addSubview(middleScroll)
 
         // The lens control sits with the other two (DEC-061). The design draws it inside the pane
         // header; it lives here instead because a control in the webview cannot act — the page
@@ -472,6 +487,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         split.dividerStyle = .thin
         split.addArrangedSubview(leftScroll)
         split.addArrangedSubview(filePane)
+        // **Which pane gives way when the window is laid out again.** A width constraint is what the
+        // pane asks for; the holding priority is what `NSSplitView` does when it redistributes, and
+        // it redistributes on every layout pass — which nothing in this window triggered until the
+        // status line began ticking once a second (DEC-075). The two sidebars hold their width; the
+        // diff pane is what stretches, which is also what a reader wants.
+        split.setHoldingPriority(NSLayoutConstraint.Priority(261), forSubviewAt: 0)
+        split.setHoldingPriority(NSLayoutConstraint.Priority(260), forSubviewAt: 1)
+        split.setHoldingPriority(NSLayoutConstraint.Priority(250), forSubviewAt: 2)
         split.addArrangedSubview(vertical)
 
         // Auto layout inside the split, rather than frame proportions. NSSplitView distributes by
@@ -2676,9 +2699,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
         titlePathLabel = NSTextField(labelWithString: "")
         titlePathLabel.font = Theme.font(Theme.textSizeSmall)
-        // On the chrome band, where the faint step measures 4.47:1 (light) — under the 4.5 the
-        // design's review fixed this ink to. `27-…` §3, measured again in step 62.
-        titlePathLabel.textColor = Theme.inkQuiet
+        titlePathLabel.textColor = Theme.inkFaint
         titlePathLabel.lineBreakMode = .byTruncatingMiddle
 
         sourcesButton = NSButton(title: "Sources ⌄", target: self,
@@ -2724,7 +2745,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     private func buildScopeRow() -> NSView {
         let caption = NSTextField(labelWithString: ChromeLabels.scopeCaption)
         caption.font = Theme.font(Theme.textSizeTiny, weight: .semibold)
-        caption.textColor = Theme.inkQuiet
+        caption.textColor = Theme.inkFaint
         caption.translatesAutoresizingMaskIntoConstraints = false
 
         baseBlock = FactBlock()
@@ -2915,7 +2936,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
         let legend = NSTextField(labelWithString: ChromeLabels.keyLegend())
         legend.font = Theme.font(Theme.textSizeTiny)
-        legend.textColor = Theme.inkQuiet
+        legend.textColor = Theme.inkFaint
         legend.lineBreakMode = .byTruncatingTail
         // The legend is the first thing to give way in a narrow window: the two controls beside it
         // are aimed at, and it is read once and remembered.
@@ -3324,6 +3345,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             // and puts the width back. The first assignment is what the table is asked for; this
             // is what it keeps.
             DispatchQueue.main.async {
+                // The pane's own children go with it. `NSSplitView` sets the *pane's* frame and the
+                // layout engine then puts the list back to the width it valued it at — traced:
+                // `320 → 34` from the engine, and 34 → 320 again by the time the next pass ran. The
+                // pane is asked to place its children once more, after everything has settled.
+                (table.enclosingScrollView?.superview as? FilePane)?.place()
                 table.setFrameSize(NSSize(width: clip.bounds.width, height: table.frame.height))
                 table.tile()
                 clip.scroll(to: NSPoint(x: 0, y: clip.bounds.origin.y))
@@ -4575,7 +4601,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
 
         let files = label(Theme.textSizeTiny, .regular,
-                          Theme.inkQuiet)
+                          snapshot.uncommittedCount == 0 ? Theme.inkFaint : Theme.inkQuiet)
         files.stringValue = snapshot.uncommittedCount == 0
             ? "clean" : "\(snapshot.uncommittedCount) files"
 
@@ -4585,9 +4611,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                              dashed: snapshot.aheadCount == nil,
                              emphasis: snapshot.aheadCount == nil)
 
-        // `inkQuiet`: a repository row is drawn on the panel surface *and* on the selected-row
-        // surface, and the faint step measures 4.12:1 on the latter.
-        let path = label(Theme.textSizeTiny, .regular, Theme.inkQuiet)
+        let path = label(Theme.textSizeTiny, .regular, Theme.inkFaint)
         path.stringValue = snapshot.url.path.replacingOccurrences(
             of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
         path.lineBreakMode = .byTruncatingMiddle

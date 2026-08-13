@@ -322,19 +322,28 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // — the same discipline as the shipped-module list in the privacy check.
         let pairs: [(ink: String, surface: String, where_: String)] = [
             ("--ds-text", "--ds-chrome", "the application name and the repository in the title bar"),
-            ("--ds-dim", "--ds-chrome", "the comparison text, the SCOPE caption, the key legend, the base block"),
+            ("--ds-dim", "--ds-chrome", "the comparison text and the base block's ref"),
+            ("--ds-faint", "--ds-chrome", "the SCOPE caption, the key legend, the repository's path"),
             ("--ds-text", "--ds-panel-repos", "a repository's name"),
-            ("--ds-dim", "--ds-panel-repos", "its head state and its path"),
-            ("--ds-faint", "--ds-panel-repos", "the REPOSITORIES caption"),
+            ("--ds-dim", "--ds-panel-repos", "its head state"),
+            ("--ds-faint", "--ds-panel-repos", "the REPOSITORIES caption and the path under it"),
             ("--ds-text", "--ds-panel-files", "a file's name and its kind glyph"),
             ("--ds-dim", "--ds-panel-files", "its counts and the group headers"),
             ("--ds-faint", "--ds-panel-files", "the CHANGED FILES caption"),
             ("--ds-text", "--ds-row-selected", "the selected row's name"),
-            ("--ds-dim", "--ds-row-selected", "the selected row's path and counts"),
+            ("--ds-dim", "--ds-row-selected", "the selected row's counts"),
+            ("--ds-faint", "--ds-row-selected", "the selected repository's path"),
             ("--ds-text", "--ds-control-thumb", "the chosen pill"),
-            ("--ds-dim", "--ds-control-trough", "the pills not chosen, and every key hint"),
+            ("--ds-faint", "--ds-control-thumb", "its key hint — the raised surface, and the binding one in dark"),
+            ("--ds-dim", "--ds-control-trough", "the pills not chosen"),
+            ("--ds-faint", "--ds-control-trough", "their key hints, and an unavailable scope"),
             ("--ds-text", "--ds-empty-bg", "the first screen a stranger meets"),
             ("--ds-dim", "--ds-empty-bg", "its explanation"),
+            // The same ink is drawn in the diff pane, which is a different file's business but the
+            // same token: a threshold that held only for the chrome would be half a rule.
+            ("--ds-faint", "--ds-bg", "the pane behind the code"),
+            ("--ds-faint", "--ds-code", "the gutters beside it"),
+            ("--ds-faint", "--ds-fold", "a folded range's own row"),
         ]
         var failing: [String] = []
         for pair in pairs {
@@ -353,17 +362,31 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("every ink/surface pair the chrome draws clears 4.5:1 in both appearances",
                failing.isEmpty, failing.joined(separator: " | "))
 
-        // Two controls. The first is the design's own first draft, which `27-…` §3 caught at 2.7:1;
-        // the second is the pair this check was written for — the faint step on the chrome band,
-        // which reads as a perfectly reasonable grey and is 4.47:1.
+        // Three controls, and the second is the one that matters: **the value this check was
+        // written against, as a literal.** Reading it from the token file would have made the check
+        // pass the moment DEC-076 changed the file — a control that the fix satisfies is not a
+        // control. `#6b6b74` is what `--ds-faint` was in light, and it is 4.47:1 on the chrome band.
         report("negative control: the design's first tertiary colour is caught",
                ratio("#8a8a94", "#f2f2f5") < 4.5,
                String(format: "%.2f:1", ratio("#8a8a94", "#f2f2f5")))
-        report("negative control: and so is the pair that prompted this check",
-               ratio(value("--ds-faint", dark: false) ?? "#000000",
-                     value("--ds-chrome", dark: false) ?? "#ffffff") < 4.5,
-               String(format: "%.2f:1", ratio(value("--ds-faint", dark: false) ?? "#000000",
-                                              value("--ds-chrome", dark: false) ?? "#ffffff")))
+        report("negative control: and so is the value this check was written against",
+               ratio("#6b6b74", "#ececed") < 4.5,
+               String(format: "%.2f:1 on the chrome band", ratio("#6b6b74", "#ececed")))
+        report("and its dark counterpart on the raised thumb",
+               ratio("#86868f", "#33333a") < 4.5,
+               String(format: "%.2f:1", ratio("#86868f", "#33333a")))
+
+        // DEC-076's own trade-off, asserted rather than remembered: three inks that read as two are
+        // worse than a step that clears the threshold by a tenth, so the third ink has to stay
+        // visibly apart from the second in both appearances.
+        for dark in [false, true] {
+            guard let dim = value("--ds-dim", dark: dark), let faint = value("--ds-faint", dark: dark)
+            else { continue }
+            report("the third ink is still a step away from the second (\(dark ? "dark" : "light"))",
+                   ratio(dim, faint) >= 1.10,
+                   String(format: "%.2f:1 between %@ and %@", ratio(dim, faint),
+                          dim as NSString, faint as NSString))
+        }
     }
 
     print("\n=== the contract describes the chrome it cannot see ===")

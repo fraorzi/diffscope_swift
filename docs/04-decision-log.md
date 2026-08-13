@@ -3231,3 +3231,40 @@ For the watcher:
 ### Revisit trigger
 
 Reopen if the age ever needs to be per-repository rather than per-window: the sweep refreshes all of them and the watcher follows only the open one, so a reader looking at the repository list is reading counts of two different ages. Today the list is swept as a whole and the distinction does not arise.
+
+---
+
+## DEC-076 — The tertiary ink is re-measured against every surface it is drawn on, not against the paper
+
+- **Date:** 2026-08-12 · **Topic:** `--ds-faint` in both appearances · **Status:** Accepted · **Amends DEC-066's token table; extends `27-…` §3**
+
+### Context
+
+`27-…` §3 records the adopted design's tertiary text failing contrast at 2.7:1 in light and 3.8:1 in dark, and being **fixed by measurement rather than by eye** to 5.1:1 and 5.8:1. Those two numbers were measured against the paper — `--ds-bg`. The chrome has eight other surfaces, and nothing had ever measured them.
+
+Photographed in light for the first time (step 62) and measured, `--ds-faint` at `#6b6b74` / `#86868f` is **4.47:1** on the chrome band, **4.32:1** on the control trough, **4.12:1** on a selected row, and **3.47:1** on the raised thumb in dark. Those four carry the key hints, the status line's legend, the `SCOPE` caption, the base block, a selected repository's path, and every pill that is not chosen.
+
+### Options considered
+
+1. **Move the labels to `--ds-dim`** and draw `--ds-faint` on the two panel surfaces only. Shipped as the immediate fix in step 62; it flattens the design's three-step hierarchy to two wherever the chrome is not a panel, and leaves a token that is a trap for the next person.
+2. **Darken it in light and lighten it in dark, until it clears every surface.** Chosen by the product owner.
+3. **Give the raised thumb its own ink.** Rejected: it is one site, and a per-surface exception is the rule this entry exists to remove.
+
+### Final decision
+
+**Option 2**, at **`#62626b` in light and `#9e9ea7` in dark**, and the threshold is the substance of the entry.
+
+The binding surfaces are the extremes rather than the paper: `--ds-row-selected` in light (4.72:1) and `--ds-control-thumb` in dark (4.72:1) — the raised thumb is a *light* surface inside a dark window, so an ink that clears it must be nearly as bright as `--ds-dim`.
+
+**The target is 4.7, not 5.0**, and that number was measured rather than chosen. At 5.0 the dark value comes out at `#a3a3ac`, which is **1.06:1 against `--ds-dim`** — the third ink and the second become the same ink, and a hierarchy of three that reads as two is worse than a step that clears the threshold by a tenth. At 4.7 the step is 1.34:1 in light and 1.13:1 in dark, and every surface clears 4.72:1 with room for rounding.
+
+### Consequences
+
+- **The third ink is usable on every surface the chrome draws**, so step 62's substitutions are reverted: the key hints, the legend, the `SCOPE` caption, the base block's shortcut and a repository's path are tertiary again, as the design draws them.
+- **The check outlives the fix.** `runChromeChecks` holds every ink/surface pair to 4.5:1 in both appearances; its negative control is now the **previous value on the chrome band** as a literal, so the check that caught this cannot be quietly satisfied by the change that fixed it.
+- **The webview surfaces were measured too** — `--ds-bg`, `--ds-code`, `--ds-fold` — because the same token is drawn there: 5.40, 6.04 and 5.64 in light, 7.90, 7.90 and 7.25 in dark.
+- **`27-…` §3's numbers are superseded, not deleted.** They were right about the paper and were never wrong; they were incomplete, and this entry says which surfaces they did not cover.
+
+### Revisit trigger
+
+Reopen if a surface lighter than `--ds-control-thumb` is added to the dark appearance, or darker than `--ds-row-selected` to the light one. Both are the extremes this pair is sized against, and a new extreme moves the constraint rather than merely adding a row to the check.

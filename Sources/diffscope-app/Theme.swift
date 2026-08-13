@@ -43,14 +43,17 @@ enum Theme {
     /// `--ds-text` / `--ds-dim` / `--ds-faint`. Three steps, and the third is the one that has to
     /// be watched: the adopted design's first draft had it at 2.7:1 against paper (`27-…` §3).
     ///
-    /// **The correction was measured against the paper only**, and the chrome has four other
-    /// surfaces. Measured in step 62: the faint step is **4.47:1** on the chrome band, **4.32:1** on
-    /// the control trough, **4.12:1** on a selected row and **3.47:1** on the thumb in dark — so it
-    /// is drawn on the two panel surfaces and nowhere else, and `runChromeChecks` holds every pair
-    /// the window actually draws to 4.5:1 in both appearances.
+    /// **That correction was measured against the paper only**, and the chrome has eight other
+    /// surfaces: the faint step measured **4.47:1** on the chrome band, **4.32:1** on the control
+    /// trough, **4.12:1** on a selected row and **3.47:1** on the raised thumb in dark. DEC-076
+    /// re-sized it against the extremes instead — `--ds-row-selected` in light and
+    /// `--ds-control-thumb` in dark, both at **4.72:1** — so the third ink is usable everywhere the
+    /// chrome draws. 4.7 rather than 5.0 because at 5.0 the dark value lands 1.06:1 from `inkQuiet`,
+    /// and three inks that read as two are worse than a tenth of headroom.
+    /// `runChromeChecks` holds every pair to 4.5:1 in both appearances.
     static let ink = dynamic(dark: hex(0xf2f2f5), light: hex(0x16161a))
     static let inkQuiet = dynamic(dark: hex(0xa8a8b1), light: hex(0x4f4f58))
-    static let inkFaint = dynamic(dark: hex(0x86868f), light: hex(0x6b6b74))
+    static let inkFaint = dynamic(dark: hex(0x9e9ea7), light: hex(0x62626b))
 
     /// The surfaces AppKit draws, mirrored from the `@chrome` block of `tokens.css` (DEC-066).
     /// The check suite requires every token in that block to be named here; a design that stops at
