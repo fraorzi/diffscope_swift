@@ -212,7 +212,7 @@ public enum KeyboardMap {
               menu: .navigate, satisfies: .changeNavigation),
         .init(id: "change.previous", title: "Previous Change", key: "↑", modifiers: [.command],
               menu: .navigate, satisfies: .changeNavigation),
-        .init(id: "expandAll", title: "Expand All Collapsed Ranges", key: "e", modifiers: [.command],
+        .init(id: "expandAll", title: "Expand or Collapse All Ranges", key: "e", modifiers: [.command],
               menu: .navigate, satisfies: .expandCollapsed),
         .init(id: "file.next", title: "Next File", key: "↓", modifiers: [.option],
               menu: .navigate, satisfies: .moveBetweenFiles),

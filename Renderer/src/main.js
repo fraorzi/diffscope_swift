@@ -1367,10 +1367,19 @@ window.diffscopeCommand = function (name) {
     // yet still has a current region — the first change at or below the top of the viewport —
     // because otherwise "raw for the current region" would do nothing on the file they just opened.
     case "currentStop": return stopIndex >= 0 ? stopIndex : firstVisibleStop();
-    case "expandAll":
-      folds.forEach((_, index) => expanded.add(index));
+    // DEC-078: one command, both directions. Expand everything **unless everything is already
+    // expanded**, in which case collapse everything. Deliberately *everything*, not *anything*: a
+    // reader who has opened one fold by clicking it, or who has jumped into one — `goToStop` opens
+    // whatever covers its target — presses ⌘E to open the rest, which is the reading of the key
+    // they already have. The second press closes them all.
+    case "expandAll": {
+      const allOpen = folds.length > 0 && folds.every((_, index) => expanded.has(index));
+      if (allOpen) expanded = new Set();
+      else folds.forEach((_, index) => expanded.add(index));
       refreshDecorations();
-      return { expanded: folds.length };
+      if (lastModel) updateFooter(lastModel);
+      return { expanded: allOpen ? 0 : folds.length, collapsed: allOpen };
+    }
     default: return null;
   }
 };
@@ -1410,6 +1419,18 @@ function updateFooter(model) {
   if (hidden > 0) parts.push(`${hidden} unchanged lines folded`);
   bar.hidden = parts.length === 0;
   text.textContent = parts.join(" · ");
+
+  // DEC-078: the button says **which way it will go**. A control whose effect depends on state the
+  // reader cannot otherwise see has to state the effect, and this is the only place in the pane
+  // where the fold state is not visible — a reader who has scrolled past every fold marker sees
+  // this bar and nothing else. No keystroke on it (DEC-077): the rule was written about the chrome
+  // and this label is the one place in the webview it had been missed.
+  const button = document.getElementById("diff-footer-expand");
+  if (button) {
+    const allOpen = folds.length > 0 && folds.every((_, index) => expanded.has(index));
+    button.textContent = allOpen ? "Collapse" : "Expand";
+    button.hidden = folds.length === 0;
+  }
 }
 
 function groupCounts(model) {
@@ -1799,6 +1820,10 @@ window.diffscopeProbe = function () {
     footer: document.getElementById("diff-footer")?.hidden === false
       ? (document.getElementById("diff-footer-text")?.textContent || "") : "",
     foldMarks: document.querySelectorAll(".ds-fold").length,
+    // DEC-078: what the footer's button says it will do next. Read from the document rather than
+    // from the fold set, because the promise is the label a reader sees.
+    expandLabel: document.getElementById("diff-footer-expand")?.hidden === false
+      ? (document.getElementById("diff-footer-expand")?.textContent || "") : "",
     formattingFoldMarks: document.querySelectorAll(".ds-fold-formatting").length,
     foldLabels: [...document.querySelectorAll(".ds-fold")].map(el => el.textContent),
     scrollTop: Math.round(left.scrollDOM.scrollTop),

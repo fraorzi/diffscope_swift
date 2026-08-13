@@ -64,9 +64,15 @@ The old rule was *quietened, never removed — a control that vanishes teaches a
 
 The same arm carries item 2's stated acceptance test in the case that actually exercises it: with wrapping off, a three-character line and a three-hundred-character line measure **2411 px each** — the same right edge, which is the long line's rather than the pane's.
 
-**4. Expand cannot be undone**
+**4. Expand cannot be undone** ([DEC-078](04-decision-log.md), amends DEC-017) — **landed**
 `⌘E` expands every collapsed range and there is no way back.
 *Done when:* the same command collapses again — one key, one button, and the button's label says which way it will go.
+
+*How it landed.* One command, both directions: expand everything **unless every fold is already open**, in which case collapse everything. Deliberately *everything* rather than *anything* — a reader who has clicked one fold open, or who has jumped into one (`goToStop` opens whatever covers its target), presses ⌘E to open the rest, which is the reading of the key they already have. The button reads `Expand` or `Collapse` and is recomputed with the footer; the menu item is renamed to name the toggle rather than one of its directions.
+
+The arm asks for the **round trip**, not for either direction: `2 → 0 → 2` folds and `Expand → Collapse → Expand`, because the defect reported was not *collapse is missing* but *there is no way back*.
+
+*And it closed DEC-077 in the one place that had been missed.* The button's label was `Expand ⌘E`. The keystroke rule was written about the AppKit chrome and `ChromeLabels`, so nothing was looking at the webview's own markup; a check now refuses a modifier run in it, with that label as its control.
 
 **5. The jargon goes** (DEC-077, narrows DEC-017 and DEC-058)
 `parser: parsed — tree-sitter tsx`, `confidence: high`, `mode: structural` leave the pane. **Nothing replaces them while everything is normal.**

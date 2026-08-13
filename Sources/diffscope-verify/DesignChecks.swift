@@ -156,6 +156,42 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
                    && script.contains("if (layout === \"unified\") return unified ? [unified.scrollDOM] : []"))
     }
 
+    print("\n=== expanding a fold is reversible (DEC-078) ===")
+    do {
+        // DEC-017 permits folding only while what is hidden is counted and one keystroke from
+        // opening. That is a rule about getting *in*; nothing described getting back out, and
+        // `expandAll` only ever added to the set. The live arm asserts the round trip on a real
+        // document; this asserts the two things a photograph of that round trip would not show.
+        report("the command has both directions, not just the one it is named after",
+               script.contains("case \"expandAll\": {")
+                   && script.contains("if (allOpen) expanded = new Set();"))
+        // *Everything is open*, not *anything is open* — a reader who has clicked one fold, or who
+        // has jumped into one, presses ⌘E to open the rest. The distinction is the decision.
+        report("and it collapses only when every fold is already open",
+               script.contains("folds.every((_, index) => expanded.has(index))"))
+        report("the button says which way it will go",
+               script.contains("button.textContent = allOpen ? \"Collapse\" : \"Expand\""))
+
+        // DEC-077 in the one place it had been missed: the rule was written about the AppKit chrome
+        // and `ChromeLabels`, and this label lives in the webview, where nothing was looking.
+        let modifierRun = "[⌘⌥⇧⌃]+[A-Za-z0-9↑↓←→\\[\\]]"
+        // Comments first: a note *about* a keystroke is not a keystroke printed on a control, and
+        // failing on one would teach the next reader to work around the check rather than keep it.
+        let markup = html.replacingOccurrences(of: "(?s)/\\*.*?\\*/", with: " ",
+                                               options: [.regularExpression])
+            .replacingOccurrences(of: "(?s)<!--.*?-->", with: " ", options: [.regularExpression])
+        let printedKeys = markup.ranges(of: modifierRun)
+        report("no keystroke is printed in the diff pane's own markup (DEC-077)",
+               printedKeys.isEmpty, printedKeys.prefix(3).joined(separator: " | "))
+        report("negative control: the label this replaced would be caught",
+               !"<button id=\"diff-footer-expand\" type=\"button\">Expand ⌘E</button>"
+                   .ranges(of: modifierRun).isEmpty)
+        // And the control for the direction check: the shape the command had before this entry.
+        report("negative control: a command that only ever expands is caught",
+               !"case \"expandAll\": folds.forEach((_, i) => expanded.add(i));"
+                   .contains("if (allOpen) expanded = new Set();"))
+    }
+
     print("\n=== nothing animates without an off switch (DEC-064, 24-… §5) ===")
     do {
         // The rule this replaced was stronger and free: *nothing animates*, so reduced motion was

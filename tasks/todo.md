@@ -1935,3 +1935,29 @@ quiet control; the moment it disappears it is a missing one.
 Toggling wrap is the only act that creates something to scroll to without changing the document, so
 it updates the track — and settles the views first, because the widths it decides from are only
 right once the pending measurement has been read (step 67).
+
+## Step 69 — `28-…` item 4: ⌘E goes both ways (DEC-078)
+
+- [x] **DEC-078 written before the code**, amending DEC-017: one command, both directions
+- [x] `expandAll` collapses when every fold is already open, expands otherwise
+- [x] the footer button reads `Expand` or `Collapse`, recomputed with the footer, and is dropped
+      entirely when there is nothing folded
+- [x] the menu item is `Expand or Collapse All Ranges`, naming the toggle rather than one direction
+- [x] a live arm asserting the **round trip** — `2 → 0 → 2` folds, `Expand → Collapse → Expand`
+- [x] three source checks with two negative controls
+
+### Step 69 — *everything is open*, not *anything is open*
+
+The rule that decides which way ⌘E goes is that **every** fold is already expanded. `goToStop` opens
+whatever fold covers the line it jumps to, and a reader can click one open — under an *anything*
+rule either of those would turn the next ⌘E into a collapse, which is not the reading of the key
+they have. Under the *everything* rule it opens the rest, and the second press closes them all.
+
+### Step 69 — the keystroke rule had a hole the size of the diff pane
+
+The button's label was `Expand ⌘E`. DEC-077 took keystrokes off the interface and the check written
+for it reads `ChromeLabels` and the AppKit chrome — **nothing was looking at the webview's own
+markup**, which is where the one remaining printed keystroke was. A check now refuses a modifier run
+in `index.html`, with comments stripped first and that label as its negative control.
+
+1666 → 1672 checks.

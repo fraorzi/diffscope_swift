@@ -3313,3 +3313,44 @@ This project has been building for the reader who wants to know **how the tool r
 ### Revisit trigger
 
 Reopen the first point the moment a reader is surprised by an answer — the chips exist because a tool that aligns code structurally can be wrong in ways a reader cannot see, and *silent and right* and *silent and wrong* look identical. The sentence for a degradation is the floor, and it does not move.
+
+---
+
+## DEC-078 — Expanding a fold is reversible, and one command does both directions
+
+- **Date:** 2026-08-14 · **Topic:** `⌘E` expands every collapsed range and there is no way back · **Status:** Accepted · **Amends DEC-017; item 4 of [28-interface-plan.md](28-interface-plan.md)**
+
+### Context
+
+DEC-017 permits folding — the one presentation act that puts content out of sight — **only while the count of what is hidden is shown and it is one keystroke from opening**. That is a rule about getting *in* to the folded state, and it was written from the position of a reader who is worried about losing a difference. It says nothing about getting back out, and nothing did: `expandAll` adds every fold index to a set that is only ever cleared when a new model arrives.
+
+The owner reported it as a defect, and it is one in the plain sense — a reader who presses `⌘E` on a file with sixty folded lines to check one of them cannot get the file back to the shape they were reading it in. Their remedy today is to select another file and select this one again.
+
+There is a second-order cost. Folding exists because unchanged text is noise; a reader who cannot re-fold has to weigh *do I want to see this* against *am I willing to lose the shape of the file*, which is exactly the kind of small irreversible choice that makes people stop using a control.
+
+### Options considered
+
+1. **A second command and a second key** — `⌘E` expands, `⇧⌘E` collapses. Rejected: the map is already at four modifier tiers, and DEC-077 has just taken every printed keystroke off the screen, so a reader would have to *learn* the second one from a menu. Two commands also make it possible to be in a state neither of them describes.
+2. **Collapse restores exactly what was folded before, per fold.** Rejected as more than was asked for and less checkable: a fold that was opened by clicking it, and a fold that was opened because a jump landed inside it (`goToStop` opens whatever covers its target), would restore differently, and no button label can honestly describe that.
+3. **One command that toggles: expand everything, unless everything is already expanded, in which case collapse everything.** Chosen.
+
+### Final decision
+
+**Option 3.** Specifically:
+
+- `expandAll` expands every fold **unless every fold is already expanded**, in which case it collapses every fold. One key, one menu item, one button.
+- The rule is deliberately *everything is expanded*, not *anything is expanded*: a reader who has opened one fold by clicking it, or who has jumped into one, presses `⌘E` to open the rest — which is the reading of the key they already have. The second press closes them all.
+- **The button says which way it will go** — `Expand` or `Collapse`, recomputed whenever the footer is. A control whose effect depends on hidden state has to state the effect, and this is the one place in the pane where that state is not otherwise visible.
+- The menu item is renamed to name the toggle rather than one of its directions.
+- The button stops printing `⌘E`, completing DEC-077 in the one place it had been missed: the rule was written about the chrome and this label lives in the webview.
+
+### Consequences
+
+- **DEC-017 is unchanged in substance.** The count is still shown, the content is still one keystroke away, and the folded state is still the one the model arrives in. What is added is the way back.
+- **A new state is reachable that was not before**: everything folded again after having been unfolded. It is the state the model arrives in, so nothing new has to be drawn for it.
+- The disclosed count in the footer already describes the folded state, so the bar is correct in both directions with no change.
+- Checked with both directions and their controls: two presses return the document to the fold count it started with, and a press with one fold already open expands rather than collapses.
+
+### Revisit trigger
+
+Reopen if a reader asks for *this fold* back rather than all of them — that is option 2, and it needs a per-fold record and a label that can describe it.

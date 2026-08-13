@@ -936,7 +936,53 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 FileHandle.standardError.write(
                     Data("SELFTEST navigation=\(ok ? "OK" : "MISMATCH") jump=\(jump) stops=\(render.stops.count) folds=\(render.collapses.count)\n".utf8))
                 if !ok { exit(14) }
-                self.snapshot(named: "navigation") { self.runRefreshSelftest() }
+                self.snapshot(named: "navigation") {
+                    self.runExpandToggleSelftest { self.runRefreshSelftest() }
+                }
+            }
+        }
+    }
+
+    /// DEC-078: **⌘E is reversible.** Run against the navigation model, which is the one that has
+    /// folds in it, and it asks for the round trip rather than for either direction alone — the
+    /// defect the owner reported is not "collapse is missing", it is "there is no way back".
+    ///
+    /// The button's label is read from the document beside the fold count, because the label is the
+    /// promise: a control whose effect depends on state the reader cannot see has to say which way
+    /// it will go, and a fold set that toggles under a label stuck on `Expand` is the same defect
+    /// with an extra step.
+    private func runExpandToggleSelftest(then next: @escaping () -> Void) {
+        func read(_ label: String, _ handler: @escaping (Int, String) -> Void) {
+            webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
+                let text = (value as? String) ?? "nil"
+                let data = Data(text.utf8)
+                let probe = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+                let folds = probe["foldMarks"] as? Int ?? -1
+                let button = probe["expandLabel"] as? String ?? "?"
+                FileHandle.standardError.write(Data(
+                    ("SELFTEST expand-\(label) folds=\(folds) button=\(button)\n").utf8))
+                handler(folds, button)
+            }
+        }
+        read("before") { before, beforeLabel in
+            self.webView.evaluateJavaScript("window.diffscopeCommand(\"expandAll\")") { _, _ in
+                read("expanded") { opened, openedLabel in
+                    self.webView.evaluateJavaScript("window.diffscopeCommand(\"expandAll\")") { _, _ in
+                        read("collapsed") { closed, closedLabel in
+                            // Three claims: the folds were there, one press opened every one of
+                            // them, and a second press put the document back exactly as it was.
+                            let ok = before > 0 && beforeLabel == "Expand"
+                                && opened == 0 && openedLabel == "Collapse"
+                                && closed == before && closedLabel == "Expand"
+                            FileHandle.standardError.write(Data(
+                                ("SELFTEST expand-toggle=\(ok ? "OK" : "MISMATCH") "
+                                    + "\(before)→\(opened)→\(closed) folds, "
+                                    + "\(beforeLabel)→\(openedLabel)→\(closedLabel)\n").utf8))
+                            guard ok else { exit(29) }
+                            next()
+                        }
+                    }
+                }
             }
         }
     }
