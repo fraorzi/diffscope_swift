@@ -1131,18 +1131,106 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 // heights CodeMirror had before it re-measured, and the answer flips between runs
                 // on identical input — which is the scale arm's lesson in a second place: a number
                 // taken before the thing settles is a number about the timing, not the layout.
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                    self.webView.evaluateJavaScript("JSON.stringify(window.diffscopeHeights())") { h, _ in
-                        FileHandle.standardError.write(Data(
-                            ("SELFTEST unified-geometry \((h as? String) ?? "nil")\n").utf8))
-                    }
-                }
                 self.snapshot(named: "unified") {
                     guard ok else { exit(24) }
-                    // Back to two panes: every arm after this one probes two documents, and the
-                    // audit that follows must see the marks the reader sees.
-                    self.webView.evaluateJavaScript("window.diffscopeSetLayout(\"split\")") { _, _ in
-                        self.runStyleAuditSelftest()
+                    // **After a turn of the run loop, and before the layout goes back.** Asked
+                    // immediately, this reports whatever line heights CodeMirror had before it
+                    // re-measured, and the answer flips between runs on identical input — the
+                    // scale arm's lesson in a second place. Asked *late*, it reports the other
+                    // layout: both of these were scheduled beside the snapshot and fired after it,
+                    // so `unified-geometry` had been printing `unified: 0→0` — a measurement of a
+                    // hidden view, under a name that said otherwise, for two milestones.
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        self.webView.evaluateJavaScript("JSON.stringify(window.diffscopeHeights())") { h, _ in
+                            FileHandle.standardError.write(Data(
+                                ("SELFTEST unified-geometry \((h as? String) ?? "nil")\n").utf8))
+                            // `28-…` item 2: the tint behind a changed line is as wide as the line
+                            // box, and a line box is as wide as `.cm-content` — which CodeMirror
+                            // sizes to the widest line, not to the scroller.
+                            self.runWidthSelftest {
+                                // Back to two panes: every arm after this one probes two documents,
+                                // and the audit that follows must see the marks the reader sees.
+                                self.webView.evaluateJavaScript("window.diffscopeSetLayout(\"split\")") { _, _ in
+                                    self.runStyleAuditSelftest()
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// `28-…` item 2: **the tint behind a changed line reaches the right edge of the pane.**
+    ///
+    /// The tint is a line decoration, so it is as wide as the line box, and a line box is as wide
+    /// as `.cm-content`. The defect was one missing `flex-direction` on the unified host — the
+    /// layout switch sets `display: flex`, which made it a *row* container, and a flex item with no
+    /// grow is as wide as its content. So every line ended at the longest line and the pane went
+    /// black to the right of it. Nothing was wrong with the tint's own rule, which is why the
+    /// acceptance test is a measurement of the line box rather than a photograph of the colour.
+    ///
+    /// Three questions, and the second is the one a single measurement would have missed:
+    ///   1. every line box ends at the same place (`minLine == maxLine`) — a three-character line
+    ///      and a two-hundred-character line are tinted to the same edge;
+    ///   2. that place is the space beside the gutters (`maxLine == available`), **at two window
+    ///      widths**, because a layout that has only ever been laid out once is a layout nobody has
+    ///      checked (M9-K);
+    ///   3. and the measurement can fail: the missing `flex-direction` is put back and the same
+    ///      numbers are required to notice.
+    private func runWidthSelftest(then next: @escaping () -> Void) {
+        func measure(_ label: String, _ handler: @escaping (Bool, String) -> Void) {
+            webView.evaluateJavaScript("JSON.stringify(window.diffscopeWidths())") { value, _ in
+                let text = (value as? String) ?? "nil"
+                let data = Data(text.utf8)
+                let all = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+                let panes = all["panes"] as? [[String: Any]] ?? []
+                let pane = panes.first { $0["view"] as? String == "unified" } ?? [:]
+                let minLine = pane["minLine"] as? Int ?? -1
+                let maxLine = pane["maxLine"] as? Int ?? -2
+                let available = pane["available"] as? Int ?? -3
+                let host = pane["hostWidth"] as? Int ?? -4
+                let scroller = pane["scrollerWidth"] as? Int ?? -5
+                let unmatched = (pane["rowDrift"] as? String ?? "").contains("lines-with-no-row=0")
+                // Three relations, and the middle one is what the first control was missing: a
+                // shrink-wrapped editor keeps every relation *inside* itself while occupying half
+                // its pane, so the editor has to be measured against the pane as well.
+                let filled = minLine == maxLine && maxLine == available && available > 0
+                    && scroller == host && unmatched
+                FileHandle.standardError.write(Data(
+                    ("SELFTEST widths-\(label)=\(filled ? "OK" : "MISMATCH") "
+                        + "min=\(minLine) max=\(maxLine) available=\(available) "
+                        + "scroller=\(scroller) host=\(host) "
+                        + "inner=\(all["innerWidth"] as? Int ?? -1) "
+                        + "\(pane["rowDrift"] as? String ?? "no drift reported")\n").utf8))
+                handler(filled, text)
+            }
+        }
+        // A second width, taken from the window rather than from the page: the page cannot resize
+        // itself and a width the layout was built at proves nothing about any other one.
+        let original = window.frame
+        measure("natural") { natural, _ in
+            var narrowed = original
+            narrowed.size.width -= 220
+            self.window.setFrame(narrowed, display: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                measure("narrowed") { narrowed2, _ in
+                    self.window.setFrame(original, display: true)
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                        self.webView.evaluateJavaScript("window.diffscopeInjectShrinkWrap(true)") { _, _ in
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                                measure("control") { stillFilled, _ in
+                                    let caught = !stillFilled
+                                    FileHandle.standardError.write(Data(
+                                        ("SELFTEST widths-control=\(caught ? "OK" : "MISMATCH") "
+                                            + "the missing flex-direction is noticed\n").utf8))
+                                    self.webView.evaluateJavaScript("window.diffscopeInjectShrinkWrap(false)") { _, _ in
+                                        guard natural && narrowed2 && caught else { exit(26) }
+                                        next()
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -1153,6 +1241,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// the live document, because a stylesheet can be read and still be wrong about what the reader
     /// gets — a later rule, a cascade, an inherited opacity.
     private func runStyleAuditSelftest() {
+        // The same width question asked of the two-pane layout, which sizes its content
+        // independently of unified and can therefore be right while unified is wrong.
+        webView.evaluateJavaScript("JSON.stringify(window.diffscopeWidths())") { w, _ in
+            FileHandle.standardError.write(Data(
+                ("SELFTEST split-widths \((w as? String) ?? "nil")\n").utf8))
+        }
         webView.evaluateJavaScript("JSON.stringify(window.diffscopeStyleAudit())") { value, _ in
             let text = (value as? String) ?? "nil"
             let data = Data(text.utf8)
@@ -2657,6 +2751,22 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         guard let dir = ProcessInfo.processInfo.environment["DIFFSCOPE_SNAPSHOT_DIR"] else {
             next(); return
         }
+        // **Settled before it is photographed.** CodeMirror re-measures inside an animation frame
+        // and the frame never comes while the window is occluded, which this one always is — so
+        // every picture taken before this line shows the gutter rows the editor was *constructed*
+        // with (16.87 px) beside lines the stylesheet lays out at 15, and a number column that has
+        // drifted a whole line by the sixth row. The reader never sees that; the pictures did.
+        webView.evaluateJavaScript("window.diffscopeSettle()") { settled, _ in
+            if let text = settled as? String, !text.isEmpty {
+                FileHandle.standardError.write(Data(
+                    ("SELFTEST settle \(name) line-height \(text)\n").utf8))
+            }
+            self.captureSnapshot(named: name, into: dir, then: next)
+        }
+    }
+
+    private func captureSnapshot(named name: String, into dir: String,
+                                 then next: @escaping () -> Void) {
         webView.takeSnapshot(with: nil) { image, _ in
             if let image, let tiff = image.tiffRepresentation,
                let rep = NSBitmapImageRep(data: tiff),

@@ -48,7 +48,15 @@
   #track:disabled { opacity: var(--ds-track-idle); }
   /* One column instead of two (DEC-059). Only one of the two layouts holds a document at a
      time, so nothing is drawn twice and no probe counts a mark that is not on screen. */
-  #unified { display: none; flex: 1; min-height: 0; background: var(--ds-code); }
+  /* **`flex-direction: column`, and it is the whole of `28-…` item 2.** The layout switch sets
+     `display: flex` on this host, which made it a *row* container with one item in it — and a flex
+     item with no `flex-grow` is as wide as its content. So the editor was as wide as its longest
+     line, every line box ended there, and the tint behind a changed line stopped in the middle of
+     the pane with black to the right of it. Nothing was wrong with the tint's own rule.
+     Down the column axis the item stretches across the width instead, which is what `#stage` and
+     `#rendered` were already getting for free. */
+  #unified { display: none; flex: 1; min-height: 0; flex-direction: column;
+             background: var(--ds-code); }
 
   /* The rendered comparison (DEC-063). Four modes over two images that arrive as data: URLs and
      are drawn through <img>, never inlined — an SVG is repository content and can carry script. */
@@ -296,7 +304,15 @@
      re-measured: asked after the layout settles, the two agree to the pixel and agree identically
      across runs. The rule stays because two things that must match should not be able to take
      different defaults, and it is recorded here that it fixed nothing observable. */
-  .cm-editor .cm-line, .cm-editor .cm-gutterElement { line-height: var(--ds-line-height); }
+  /* **`.cm-content` joined this list and, like the rest of it, repaired nothing observable.**
+     `.cm-scroller` sets its type with the `font:` shorthand, which resets `line-height` to
+     `normal`, and `.cm-content` inherited that — so an editor asked for its metrics before it has
+     measured answers 16.87 px where this stylesheet asks for 15. That is a real number and it is
+     what the snapshots were photographing; it is *not* what a reader gets, because CodeMirror
+     re-measures and only an occluded window stops it. The rule stays for the reason the two beside
+     it do: three elements that must agree should not be able to take different defaults. */
+  .cm-editor .cm-content, .cm-editor .cm-line,
+  .cm-editor .cm-gutterElement { line-height: var(--ds-line-height); }
   .cm-activeLine { background: var(--ds-syn-active-line); }
   .cm-selectionBackground, ::selection { background: var(--ds-syn-selection); }
   .tok-keyword { color: var(--ds-syn-keyword); }

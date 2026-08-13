@@ -43,10 +43,16 @@ A changed line gets a tint across the **whole line**; the bytes that actually ch
 
 **The negative control failed first, and it was right to.** The obvious control — the design's own green and red at their shipped alphas — measures **1.289:1** apart and would have *passed* the check it exists to fail. The red's alpha is solved for instead, so green at .20 and red at .15 land on the same relative luminance over paper and the control measures 1.00:1. `--ds-underline-thickness` and its quiet twin are gone from the token file; `--ds-underline-offset` stays, because the terminal still draws a dotted underline for a shell that has wandered out of the selected repository.
 
-**2. The line background reaches the right edge**
+**2. The line background reaches the right edge** — **landed**
 Reported with a screenshot: the tint stops where the text stops.
 *Cause to check first:* CodeMirror lines are as wide as their content unless the content element is stretched; look at `.cm-line` width against the scroller, not at the tint's rule.
 *Done when:* a line with three characters and a line with two hundred are tinted to the same right edge, at two window widths.
+
+*How it landed, and the cause was one word.* `applyLayout` shows the unified host with `display: flex`, which made it a **row** container holding one item — and a flex item with no `flex-grow` is as wide as its content. So the editor was as wide as its longest line, every line box ended there, and the pane went black to the right of it. `flex-direction: column` is the whole fix; nothing was wrong with the tint's rule, which is why the acceptance test measures the line box rather than photographing the colour. `diffscopeWidths` reports it, the arm asserts `minLine == maxLine == available` **and `scrollerWidth == hostWidth`** at two window widths — the second is taken by resizing the window 220 pt, because a layout laid out once is a layout nobody has checked (M9-K).
+
+**The first control passed, for the second time in two items.** Injecting the missing `flex-direction` back shrinks the scroller *and* the lines together, so every relation inside the editor still agreed while the pane sat half empty — the editor has to be measured against the pane it is in, not only against itself.
+
+*And the instrument was lying in every picture.* The same probe reported eleven of fourteen lines with no gutter row level with them, and a photograph appeared to confirm it. It is not real: **CodeMirror re-measures inside an animation frame, and `requestAnimationFrame` is suspended while the window is occluded**, which a terminal-launched selftest always is (T1-A). The views keep their construction-time line height — 14 or 16.87 px against the 15 the stylesheet lays lines out at — and the *gutter rows* are sized from it. Forcing the pending measurement to be read (`diffscopeSettle`, called before every snapshot now) puts the rows back on their lines. Every unified snapshot this project has taken before today has a drifted number column in it that no reader has ever seen.
 
 **3. The horizontal scrollbar appears when there is nothing to scroll** (DEC-077, reverses `24-…` §5)
 The old rule was *quietened, never removed — a control that vanishes teaches a reader it does not exist*. That rule was written about a control a reader might need. This one **cannot be used**.

@@ -758,6 +758,16 @@ function applyLayout(model) {
   const clock = () => performance.now();
   const startedAt = clock();
   if (layout === "unified") {
+    // **The host is shown before the view is built**, so the editor is never constructed inside a
+    // `display: none` element and never has to start from the font's own defaults.
+    //
+    // Recorded honestly: this fixed nothing observable. The stale metrics it was written for were
+    // real — gutter rows sized at 16.87 px beside lines the stylesheet lays out at 15 — but they
+    // outlive construction, because CodeMirror re-measures inside an animation frame and the frame
+    // never comes while the window is occluded. `diffscopeSettle` is what actually clears them, and
+    // in a window the reader can see they were never there at all.
+    stage.style.display = "none";
+    host.style.display = "flex";
     if (!unified) unified = makeUnifiedPane(host);
     const composeAt = clock();
     const doc = buildUnified(model);
@@ -785,8 +795,10 @@ function applyLayout(model) {
     };
     applySide(left, empty);
     applySide(right, empty);
-    stage.style.display = "none";
-    host.style.display = "flex";
+    // And a re-measure asked for explicitly, so the metrics cannot go stale a second way — a
+    // window resized while unified is hidden, a font that loads late. It is a no-op when nothing
+    // has changed.
+    unified.requestMeasure();
   } else {
     if (unified) {
       unified.dispatch({ changes: { from: 0, to: unified.state.doc.length, insert: "" } });
@@ -1255,6 +1267,21 @@ window.diffscopeInjectHostileStyle = function (enable) {
   return true;
 };
 
+/// The negative control for `diffscopeWidths`. The defect `28-…` item 2 records was one missing
+/// `flex-direction` on the unified host: `display: flex` made it a row container, and a flex item
+/// with no grow is as wide as its content. Putting that back is the only honest way to show the
+/// measurement can fail — a width check that has only ever seen the fixed layout is an assumption.
+window.diffscopeInjectShrinkWrap = function (enable) {
+  const id = "ds-shrinkwrap-probe";
+  document.getElementById(id)?.remove();
+  if (!enable) return false;
+  const style = document.createElement("style");
+  style.id = id;
+  style.textContent = "#unified { flex-direction: row; }";
+  document.head.appendChild(style);
+  return true;
+};
+
 window.diffscopeSetWrap = function (enabled) {
   if (unified) {
     unified.dispatch({ effects: unifiedWrapping.reconfigure(enabled ? EditorView.lineWrapping : []) });
@@ -1601,6 +1628,91 @@ window.diffscopeHeights = function () {
     children: [...document.body.children].map(node =>
       `${node.id || node.tagName.toLowerCase()}:${rect(node)}`).join(" "),
   };
+};
+
+/// The horizontal half of `diffscopeHeights`. The tint behind a changed line stops where the line
+/// box stops, and a `.cm-line` is only as wide as `.cm-content` — which CodeMirror sizes to the
+/// **widest line**, not to the scroller. So the question "does the tint reach the right edge" is
+/// the question "how wide is a short line's box against the scroller", and it is the one to ask
+/// before touching the tint's own rule.
+///
+/// Reported per view and per line, because the two layouts size their content differently and a
+/// single number would hide which one is wrong.
+/// Force every editor to read the measurement it has pending, and report what changed.
+///
+/// CodeMirror re-measures inside an animation frame and **`requestAnimationFrame` is suspended
+/// while the window is occluded**, which a selftest launched from a terminal always is (T1-A). Until
+/// this existed, a view built while its host was hidden kept its construction-time defaults for the
+/// whole run: the *lines* were laid out by CSS and were right, and the **gutter rows** were sized
+/// from the stale number — 16.87 px against 15 — so every unified snapshot this project has taken
+/// has a number column in it that drifts a line by the sixth row, and the reader has never seen it.
+///
+/// Reading a coordinate forces the pending measurement to be read synchronously. Called before each
+/// snapshot, so a picture shows the layout the reader gets rather than the one the frame scheduler
+/// never got round to.
+window.diffscopeSettle = function () {
+  const views = [left, right, unified].filter(Boolean);
+  const before = views.map(v => v.defaultLineHeight);
+  for (const view of views) {
+    view.requestMeasure();
+    if (view.state.doc.length) view.coordsAtPos(0);
+  }
+  return views.map((v, i) => `${before[i].toFixed(2)}→${v.defaultLineHeight.toFixed(2)}`).join(" ");
+};
+
+window.diffscopeWidths = function () {
+  function measure(view, name) {
+    if (!view) return { view: name, absent: true };
+    // Settled first, for the reason `diffscopeSettle` exists: an occluded window never runs the
+    // frame the re-measurement is queued in, and this arm would otherwise report the layout the
+    // editor was constructed with rather than the one it has.
+    view.requestMeasure();
+    if (view.state.doc.length) view.coordsAtPos(0);
+    const scroller = view.scrollDOM;
+    const content = view.contentDOM;
+    const lines = [...view.dom.querySelectorAll(".cm-line")];
+    const widths = lines.map(el => Math.round(el.getBoundingClientRect().width));
+    const gutters = view.dom.querySelector(".cm-gutters");
+    return {
+      view: name,
+      // The pane the editor is supposed to fill. Without it the check is circular: a shrink-wrapped
+      // editor has a narrow scroller *and* narrow lines, so every relation inside the editor still
+      // agrees while the pane is half empty — which is exactly what the first version of the
+      // control demonstrated by passing.
+      hostWidth: Math.round(view.dom.parentElement?.getBoundingClientRect().width ?? -1),
+      scrollerWidth: Math.round(scroller.getBoundingClientRect().width),
+      scrollWidth: Math.round(scroller.scrollWidth),
+      contentWidth: Math.round(content.getBoundingClientRect().width),
+      // What the content has to fill: the scroller less the gutters beside it. A line box reaching
+      // this number is a tint reaching the right edge; anything less is the defect.
+      available: Math.round(scroller.getBoundingClientRect().width
+        - (gutters ? gutters.getBoundingClientRect().width : 0)),
+      lines: lines.length,
+      // The shortest and the longest line box. `28-…` item 2's acceptance test is that a line of
+      // three characters and a line of two hundred are tinted to the same right edge, which is
+      // exactly these two numbers being equal.
+      minLine: widths.length ? Math.min(...widths) : -1,
+      maxLine: widths.length ? Math.max(...widths) : -1,
+      // And whether the gutter rows stand where the lines stand. **Matched by position, not by
+      // index.** `.cm-gutterElement` comes back grouped by gutter, and the list also holds rows
+      // that belong to no line — the spacer at the top, and one per block widget, which is what a
+      // hunk header is. Pairing the two lists by index reported an 18 px drift in unified that a
+      // photograph appeared to confirm and that does not exist: every line has a row level with it,
+      // and the extra rows are the widget's own.
+      rowDrift: (() => {
+        const first = view.dom.querySelector(".cm-gutter");
+        if (!first) return "no gutter";
+        const rows = [...first.querySelectorAll(".cm-gutterElement")]
+          .map(el => Math.round(el.getBoundingClientRect().top));
+        const tops = lines.map(el => Math.round(el.getBoundingClientRect().top));
+        const unmatched = tops.filter(top => !rows.some(row => Math.abs(row - top) <= 1)).length;
+        return `rows=${rows.length} lines=${tops.length} lines-with-no-row=${unmatched}`;
+      })(),
+    };
+  }
+  return { layout, innerWidth: window.innerWidth,
+           panes: [measure(left, "left"), measure(right, "right"),
+                   measure(unified, "unified")] };
 };
 
 window.diffscopeProbe = function () {

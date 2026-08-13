@@ -1877,3 +1877,40 @@ passing on its underline**, and the texture that was supposed to be the other ca
 satisfied the check. Removing the underlines failed six marks at a stroke and said so. The list now
 names the form the textures are actually written in, and the underline's own rule moves to the
 luminance measurement rather than disappearing with it.
+
+## Step 67 — `28-…` item 2: the tint reaches the right edge, and the pictures stop lying
+
+- [x] `#unified` gains `flex-direction: column` — the layout switch sets `display: flex`, which had
+      made it a row container whose single item was as wide as its content
+- [x] `diffscopeWidths` reports host, scroller, gutters, every line box and the gutter/line pairing
+- [x] a selftest arm asserting `minLine == maxLine == available` **and `scroller == host`**, at two
+      window widths, with the missing `flex-direction` injected back as the control
+- [x] `diffscopeSettle` forces CodeMirror's pending measurement before every snapshot
+- [x] `28-…` item 2 records both the fix and the artifact
+
+### Step 67 — the control passed, again
+
+Injecting `flex-direction: row` back shrinks the scroller **and** the lines together, so `minLine ==
+maxLine == available` still held while the pane sat half empty. Two items in a row the first control
+has been satisfied by the defect it was written to catch. The rule that comes out of it: **measure
+the thing against what it is supposed to fill, not against itself.** The editor is now compared with
+its host as well.
+
+### Step 67 — eleven of fourteen lines had no gutter row, and it was the instrument
+
+The width probe also reported a vertical drift between the number columns and the code, and a
+full-resolution crop appeared to confirm it — rows 17 px apart against lines at 15. It is not real.
+**CodeMirror re-measures inside an animation frame and `requestAnimationFrame` is suspended while
+the window is occluded**, which a terminal-launched selftest always is (T1-A, for the third time in
+this project). Each view keeps whatever line height it was constructed with — 14 px for the two
+panes, 16.87 for unified — and the *gutter rows* are sized from that number while the lines are laid
+out by CSS. Reading a coordinate forces the pending measurement: rows go to 15 px and
+`lines-with-no-row` goes to 0.
+
+So **every unified snapshot taken before today has a number column in it that drifts a whole line by
+the sixth row, and no reader has ever seen it.** `snapshot(named:)` settles the views first now.
+
+Two changes made while chasing the wrong cause were kept and are recorded as having fixed nothing
+observable: the unified view is built after its host is shown rather than inside a `display: none`
+element, and `.cm-content` joins the two elements that already share `--ds-line-height`. Both are
+right; neither was the bug.

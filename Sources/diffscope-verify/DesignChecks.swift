@@ -478,9 +478,10 @@ func runTesterPacketChecks(_ reportRaw: (String, Bool, String) -> Void) {
 
         report("the contract exists and is not empty", !contract.isEmpty, "\(contract.count) bytes")
 
-        // The class the hostile-probe control applies is the selftest's own instrument, not
-        // something a reader ever sees, so it is not part of the contract.
-        let emitted = Set(diffScript.ranges(of: "ds-[a-z-]+")).subtracting(["ds-hostile-probe"])
+        // The ids the two negative controls give their injected stylesheets are the selftest's own
+        // instruments, not something a reader ever sees, so they are not part of the contract.
+        let emitted = Set(diffScript.ranges(of: "ds-[a-z-]+"))
+            .subtracting(["ds-hostile-probe", "ds-shrinkwrap-probe"])
         let undocumented = emitted.filter { !contract.contains("`\($0)`") }.sorted()
         report("every class the renderer applies is described in the contract",
                undocumented.isEmpty, undocumented.joined(separator: ", "))
