@@ -154,6 +154,70 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
                !shortcuts.contains("⌘J"))
     }
 
+    print("\n=== the status line says what the watcher is doing, and prints the map's keys (DEC-075) ===")
+    do {
+        report("watching says so, with how old the window is",
+               ChromeLabels.watcherStatus(.watching, refreshedSecondsAgo: 4)
+                   == "● Watching · refreshed 4s ago",
+               ChromeLabels.watcherStatus(.watching, refreshedSecondsAgo: 4))
+        // A window that has never refreshed does not say it refreshed zero seconds ago: the age is
+        // absent, because the clause exists to make the counts honest and `0s` would do the opposite.
+        report("and a window that has never refreshed omits the age rather than saying zero",
+               ChromeLabels.watcherStatus(.watching, refreshedSecondsAgo: nil) == "● Watching")
+        // Shape, not colour (DEC-035): a filled dot against a hollow one survives greyscale.
+        report("not watching is a different shape, not a different shade",
+               ChromeLabels.watcherStatus(.unavailable("no FSEvents stream"),
+                                          refreshedSecondsAgo: nil).hasPrefix("○")
+                   && ChromeLabels.watcherStatus(.watching, refreshedSecondsAgo: nil).hasPrefix("●"))
+        report("and it carries the reason, which is the half a reader can act on",
+               ChromeLabels.watcherStatus(.stopped("kbtree was moved or renamed"),
+                                          refreshedSecondsAgo: 30)
+                   == "○ Watching stopped — kbtree was moved or renamed · refreshed 30s ago")
+
+        report("the age reads in the units of a window being watched",
+               ChromeLabels.refreshedAgo(seconds: 0) == "just now"
+                   && ChromeLabels.refreshedAgo(seconds: 4) == "4s ago"
+                   && ChromeLabels.refreshedAgo(seconds: 90) == "1m ago"
+                   && ChromeLabels.refreshedAgo(seconds: 7200) == "2h ago",
+               ChromeLabels.refreshedAgo(seconds: 90))
+        // A clock that goes backwards — a sweep stamped in the future by a skewed clock — must not
+        // print a negative age, for the same reason `stalenessDescription` says *dated in the future*.
+        report("negative control: a negative age is not printed as one",
+               ChromeLabels.refreshedAgo(seconds: -5) == "just now")
+
+        // **The legend disagrees with the design, on purpose.** The design writes `⌥↑↓ change`;
+        // DEC-065 gives ⌥↑↓ to files and ⌘↑↓ to changes, and a legend printed from a picture rather
+        // than from the map is the tester packet's defect on a surface every reader sees.
+        let legend = ChromeLabels.keyLegend()
+        report("the legend prints the keys the map actually binds",
+               legend == "⌘↑↓ change · ⌥↑↓ file · ⌘⏎ open in editor", legend)
+        report("and not the key the design drew for changes", !legend.contains("⌥↑↓ change"), legend)
+
+        // Every modifier run in it is a shortcut the map composes — the same rule, and the same
+        // check, as the tester packet's.
+        let shortcuts = Set(KeyboardMap.bindings.map(\.shortcut))
+        let pattern = try! NSRegularExpression(pattern: "[⌃⌥⇧⌘]+[^ ]")
+        var unknown: [String] = []
+        for match in pattern.matches(in: legend,
+                                     range: NSRange(legend.startIndex..., in: legend)) {
+            guard let found = Range(match.range, in: legend) else { continue }
+            let token = String(legend[found])
+            // `⌘↑↓` is one run standing for two bindings, so both are asked for.
+            let candidates = token.hasSuffix("↑") || token.hasSuffix("↓")
+                ? [String(token.dropLast()) + "↑", String(token.dropLast()) + "↓"]
+                : [token]
+            if !candidates.allSatisfy({ shortcuts.contains($0) }) { unknown.append(token) }
+        }
+        report("every keystroke the legend prints is one the map composes", unknown.isEmpty,
+               unknown.joined(separator: " "))
+        report("negative control: a keystroke nothing binds would be caught",
+               !shortcuts.contains("⌥⌘↑"))
+
+        report("the layout is offered as words, not as glyphs nobody can name",
+               ChromeLabels.layoutTitles == ["Unified", "Side by side"],
+               ChromeLabels.layoutTitles.joined(separator: " | "))
+    }
+
     print("\n=== a group header is short, and no two are the same (DEC-074) ===")
     do {
         let workspace = groupHeaderTitles(["packages/web", "packages/api"])

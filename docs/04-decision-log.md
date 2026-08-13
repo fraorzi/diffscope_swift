@@ -3181,3 +3181,53 @@ The rule: take the first *n* components, upper-cased, and append `…` when the 
 ### Revisit trigger
 
 Reopen if a repository ever produces more than about ten groups whose first two components are identical: the rule then lengthens every header in the list at once, and the pane may be better served by lengthening only the headers that collide.
+
+---
+
+## DEC-075 — The status line carries the watcher, the modes and the keys, and it prints the keys the map actually binds
+
+- **Date:** 2026-08-12 · **Topic:** what the bottom bar says; where the mode switch lives; the design's key legend · **Status:** Accepted · **Extends DEC-026, DEC-027, DEC-064**
+
+### Context
+
+The design's status line has three fields: `● Watching · refreshed 4s ago` at the left, the mode switch in the middle, and at the right the layout control, `Wrap long lines`, and a legend reading `⌥↑↓ change · ⌘⏎ open in editor`.
+
+What ships is one label carrying whatever happened last. Three things are missing from it and one is wrong in the design.
+
+**The watcher has never been visible.** DEC-027 watches the open repository and DEC-026 debounces; the reader is told only when it *fails* (`auto-refresh unavailable for …`). A reader looking at a diff has no way to know whether what they are seeing is live, and *nothing is happening* looks exactly like *watching, nothing has changed*. It is also the one fact that makes the rest of the window trustworthy: every count in it is as old as the last refresh.
+
+**The legend in the design is wrong about this product.** It writes `⌥↑↓ change`, and DEC-065 gives `⌥↑↓` to **files**; changes are `⌘↑↓`. A legend is a promise about a keystroke, and one printed from a picture rather than from the map is the tester packet's defect on a surface every reader sees.
+
+### Options considered
+
+1. **Draw the design's legend as written.** Rejected outright: it names a key that does something else.
+2. **Compose the legend from `KeyboardMap`** — three entries, `⌘↑↓ change · ⌥↑↓ file · ⌘⏎ open in editor` — under DEC-071's rule, with a check that every keystroke it prints is one the map composes.
+3. **Drop the legend.** Rejected: it is the only place in the window that says movement has keys at all, and the pills say it for the things that are pills.
+
+For the watcher:
+
+1. **A dot and a word, with the age of the last refresh** — `● Watching · refreshed 4s ago`, and `○ Not watching — <reason>` where the watcher failed or stopped. Shape as well as colour (DEC-035): a filled dot against a hollow one.
+2. **A word only.** Rejected: *watching* without an age says nothing about how old the counts are, which is the question the field exists to answer.
+3. **An age only.** Rejected in the other direction: `refreshed 4s ago` beside a dead watcher would be a true sentence in the service of a false impression.
+
+### Final decision
+
+**Option 1 and option 2.** The bar's three fields are the design's, and the legend is the map's.
+
+**`refreshed Ns ago` is measured from the last time the window actually re-read the repository** — `reloadFiles` and the sweep, the two places that replace what is on screen — not from the last keystroke, the last render or the last file-system event. An event the debounce swallowed changed nothing and must not reset the clock (DEC-026). Before the first refresh the clause is absent rather than zero.
+
+**The mode switch moves here from the diff pane's band.** It applies to the whole window's reading of a file and it is now the only pill left with nowhere to be; the lens stays in the pane, because a lens *is* about that pane.
+
+**The words are `Unified` and `Side by side`, not icons.** The design draws glyphs; this project has no icon set, and a glyph a reader cannot name is worse than a word. Recorded so the next revision does not read the absence as an oversight.
+
+### Consequences
+
+- **The window says how old it is.** Every count in it is as old as the last refresh, and until now nothing said when that was.
+- **A failed watcher is visible while it is failing**, not only in the moment it failed. The old message was transient: it was overwritten by the next thing that happened, and the reader was left with a window that quietly stopped following the disk.
+- **The transient message keeps its place beside the watcher field**, so nothing that used to be said stops being said.
+- **The legend disagrees with the design on purpose**, and the check is what keeps it that way: every keystroke printed in the chrome must be one `KeyboardMap` composes.
+- **The bar is 30 pt rather than 24**, because a 24 pt pill cannot sit in a 24 pt bar.
+
+### Revisit trigger
+
+Reopen if the age ever needs to be per-repository rather than per-window: the sweep refreshes all of them and the watcher follows only the open one, so a reader looking at the repository list is reading counts of two different ages. Today the list is swept as a whole and the distinction does not arise.

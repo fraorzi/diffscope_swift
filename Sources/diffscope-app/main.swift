@@ -115,6 +115,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var searchScope: SearchScope = .changedFiles
     /// The sentence stating which convention the uncommitted counts use (`12-…` §2).
     var conventionLabel: NSTextField!
+    /// The status line's own fields (DEC-075): what the watcher is doing, how old the window is,
+    /// the layout, and the wrap switch. The transient message keeps `statusLabel`.
+    var watchLabel: NSTextField!
+    var layoutControl: PillControl!
+    var wrapButton: NSButton!
+    var watchState: ChromeLabels.WatchState = .unavailable("no repository open")
+    var lastRefresh: Date?
+    private var refreshTicker: Timer?
     /// The two column headers (DEC-071). Held because both change with the collapse state and the
     /// changed-file count changes with every reload — the caption and the count are two labels
     /// rather than one string so the count can sit at the pane's other edge, where the eye compares
@@ -402,7 +410,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // The scope and what it compares have left this band for a row of their own, across the
         // window (DEC-072): changing the scope changes the *file list*, so the control belongs
         // above the lists rather than inside the pane on the other side of them.
-        let band = NSStackView(views: [modeControl, lensControl])
+        // The mode switch has moved to the status line (DEC-075); the lens stays, because a lens is
+        // about this pane and a mode is about the whole window's reading of a file.
+        let band = NSStackView(views: [lensControl])
         band.orientation = .horizontal
         band.alignment = .centerY
         band.spacing = Theme.space6
@@ -554,6 +564,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
         window.contentView = container
         window.makeKeyAndOrderFront(nil)
+        // The age changes with nothing else happening, so something has to ask. One second, and the
+        // label is only assigned when the sentence changes.
+        refreshTicker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            self?.updateWatchLabel()
+        }
         watchForKeyboardNavigation()
         // The drawer starts closed, and the divider has to say so. `NSSplitView` sets its arranged
         // subviews' frames itself — a height constraint on one of them is a suggestion it ignores —
@@ -1811,6 +1826,60 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 + "base=[\(Int(block.minX)),\(Int(block.minY)) \(Int(block.width))×\(Int(block.height))] "
                 + "\"\(baseBlock.toolTip ?? "")\"\n").utf8))
         guard ok else { exit(65) }
+        statusBarSelftest()
+    }
+
+    /// DEC-075, in the window. The three fields are laid out against each other rather than in one
+    /// stack, so the arm asks what only the window can answer: the modes are **centred on the bar**
+    /// and neither neighbour overlaps them, and the watcher's sentence is the one the state produces.
+    private func statusBarSelftest() {
+        let bar = statusBar.convert(statusBar.bounds, to: nil)
+        let modes = modeControl.convert(modeControl.bounds, to: nil)
+        let watch = watchLabel.convert(watchLabel.bounds, to: nil)
+        let layout = layoutControl.convert(layoutControl.bounds, to: nil)
+        let wrap = wrapButton.convert(wrapButton.bounds, to: nil)
+        // The legend, drawn in full or not at all: `⌘⏎ open in…` is a keystroke with its purpose cut
+        // off, and a truncated promise about a key is worse than no promise. Asked as *what it needs
+        // against what it got*, which is the only form a picture cannot disagree with.
+        let legendView = (statusBar.subviews.compactMap { $0 as? NSStackView }.last?
+            .views.compactMap { $0 as? NSTextField }.last)
+        let legendNeeds = legendView?.intrinsicContentSize.width ?? 0
+        let legendHas = legendView?.frame.width ?? 0
+        let legendWhole = legendHas >= legendNeeds - 1
+
+        // Centred *if the bar has room*, which is the honest form of the assertion: the constraint
+        // is a preference precisely so that a narrow window shifts the pills instead of growing.
+        let hasRoom = bar.width >= Theme.windowWidth
+        let centred = !hasRoom || abs(modes.midX - bar.midX) < 1
+        // And the bar must not have made the window wider than it asked to be.
+        let didNotGrow = bar.width <= (window.screen?.frame.width ?? bar.width)
+        let drawn = [modes, watch, layout, wrap].allSatisfy { bar.contains($0) && $0.width > 1 }
+        // Nothing overlaps the modes: a message arriving on the left must not push a control the
+        // reader is aiming at, and a stack view is exactly what would have.
+        let clear = watch.maxX <= modes.minX && layout.minX >= modes.maxX
+        // The sentence, against the same function the suite asks — including the age, which is what
+        // separates *watching* from *watching, and this is how old it is*.
+        //
+        // **Against a second either side**, because the age is a clock: the label is written on the
+        // tick and read here, and the first version of this arm failed on `3s` against `4s`. That is
+        // M9-G's lesson pointed at my own assertion — a number taken across a boundary is a number
+        // about the timing.
+        let seconds = lastRefresh.map { Int(Date().timeIntervalSince($0)) }
+        let acceptable = (seconds.map { [$0 - 1, $0, $0 + 1] } ?? [nil].compactMap { $0 })
+            .map { ChromeLabels.watcherStatus(watchState, refreshedSecondsAgo: $0) }
+        let saidIt = acceptable.contains(watchLabel.stringValue)
+            && watchLabel.stringValue.hasPrefix("● Watching")
+            && watchLabel.stringValue.contains("refreshed")
+        let ok = centred && drawn && clear && saidIt && didNotGrow && legendWhole
+
+        FileHandle.standardError.write(Data(
+            ("SELFTEST status-bar=\(ok ? "OK" : "MISMATCH") bar=\(Int(bar.width))×\(Int(bar.height)) "
+                + "watch=\"\(watchLabel.stringValue)\"@\(Int(watch.maxX)) "
+                + "modes=[\(Int(modes.minX)),\(Int(modes.width))] centred=\(centred) "
+                + "layout=\(Int(layout.minX)) wrap=\(Int(wrap.minX)) "
+                + "legend=\"\(legendView?.stringValue ?? "nil")\" needs \(Int(legendNeeds))pt "
+                + "has \(Int(legendHas))pt drawn=\(drawn) clear=\(clear)\n").utf8))
+        guard ok else { exit(69) }
         sourcesButtonSelftest()
     }
 
@@ -1992,7 +2061,26 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                     + "spineHeader=\"\(self.fileHeaderCaption.stringValue)|\(self.fileHeaderCount.stringValue)\""
                     + "@\(Int(self.fileHeaderCount.intrinsicContentSize.width))pt\n").utf8))
             guard ok, indented, headersWorded, headersFit else { exit(48) }
-            self.windowSnapshot(named: "collapsed") { self.lensSelftest() }
+            // **And it has to still be collapsed a second later.** A collapse is a set of
+            // constraints on panes whose frames `NSSplitView` owns, so any later layout pass can
+            // redistribute the width back — and until the status line started ticking once a second
+            // (DEC-075), nothing in this window ever laid out again after a collapse, so the
+            // question had never been asked. The pane the window grew under, in M9-K, is what asked
+            // it: the rail obeyed and the file spine went back to 320.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                let railAfter = self.repoTable.enclosingScrollView?.superview?.frame.width ?? -1
+                let spineAfter = self.fileTable.enclosingScrollView?.frame.width ?? -1
+                let paneAfter = self.fileTable.enclosingScrollView?.superview?.frame.width ?? -1
+                let held = abs(railAfter - Theme.railWidth) < 1
+                    && abs(spineAfter - Theme.spineWidth) < 1
+                    && abs(paneAfter - Theme.spineWidth) < 1
+                FileHandle.standardError.write(Data(
+                    ("SELFTEST collapse-holds=\(held ? "OK" : "MISMATCH") after a second of ticks: "
+                        + "rail=\(railAfter) spine=\(spineAfter) pane=\(paneAfter) "
+                        + "window=\(Int(self.window.frame.width))pt\n").utf8))
+                guard held else { exit(48) }
+                self.windowSnapshot(named: "collapsed") { self.lensSelftest() }
+            }
         }
     }
 
@@ -2790,22 +2878,107 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// happened belongs where a reader glances, not between the controls and the thing they
     /// control.
     private func buildStatusBar() -> NSView {
-        let stack = NSStackView(views: [statusLabel, spacerView()])
-        stack.orientation = .horizontal
-        stack.alignment = .centerY
-        stack.spacing = Theme.space4
-        stack.edgeInsets = NSEdgeInsets(top: 0, left: Theme.space6, bottom: 0, right: Theme.space6)
+        // Left: what the watcher is doing and how old the window is (DEC-075), then whatever
+        // happened last — the line that used to be the whole bar.
+        watchLabel = NSTextField(labelWithString: "")
+        watchLabel.font = Theme.font(Theme.textSizeSmall)
+        watchLabel.textColor = Theme.inkQuiet
+        watchLabel.lineBreakMode = .byTruncatingTail
+        watchLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        // The transient message is what yields when the bar runs out of room: the watcher's state is
+        // a standing fact and `removed /some/path` is a sentence about a moment.
+        statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let left = NSStackView(views: [watchLabel, statusLabel])
+        left.orientation = .horizontal
+        left.alignment = .centerY
+        left.spacing = Theme.space4
+
+        // Right: the layout, the wrap switch, and the keys that move the reader around.
+        // **No key on this one.** ⌥⌘→ is a *toggle* between the two (DEC-059), not two bindings, and
+        // printing the same keystroke on both segments reads as two keys that happen to be equal —
+        // besides costing the legend beside it the width it needs to be drawn in full.
+        layoutControl = PillControl(labels: ChromeLabels.layoutTitles)
+        layoutControl.selectedSegment = sideBySide ? 1 : 0
+        layoutControl.target = self
+        layoutControl.action = #selector(layoutChanged)
+
+        // A real checkbox: it keeps its own drawn state, its accessibility and its behaviour, which
+        // is the same reasoning the empty state's buttons are built on.
+        wrapButton = NSButton(checkboxWithTitle: ChromeLabels.wrapTitle, target: self,
+                              action: #selector(toggleWrap))
+        wrapButton.font = Theme.prose(Theme.textSizeSmall)
+        wrapButton.state = wrapEnabled ? .on : .off
+        wrapButton.toolTip = KeyboardMap.binding(id: "wrap")?.shortcut
+
+        let legend = NSTextField(labelWithString: ChromeLabels.keyLegend())
+        legend.font = Theme.font(Theme.textSizeTiny)
+        legend.textColor = Theme.inkFaint
+        legend.lineBreakMode = .byTruncatingTail
+        // The legend is the first thing to give way in a narrow window: the two controls beside it
+        // are aimed at, and it is read once and remembered.
+        legend.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+
+        let right = NSStackView(views: [layoutControl, wrapButton, legend])
+        right.orientation = .horizontal
+        right.alignment = .centerY
+        right.spacing = Theme.space6
 
         let bar = ChromeBar(surface: Theme.chrome, edge: .top)
-        bar.addSubview(stack)
-        stack.translatesAutoresizingMaskIntoConstraints = false
+        for view in [left, modeControl!, right] {
+            bar.addSubview(view)
+            view.translatesAutoresizingMaskIntoConstraints = false
+        }
+        // Centred against the bar rather than laid out between the two groups: a stack would put the
+        // modes wherever the left field's length left them, and a control that moves when a message
+        // arrives is a control a reader has to look for.
+        //
+        // **A preference, not a requirement**, and that is the whole of what this constraint had to
+        // learn. Required, it forced a minimum window width of twice the right-hand group plus the
+        // pills — the window opened **72 pt wider than `Theme.windowWidth`**, and the split view
+        // redistributed that extra width the next time the panes were laid out, so ⌃⌘0 collapsed the
+        // rail and left the file spine at 320. A bar that cannot fit its contents must shift them,
+        // never grow the window under the panes.
+        let centred = modeControl.centerXAnchor.constraint(equalTo: bar.centerXAnchor)
+        centred.priority = NSLayoutConstraint.Priority(500)
         NSLayoutConstraint.activate([
             bar.heightAnchor.constraint(equalToConstant: Theme.statusBarHeight),
-            stack.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
-            stack.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            left.leadingAnchor.constraint(equalTo: bar.leadingAnchor, constant: Theme.space6),
+            left.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            centred,
+            modeControl.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
+            modeControl.leadingAnchor.constraint(greaterThanOrEqualTo: left.trailingAnchor,
+                                                 constant: Theme.space4),
+            modeControl.trailingAnchor.constraint(lessThanOrEqualTo: right.leadingAnchor,
+                                                  constant: -Theme.space4),
+            right.trailingAnchor.constraint(equalTo: bar.trailingAnchor, constant: -Theme.space6),
+            right.centerYAnchor.constraint(equalTo: bar.centerYAnchor),
         ])
+        updateWatchLabel()
         return bar
+    }
+
+    /// `● Watching · refreshed 4s ago` (DEC-075). Called on a tick, because the age changes without
+    /// anything else happening — and only assigned when the sentence changes, so the bar is not
+    /// redrawn once a second for a string that reads the same.
+    private func updateWatchLabel() {
+        let age = lastRefresh.map { Int(Date().timeIntervalSince($0)) }
+        let sentence = ChromeLabels.watcherStatus(watchState, refreshedSecondsAgo: age)
+        if watchLabel.stringValue != sentence { watchLabel.stringValue = sentence }
+    }
+
+    /// Stamped where the window actually re-reads the repository, not where an event arrives: an
+    /// event the debounce swallowed changed nothing on screen and must not reset the clock (DEC-026).
+    private func markRefreshed() {
+        lastRefresh = Date()
+        updateWatchLabel()
+    }
+
+    @objc private func layoutChanged() {
+        // The control and ⌥⌘→ are one thing (DEC-059): the toggle owns the state, so the segment
+        // only asks for it when the two disagree.
+        guard (layoutControl.selectedSegment == 1) != sideBySide else { return }
+        toggleSideBySide()
     }
 
     private func buildEmptyState() {
@@ -2946,6 +3119,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                     summary += " · " + unusable.map { "\($0.source.path) \($0.state.rawValue)" }
                         .joined(separator: ", ")
                 }
+                self.markRefreshed()
                 self.statusLabel.stringValue = summary
                 // Opening onto three empty panes makes the reader click before the application has
                 // said anything. Selecting after the summary, not before, so that whatever the
@@ -3032,6 +3206,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     @objc private func toggleWrap() {
         wrapEnabled.toggle()
         wrapMenuItem?.state = wrapEnabled ? .on : .off
+        wrapButton?.state = wrapEnabled ? .on : .off
         webView.evaluateJavaScript("window.diffscopeSetWrap(\(wrapEnabled))") { _, _ in }
         statusLabel.stringValue = wrapEnabled ? "long lines wrap" : "long lines scroll horizontally"
     }
@@ -3043,6 +3218,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     @objc private func toggleSideBySide() {
         sideBySide.toggle()
         sideBySideMenuItem?.state = sideBySide ? .on : .off
+        layoutControl?.selectedSegment = sideBySide ? 1 : 0
         webView.evaluateJavaScript("window.diffscopeSetLayout(\"\(sideBySide ? "split" : "unified")\")") { _, _ in }
         statusLabel.stringValue = sideBySide ? "side by side" : "unified"
     }
@@ -4057,6 +4233,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                           chosenByUser: state.configuration.baseOverrides[repository.url.standardizedFileURL.path] != nil,
                           committerDate: repository.baseRefCommitterDate)
             : state.scope.comparisonDescription)
+        markRefreshed()
         statusLabel.stringValue = "\(state.files.count) files · \(state.scope.title)\(ageText)\(reasons)"
         // The same sentence, into the page (the adopted design's `SHOWING` row). The diff pane is
         // where a reader is actually looking, and until now *what is being compared* was only in
@@ -4182,9 +4359,16 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             self?.handle(signal, in: repository)
         }
         self.watcher = watcher
-        if !watcher.start() {
+        if watcher.start() {
+            watchState = .watching
+        } else {
+            // Standing, not transient (DEC-075): the old message was overwritten by the next thing
+            // that happened, and the reader was left with a window that had quietly stopped
+            // following the disk.
+            watchState = .unavailable("auto-refresh unavailable for \(repository.displayName)")
             statusLabel.stringValue = "auto-refresh unavailable for \(repository.displayName)"
         }
+        updateWatchLabel()
         for diagnostic in watcher.diagnostics {
             statusLabel.stringValue = diagnostic.message
         }
@@ -4212,6 +4396,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             }
         case .rootChanged:
             statusLabel.stringValue = "\(repository.displayName) was moved or renamed — auto-refresh stopped"
+            watchState = .stopped("\(repository.displayName) was moved or renamed")
+            updateWatchLabel()
             watcher?.stop()
         }
     }

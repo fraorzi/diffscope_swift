@@ -2529,3 +2529,37 @@ Note also what the system reports: with Command held, `characters` is the **unsh
 ## The generalisation
 
 **Three wrong instruments produced three different confident answers, and two of them were about the product rather than about the instrument.** The first said *the scope shortcuts are shadowed by the mode shortcuts*; the second said *the scope shortcuts fire nothing*; the third — the real one — says the map is fine. T0's rule has now been paid for four times: **when a measurement disagrees with expectation, suspect the driver first**, and when the driver is a synthesized event, get the system to build it.
+
+---
+
+# M9-K — a centred control in a bar grew the window, and the collapse it broke had never been asked to survive a layout pass
+
+**Date:** 2026-08-12 · **Why:** DEC-075 put the mode switch in the middle of the status line. The collapse arm then failed four runs in a row — `⌃⌘0` collapsed the repository rail to 44 pt and left the file spine at **320**, its full width — while every check in the suite passed.
+
+## What was measured
+
+The arm prints the drawn widths beside the window's own:
+
+| Run | Status bar | Rail | Spine |
+|---|---|---|---|
+| Before the status line was rebuilt | 1400 pt | 44 | 34 |
+| With the modes centred, required | **1472 pt** | 44 | **320** |
+| With the centring at priority 500 | 1400 pt | 44 | 34 |
+
+**The window was 72 pt wider than `Theme.windowWidth`.** Centring the modes against the bar while pinning the right-hand group to the bar's trailing edge makes the bar's minimum width *twice the right-hand group plus the pills* — about 1470 with the layout control, the wrap switch and the key legend in it. Auto Layout satisfied that the only way it could: it grew the window. Nothing was logged, because nothing was unsatisfiable.
+
+The split view then redistributed the extra width the next time the panes were laid out, and a pane whose frame `NSSplitView` owns takes a width constraint as a suggestion — M8-D's finding, from the other direction.
+
+## What changed
+
+The centring constraint is a **preference** (priority 500) with required inequalities keeping the pills clear of both neighbours, and the legend yields first under compression. A bar that cannot fit its contents shifts them; it never grows the window under the panes.
+
+## The second finding, which is the more useful one
+
+**Nothing in this window had ever laid out again after a collapse.** The status line ticks once a second now (the age of the last refresh has to change without anything else happening), and that tick is the first thing this application has ever done that triggers a layout pass while the panes are collapsed. It is what turned a latent redistribution into a visible one.
+
+So the collapse arm now measures **twice**: once 0.8 s after ⌃⌘0, and again 1.5 s later, across at least one tick. `collapse-holds` is the second assertion, and it is the one that would have caught this without the window-growth defect being present at all.
+
+## The generalisation
+
+**A layout that has only ever been laid out once is a layout nobody has checked.** Three of this project's interface defects are now instances of it: panes that began at zero width and stayed there, a caption squeezed to zero height beside a growing scroll view, and a collapse that the next layout pass undid. The cheap guard is the same in all three: measure the drawn frame, then make something happen and measure it again.

@@ -1623,3 +1623,58 @@ property is asserted over generated lists rather than over the four examples tha
 
 The one case the rule cannot fix is two keys differing only in case: `a/Web` and `a/web` are the same
 word upper-cased at every depth. There the whole list keeps its paths, which is ugly and true.
+
+## Step 61 — the status line says what the watcher is doing, and prints the keys the map binds
+
+- [x] `● Watching · refreshed 4s ago` at the left, with whatever happened last beside it
+- [x] The mode switch centred; the layout, `Wrap long lines` and the key legend at the right
+- [x] The legend is composed from `KeyboardMap` and **disagrees with the design on purpose**
+- [x] DEC-075 before the code; 1655 → **1666 checks**, three of them negative controls
+- [x] Two live arms and one new guard: the bar's three fields, and `collapse-holds`
+
+### Step 61 — the design's legend names a key that does something else
+
+The design writes `⌥↑↓ change`. DEC-065 gives `⌥↑↓` to **files** and `⌘↑↓` to changes. A legend is a
+promise about a keystroke, and one printed from a picture rather than from the map is exactly the
+defect M8-P found in the tester packet — on a surface every reader sees rather than in a document a
+tester reads once. So the legend is `⌘↑↓ change · ⌥↑↓ file · ⌘⏎ open in editor`, composed from the
+bindings, and a check requires every modifier run in it to be a shortcut the map composes.
+
+The layout pill carries **no** key, and that is the same rule read the other way: `⌥⌘→` is a toggle
+between the two segments, not two bindings, and printing one keystroke on both reads as two keys that
+happen to be equal.
+
+### Step 61 — the watcher was only ever visible while failing
+
+DEC-027 has watched the open repository since M7 and the reader was told about it only when it broke
+— transiently, in a line the next message overwrote. *Nothing is happening* and *watching, nothing
+has changed* looked identical, and every count in the window is as old as the last refresh with
+nothing saying when that was.
+
+`refreshed Ns ago` is stamped where the window actually re-reads the repository, not where an event
+arrives: an event the debounce swallowed changed nothing on screen and must not reset the clock
+(DEC-026). Before the first refresh the clause is absent rather than `0s`, because a window that has
+never refreshed saying *refreshed 0s ago* is a false sentence about the thing the field exists to
+make honest.
+
+### Step 61 — the bar grew the window, and the collapse it broke had never been laid out twice
+
+Centring the modes with a **required** constraint, against a right-hand group pinned to the bar's
+trailing edge, makes the bar's minimum width twice that group plus the pills. Auto Layout satisfied
+it the only way it could: the window opened **1472 pt wide** against `Theme.windowWidth = 1400`, and
+nothing was logged because nothing was unsatisfiable. The split view redistributed the extra width,
+and ⌃⌘0 then collapsed the rail and left the file spine at 320.
+
+The centring is a preference now (priority 500) with required inequalities keeping the pills clear of
+both neighbours. But the second finding is the one worth keeping: **nothing in this window had ever
+laid out again after a collapse**, so a collapse that a later layout pass undoes was a defect no
+check could have seen. The ticking status line is the first thing that lays out while the panes are
+collapsed. `collapse-holds` now re-measures 1.5 s later, across at least one tick.
+`22-experiment-log.md` → **M9-K**.
+
+### Step 61 — and the legend has to be drawn in full
+
+`⌘⏎ open in…` is a keystroke with its purpose cut off, which is worse than no legend. The arm asks
+what the label *needs* against what it *got* — the only form of the question a picture cannot
+disagree with — and the first answer was 253 pt needed against 214 given, which is how the duplicate
+key on the layout pill came to be removed.

@@ -98,7 +98,9 @@ enum Theme {
     /// path; the status line sits at the bottom edge. `trafficLightInset` clears the three buttons
     /// the system draws in the title bar and nothing else.
     static let titleBarHeight: CGFloat = 44
-    static let statusBarHeight: CGFloat = 24
+    /// 30, not 24: the status line holds the mode switch since DEC-075, and a 24 pt pill cannot sit
+    /// in a 24 pt bar.
+    static let statusBarHeight: CGFloat = 30
     static let trafficLightInset: CGFloat = 78
     /// The scope row across the window (DEC-072): a 24 pt pill with the row's own padding around it.
     static let scopeBarHeight: CGFloat = 36

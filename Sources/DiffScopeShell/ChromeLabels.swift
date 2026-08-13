@@ -111,6 +111,72 @@ public enum ChromeLabels {
                   dashed: !comparingAgainstBase)
     }
 
+    /// What the watcher is doing (DEC-075). Three states, because *not watching* has two causes a
+    /// reader would act on differently: it never started, or it stopped because the repository moved.
+    public enum WatchState: Equatable, Sendable {
+        case watching
+        case unavailable(String)
+        case stopped(String)
+    }
+
+    /// `● Watching · refreshed 4s ago`, or `○ Not watching — <reason>`.
+    ///
+    /// **The dot is filled or hollow**, not green or grey: the distinction has to survive greyscale
+    /// like every other one in this window (DEC-035). The age is absent rather than zero before the
+    /// first refresh — *refreshed 0s ago* on a window that has never refreshed is a false sentence
+    /// about the thing this field exists to make honest.
+    public static func watcherStatus(_ state: WatchState, refreshedSecondsAgo: Int?) -> String {
+        let age = refreshedSecondsAgo.map { " · refreshed \(refreshedAgo(seconds: $0))" } ?? ""
+        switch state {
+        case .watching: return "● Watching\(age)"
+        case let .unavailable(reason): return "○ Not watching — \(reason)\(age)"
+        case let .stopped(reason): return "○ Watching stopped — \(reason)\(age)"
+        }
+    }
+
+    /// How long ago, in the units a reader watching a window cares about. `stalenessDescription` in
+    /// the Git layer answers the same question for a base ref and starts at *today*, which is the
+    /// right granularity there and useless here.
+    public static func refreshedAgo(seconds: Int) -> String {
+        switch seconds {
+        case ..<0: return "just now"
+        case 0...2: return "just now"
+        case 3..<60: return "\(seconds)s ago"
+        case 60..<3600: return "\(seconds / 60)m ago"
+        case 3600..<86_400: return "\(seconds / 3600)h ago"
+        default: return "\(seconds / 86_400)d ago"
+        }
+    }
+
+    /// The keys the status line prints (DEC-075).
+    ///
+    /// **Composed from the map, and it disagrees with the design on purpose.** The design writes
+    /// `⌥↑↓ change`; DEC-065 gives `⌥↑↓` to *files* and `⌘↑↓` to changes. A legend printed from a
+    /// picture rather than from the map is the tester packet's defect on a surface every reader sees.
+    public static func keyLegend() -> String {
+        [arrowPair(upID: "change.previous", downID: "change.next", label: "change"),
+         arrowPair(upID: "file.previous", downID: "file.next", label: "file"),
+         KeyboardMap.binding(id: "openInEditor").map { "\($0.shortcut) open in editor" }]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+    }
+
+    /// `⌘↑↓ change`: one modifier run, both arrows, one word. `nil` where the two directions do not
+    /// share their modifiers — two keys that differ deserve two entries, and inventing a pair would
+    /// print a keystroke nothing binds.
+    private static func arrowPair(upID: String, downID: String, label: String) -> String? {
+        guard let up = KeyboardMap.binding(id: upID), let down = KeyboardMap.binding(id: downID),
+              up.modifiers == down.modifiers, up.key == "↑", down.key == "↓" else { return nil }
+        return "\(up.modifiers.symbols)↑↓ \(label)"
+    }
+
+    /// The wrap toggle's own words (`12-…`, DEC-065's ⌥⌘W).
+    public static let wrapTitle = "Wrap long lines"
+
+    /// The two layouts (DEC-059), as words rather than glyphs: this project has no icon set, and a
+    /// glyph a reader cannot name is worse than a word.
+    public static let layoutTitles = ["Unified", "Side by side"]
+
     /// Whether a header can be drawn in a collapsed pane at all. Stated as a function rather than
     /// left to the picture, because "it looked clipped" is not something a later reader can check —
     /// and because the failure it guards is a pane that says `REPOSITOR` and means nothing.
