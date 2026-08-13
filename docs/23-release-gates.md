@@ -12,7 +12,7 @@ A gate is not passed by an agent's opinion. Each one ends with a **report writte
 
 | Gate | Report | The sentence that announces it |
 |---|---|---|
-| G1 | `docs/23a-poc-report.md` | **POC READY** — with the walkthrough log and the known-gaps list *(written 2026-07-29)* |
+| G1 | `docs/23a-poc-report.md` | **POC READY** — with the walkthrough log and the known-gaps list *(written 2026-07-29; the owner's two sessions happened 2026-08-12 and 2026-08-13, and §10 of that report was audited against them on the 13th — four of its five interface gaps had been closed while it still told a stranger not to report them)* |
 | G2 | `docs/24-design-contract.md` | **DESIGN INTAKE READY** — naming the one file to paste into *(passed 2026-07-31)* |
 | G3 | `docs/25-tester-packet.md` | **TESTER BUILD READY** — naming the `.zip` and its checksum *(passed 2026-07-31)* |
 
@@ -40,6 +40,10 @@ Every item observed on the owner's own repositories, not on fixtures.
 - [ ] A repository with **no** changes, and a file with a **single-byte** change, both read correctly
 - [ ] `swift run diffscope-verify` passes, and `DIFFSCOPE_SELFTEST=1` exits 0
 - [ ] The walkthrough is logged with the actual repository names and what was observed, including anything that felt wrong but is not a defect
+
+**Where this stands, 2026-08-13.** The owner has now used the application twice — 2026-08-12 and 2026-08-13 — and both sessions produced exactly what this gate exists for: a list of what is wrong when a person uses it. The first produced four defects and six missing pieces of chrome (DEC-071 … DEC-075); the second produced fourteen items, four built and ten planned in [28-interface-plan.md](28-interface-plan.md), and one decision that reverses several earlier ones (DEC-077).
+
+**The boxes above are deliberately not ticked.** They are observations on the owner's own repositories, and only the owner can make them; nothing in the two sessions was logged against this list. Either walk it once and tick it, or replace it with what the two sessions actually covered — but do not let a fresh agent read unticked boxes as *never used*, which is what they say today and is false.
 
 ### What gets built
 

@@ -164,13 +164,15 @@ An hour, roughly in this order. `mailingi-2025` has 44 changed files, `philips__
 
 All of these are already recorded. Reporting them costs you time and tells me nothing new.
 
+> **Audited 2026-08-13.** This section is dated 2026-07-29 and **four of its five interface entries had been fixed** while it still told a stranger not to report them — which is worse than a stale document, because it is an instruction. Each is struck through with what closed it. The one that survives is the editor's default template.
+
 **Interface**
 
-- There is still no per-repository way to override the base branch, so the "vs base" scope is unusable where detection lands on the wrong branch (`carrefour-inapp`).
-- The file list has **no keyboard navigation of its own**. You can step through files with ⌘[ / ⌘], but you cannot arrow through the list and there is no type-to-find.
-- The default editor command (`open -a WebStorm`) cannot jump to a line, so ⌘O opens the file at the top even though the right line is now known. Set `DIFFSCOPE_EDITOR` to a template containing `{line}` to use it.
-- The mode pill can say `mode: structural` next to a notice saying structural analysis was unavailable. The pill reports what *you* selected, not which path ran. Confusing, known, unfixed.
-- There is no picker for arbitrary branches or commits — the four scopes are all there is in this version.
+- ~~There is still no per-repository way to override the base branch, so the "vs base" scope is unusable where detection lands on the wrong branch (`carrefour-inapp`).~~ **Closed 2026-07-31** — ⇧⌘B, stored in the configuration (DEC-011), and the base is drawn as a block in the scope row since DEC-072.
+- ~~The file list has **no keyboard navigation of its own**.~~ **Closed 2026-08-09** (DEC-057, measured in M8-J): ⌥↑ / ⌥↓ and the bare arrow keys both walk 63 files past nine group headers with no blind stops. **Type-to-find is still absent** and is the half of this entry that stands.
+- **The default editor command cannot jump to a line.** `EditorCommand.defaultTemplate` is still `/usr/bin/open -a WebStorm {file}` — no `{line}` — so ⌘⏎ opens the file at the top until you set a template containing `{line}` in Settings. **Still open**, and it is the last surviving interface gap from this report.
+- ~~The mode pill can say `mode: structural` next to a notice saying structural analysis was unavailable.~~ **Closed 2026-08-09** (DEC-058): the pill reported the path taken as well as the selection. **And then the pill itself was removed** — DEC-077 takes the three technical chips off the screen entirely.
+- ~~There is no picker for arbitrary branches or commits.~~ **Partly closed 2026-08-10** (DEC-061): the History lens picks one commit or two and compares them. A branch picker is still not built.
 
 **Analysis**
 
@@ -182,8 +184,8 @@ All of these are already recorded. Reporting them costs you time and tells me no
 
 **Not built at all**
 
-- No ambiguity indicator, even though ambiguity is detected internally. Deliberately withdrawn.
-- Two failure conditions (partial parse errors, low confidence) are classified internally but never surfaced.
+- No ambiguity indicator, even though ambiguity is detected internally. Deliberately withdrawn (DEC-045).
+- ~~Two failure conditions (partial parse errors, low confidence) are classified internally but never surfaced.~~ **Closed 2026-08-09** — `parseErrorRegions` reports F1, and confidence was surfaced as a chip. **DEC-077 then took the chip off the screen** for a normal file: what remains, and what may never go, is the plain sentence a degraded file draws.
 
 ---
 
@@ -195,7 +197,7 @@ In priority order. The first line is worth more than everything below it combine
 2. **A failure message left me unsure whether the diff was complete.** Quote the exact wording.
 3. **It crashed, hung, or went blank.** What you were doing, which repository, which file.
 4. **Something was slow enough to be annoying.** Which file, roughly how big.
-5. **Something was confusing or ugly.** Welcome, but least urgent — the look is deliberately unstyled at this stage, and the design comes at gate G2.
+5. **Something was confusing or ugly.** Welcome, and no longer least urgent: the design landed at G2, the chrome was built against it (DEC-071 … DEC-076), and the owner's second session turned *confusing* into the largest item on the list (DEC-077, [28-interface-plan.md](28-interface-plan.md)). If a word on the screen means nothing to you, that is a defect worth reporting.
 
 **If a diff looks wrong, keep the file.** Do not fix or revert it before telling me — the exact pair of versions is what makes it reproducible. `git stash` is enough.
 

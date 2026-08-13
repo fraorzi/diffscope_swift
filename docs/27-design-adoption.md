@@ -66,6 +66,14 @@ All eight steps above are built. The three that cost the most were not the ones 
 
 The eight image fixtures of `15-…` §4.7a were built the next day and are the last item of §4 step 8. Nothing in this document is now outstanding.
 
+## 4b. That sentence has been wrong twice, and this is the correction
+
+**2026-08-12.** Put beside a screenshot of `DiffScope.dc.html`, the window was missing the whole of its chrome: no column headers, the scope control inside the diff pane, the base as prose, no key hints, full paths as group headers, a status line carrying one message and nothing else. Six items, built as **DEC-071 … DEC-075**, and the sentence above should have read *nothing in the diff pane is outstanding*.
+
+**2026-08-13.** The owner used the finished chrome and asked for a large part of it to be taken back off: the focus rings, the printed keystrokes, the technical chips, the underlines in the diff. Not a reversal of the design — a reversal of **who the window is drawn for**, and it is [DEC-077](04-decision-log.md), with its work list in [28-interface-plan.md](28-interface-plan.md).
+
+**The lesson is about this document rather than about the design.** *Nothing is outstanding* is a claim no document can carry, because the thing it is measured against is a picture nobody in this repository can open. Written twice, wrong twice. What this file can honestly say is **which decisions the design produced**; what is left to build lives in `28-…`, which is a list with acceptance tests rather than an adjective.
+
 ## 5. What is drawn and deliberately not built yet
 
 `12-desktop-ux-specification.md` §9 lists only functions that exist, because DEC-057's check fails a listed row nothing binds. The lenses, the collapses, search and the image-comparison modes are bound and listed **as they land**, one row per landing. A drawing is not a binding, and the coverage table is not a wish list.

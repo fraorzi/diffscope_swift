@@ -1,6 +1,18 @@
 # 24 — Design contract
 
-**Status:** Accepted 2026-07-31, gate G2 of `23-release-gates.md`. Authoritative for what a design may change and what it may not. **Amended 2026-08-09** by DEC-059 (a sign column), DEC-063 (surfaces that render), DEC-064 (motion) and DEC-066 (the token table as the delivery format).
+**Status:** Accepted 2026-07-31, gate G2 of `23-release-gates.md`. Authoritative for what a design may change and what it may not. **Amended 2026-08-09** by DEC-059 (a sign column), DEC-063 (surfaces that render), DEC-064 (motion) and DEC-066 (the token table as the delivery format), **2026-08-12** by DEC-071 … DEC-076 (the chrome, and the contrast threshold every ink is held to), and **2026-08-13** by [DEC-077](04-decision-log.md).
+
+**What DEC-077 changes here, and how much of it has landed.** The owner asked for a quieter window, and three of this document's rules move with it:
+
+| Rule | Was | Now | Landed |
+|---|---|---|---|
+| The focus ring | `--ds-focus-ring`, 2 px, drawn while the keyboard is in use (DEC-070) | **not drawn at all**; the selected row carries focus, marked by a fill *and* a bar at its leading edge | **yes** (`930e621`) |
+| Keystrokes in the chrome | printed on every pill, in the status line and on the base block (DEC-073) | **never printed**; still composed for tooltips and the menu bar, and a check refuses a modifier run written by hand in any string the chrome shows | **yes** |
+| `#track`, §5 | *quietened, never removed* | **absent when there is nothing to scroll** — that rule was written about a control a reader might need, and this one cannot be used | no — `28-…` item 3 |
+| Change marks | an underline plus a texture, because colour alone fails greyscale (DEC-035) | a tint over the whole line and a **stronger tint** on the changed bytes; the two must differ in **luminance**, and the sign column and gutter edge stay | no — `28-…` item 1 |
+| The trust chips | `parser:`, `confidence:`, `mode:`, always drawn (DEC-017, DEC-058) | **nothing while everything is normal**; one plain sentence when a file is shown as plain text — INV-4 is the floor and does not move | no — `28-…` item 5 |
+
+The work list, with an acceptance test for each item, is [28-interface-plan.md](28-interface-plan.md).
 
 **Paste your design into `Renderer/src/tokens.css`.** That is the whole answer to "where does it go". The rest of this document is what you get to change, what the interface promises in return, and the two rules the suite enforces so a restyle cannot break the thing the product exists for.
 

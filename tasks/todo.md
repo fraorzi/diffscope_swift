@@ -1811,3 +1811,35 @@ first refresh the window was showing a repository's diff with nothing in the lis
 the owner's *"nie jest zaznaczone repo z którego aktualnie korzystam"*, and it is a defect rather
 than a styling gap. The sweep re-selects by path now, the arm asserts a selected row, and the row is
 marked by a **bar at its leading edge** as well as by a fill one step of grey from the panel.
+
+## Step 65 — the documents catch up, and one of them had been lying to a stranger
+
+- [x] **New:** `28-interface-plan.md` — the ten items DEC-077 leaves, each with what it reverses,
+      what will refuse it, and **how to prove it is done**
+- [x] `23a-poc-report.md` §10 audited: **four of its five interface gaps were closed** while the
+      section still told a tester not to report them
+- [x] `27-…` gains §4b: *nothing is outstanding* has now been written twice and been wrong twice
+- [x] `24-…` carries a table of what DEC-077 changes and how much of it has landed
+- [x] `23-…` G1 says the owner's two sessions happened, and why its boxes are still unticked
+- [x] `21-…` §0 and both file maps; `00-index.md`
+
+### Step 65 — the worst of the four was an instruction, not a description
+
+`23a-…` §10 is headed *"please do not report these"*. It listed the base-branch override (built as
+⇧⌘B on 2026-07-31), the missing keyboard navigation of the file list (built 2026-08-09 and measured
+over 63 files), and the mode pill disagreeing with the path taken (DEC-058, and since removed
+outright by DEC-077). A stale description wastes a reader's minute; a stale instruction spends a
+tester's session on silence about things that work.
+
+The one that survived the audit is real and small: `EditorCommand.defaultTemplate` is still
+`/usr/bin/open -a WebStorm {file}` — **no `{line}`** — so ⌘⏎ opens the file at the top until the
+reader configures a template.
+
+### Step 65 — and *nothing is outstanding* is a sentence no document here can carry
+
+`27-…` §4a wrote it on 2026-08-09; the owner's first session disproved it on the 12th. §0 corrected
+that, and the second session disproved the correction on the 13th. The thing both were measured
+against is a design behind a login that nobody in this repository can open.
+
+So `27-…` now says what it can honestly say — **which decisions the design produced** — and what is
+left to build lives in `28-…`, which is a list with acceptance tests rather than an adjective.

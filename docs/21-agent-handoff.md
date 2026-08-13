@@ -8,6 +8,19 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
+**2026-08-13 — the owner used the finished chrome and asked for most of its voice back off. Start at [28-interface-plan.md](28-interface-plan.md).** Fourteen items in one message, and together they are one sentence the owner wrote themselves: build for a **junior frontend developer, not for the author of a diff engine** — *"jeśli coś nie wiadomo czy mi się przyda jako info czy nie, to usuń."* That is **DEC-077**, and it reverses parts of DEC-016, DEC-017, DEC-035, DEC-058, DEC-070, DEC-073 and one rule of the design contract.
+
+**Four are built** (`930e621`, 1673 → **1659 checks** — the count *fell*, because fourteen checks went with the features they described):
+
+- **The focus ring is gone entirely** — DEC-070's option 2, offered then and chosen now. The arm is inverted: it asserts nothing draws one.
+- **Keystrokes are off the screen.** The replacement rule keeps the intent: a keystroke may still be *composed* (tooltips, the menu bar) and must still come from `KeyboardMap`; a modifier run **written by hand** in any string the chrome shows now fails the suite. It found one on its first run, sitting in the status line since M8.
+- **The dividers drag again.** They refused because the pane-width constraints are held at 999 so a collapse cannot be ignored — the split moved the divider and the next layout pass restored the constant. `splitViewDidResizeSubviews` writes the drawn widths back, and each pane header carries a chevron, because a divider is a thing you have to know to drag.
+- **The open repository is the selected row.** It had `selectedRow = -1` while showing that repository's diff: the selection was set only when nothing was open, and every sweep replaces the snapshots. Marked with a bar at the leading edge as well as a fill.
+
+**Ten are not built, and they are the plan.** Underlines out and a tint over the whole line with a stronger tint on the changed bytes; the tint reaching the right edge; the scrollbar hidden when there is nothing to scroll; expand made reversible; **the technical chips removed**; real `NSGlassEffectView` glass (macOS 26, and the API exists — `NSGlassEffectContainerView.spacing` is the merge animation); switches as popovers; motion everywhere; visible section hierarchy; coloured file-kind glyphs. Each with an acceptance test in `28-…`.
+
+**The one thing that does not move**, and say it plainly to whoever asks next: when a file could not be parsed and is shown as plain text, **the pane says so in plain words**. That is INV-4, the core invariant made visible, and *silent and right* looks exactly like *silent and wrong*. Everything else technical goes.
+
 **2026-08-12, later — light appearance was photographed for the first time, and it found two defects that dark mode had been hiding.** The whole selftest runs in light with a launch argument (`-NSRequiresAquaSystemAppearance YES`) — no code, no system setting. Every neutral surface then measured against the token table rather than looked at: title bar `#ececed`, repository pane `#f6f6f8`, file pane `#fbfbfd`, selected row `#e3e3e8`, trough `#e8e8ec`, thumb and code `#ffffff` — all exactly the declared light values. **1666 → 1673 checks**, `dist/DiffScope-1d8544d.zip` repackaged and the older zips dropped.
 
 **The first defect is the tertiary ink, and the lesson is about where a measurement was taken.** `27-…` §3 records the adopted design's tertiary text failing at 2.7:1 and being *fixed by measurement, not by eye* — **against the paper**. The chrome has eight other surfaces and nothing had ever measured them: `--ds-faint` was **4.47:1** on the chrome band, **4.32:1** on the control trough, **4.12:1** on a selected row and **3.47:1** on the raised thumb in dark. Three of those four carry labels this milestone added — the key hints, the status line's legend, the `SCOPE` caption. **DEC-076** re-sizes the ink against the extremes instead (`#62626b` light, `#9e9ea7` dark, worst case 4.72:1 both ways), and the target is **4.7 rather than 5.0 for a measured reason**: at 5.0 the dark value lands 1.06:1 from `--ds-dim`, and three inks that read as two are worse than a tenth of headroom. A check holds every ink/surface pair the chrome draws to 4.5:1 in **both** appearances, holds the second-to-third step at ≥1.10, and takes the **previous value as a literal** for its control — a control read from the token file would have started passing the moment the fix changed that file.
@@ -367,6 +380,7 @@ M0 in `19-roadmap.md`: verify #306, measure serialisation, assess Swift binding 
 | `22-experiment-log.md` | Spike results with methods |
 | `23-release-gates.md` | **The three handover gates** — POC, design intake, tester build |
 | `24-design-contract.md` | **What a design may change, and the two rules it may not break** |
+| `28-interface-plan.md` | **What is left to build in the interface, with an acceptance test for each item** (DEC-077) |
 | `25-tester-packet.md` | **Hand to a third-party tester with the zip. Nothing else needed** |
 | `26-terminal-plan.md` | **The terminal: what was measured, what it costs, and gate T0** |
 | `26-coverage-audit.md` | Where each T- and R- test is proven, and what could fail it |
