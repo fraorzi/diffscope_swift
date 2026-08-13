@@ -8,6 +8,24 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
+**2026-08-14 — the whole of tranche 2 is built: the diff pane is what DEC-077 asked for.** Five of the ten items in [28-interface-plan.md](28-interface-plan.md) are done, in the order that document gives, and **1659 → 1680 checks**. Look at `structural.png` and `unified.png` in both appearances before anything else — the pane is unrecognisable and the plan's remaining five items are all about the chrome around it.
+
+- **The underlines are gone and a tint pair replaced them.** A changed line is tinted across its whole line box; the bytes that changed take the same hue at a lower transparency. The greyscale rule the underline carried moved to a *measurement*: three pairs composited over `--ds-code` in both appearances, 1.27:1 to 1.53:1 apart against a floor of 1.20.
+- **The tint reaches the right edge**, which was one missing `flex-direction` on the unified host — `display: flex` had made it a row container whose single item was as wide as its content.
+- **The horizontal track is absent when there is nothing to scroll**, reversing the contract's *quietened, never removed* for this one control.
+- **⌘E goes both ways** ([DEC-078](04-decision-log.md)), and the footer button says which way.
+- **The three technical chips are gone**, and INV-4's floor is one plain sentence: *This file is shown as plain text — <why>. Every difference in it is still shown.*
+
+**Three findings from those five, and the third is the one to read before you photograph anything.**
+
+**Two negative controls in a row passed.** The tint control used the design's own green and red at their shipped alphas and measured 1.289:1 apart — above the floor it exists to sit below. The width control put the missing `flex-direction` back, which shrinks the scroller *and* the lines together, so every relation inside the editor still agreed while the pane sat half empty. Both were written, both looked right, and neither could fail. **Measure the control before believing the check**, and measure the thing against what it is supposed to fill rather than against itself.
+
+**A shape check had never once seen the signal it was written for.** `DesignChecks`'s greyscale list held `text-decoration` and `background: repeating-linear-gradient`, and the textures are declared `background-image: var(--ds-tex-…)` — so every mark had been passing on its *underline*, and the texture that was supposed to be the other carrier satisfied nothing. Removing the underlines failed six marks at a stroke and said so.
+
+**Every snapshot before today has a drifted gutter in it that no reader has ever seen.** CodeMirror re-measures inside an animation frame and **`requestAnimationFrame` is suspended while the window is occluded** — which a terminal-launched selftest always is (T1-A, third occurrence). Each view keeps whatever line height it was constructed with, 14 or 16.87 px against the 15 the stylesheet lays lines out at, and the *gutter rows* are sized from that number. Eleven of fourteen lines had no gutter row level with them, and a full-resolution crop appeared to confirm it. `window.diffscopeSettle()` forces the pending measurement to be read and `snapshot(named:)` calls it first now. `tasks/todo.md` step 67 has the whole chase; the short version is **a picture of an occluded window is a picture of a layout that never ran**.
+
+**Five items are left and they are `28-…` items 6–10**: real `NSGlassEffectView` glass, switches as popovers, motion, visible section hierarchy, coloured file-kind glyphs. All five are the AppKit chrome rather than the webview.
+
 **2026-08-13 — the owner used the finished chrome and asked for most of its voice back off. Start at [28-interface-plan.md](28-interface-plan.md).** Fourteen items in one message, and together they are one sentence the owner wrote themselves: build for a **junior frontend developer, not for the author of a diff engine** — *"jeśli coś nie wiadomo czy mi się przyda jako info czy nie, to usuń."* That is **DEC-077**, and it reverses parts of DEC-016, DEC-017, DEC-035, DEC-058, DEC-070, DEC-073 and one rule of the design contract.
 
 **Four are built** (`930e621`, 1673 → **1659 checks** — the count *fell*, because fourteen checks went with the features they described):
