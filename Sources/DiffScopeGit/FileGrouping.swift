@@ -85,7 +85,7 @@ public func groupKey(for path: String, workspacePackages: [String]) -> String {
         .max(by: { $0.count < $1.count })
     if let matching { return matching }
     let parent = (path as NSString).deletingLastPathComponent
-    return parent.isEmpty ? "(repository root)" : parent
+    return parent.isEmpty ? repositoryRootGroup : parent
 }
 
 /// Rows for the list, headers included.
@@ -127,6 +127,49 @@ public func fileListRows(
         }
     }
     return rows
+}
+
+/// The sentinel group for files sitting at the repository root. A label rather than a path, so the
+/// shortening below leaves it alone.
+public let repositoryRootGroup = "(repository root)"
+
+/// What a group header **says**, as opposed to what a group **is** (DEC-074).
+///
+/// The key is a path — `packages/app-2/src/components/nested` — and a 320 pt pane truncates it from
+/// the head, which removes exactly the part that tells one group from another. The header is the
+/// shortest **front-anchored** form that stays unique in this list: the first *n* components,
+/// upper-cased, with `…` where more follow, and *n* raised for the whole list until no two headers
+/// are equal.
+///
+/// **Uniqueness is what makes shortening safe.** Two groups under one header is a list that lies
+/// about where its files are, and it is the one failure mode this function must not have — asserted
+/// as a property rather than on examples.
+public func groupHeaderTitles(_ keys: [String]) -> [String: String] {
+    let paths = keys.filter { $0 != repositoryRootGroup }
+    var titles: [String: String] = [:]
+    for key in keys where key == repositoryRootGroup { titles[key] = key }
+    guard !paths.isEmpty else { return titles }
+
+    func components(_ key: String) -> [String] { key.split(separator: "/").map(String.init) }
+    let deepest = paths.map { components($0).count }.max() ?? 1
+
+    func candidate(_ key: String, depth: Int) -> String {
+        let parts = components(key)
+        let head = parts.prefix(depth).joined(separator: "/").uppercased()
+        return parts.count > depth ? head + "…" : head
+    }
+
+    for depth in 2...max(2, deepest) {
+        let candidates = paths.map { candidate($0, depth: depth) }
+        if Set(candidates).count == paths.count {
+            for (key, title) in zip(paths, candidates) { titles[key] = title }
+            return titles
+        }
+    }
+    // Two keys differing only in case — `a/Web` and `a/web`. Upper-casing cannot separate them at
+    // any depth, so the list keeps its paths rather than drawing two identical headers.
+    for key in paths { titles[key] = key }
+    return titles
 }
 
 /// Where the selection lands when the reader steps through the list.

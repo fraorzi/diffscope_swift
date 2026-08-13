@@ -39,6 +39,9 @@ final class AppState {
     var repositoryLabels: [String: String] = [:]
     /// The file list as drawn: headers and files interleaved (DEC-033 as amended).
     var fileRows: [FileListRow] = []
+    /// Group key → what its header says (DEC-074). Computed with the rows, because the shortest
+    /// unique form depends on every other group in the list.
+    var groupTitles: [String: String] = [:]
     /// Path → what the list can say about the file cheaply. Filled in by a background pass, so a
     /// large working tree lists immediately and gains its badges a moment later.
     var annotations: [String: FileAnnotation] = [:]
@@ -4019,6 +4022,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
         state.fileRows = fileListRows(state.files,
                                       workspacePackages: declaredWorkspacePackages(in: repository.url))
+        state.groupTitles = groupHeaderTitles(state.fileRows.compactMap {
+            if case let .header(key) = $0 { return key }
+            return nil
+        })
         state.annotations = [:]
         updatePaneHeaders()
         fileTable.reloadData()
@@ -4420,12 +4427,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
     private func fileCell(_ cell: NSTableCellView, row: Int) -> NSView {
         switch state.fileRows[row] {
-        case let .header(title):
+        case let .header(key):
             let header = label(Theme.textSizeTiny, .semibold, Theme.inkQuiet)
-            header.stringValue = filesCollapsed ? "···" : title
-            header.lineBreakMode = .byTruncatingHead
+            // The short, front-anchored form (DEC-074). Truncating the key from the head removed
+            // the components that tell one group from another — `…/components/nested`, nine times.
+            header.stringValue = filesCollapsed ? "···" : (state.groupTitles[key] ?? key)
+            header.lineBreakMode = .byTruncatingTail
             _ = self.row([header], in: cell)
-            cell.toolTip = title
+            // The path in full, where nothing else in the row carries it.
+            cell.toolTip = key
             return cell
 
         case let .file(file, display):

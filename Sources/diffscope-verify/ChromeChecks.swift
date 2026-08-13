@@ -154,6 +154,69 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
                !shortcuts.contains("⌘J"))
     }
 
+    print("\n=== a group header is short, and no two are the same (DEC-074) ===")
+    do {
+        let workspace = groupHeaderTitles(["packages/web", "packages/api"])
+        report("a declared package reads as the design writes it",
+               workspace["packages/web"] == "PACKAGES/WEB" && workspace["packages/api"] == "PACKAGES/API",
+               workspace.values.sorted().joined(separator: ", "))
+
+        // The fixture tree, which is where the old headers failed: nine groups whose last two
+        // components are identical, in a pane that truncates from the head.
+        let deep = (0...8).map { "packages/app-\($0)/src/components/nested" }
+        let titles = groupHeaderTitles(deep)
+        report("nine groups that differ only in their second component stay short and separate",
+               Set(titles.values).count == 9 && titles[deep[0]] == "PACKAGES/APP-0…",
+               titles.values.sorted().joined(separator: " "))
+
+        // A collision at depth 2 has to lengthen rather than draw the same header twice.
+        let siblings = groupHeaderTitles(["src/components/Button", "src/components/Card"])
+        report("a collision lengthens the header instead of repeating it",
+               Set(siblings.values).count == 2
+                   && siblings["src/components/Button"] == "SRC/COMPONENTS/BUTTON",
+               siblings.values.sorted().joined(separator: ", "))
+
+        // Upper-casing cannot separate these at any depth, so the list keeps its paths.
+        let cased = groupHeaderTitles(["a/Web", "a/web"])
+        report("two groups differing only in case keep their paths rather than colliding",
+               cased["a/Web"] == "a/Web" && cased["a/web"] == "a/web",
+               cased.values.sorted().joined(separator: ", "))
+
+        report("the repository-root sentinel is left alone",
+               groupHeaderTitles([repositoryRootGroup, "src/app"])[repositoryRootGroup]
+                   == repositoryRootGroup)
+
+        // The property the whole rule rests on, over generated keys rather than over the four
+        // examples above: **two groups may never share a header.** A shortening that collides is a
+        // list that lies about where its files are.
+        var rng = Rng(state: 0xC0FFEE)
+        var collisions = 0
+        var checked = 0
+        for _ in 0..<200 {
+            let words = ["packages", "src", "app", "web", "api", "components", "nested", "lib", "ui"]
+            var keys = Set<String>()
+            for _ in 0..<(2 + rng.next(6)) {
+                let depth = 1 + rng.next(5)
+                keys.insert((0..<depth).map { _ in words[rng.next(words.count)] }
+                    .joined(separator: "/"))
+            }
+            let generated = groupHeaderTitles(Array(keys))
+            checked += keys.count
+            if Set(generated.values).count != keys.count { collisions += 1 }
+        }
+        report("no two groups ever share a header, over 200 generated lists", collisions == 0,
+               "\(collisions) colliding lists of \(checked) keys")
+
+        // The control: the rule this replaced. The last two components were the obvious shortening
+        // and they collapse the fixture tree's nine groups into one header.
+        let naive = Set(deep.map { key -> String in
+            let parts = key.split(separator: "/")
+            return parts.suffix(2).joined(separator: "/").uppercased()
+        })
+        report("negative control: shortening from the tail would have drawn one header nine times",
+               naive.count == 1, naive.joined(separator: ", "))
+    }
+
     print("\n=== the contract describes the chrome it cannot see ===")
     do {
         // The class table in `24-…` §3 lists what the *renderer* emits, and the chrome emits nothing:

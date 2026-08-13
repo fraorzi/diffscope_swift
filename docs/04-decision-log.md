@@ -3141,3 +3141,43 @@ The empty scope reads `Staged — nothing staged`, in **the same shape as the un
 ### Revisit trigger
 
 Reopen the second half if the sweep ever computes per-scope counts for another reason. The cost objection disappears the moment the number is already in hand, and the design's own form — a state on each pill — becomes reachable without a single extra invocation.
+
+---
+
+## DEC-074 — A group header is the shortest front-anchored form that stays unique
+
+- **Date:** 2026-08-12 · **Topic:** what the file list's group headers say · **Status:** Accepted · **Amends DEC-033 (as amended 2026-07-31)**
+
+### Context
+
+DEC-033's amendment groups changed files by declared workspace package where there is one and by parent directory otherwise, and the header is **the group key verbatim**. On the corpus that means headers like `packages/app-2/src/components/nested` — five components, in a pane 320 pt wide, truncated from the head so the reader sees `…/components/nested` and the part that distinguishes one group from another is the part that was cut.
+
+The design writes `PACKAGES/WEB`.
+
+### Options considered
+
+1. **The last two components.** Rejected by the corpus: nine groups of the fixture tree end in `components/nested`, so all nine headers would be the same words — which is worse than a truncated path, because it *looks* like an answer.
+2. **The first two components, with an ellipsis where more follow, lengthened until every header in the list is unique.** `packages/web` → `PACKAGES/WEB`, and the nine deep groups → `PACKAGES/APP-0…` … `PACKAGES/APP-8…`.
+3. **Elide the common middle** — `PACKAGES/APP-0/…/NESTED`. Rejected as a rule with two moving parts and no better answer on any real input in the corpus.
+4. **Leave the paths and let the pane truncate.** What ships today, and the failure is silent: the truncation removes exactly the distinguishing prefix.
+
+### Final decision
+
+**Option 2**, with uniqueness as the invariant that makes shortening safe.
+
+The rule: take the first *n* components, upper-cased, and append `…` when the key has more; start at *n* = 2 and raise it for the whole list until no two headers are equal. Where two keys differ only in case — `a/Web` and `a/web` — upper-casing cannot separate them at any depth, and the whole list falls back to the keys verbatim rather than drawing two identical headers.
+
+**Front-anchored, because that is where identity lives.** In a monorepo the package is the first component or two; the tail is `src/components/…` in every group and separates nothing. This is the opposite end from the file rows, which show the path *relative* to their group — between them the reader has the whole path, and the row's tooltip still carries it in full.
+
+**The sentinel `(repository root)` is passed through unchanged.** It is already a label rather than a path, and upper-casing it would produce `(REPOSITORY ROOT)`.
+
+### Consequences
+
+- **Two groups can never share a header.** That is asserted as a property over generated keys, not only over the examples, because the whole safety of shortening rests on it.
+- **The full path is still available** on the row's tooltip and, for the files themselves, in the diff pane's `#file-path` — which is where DEC-058 requires a displayed fact to be.
+- **Headers get shorter as a list gets more homogeneous, and longer as it gets more varied**, which is the right direction: a list whose groups differ only deep in the tree is a list where the deep part is what the reader needs.
+- `fileListRows` is unchanged and still carries the group key. The short form is computed beside it and looked up when a header is drawn, so nothing that reasons about grouping has to know about presentation.
+
+### Revisit trigger
+
+Reopen if a repository ever produces more than about ten groups whose first two components are identical: the rule then lengthens every header in the list at once, and the pane may be better served by lengthening only the headers that collide.

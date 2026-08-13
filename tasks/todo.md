@@ -1592,3 +1592,34 @@ The arm asserts the item **count** against `KeyboardMap.bindings(in: .sources)` 
 against the map's titles, rather than asserting that a button exists. A pop-up whose menu came out
 empty would look identical in every picture ever taken of this window — the M8-D lesson pointed at a
 control instead of a list.
+
+## Step 60 — group headers say where, in two words
+
+- [x] `PACKAGES/APP-0…` rather than `packages/app-0/src/components/nested`: the first *n*
+      components, upper-cased, lengthened for the whole list until no two headers are equal
+- [x] `(repository root)` passed through; two groups differing only in case keep their paths
+- [x] DEC-074 amends DEC-033; the rule lives in `FileGrouping.swift`, beside the grouping it labels
+- [x] 1648 → **1655 checks**, including the uniqueness property over 200 generated lists
+
+### Step 60 — the truncation was removing the answer
+
+The header was the group key verbatim, and a 320 pt pane truncates from the head — so nine groups of
+the fixture tree drew `…/components/nested`, nine times, and the component that tells them apart was
+the one cut off. Shortening from the **tail** is the obvious fix and is the same defect written
+deliberately: the negative control asserts that the last two components collapse all nine groups into
+one header.
+
+Front-anchored is right because that is where identity lives: in a monorepo the package is the first
+component or two, and `src/components/…` is every group's tail. The file rows underneath show their
+paths **relative to the group**, so between the two ends the reader has the whole path — and the
+row's tooltip still carries it in full.
+
+### Step 60 — uniqueness is what makes shortening safe
+
+Any shortening can merge two groups into one header, and a merged header is a list that lies about
+where its files are. So the depth is raised until every header in the list is distinct, and the
+property is asserted over generated lists rather than over the four examples that motivated it —
+`Set(titles.values).count == keys.count`, 200 times.
+
+The one case the rule cannot fix is two keys differing only in case: `a/Web` and `a/web` are the same
+word upper-cased at every depth. There the whole list keeps its paths, which is ugly and true.
