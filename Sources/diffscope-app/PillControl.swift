@@ -132,7 +132,10 @@ final class PillControl: NSView {
                 outline.stroke()
             }
 
-            let colour: NSColor = !segment.enabled ? Theme.inkFaint
+            // `inkQuiet`, not `inkFaint`: measured, the faint step is 4.32:1 on the trough and
+            // 3.47:1 on the thumb in dark — under the 4.5 the design's own review fixed this ink to
+            // (`27-…` §3). The dashed outline is what says *unavailable*; the colour never was.
+            let colour: NSColor = !segment.enabled ? Theme.inkQuiet
                 : index == selectedSegment ? Theme.ink : Theme.inkQuiet
             let weight: NSFont.Weight = index == selectedSegment ? .semibold : .regular
             let attributes: [NSAttributedString.Key: Any] = [
@@ -143,7 +146,9 @@ final class PillControl: NSView {
             let size = text.size(withAttributes: attributes)
             let hint = segment.hint as NSString
             let hintAttributes: [NSAttributedString.Key: Any] = [
-                .font: hintFont, .foregroundColor: Theme.inkFaint,
+                // Same measurement: a key hint on the trough is 4.32:1 at `inkFaint`. It is set
+                // in the monospace face at 10 pt, which is what keeps it quieter than the title.
+                .font: hintFont, .foregroundColor: Theme.inkQuiet,
             ]
             let hintSize = segment.hint.isEmpty ? .zero : hint.size(withAttributes: hintAttributes)
             // Title and key are laid out as one block and then centred together, so the pair stays
@@ -226,8 +231,9 @@ final class FactBlock: NSView {
     init() {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-        for (field, colour) in [(captionLabel, Theme.inkQuiet), (separator, Theme.inkFaint),
-                                (detailLabel, Theme.ink), (shortcutLabel, Theme.inkFaint)] {
+        // The block sits on the chrome band, where `inkFaint` measures 4.47:1.
+        for (field, colour) in [(captionLabel, Theme.inkQuiet), (separator, Theme.inkQuiet),
+                                (detailLabel, Theme.ink), (shortcutLabel, Theme.inkQuiet)] {
             field.font = Theme.font(Theme.textSizeTiny,
                                     weight: field === captionLabel ? .semibold : .regular)
             field.textColor = colour

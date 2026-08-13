@@ -2676,7 +2676,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
         titlePathLabel = NSTextField(labelWithString: "")
         titlePathLabel.font = Theme.font(Theme.textSizeSmall)
-        titlePathLabel.textColor = Theme.inkFaint
+        // On the chrome band, where the faint step measures 4.47:1 (light) — under the 4.5 the
+        // design's review fixed this ink to. `27-…` §3, measured again in step 62.
+        titlePathLabel.textColor = Theme.inkQuiet
         titlePathLabel.lineBreakMode = .byTruncatingMiddle
 
         sourcesButton = NSButton(title: "Sources ⌄", target: self,
@@ -2722,7 +2724,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     private func buildScopeRow() -> NSView {
         let caption = NSTextField(labelWithString: ChromeLabels.scopeCaption)
         caption.font = Theme.font(Theme.textSizeTiny, weight: .semibold)
-        caption.textColor = Theme.inkFaint
+        caption.textColor = Theme.inkQuiet
         caption.translatesAutoresizingMaskIntoConstraints = false
 
         baseBlock = FactBlock()
@@ -2913,7 +2915,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
         let legend = NSTextField(labelWithString: ChromeLabels.keyLegend())
         legend.font = Theme.font(Theme.textSizeTiny)
-        legend.textColor = Theme.inkFaint
+        legend.textColor = Theme.inkQuiet
         legend.lineBreakMode = .byTruncatingTail
         // The legend is the first thing to give way in a narrow window: the two controls beside it
         // are aimed at, and it is read once and remembered.
@@ -4573,7 +4575,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
 
         let files = label(Theme.textSizeTiny, .regular,
-                          snapshot.uncommittedCount == 0 ? Theme.inkFaint : Theme.inkQuiet)
+                          Theme.inkQuiet)
         files.stringValue = snapshot.uncommittedCount == 0
             ? "clean" : "\(snapshot.uncommittedCount) files"
 
@@ -4583,7 +4585,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                              dashed: snapshot.aheadCount == nil,
                              emphasis: snapshot.aheadCount == nil)
 
-        let path = label(Theme.textSizeTiny, .regular, Theme.inkFaint)
+        // `inkQuiet`: a repository row is drawn on the panel surface *and* on the selected-row
+        // surface, and the faint step measures 4.12:1 on the latter.
+        let path = label(Theme.textSizeTiny, .regular, Theme.inkQuiet)
         path.stringValue = snapshot.url.path.replacingOccurrences(
             of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
         path.lineBreakMode = .byTruncatingMiddle

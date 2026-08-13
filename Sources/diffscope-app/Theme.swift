@@ -41,8 +41,13 @@ enum Theme {
     }
 
     /// `--ds-text` / `--ds-dim` / `--ds-faint`. Three steps, and the third is the one that has to
-    /// be watched: it carries paths, counts and key hints at 10–11 px, and the adopted design's
-    /// first draft had it at 2.7:1 against paper. These clear 4.5:1 in both appearances.
+    /// be watched: the adopted design's first draft had it at 2.7:1 against paper (`27-…` §3).
+    ///
+    /// **The correction was measured against the paper only**, and the chrome has four other
+    /// surfaces. Measured in step 62: the faint step is **4.47:1** on the chrome band, **4.32:1** on
+    /// the control trough, **4.12:1** on a selected row and **3.47:1** on the thumb in dark — so it
+    /// is drawn on the two panel surfaces and nowhere else, and `runChromeChecks` holds every pair
+    /// the window actually draws to 4.5:1 in both appearances.
     static let ink = dynamic(dark: hex(0xf2f2f5), light: hex(0x16161a))
     static let inkQuiet = dynamic(dark: hex(0xa8a8b1), light: hex(0x4f4f58))
     static let inkFaint = dynamic(dark: hex(0x86868f), light: hex(0x6b6b74))

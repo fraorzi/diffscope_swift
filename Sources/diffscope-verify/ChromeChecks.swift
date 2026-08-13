@@ -281,6 +281,91 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
                naive.count == 1, naive.joined(separator: ", "))
     }
 
+    print("\n=== every ink the chrome draws clears 4.5:1 on the surface it is drawn on ===")
+    do {
+        // `27-…` §3 records the adopted design's tertiary text failing contrast at 2.7:1 and being
+        // **fixed by measurement rather than by eye**. Nothing then held that fixed: the corrected
+        // pair was measured against the paper, and the chrome band, the control trough and the
+        // selected row are three other surfaces the same ink is drawn on. Measured in step 62, the
+        // faint step is 4.47:1 on the chrome, 4.32:1 on the trough, 4.12:1 on a selected row and
+        // 3.47:1 on the thumb in dark — every one of them under the threshold the design was held to.
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let tokens = (try? String(contentsOf: root.appendingPathComponent("Renderer/src/tokens.css"),
+                                  encoding: .utf8)) ?? ""
+        let halves = tokens.components(separatedBy: "@media (prefers-color-scheme: dark)")
+        report("the token file has both appearances in it", halves.count == 2,
+               "\(halves.count) parts")
+
+        func value(_ name: String, dark: Bool) -> String? {
+            let source = dark ? (halves.last ?? "") : (halves.first ?? "")
+            guard let range = source.range(of: "\(name):\\s*#[0-9a-fA-F]{6}",
+                                           options: .regularExpression) else {
+                return dark ? value(name, dark: false) : nil
+            }
+            return String(source[range].suffix(7))
+        }
+        func luminance(_ hex: String) -> Double {
+            let digits = Array(hex.dropFirst())
+            let channels = stride(from: 0, to: 6, by: 2).map { index -> Double in
+                let byte = Double(UInt8(String(digits[index...index + 1]), radix: 16) ?? 0) / 255
+                return byte <= 0.03928 ? byte / 12.92 : pow((byte + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2]
+        }
+        func ratio(_ ink: String, _ surface: String) -> Double {
+            let a = luminance(ink), b = luminance(surface)
+            return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+        }
+
+        // **Hand-maintained, and each entry names where it is drawn.** A cross product would be a
+        // check about a palette; this is a check about the window. The list grows when a label does
+        // — the same discipline as the shipped-module list in the privacy check.
+        let pairs: [(ink: String, surface: String, where_: String)] = [
+            ("--ds-text", "--ds-chrome", "the application name and the repository in the title bar"),
+            ("--ds-dim", "--ds-chrome", "the comparison text, the SCOPE caption, the key legend, the base block"),
+            ("--ds-text", "--ds-panel-repos", "a repository's name"),
+            ("--ds-dim", "--ds-panel-repos", "its head state and its path"),
+            ("--ds-faint", "--ds-panel-repos", "the REPOSITORIES caption"),
+            ("--ds-text", "--ds-panel-files", "a file's name and its kind glyph"),
+            ("--ds-dim", "--ds-panel-files", "its counts and the group headers"),
+            ("--ds-faint", "--ds-panel-files", "the CHANGED FILES caption"),
+            ("--ds-text", "--ds-row-selected", "the selected row's name"),
+            ("--ds-dim", "--ds-row-selected", "the selected row's path and counts"),
+            ("--ds-text", "--ds-control-thumb", "the chosen pill"),
+            ("--ds-dim", "--ds-control-trough", "the pills not chosen, and every key hint"),
+            ("--ds-text", "--ds-empty-bg", "the first screen a stranger meets"),
+            ("--ds-dim", "--ds-empty-bg", "its explanation"),
+        ]
+        var failing: [String] = []
+        for pair in pairs {
+            for dark in [false, true] {
+                guard let ink = value(pair.ink, dark: dark),
+                      let surface = value(pair.surface, dark: dark) else {
+                    failing.append("\(pair.ink)/\(pair.surface): undeclared"); continue
+                }
+                let measured = ratio(ink, surface)
+                if measured < 4.5 {
+                    failing.append(String(format: "%@ on %@ %@ %.2f:1 (%@)", pair.ink, pair.surface,
+                                          dark ? "dark" : "light", measured, pair.where_))
+                }
+            }
+        }
+        report("every ink/surface pair the chrome draws clears 4.5:1 in both appearances",
+               failing.isEmpty, failing.joined(separator: " | "))
+
+        // Two controls. The first is the design's own first draft, which `27-…` §3 caught at 2.7:1;
+        // the second is the pair this check was written for — the faint step on the chrome band,
+        // which reads as a perfectly reasonable grey and is 4.47:1.
+        report("negative control: the design's first tertiary colour is caught",
+               ratio("#8a8a94", "#f2f2f5") < 4.5,
+               String(format: "%.2f:1", ratio("#8a8a94", "#f2f2f5")))
+        report("negative control: and so is the pair that prompted this check",
+               ratio(value("--ds-faint", dark: false) ?? "#000000",
+                     value("--ds-chrome", dark: false) ?? "#ffffff") < 4.5,
+               String(format: "%.2f:1", ratio(value("--ds-faint", dark: false) ?? "#000000",
+                                              value("--ds-chrome", dark: false) ?? "#ffffff")))
+    }
+
     print("\n=== the contract describes the chrome it cannot see ===")
     do {
         // The class table in `24-…` §3 lists what the *renderer* emits, and the chrome emits nothing:

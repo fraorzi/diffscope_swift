@@ -1678,3 +1678,45 @@ collapsed. `collapse-holds` now re-measures 1.5 s later, across at least one tic
 what the label *needs* against what it *got* — the only form of the question a picture cannot
 disagree with — and the first answer was 253 pt needed against 214 given, which is how the duplicate
 key on the layout pill came to be removed.
+
+## Step 62 — light mode was photographed for the first time, and the faint ink does not clear contrast on half the chrome
+
+- [x] The whole selftest run in **light appearance** (`-NSRequiresAquaSystemAppearance YES`, a launch
+      argument — no code, no system setting touched)
+- [x] Every neutral surface measured against the token table rather than looked at: title bar
+      `#ececed`, repository pane `#f6f6f8`, file pane `#fbfbfd`, selected row `#e3e3e8`, trough
+      `#e8e8ec`, thumb and code `#ffffff` — all exactly the declared light values
+- [x] **Defect found and fixed:** `--ds-faint` is under 4.5:1 on four of the surfaces it was drawn on
+- [x] A check now holds every ink/surface pair the chrome draws to 4.5:1 **in both appearances**,
+      with the design's own first draft (2.7:1) as one control and the pair that prompted it as the
+      other
+
+### Step 62 — the contrast correction had only ever been measured against the paper
+
+`27-…` §3 records the adopted design's tertiary text failing at 2.7:1 and being *fixed by measurement,
+not by eye*. The corrected pair was measured against `--ds-bg`. The chrome has four other surfaces,
+and nothing had ever measured those:
+
+| Pair | Light | Dark |
+|---|---|---|
+| faint on `--ds-chrome` — the SCOPE caption, the key legend, the base block, the title-bar path | **4.47** | 5.01 |
+| faint on `--ds-control-trough` — every key hint, every pill not chosen, every unavailable scope | **4.32** | 4.81 |
+| faint on `--ds-row-selected` — a selected repository's path | **4.12** | 4.66 |
+| faint on `--ds-control-thumb` — a hint on the chosen pill | 5.28 | **3.47** |
+| faint on `--ds-panel-repos` / `--ds-panel-files` — the two column captions | 4.89 / 5.10 | 5.45 / 5.34 |
+
+Three of those four are labels **step 58 and step 61 added**, which is the honest way to put it: the
+key hints and the legend went onto a surface the ink had never been measured against.
+
+**The palette is not changed** — that is the design's own table and the product owner's to alter. The
+labels move to `--ds-dim` (6.3–7.7:1 everywhere it is drawn), and `--ds-faint` is now drawn on the two
+panel surfaces and nowhere else. The alternative — darkening the token so the third step is usable
+everywhere — is a one-line change to the table and is a question for the owner rather than an answer.
+
+### Step 62 — a single pixel is not a measurement either
+
+The first sample of the selected row returned `#ececed`, which is the chrome's colour and not the
+row's: the box straddled the pane boundary, 1180 px into a file pane that ends at 1200. Same family
+as the crop tool that measures its offsets from the centre (step 57). The probe now reports **the
+modal colour of a box and its share** — `#f6f6f8 100% of 300×60 px` is a statement about a surface;
+one pixel is a statement about wherever that pixel happened to land.
