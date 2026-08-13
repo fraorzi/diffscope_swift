@@ -93,6 +93,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// was drawn rather than what it was asked for.
     var scopeBar: NSView!
     var baseBlock: FactBlock!
+    /// `Sources ⌄` in the title bar (DEC-071's rule, second instance). Held for the selftest, which
+    /// asks where it was drawn and what its menu contains.
+    var sourcesButton: NSButton!
     var titleRepositoryLabel: NSTextField!
     var titlePathLabel: NSTextField!
     var lensControl: PillControl!
@@ -1805,6 +1808,30 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 + "base=[\(Int(block.minX)),\(Int(block.minY)) \(Int(block.width))×\(Int(block.height))] "
                 + "\"\(baseBlock.toolTip ?? "")\"\n").utf8))
         guard ok else { exit(65) }
+        sourcesButtonSelftest()
+    }
+
+    /// DEC-071's rule in the title bar: the button is drawn, and the menu it opens is the map's.
+    /// Counted rather than looked at — a pop-up that opened an empty menu would photograph as a
+    /// button that does nothing, which is exactly what a picture cannot tell you.
+    private func sourcesButtonSelftest() {
+        let bar = titleBar.convert(titleBar.bounds, to: nil)
+        let button = sourcesButton.convert(sourcesButton.bounds, to: nil)
+        let items = sourceMenu(additionsOnly: false).items
+        let additions = sourceMenu(additionsOnly: true).items
+        let bindings = KeyboardMap.bindings(in: .sources)
+        let titles = Set(items.map(\.title))
+        let ok = bar.contains(button) && button.width > 1
+            && items.count == bindings.count
+            && titles == Set(bindings.map(\.title))
+            && additions.count == 2
+        FileHandle.standardError.write(Data(
+            ("SELFTEST sources-button=\(ok ? "OK" : "MISMATCH") "
+                + "button=[\(Int(button.minX)),\(Int(button.minY)) "
+                + "\(Int(button.width))×\(Int(button.height))] in titleBar=\(Int(bar.width))×\(Int(bar.height)) "
+                + "menu=\(items.count) of \(bindings.count) bindings, additions=\(additions.count) "
+                + "titles=\(items.map(\.title).joined(separator: " | "))\n").utf8))
+        guard ok else { exit(68) }
         pillHintSelftest()
     }
 
@@ -2561,8 +2588,21 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         titlePathLabel.textColor = Theme.inkFaint
         titlePathLabel.lineBreakMode = .byTruncatingMiddle
 
+        sourcesButton = NSButton(title: "Sources ⌄", target: self,
+                                 action: #selector(showSourcesMenu(_:)))
+        sourcesButton.isBordered = false
+        sourcesButton.font = Theme.prose(Theme.textSizeSmall)
+        sourcesButton.contentTintColor = Theme.inkQuiet
+        sourcesButton.setButtonType(.momentaryChange)
+        sourcesButton.translatesAutoresizingMaskIntoConstraints = false
+        // Every item it opens, and its key, in the one place a pointer user can see them without
+        // opening the menu bar.
+        sourcesButton.toolTip = KeyboardMap.bindings(in: .sources)
+            .map { $0.key.isEmpty ? $0.title : "\($0.title)  \($0.shortcut)" }
+            .joined(separator: "\n")
+
         let stack = NSStackView(views: [name, titleRepositoryLabel, titlePathLabel,
-                                        spacerView(), searchField])
+                                        spacerView(), sourcesButton, searchField])
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = Theme.space3
@@ -2700,10 +2740,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         return button
     }
 
-    @objc private func showAddSourceMenu(_ sender: NSButton) {
+    /// The Sources menu, or the half of it that adds (DEC-071). One builder, because the `+` on the
+    /// repositories header and the `Sources ⌄` button in the title bar are the same promise: a
+    /// pointer route to bindings that already exist.
+    private func sourceMenu(additionsOnly: Bool) -> NSMenu {
         let menu = NSMenu()
         for binding in KeyboardMap.bindings(in: .sources)
-        where binding.id.hasPrefix("sources.add") {
+        where !additionsOnly || binding.id.hasPrefix("sources.add") {
             guard let action = selector(for: binding.id) else { continue }
             let item = NSMenuItem(title: binding.title, action: action,
                                   keyEquivalent: keyEquivalent(binding.key))
@@ -2711,8 +2754,20 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             item.target = self
             menu.addItem(item)
         }
-        menu.popUp(positioning: nil,
-                   at: NSPoint(x: 0, y: sender.bounds.height + Theme.space2), in: sender)
+        return menu
+    }
+
+    @objc private func showAddSourceMenu(_ sender: NSButton) {
+        sourceMenu(additionsOnly: true).popUp(
+            positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + Theme.space2), in: sender)
+    }
+
+    /// `Sources ⌄` in the title bar (the adopted design). The whole menu this time, `Remove Source`
+    /// and `Set Base Branch…` included: the title bar says which repository is open, and these are
+    /// the four things a reader does to *which repositories exist at all*.
+    @objc private func showSourcesMenu(_ sender: NSButton) {
+        sourceMenu(additionsOnly: false).popUp(
+            positioning: nil, at: NSPoint(x: 0, y: sender.bounds.height + Theme.space2), in: sender)
     }
 
     /// The headers' text, from `ChromeLabels` (DEC-071). Called wherever either number can change:

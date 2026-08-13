@@ -213,12 +213,23 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
             return String(rest[..<end.lowerBound])
         }
 
-        let menu = body(of: "showAddSourceMenu", in: shell)
-        report("the button's menu is found in the shell", !menu.isEmpty, "\(menu.count) bytes")
+        let menu = body(of: "sourceMenu", in: shell)
+        report("the builder both buttons use is found in the shell", !menu.isEmpty,
+               "\(menu.count) bytes")
         report("it is composed from the keyboard map",
                menu.contains("KeyboardMap.bindings(in: .sources)"))
         report("and it names no title of its own",
                !menu.contains("NSMenuItem(title: \""), menu)
+        // The second instance of the rule: `Sources ⌄` in the title bar opens the **whole** Sources
+        // menu, and the `+` on the repositories header opens the half of it that adds. One builder,
+        // so neither can grow an item the menu bar does not have.
+        report("both pointer routes go through that one builder",
+               body(of: "showSourcesMenu", in: shell).contains("sourceMenu(additionsOnly: false)")
+                   && body(of: "showAddSourceMenu", in: shell)
+                       .contains("sourceMenu(additionsOnly: true)"))
+        report("and the whole Sources menu is four bindings, not two",
+               KeyboardMap.bindings(in: .sources).count == 4,
+               KeyboardMap.bindings(in: .sources).map(\.id).joined(separator: ", "))
 
         // The control. `contains` over a method body will agree with a correct one and with an
         // empty one alike, so a hand-written item has to be caught.

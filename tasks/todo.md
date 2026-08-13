@@ -1576,3 +1576,19 @@ Nothing is claimed about the scopes that are *not* selected. Asking each of them
 invocations per refresh for an answer that is stale as soon as the reader saves a file, and DEC-073
 records the trigger that would reopen it: the moment a sweep computes those counts for another
 reason, the design's own form — a state on every pill — is free.
+
+## Step 59 — `Sources ⌄` in the title bar
+
+- [x] The button beside the search field, opening the **whole** Sources menu: add a root, add a
+      repository, remove a source, set the base branch
+- [x] One builder for both pointer routes — the `+` on the repositories header asks it for the
+      additions, the title bar asks it for everything
+- [x] No new decision: DEC-071 wrote the rule and named this button as its second instance
+- [x] 1646 → **1648 checks**; the live arm counts the menu's items against the map's bindings
+
+### Step 59 — a button that opens an empty menu photographs as a button
+
+The arm asserts the item **count** against `KeyboardMap.bindings(in: .sources)` and the item titles
+against the map's titles, rather than asserting that a button exists. A pop-up whose menu came out
+empty would look identical in every picture ever taken of this window — the M8-D lesson pointed at a
+control instead of a list.
