@@ -73,6 +73,30 @@ public enum ChromeLabels {
     /// The scope row's own caption.
     public static let scopeCaption = "SCOPE"
 
+    /// The keystroke drawn on a pill (DEC-073), by the identifier of the binding that selects it.
+    ///
+    /// Empty for a binding the map does not have, which is the honest answer: a pill that printed a
+    /// key nothing binds would teach a reader a keystroke that does nothing. The check suite asks
+    /// for exactly that case.
+    public static func pillHint(bindingID: String) -> String {
+        KeyboardMap.binding(id: bindingID)?.shortcut ?? ""
+    }
+
+    /// The hints for a whole control, in the order its segments are drawn.
+    public static func pillHints(bindingIDs: [String]) -> [String] {
+        bindingIDs.map(pillHint(bindingID:))
+    }
+
+    /// A scope that is available and empty (DEC-073): `Staged — nothing staged`.
+    ///
+    /// **The same shape as the unavailable state** the window already draws — `title — reason` — so
+    /// the two read as two answers to one question rather than as two different kinds of message.
+    /// Both halves come from `ComparisonScope`; this is only the join, and it exists so that the
+    /// join is a claim rather than a `+` in a view.
+    public static func scopeState(shortTitle: String, emptyDescription: String) -> String {
+        "\(shortTitle) — \(emptyDescription)"
+    }
+
     /// The base block at the right end of the scope row. `detail` is `baseDetail` from the Git
     /// layer — the ref, whether the reader chose it, and the age of its newest commit.
     ///

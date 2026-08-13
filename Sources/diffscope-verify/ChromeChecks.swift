@@ -64,6 +64,53 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
                    ChromeLabels.PaneHeaderText(caption: "", count: "48291")))
     }
 
+    print("\n=== every pill prints its key, and an empty scope says so (DEC-073) ===")
+    do {
+        // The map was visible only in the menu bar. A reader looking at the control had no way to
+        // learn its key without opening a menu — DEC-016 is about being able to *use* the keyboard,
+        // and this is about being able to find out that you can.
+        let scopeHints = ChromeLabels.pillHints(bindingIDs: ["scope.allLocal", "scope.unstaged",
+                                                            "scope.staged", "scope.base"])
+        report("the scope pills print the keys the map binds",
+               scopeHints == ["⇧⌘1", "⇧⌘2", "⇧⌘3", "⇧⌘4"], scopeHints.joined(separator: " "))
+        let modeHints = ChromeLabels.pillHints(bindingIDs: ["mode.structural", "mode.expanded",
+                                                           "mode.raw"])
+        report("and so do the mode pills, in the order DEC-065 numbers them",
+               modeHints == ["⌘1", "⌘2", "⌘3"], modeHints.joined(separator: " "))
+        let lensHints = ChromeLabels.pillHints(bindingIDs: ["lens.diff", "lens.blame", "lens.history"])
+        report("and the lens pills", lensHints == ["⌃⌘D", "⌃⌘B", "⌃⌘H"],
+               lensHints.joined(separator: " "))
+
+        // Every hint drawn is a keystroke the map composes, checked as a set rather than one by one:
+        // a pill printing a key nothing binds teaches a reader a keystroke that does nothing.
+        let shortcuts = Set(KeyboardMap.bindings.map(\.shortcut))
+        report("no pill prints a key the map does not have",
+               (scopeHints + modeHints + lensHints).allSatisfy { shortcuts.contains($0) })
+        // The control. A binding that does not exist has to produce **nothing** rather than a
+        // plausible-looking string.
+        report("negative control: a hint for a binding the map does not have is empty",
+               ChromeLabels.pillHint(bindingID: "scope.invented").isEmpty)
+
+        // The four scopes, and the third state the window could not draw: available and empty.
+        report("an empty scope says which one it is and what is empty about it",
+               ChromeLabels.scopeState(shortTitle: ComparisonScope.stagedVsHead.shortTitle,
+                                       emptyDescription: ComparisonScope.stagedVsHead.emptyDescription)
+                   == "Staged — nothing staged")
+        report("and each scope words it for itself rather than sharing one sentence",
+               Set(ComparisonScope.allCases.map(\.emptyDescription)).count
+                   == ComparisonScope.allCases.count,
+               ComparisonScope.allCases.map(\.emptyDescription).joined(separator: " | "))
+        // The pills' four words are the scopes' own, so the control and the sentence cannot come to
+        // call the same scope two things.
+        report("the pill's word and the empty sentence's word are the same word",
+               ComparisonScope.allCases.map(\.shortTitle)
+                   == ["All local", "Unstaged", "Staged", "vs base"],
+               ComparisonScope.allCases.map(\.shortTitle).joined(separator: " "))
+        report("negative control: the empty state is not the unavailable state's sentence",
+               ChromeLabels.scopeState(shortTitle: "Staged", emptyDescription: "nothing staged")
+                   != "Staged — no upstream to compare against")
+    }
+
     print("\n=== the base is a block that says it can be changed (DEC-072) ===")
     do {
         let now = ISO8601DateFormatter().date(from: "2026-08-12T12:00:00Z")!

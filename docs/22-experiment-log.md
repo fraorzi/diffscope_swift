@@ -2492,3 +2492,40 @@ both  · continuous rewrite · blended:         0 of 800
 `settleConfirmDelay` is now its own constant at 5 ms. The guarantee is untouched and the cost falls from half the pins to about one in fifteen.
 
 **The generalisation, which is the point:** a constant that already exists is not a measurement. Borrowing one because it is nearby is how a number ends up sized for the wrong quantity — and it survived review here precisely because it looked like reuse rather than a choice.
+
+---
+
+# M9-J — a synthesized key event cannot reach a shifted key equivalent, and two of the three ways of faking one fail silently
+
+**Date:** 2026-08-12 · **Why:** DEC-073's arm presses ⇧⌘1 … ⇧⌘4 and asserts each one selects the scope its pill prints. It reported that ⇧⌘1, ⇧⌘2 and ⇧⌘3 selected the **mode**, which would have meant three of the four scope shortcuts were unreachable in the shipped product.
+
+## What was measured
+
+A probe application (`scratchpad/tools/keyprobe.swift`) with a main menu holding the shipped map's shape — `⌘1 ⌘2 ⌘3` for the modes first, `⇧⌘1 … ⇧⌘4` for the scopes after, and `⌘F` / `⇧⌘F` — and one recorder as every item's action, so the answer is *which item fired* rather than *did anything fire*.
+
+| Event | `characters` | `charactersIgnoringModifiers` | Fires |
+|---|---|---|---|
+| Built by the system from key code 18, ⇧⌘ | `1` | `!` | **`scope ⇧⌘1`** |
+| Hand-made, same two fields | `1` | `!` | **nothing**, `performKeyEquivalent` returns `false` |
+| Hand-made | `!` | `1` | **`mode ⌘1`** |
+| Hand-made | `1` | `1` | **`mode ⌘1`** |
+| Hand-made | `!` | `!` | **nothing** |
+| Built by the system, ⇧⌘F | `f` | `F` | **`search ⇧⌘F`** |
+
+## What it means
+
+**The shipped keyboard map is correct.** ⇧⌘1 … ⇧⌘4 reach the scopes and ⌘1 … ⌘3 reach the modes, with the modes drawn first in the menu; there is no shadowing. The defect was in the instrument.
+
+**No hand-made `NSEvent.keyEvent` reaches a shifted key equivalent at all.** The two character fields are not enough: an event built by `CGEvent(keyboardEventSource:virtualKey:keyDown:)` carries something more — the layout translation AppKit performs to match a `keyEquivalent` of `"1"` with a mask containing `.shift` — and a hand-made event cannot carry it whatever the strings say.
+
+**Two of the three failures are silent, and they fail in opposite directions.** `!`/`1` and `1`/`1` both fire the ⌘-only item and **return `true`**, so an arm that presses ⇧⌘3 and checks nothing but the return value passes while the application switched to Raw. `1`/`!` and `!`/`!` return `false`, which at least says something happened wrongly.
+
+Note also what the system reports: with Command held, `characters` is the **unshifted** character and `charactersIgnoringModifiers` is the **shifted** one — the opposite of the obvious guess, and the reason the second attempt (`#`/`#`) was written.
+
+## What changed
+
+`press(key:modifiers:keyCode:)` builds its event from a `CGEvent` whenever the key's virtual code is known, and the table of codes lives in the function so no arm has to pass one. The hand-made path remains for the arrows and Return, which have no shifted forms in the map.
+
+## The generalisation
+
+**Three wrong instruments produced three different confident answers, and two of them were about the product rather than about the instrument.** The first said *the scope shortcuts are shadowed by the mode shortcuts*; the second said *the scope shortcuts fire nothing*; the third — the real one — says the map is fine. T0's rule has now been paid for four times: **when a measurement disagrees with expectation, suspect the driver first**, and when the driver is a synthesized event, get the system to build it.

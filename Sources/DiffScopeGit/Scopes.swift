@@ -16,6 +16,35 @@ public enum ComparisonScope: String, Sendable, CaseIterable {
         }
     }
 
+    /// What the pill says (DEC-073). The long `title` is the specification's name for the scope and
+    /// is what a sentence uses; a control has room for two words, and the window had these four
+    /// spelled out as literals beside the control until the empty state needed to compose
+    /// `Staged — nothing staged` from the same word.
+    public var shortTitle: String {
+        switch self {
+        case .allLocalVsHead: return "All local"
+        case .unstagedVsIndex: return "Unstaged"
+        case .stagedVsHead: return "Staged"
+        case .branchVsMergeBase: return "vs base"
+        }
+    }
+
+    /// What it means for *this* scope to have nothing in it (DEC-073). A scope that is available and
+    /// empty looks exactly like one with work in it — a selected pill above an empty list — and the
+    /// third state was the one the window could not say.
+    ///
+    /// Worded per scope rather than as one sentence: "nothing to show" would be true of all four and
+    /// useful for none, and the reader's next move differs — staged is empty because they have not
+    /// staged, and `vs base` is empty because the branch has not diverged.
+    public var emptyDescription: String {
+        switch self {
+        case .allLocalVsHead: return "no local changes"
+        case .unstagedVsIndex: return "nothing unstaged"
+        case .stagedVsHead: return "nothing staged"
+        case .branchVsMergeBase: return "no changes against the base"
+        }
+    }
+
     /// The two sides, named. `11-…` §"Scopes" is the table this transcribes, and the adopted design
     /// puts it on a row of its own under the scope control — because *which four scopes exist* and
     /// *what this one is comparing* are different questions, and a reader who has just switched

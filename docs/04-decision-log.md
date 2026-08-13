@@ -3096,3 +3096,48 @@ The base is the second half. It is the one input to the comparison the reader ch
 ### Revisit trigger
 
 Reopen if the row gains a third control. Two — the pills and the base block — is a row a reader parses at a glance; the moment something else needs a window-wide home, the question of whether this is a *scope* row or a *comparison* row has to be answered rather than assumed.
+
+---
+
+## DEC-073 — Every pill prints its key, and an empty scope says so in the same shape as an unavailable one
+
+- **Date:** 2026-08-12 · **Topic:** key hints on the three pill controls; the *available and empty* scope state · **Status:** Accepted · **Extends DEC-016, DEC-057**
+
+### Context
+
+The design writes the shortcut on each pill — `All local ⇧⌘1` — and lists a scope state the window does not draw: `Staged — nothing staged`.
+
+Both are about the same gap. DEC-016 commits to full keyboard operation and DEC-057 made the map data, but **the map is only visible in the menu bar**: a reader looking at the scope control has no way to learn that ⇧⌘1 selects it without opening a menu that is three items deep. M8-J measured the keyboard path and found it complete; nothing measured whether it is *discoverable*.
+
+The second half is a state the window currently cannot distinguish. A scope has three conditions, and the interface draws two of them: **available with work in it**, **unavailable with a reason** (`12-…` §3, dashed and stated since M9-A), and **available with nothing in it**, which today looks exactly like the first — a selected pill above an empty list, with the count `0` in the header and no word anywhere about why.
+
+### Options considered
+
+1. **Hints on the scope pills only**, where the row has room. Rejected as arbitrary: a reader who learns that pills carry their key from one control will look for it on the others.
+2. **Hints on all three pill controls.** One mechanism, uniformly applied, drawn from `KeyboardMap` under DEC-071's rule.
+3. **A tooltip.** Rejected outright — DEC-058 has paid three times for a fact that is invisible until pointed at, and the keyboard reader M8-J measured never points at anything.
+
+For the empty state:
+
+1. **Ask every scope whether it is empty, on every refresh.** Rejected on cost and on honesty: three more Git invocations per repository per refresh, for an answer that is stale the moment the reader saves a file.
+2. **Say it for the scope that is selected**, which is the one whose count the window already has, exactly. Nothing is claimed about the other three, which is DEC-013's rule — *unknown is said, never guessed* — in its quiet form: unknown is not said at all.
+3. **Put the sentence in the file pane** instead of the scope row. Rejected as a duplicate of the changed-files header, which already reads `0`.
+
+### Final decision
+
+**Option 2 in both halves.**
+
+The hint is a property of a segment, composed by `ChromeLabels.pillHint(bindingID:)` from `KeyboardMap`, and drawn after the title in the faintest ink at the smallest size — a key is a different kind of thing from a name, and the design draws it as one.
+
+The empty scope reads `Staged — nothing staged`, in **the same shape as the unavailable state** the window already draws: `title — reason`. The words are the scope's own (`ComparisonScope.emptyDescription`), composed in the Git layer beside `comparisonDescription` for the reason that one is — a sentence the interface assembles cannot be checked. It replaces the comparison text in the scope row while it holds, because *what this scope compares* is not the reader's question when the answer is nothing.
+
+### Consequences
+
+- **The keyboard map is visible on the controls**, not only in the menu bar. Three surfaces now draw it and all three read `KeyboardMap`: the menu, the `+`'s pop-up, and the pills.
+- **The pills are wider.** Measured: the scope control goes from 268 pt to about 380, and the mode and lens controls together no longer fit a diff pane at its 300 pt minimum — they already did not, and the hints make the clipping easier to hit. Recorded here rather than fixed; the row that will hold the mode switch is the status line (still to come), which is window-wide.
+- **An empty scope is a stated state.** A reader who presses ⇧⌘3 and sees nothing is told *nothing staged* rather than being left to wonder whether the tool failed.
+- **Nothing is claimed about scopes that are not selected**, and that is a deliberate silence rather than an oversight.
+
+### Revisit trigger
+
+Reopen the second half if the sweep ever computes per-scope counts for another reason. The cost objection disappears the moment the number is already in hand, and the design's own form — a state on each pill — becomes reachable without a single extra invocation.

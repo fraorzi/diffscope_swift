@@ -20,6 +20,10 @@ import DiffScopeShell
 final class PillControl: NSView {
     struct Segment {
         var title: String
+        /// The keystroke that selects this segment (DEC-073), from `KeyboardMap` and never typed
+        /// here. Drawn on the pill because the map was visible only in the menu bar: a reader
+        /// looking at the control had no way to learn its key without opening a menu.
+        var hint: String = ""
         var enabled: Bool = true
         /// Why this segment cannot be chosen. Shown as a tooltip *and* — for the scope bar — put on
         /// the status line by the window, because a tooltip is invisible until pointed at.
@@ -34,9 +38,9 @@ final class PillControl: NSView {
         didSet { needsDisplay = true }
     }
 
-    init(labels: [String]) {
+    init(labels: [String], hints: [String] = []) {
         super.init(frame: .zero)
-        segments = labels.map { Segment(title: $0) }
+        segments = labels.enumerated().map { Segment(title: $1, hint: hints.indices.contains($0) ? hints[$0] : "") }
         wantsLayer = true
         translatesAutoresizingMaskIntoConstraints = false
         setContentHuggingPriority(.required, for: .horizontal)
@@ -62,10 +66,18 @@ final class PillControl: NSView {
     // MARK: - Geometry
 
     private var font: NSFont { Theme.prose(Theme.textSizeSmall) }
+    /// The key is set in the monospace face at the smallest size: a keystroke is a thing to be typed,
+    /// not a word to be read, and the two faces say which is which without a rule between them.
+    private var hintFont: NSFont { Theme.font(Theme.textSizeTiny) }
+
+    private func hintWidth(of segment: Segment) -> CGFloat {
+        guard !segment.hint.isEmpty else { return 0 }
+        return (segment.hint as NSString).size(withAttributes: [.font: hintFont]).width + Theme.space2
+    }
 
     private func width(of segment: Segment) -> CGFloat {
         (segment.title as NSString).size(withAttributes: [.font: font]).width
-            + 2 * Theme.pillPadding
+            + hintWidth(of: segment) + 2 * Theme.pillPadding
     }
 
     private func frame(ofSegment index: Int) -> NSRect {
@@ -129,8 +141,21 @@ final class PillControl: NSView {
             ]
             let text = segment.title as NSString
             let size = text.size(withAttributes: attributes)
-            text.draw(at: NSPoint(x: box.midX - size.width / 2, y: box.midY - size.height / 2),
-                      withAttributes: attributes)
+            let hint = segment.hint as NSString
+            let hintAttributes: [NSAttributedString.Key: Any] = [
+                .font: hintFont, .foregroundColor: Theme.inkFaint,
+            ]
+            let hintSize = segment.hint.isEmpty ? .zero : hint.size(withAttributes: hintAttributes)
+            // Title and key are laid out as one block and then centred together, so the pair stays
+            // centred in the pill rather than the title drifting left as the key grows.
+            let blockWidth = size.width + (segment.hint.isEmpty ? 0 : Theme.space2 + hintSize.width)
+            let left = box.midX - blockWidth / 2
+            text.draw(at: NSPoint(x: left, y: box.midY - size.height / 2), withAttributes: attributes)
+            if !segment.hint.isEmpty {
+                hint.draw(at: NSPoint(x: left + size.width + Theme.space2,
+                                      y: box.midY - hintSize.height / 2),
+                          withAttributes: hintAttributes)
+            }
         }
 
         if window?.firstResponder === self {

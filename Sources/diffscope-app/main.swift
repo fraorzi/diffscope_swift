@@ -246,7 +246,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         repoTable = makeTable(identifier: "repo")
         fileTable = makeTable(identifier: "file")
 
-        scopeControl = PillControl(labels: ["All local", "Unstaged", "Staged", "vs base"])
+        // Labels and keys both from data (DEC-073): the four words are the scopes' own `shortTitle`,
+        // and the four keys are the map's. Written out here, they were a second naming of the
+        // scopes and a third copy of the keyboard map.
+        scopeControl = PillControl(
+            labels: ComparisonScope.allCases.map(\.shortTitle),
+            hints: ChromeLabels.pillHints(bindingIDs: ["scope.allLocal", "scope.unstaged",
+                                                       "scope.staged", "scope.base"]))
         scopeControl.target = self
         scopeControl.action = #selector(scopeChanged)
         scopeControl.selectedSegment = 0
@@ -254,7 +260,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // Structural first, because it is the default and the mode a reader returns to — and
         // because the menu says ⌘1 Structural (DEC-065). A control whose first segment is Raw while
         // the first digit selects Structural is two orders for one set of three things.
-        modeControl = PillControl(labels: PresentationMode.displayOrder.map(\.title))
+        modeControl = PillControl(
+            labels: PresentationMode.displayOrder.map(\.title),
+            hints: ChromeLabels.pillHints(bindingIDs: ["mode.structural", "mode.expanded", "mode.raw"]))
         modeControl.target = self
         modeControl.action = #selector(modeChanged)
         modeControl.selectedSegment = PresentationMode.displayOrder.firstIndex(of: state.mode) ?? 0
@@ -365,7 +373,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // header; it lives here instead because a control in the webview cannot act — the page
         // receives calls, it does not make them — and a control that looks clickable and is not is
         // worse than one in a different place.
-        lensControl = PillControl(labels: ["Diff", "Blame", "History"])
+        lensControl = PillControl(
+            labels: ["Diff", "Blame", "History"],
+            hints: ChromeLabels.pillHints(bindingIDs: ["lens.diff", "lens.blame", "lens.history"]))
         lensControl.target = self
         lensControl.action = #selector(lensChanged)
         lensControl.selectedSegment = 0
@@ -1576,10 +1586,48 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// means **nothing is bound** to that keystroke, which is the defect DEC-016 names.
     @discardableResult
     private func press(key: String, modifiers: NSEvent.ModifierFlags, keyCode: UInt16 = 0) -> Bool {
+        // **A shifted key equivalent cannot be reached by a hand-made event at all** (M9-J).
+        // Measured against a probe menu holding both `⌘1` and `⇧⌘1`: an event built by the system
+        // from the virtual key code fires the right one every time, and *no* combination of the two
+        // character fields does it by hand — `1`/`!` is refused outright, and `!`/`1` and `1`/`1`
+        // both fire **⌘1**, so an arm asking for *Scope: Staged* silently gets *Raw* while
+        // `performKeyEquivalent` returns true. So where a key code is known, the event comes from
+        // the system: `CGEvent` fills in the characters from this machine's layout.
+        // The key codes of the keys this selftest presses, so no arm has to know them. `a` really is
+        // 0, so the lookup is what decides whether a code is known — not the parameter's default.
+        let virtualKeys: [String: UInt16] = [
+            "0": 29, "1": 18, "2": 19, "3": 20, "4": 21,
+            "5": 23, "6": 22, "7": 26, "8": 28, "9": 25,
+            "a": 0, "b": 11, "c": 8, "d": 2, "e": 14, "f": 3, "g": 5, "h": 4, "i": 34,
+            "j": 38, "k": 40, "l": 37, "m": 46, "n": 45, "o": 31, "p": 35, "q": 12, "r": 15,
+            "s": 1, "t": 17, "u": 32, "v": 9, "w": 13, "x": 7, "y": 16, "z": 6,
+            "`": 50, "[": 33, "]": 30, ",": 43,
+        ]
+        let code = keyCode != 0 ? keyCode : virtualKeys[key.lowercased()]
+        if let code, let cg = CGEvent(keyboardEventSource: CGEventSource(stateID: .privateState),
+                                      virtualKey: code, keyDown: true) {
+            cg.flags = CGEventFlags(rawValue: UInt64(modifiers.rawValue))
+            if let event = NSEvent(cgEvent: cg) {
+                return NSApplication.shared.mainMenu?.performKeyEquivalent(with: event) ?? false
+            }
+        }
+        // **The two character fields of a shifted key equivalent**, measured against the system
+        // rather than guessed (M9-J). With Command held, macOS reports the *unshifted* character in
+        // `characters` and the *shifted* one in `charactersIgnoringModifiers`: a real ⇧⌘3 is
+        // `characters: "3"`, `charactersIgnoringModifiers: "#"`. Both of the obvious guesses are
+        // wrong and neither fails loudly — `3`/`3` fires the **⌘3** item (the arm asked for *Scope:
+        // Staged* and silently got *Raw*), and `#`/`#` fires nothing while `performKeyEquivalent`
+        // returns false. T0's rule in a fourth place: when a measurement disagrees with
+        // expectation, suspect the driver first.
+        let shifted = ["1": "!", "2": "@", "3": "#", "4": "$", "5": "%",
+                       "6": "^", "7": "&", "8": "*", "9": "(", "0": ")"]
+        let ignoringModifiers = modifiers.contains(.shift)
+            ? (shifted[key] ?? key.uppercased())
+            : key
         guard let event = NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0,
             windowNumber: window.windowNumber, context: nil, characters: key,
-            charactersIgnoringModifiers: key, isARepeat: false, keyCode: keyCode
+            charactersIgnoringModifiers: ignoringModifiers, isARepeat: false, keyCode: keyCode
         ) else { return false }
         return NSApplication.shared.mainMenu?.performKeyEquivalent(with: event) ?? false
     }
@@ -1757,7 +1805,58 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 + "base=[\(Int(block.minX)),\(Int(block.minY)) \(Int(block.width))×\(Int(block.height))] "
                 + "\"\(baseBlock.toolTip ?? "")\"\n").utf8))
         guard ok else { exit(65) }
-        paneHeaderSelftest()
+        pillHintSelftest()
+    }
+
+    /// DEC-073, in the window. The strings are checked headlessly; what the window answers is
+    /// whether the keys are **drawn** — a hint the control computed and then laid out at zero width
+    /// would pass every check in `runChromeChecks` — and whether an empty scope actually says so
+    /// when the reader presses its key.
+    private func pillHintSelftest() {
+        let hints = scopeControl.segments.map(\.hint)
+        let expected = ChromeLabels.pillHints(bindingIDs: ["scope.allLocal", "scope.unstaged",
+                                                          "scope.staged", "scope.base"])
+        // The width has to have grown to hold them: `intrinsicContentSize` is what the control asked
+        // for and the frame is what it got, and a hint that is computed and clipped is a hint that
+        // is not there.
+        let asked = scopeControl.intrinsicContentSize.width
+        let drawn = scopeControl.frame.width
+        let roomForHints = drawn >= asked - 1
+
+        guard hints == expected, roomForHints else {
+            FileHandle.standardError.write(Data(
+                ("SELFTEST pill-hints=MISMATCH hints=\(hints) expected=\(expected) "
+                    + "asked=\(Int(asked))pt drawn=\(Int(drawn))pt\n").utf8))
+            exit(66)
+        }
+        // **The key each pill prints selects that pill.** A hint is a promise about a keystroke, and
+        // the four are pressed one after another rather than one being taken as evidence for the
+        // rest — the first attempt at this arm pressed ⇧⌘3 and landed on Raw.
+        pressEachScopeHint(index: 0, reached: []) { reached in
+            let ok = reached == ComparisonScope.allCases
+            FileHandle.standardError.write(Data(
+                ("SELFTEST pill-hints=\(ok ? "OK" : "MISMATCH") hints=\(hints.joined(separator: " ")) "
+                    + "asked=\(Int(asked))pt drawn=\(Int(drawn))pt "
+                    + "reached=\(reached.map(\.shortTitle).joined(separator: ","))\n").utf8))
+            guard ok else { exit(66) }
+            // Back to the scope everything below this arm was written against.
+            guard self.press(key: "1", modifiers: [.shift, .command]) else { exit(66) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { self.paneHeaderSelftest() }
+        }
+    }
+
+    /// Presses ⇧⌘1 … ⇧⌘4 in turn and reports which scope each one reached. Sequential with a pause,
+    /// because each press runs a sweep of the working tree and the answer is read afterwards.
+    private func pressEachScopeHint(index: Int, reached: [ComparisonScope],
+                                    then finish: @escaping ([ComparisonScope]) -> Void) {
+        guard index < ComparisonScope.allCases.count else { finish(reached); return }
+        guard press(key: String(index + 1), modifiers: [.shift, .command]) else {
+            finish(reached); return
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+            self.pressEachScopeHint(index: index + 1, reached: reached + [self.state.scope],
+                                    then: finish)
+        }
     }
 
     /// DEC-071, expanded. The strings are checked headlessly in `runChromeChecks`; what only the
@@ -2131,7 +2230,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// segments than it was given. Timing stays in the output as a record, where a human reading two
     /// runs can see what changed.
     private func measureScale(_ cases: [ScaleCase], index: Int) {
-        guard index < cases.count else { emptyStateSelftest(); return }
+        guard index < cases.count else { emptyScopeSelftest(); return }
         let subject = cases[index]
         let outcome = buildModel(path: "scale.ts", old: subject.old, new: subject.new,
                                  mode: .structural)
@@ -2211,6 +2310,55 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// subject rather than a tool. Photographed because that is the only way to see whether the
     /// rim reads at all — and because an empty state is reached by having *nothing*, which is a
     /// configuration the selftest has to construct rather than wait for.
+    /// DEC-073's second half, in the window. No scope of the 63-file fixture tree is empty — it has
+    /// 63 local changes, 56 unstaged and 4 staged — so the state is reached the only honest way: a
+    /// repository with a commit in it and nothing changed since.
+    private func emptyScopeSelftest() {
+        let clean = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("diffscope-clean-\(getpid())")
+        func git(_ arguments: [String]) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = arguments
+            process.currentDirectoryURL = clean
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            try? process.run()
+            process.waitUntilExit()
+        }
+        try? FileManager.default.createDirectory(at: clean, withIntermediateDirectories: true)
+        try? "committed\n".write(to: clean.appendingPathComponent("file.txt"),
+                                 atomically: true, encoding: .utf8)
+        git(["init", "-q", "."])
+        git(["config", "user.email", "fixture@diffscope.local"])
+        git(["config", "user.name", "DiffScope Fixture"])
+        git(["config", "commit.gpgsign", "false"])
+        git(["add", "."])
+        git(["commit", "-q", "-m", "one commit, nothing since"])
+
+        state.configuration = Configuration(sources: [ConfiguredSource(kind: .repository,
+                                                                       path: clean.path)])
+        state.selectedRepository = nil
+        scan(sources: state.configuration.sources)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+            let said = self.comparisonLabel.stringValue
+            let wanted = ChromeLabels.scopeState(
+                shortTitle: ComparisonScope.allLocalVsHead.shortTitle,
+                emptyDescription: ComparisonScope.allLocalVsHead.emptyDescription)
+            // The header's count and the row's sentence have to agree: `0` above a list and a
+            // sentence saying why are the two halves of the same statement.
+            let counted = self.fileHeaderCount.stringValue == "0"
+            let ok = self.state.files.isEmpty && said == wanted && counted
+            FileHandle.standardError.write(Data(
+                ("SELFTEST empty-scope=\(ok ? "OK" : "MISMATCH") files=\(self.state.files.count) "
+                    + "said=\"\(said)\" header=\"\(self.fileHeaderCount.stringValue)\" "
+                    + "repos=\(self.state.repositories.count)\n").utf8))
+            try? FileManager.default.removeItem(at: clean)
+            guard ok else { exit(67) }
+            self.emptyStateSelftest()
+        }
+    }
+
     private func emptyStateSelftest() {
         state.repositories = []
         repoTable.reloadData()
@@ -3836,7 +3984,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let reasons = unavailable.isEmpty ? "" : " · unavailable: " + unavailable.joined(separator: ", ")
         comparisonLabel.stringValue = state.historyPair.map {
             scopes.historyComparisonDescription(old: $0.old, new: $0.new) + " · from History"
-        } ?? (state.scope == .branchVsMergeBase
+        // A scope with nothing in it says so, in the shape the unavailable state already uses
+        // (DEC-073). *What this scope compares* is not the reader's question when the answer is
+        // nothing, so the sentence takes the row rather than sitting beside it.
+        } ?? (state.files.isEmpty
+            ? ChromeLabels.scopeState(shortTitle: state.scope.shortTitle,
+                                      emptyDescription: state.scope.emptyDescription)
+            : state.scope == .branchVsMergeBase
             ? baseSummary(ref: repository.baseRefUsed,
                           chosenByUser: state.configuration.baseOverrides[repository.url.standardizedFileURL.path] != nil,
                           committerDate: repository.baseRefCommitterDate)

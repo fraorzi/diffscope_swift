@@ -1529,3 +1529,50 @@ but the wrong *region*, arrived at by trusting a flag's name. `Scripts`-adjacent
 Swift cropper that takes pixels from the top-left and prints what it cut, in the scratch directory.
 **A tool that can silently return a different rectangle than you asked for is a measurement
 instrument, and it needs the same suspicion as the numbers.**
+
+## Step 58 — every pill prints its key, an empty scope says so, and the keyboard driver was wrong
+
+- [x] `⇧⌘1` … `⇧⌘4` on the scope pills, `⌘1` … `⌘3` on the modes, `⌃⌘D/B/H` on the lenses — all from
+      `KeyboardMap`, none typed beside the control
+- [x] `Staged — nothing staged`: the third scope state, in the same `title — reason` shape the
+      unavailable state already uses, worded per scope in the Git layer
+- [x] The four scope words come from `ComparisonScope.shortTitle` — they were literals beside the
+      control until the empty sentence needed the same word
+- [x] DEC-073 before the code; 1637 → **1646 checks**, two of them negative controls
+- [x] Two live arms: every printed key selects **its own** scope, and a repository with nothing
+      changed since its one commit draws `All local — no local changes` with `0` in the header
+
+### Step 58 — the arm reported a defect that was not there, twice, in opposite directions
+
+The first version of the arm pressed ⇧⌘3 and landed on **Raw**. Read literally, that says three of
+the four scope shortcuts are shadowed by the mode shortcuts and DEC-065's map has a collision
+`KeyboardMap.collisions()` cannot see, because it compares shortcut strings and `⌘3 ≠ ⇧⌘3`.
+
+It was the instrument. `NSEvent.keyEvent` was being handed `characters: "3"` while holding shift —
+an event no keyboard produces — and AppKit matched it against the **⌘3** item while
+`performKeyEquivalent` returned `true`. Correcting it to `#`/`#` produced the opposite false
+conclusion: nothing fires at all.
+
+Measured against a probe menu holding both items (`22-experiment-log.md` → **M9-J**): an event the
+**system** builds from a virtual key code fires the right item every time, and *no* combination of
+the two character fields does it by hand. With Command held, macOS reports the **unshifted**
+character in `characters` and the **shifted** one in `charactersIgnoringModifiers` — the opposite of
+the obvious guess, and still not enough on its own. So `press` builds its events with `CGEvent` where
+the key code is known, and the codes live in the function rather than in its callers.
+
+**Three instruments, three confident answers, two of them about the product.** T0's rule paid for a
+fourth time: when a measurement disagrees with expectation, suspect the driver first — and when the
+driver is a synthesized event, make the system build it.
+
+### Step 58 — where the empty scope had to be proved
+
+No scope of the 63-file fixture tree is empty: 63 local changes, 56 unstaged, 4 staged. Rather than
+assert the sentence only in the suite, the arm builds a repository with one commit and nothing
+changed since, and reads the row: `All local — no local changes`, with `0` in the changed-files
+header. **The header's count and the row's sentence are two halves of one statement**, so the arm
+asserts both — a `0` with no sentence is a list a reader cannot distinguish from a broken scan.
+
+Nothing is claimed about the scopes that are *not* selected. Asking each of them costs three more Git
+invocations per refresh for an answer that is stale as soon as the reader saves a file, and DEC-073
+records the trigger that would reopen it: the moment a sweep computes those counts for another
+reason, the design's own form — a state on every pill — is free.
