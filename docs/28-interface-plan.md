@@ -54,9 +54,15 @@ Reported with a screenshot: the tint stops where the text stops.
 
 *And the instrument was lying in every picture.* The same probe reported eleven of fourteen lines with no gutter row level with them, and a photograph appeared to confirm it. It is not real: **CodeMirror re-measures inside an animation frame, and `requestAnimationFrame` is suspended while the window is occluded**, which a terminal-launched selftest always is (T1-A). The views keep their construction-time line height — 14 or 16.87 px against the 15 the stylesheet lays lines out at — and the *gutter rows* are sized from it. Forcing the pending measurement to be read (`diffscopeSettle`, called before every snapshot now) puts the rows back on their lines. Every unified snapshot this project has taken before today has a drifted number column in it that no reader has ever seen.
 
-**3. The horizontal scrollbar appears when there is nothing to scroll** (DEC-077, reverses `24-…` §5)
+**3. The horizontal scrollbar appears when there is nothing to scroll** (DEC-077, reverses `24-…` §3) — **landed**
 The old rule was *quietened, never removed — a control that vanishes teaches a reader it does not exist*. That rule was written about a control a reader might need. This one **cannot be used**.
-*Done when:* `#track` is absent while the content fits, present the moment it does not, and the contract's §5 line is rewritten in the same commit.
+*Done when:* `#track` is absent while the content fits, present the moment it does not, and the contract's line is rewritten in the same commit. *(The plan said §5; the rule is in §3's class table.)*
+
+*How it landed.* `updateTrack` sets `hidden` beside `disabled`, `#track[hidden]` is `display: none`, and `--ds-track-idle` is gone from the token file — a token nobody references is a value a designer would change to no effect. **Both halves are asserted**, in the live document, on a two-line file of three characters and three hundred: wrapping off, the track is there and the span is 1661; wrapping on, it is gone and the span is 0. A control that is always absent satisfies half this rule, which is why the two states are each other's control.
+
+**And it found a second defect that dimming had been hiding.** `updateTrack` took its span from `left.scrollDOM` whatever layout was drawn — so **unified, the default since DEC-059, reported nothing to scroll however long its lines were**, and the one column had no keyboard-reachable way to move sideways at all (`12-…` §5.4). The track reads the showing layout now, the unified scroller drives it, and toggling wrap updates it — that toggle is the one act that creates something to scroll to without changing the document.
+
+The same arm carries item 2's stated acceptance test in the case that actually exercises it: with wrapping off, a three-character line and a three-hundred-character line measure **2411 px each** — the same right edge, which is the long line's rather than the pane's.
 
 **4. Expand cannot be undone**
 `⌘E` expands every collapsed range and there is no way back.

@@ -139,8 +139,21 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
                    && script.contains("b.scrollDOM.scrollLeft = a.scrollDOM.scrollLeft"))
         report("and the shared position has a control that is not a scrollbar",
                html.contains("id=\"track\"") && script.contains("function updateTrack"))
-        report("which is quietened rather than hidden when there is nothing to scroll",
-               html.contains("#track:disabled") && !html.contains("#track:disabled { display: none"))
+        // **Reversed by DEC-077**, and the reversal is the whole point of the entry: the old rule
+        // was *quietened, never removed*, written about a control a reader might need. This one
+        // cannot be used — there is nothing to scroll to — and a dead control is a strip of
+        // interface the reader has to learn to ignore.
+        report("the track is removed, not dimmed, when there is nothing to scroll",
+               html.contains("#track[hidden] { display: none; }")
+                   && !html.contains("--ds-track-idle")
+                   && script.contains("track.hidden = span === 0"))
+        // The half a `contains` cannot see: *which* scroller the span is taken from. It read the
+        // left pane whatever layout was showing, so unified — the default since DEC-059 — reported
+        // nothing to scroll however long its lines were. Dimming made that invisible; removing the
+        // control makes it a missing control.
+        report("and the span is taken from the layout that is showing, not always from the left pane",
+               script.contains("function trackedScrollers")
+                   && script.contains("if (layout === \"unified\") return unified ? [unified.scrollDOM] : []"))
     }
 
     print("\n=== nothing animates without an off switch (DEC-064, 24-… §5) ===")

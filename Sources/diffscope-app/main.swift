@@ -1148,10 +1148,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                             // box, and a line box is as wide as `.cm-content` — which CodeMirror
                             // sizes to the widest line, not to the scroller.
                             self.runWidthSelftest {
-                                // Back to two panes: every arm after this one probes two documents,
-                                // and the audit that follows must see the marks the reader sees.
-                                self.webView.evaluateJavaScript("window.diffscopeSetLayout(\"split\")") { _, _ in
-                                    self.runStyleAuditSelftest()
+                                self.runTrackSelftest {
+                                    // Back to two panes: every arm after this one probes two
+                                    // documents, and the audit that follows must see the marks the
+                                    // reader sees.
+                                    self.webView.evaluateJavaScript("window.diffscopeSetLayout(\"split\")") { _, _ in
+                                        self.runStyleAuditSelftest()
+                                    }
                                 }
                             }
                         }
@@ -1229,6 +1232,65 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                         next()
                                     }
                                 }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// `28-…` item 3: **the horizontal track is absent when there is nothing to scroll**, and
+    /// present the moment there is. DEC-077 reverses `24-…`'s *quietened, never removed* here, and
+    /// the reversal only holds if both halves are checked — a control that is always gone is as
+    /// wrong as one that is always there.
+    ///
+    /// The document is two lines, three characters and three hundred, which is also `28-…` item 2's
+    /// stated acceptance test: with wrapping off they must be tinted to the **same** right edge,
+    /// and that edge is the long line's, not the pane's.
+    private func runTrackSelftest(then next: @escaping () -> Void) {
+        let short = "abc\n"
+        let long = String(repeating: "const someRatherLongIdentifier = 1; ", count: 9) + "\n"
+        let old = [UInt8]((short + long).utf8)
+        let new = [UInt8]((short + long.replacingOccurrences(of: "= 1;", with: "= 2;")).utf8)
+        let outcome = buildModel(path: "selftest-track.tsx", old: old, new: new, mode: .structural)
+        let render = buildRenderModel(model: outcome.model, pinOld: "pinS", pinNew: "pinT",
+                                      mode: "structural", pathTaken: outcome.pathTaken,
+                                      parser: outcome.parser, validation: outcome.validation,
+                                      notices: outcome.notices)
+        guard let json = try? encodeRenderModel(render) else { exit(27) }
+        push(json)
+
+        func state(_ label: String, _ handler: @escaping (Bool, Bool, String) -> Void) {
+            webView.evaluateJavaScript("JSON.stringify(window.diffscopeTrackState())") { value, _ in
+                let text = (value as? String) ?? "nil"
+                let data = Data(text.utf8)
+                let probe = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+                let hidden = probe["hidden"] as? Bool ?? true
+                let span = probe["span"] as? Int ?? 0
+                let sameEdge = probe["sameEdge"] as? Bool ?? false
+                FileHandle.standardError.write(Data(
+                    ("SELFTEST track-\(label) hidden=\(hidden) span=\(span) "
+                        + "sameEdge=\(sameEdge) \(text)\n").utf8))
+                handler(hidden, sameEdge, text)
+            }
+        }
+        // Wrapping off: the long line overflows, so there is something to scroll and the control
+        // has to be there. Wrapping on: nothing overflows and it has to be gone. The two states are
+        // each other's control — neither on its own distinguishes the rule from a constant.
+        webView.evaluateJavaScript("window.diffscopeSetWrap(false)") { _, _ in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                state("overflowing") { hidden, sameEdge, _ in
+                    let present = !hidden && sameEdge
+                    self.webView.evaluateJavaScript("window.diffscopeSetWrap(true)") { _, _ in
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
+                            state("fits") { hiddenNow, _, _ in
+                                FileHandle.standardError.write(Data(
+                                    ("SELFTEST track=\(present && hiddenNow ? "OK" : "MISMATCH") "
+                                        + "present-when-scrollable=\(present) "
+                                        + "absent-when-not=\(hiddenNow)\n").utf8))
+                                guard present && hiddenNow else { exit(28) }
+                                next()
                             }
                         }
                     }

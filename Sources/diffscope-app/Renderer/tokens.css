@@ -101,9 +101,9 @@
   --ds-checker-size: 16px;
   --ds-checker-half: 8px;
 
-  /* The horizontal track when there is nothing to scroll. Quietened, not hidden: a control that
-   * disappears when it is not needed teaches a reader it does not exist. */
-  --ds-track-idle: 0.35;
+  /* `--ds-track-idle` lived here: the opacity the horizontal track dimmed to when there was nothing
+   * to scroll. DEC-077 removes the control instead of dimming it, so the value has no consumer and
+   * a token nobody references is a value a designer would change to no effect. */
 
   /* ---- Motion (DEC-064) ---------------------------------------------------
    * Durations and curve as tokens, so the register in the design and the stylesheet cannot drift

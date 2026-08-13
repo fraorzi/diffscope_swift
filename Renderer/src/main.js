@@ -633,7 +633,7 @@ function makeUnifiedPane(parent) {
     },
     provide: f => EditorView.decorations.from(f),
   });
-  return new EditorView({
+  const view = new EditorView({
     parent,
     state: EditorState.create({
       doc: "",
@@ -652,6 +652,11 @@ function makeUnifiedPane(parent) {
       ],
     }),
   });
+  // The one column has a horizontal position too, and the track is the only keyboard-reachable way
+  // to move it (`12-…` §5.4). Nothing linked it before, because the track read the left pane
+  // whatever layout was showing.
+  view.scrollDOM.addEventListener("scroll", () => { if (!syncing) updateTrack(); });
+  return view;
 }
 
 /// Line decorations for direction, beside the sign column: hue reinforcing a shape that is
@@ -695,14 +700,27 @@ function link(a, b) {
 /// The one horizontal track under the pane (the adopted design). Two panes that scroll together
 /// have one horizontal position, so they get one control for it — and a range input is reachable
 /// from the keyboard, which a scrollbar is not.
+/// **The view the track is about.** It read `left` unconditionally, which in unified holds the
+/// empty document — so the one layout that is the default reported nothing to scroll however long
+/// its lines were. Harmless while the track merely dimmed; with DEC-077 it is the difference
+/// between a control that is absent because it cannot be used and one that is absent while the
+/// reader needs it.
+function trackedScrollers() {
+  if (layout === "unified") return unified ? [unified.scrollDOM] : [];
+  return [left.scrollDOM, right.scrollDOM];
+}
+
 function updateTrack() {
   const track = document.getElementById("track");
   if (!track) return;
-  const scroller = left.scrollDOM;
-  const span = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+  const scroller = trackedScrollers()[0];
+  const span = scroller ? Math.max(0, scroller.scrollWidth - scroller.clientWidth) : 0;
   track.max = String(span);
-  track.value = String(scroller.scrollLeft);
+  track.value = String(scroller ? scroller.scrollLeft : 0);
   track.disabled = span === 0;
+  // DEC-077: **absent**, not dimmed. The rule it reverses was written about a control a reader
+  // might need; this one cannot be used at all, and a dead control is worse than an absent one.
+  track.hidden = span === 0;
   track.title = span === 0 ? "nothing to scroll horizontally"
     : `column ${Math.round(scroller.scrollLeft)} of ${Math.round(span)}`;
 }
@@ -719,8 +737,7 @@ document.getElementById("diff-footer-expand")?.addEventListener("click", () => {
 document.getElementById("track")?.addEventListener("input", event => {
   const position = Number(event.target.value);
   syncing = true;
-  left.scrollDOM.scrollLeft = position;
-  right.scrollDOM.scrollLeft = position;
+  for (const scroller of trackedScrollers()) scroller.scrollLeft = position;
   syncing = false;
 });
 
@@ -1289,6 +1306,12 @@ window.diffscopeSetWrap = function (enabled) {
   for (const view of [left, right]) {
     view.dispatch({ effects: wrapping.reconfigure(enabled ? EditorView.lineWrapping : []) });
   }
+  // Turning wrapping off is the one act that creates something to scroll to without changing the
+  // document, and turning it on is the one that takes it away. Since DEC-077 the track is *absent*
+  // rather than dimmed, so a stale answer here is a missing control rather than a dull one — and
+  // the widths it is decided from are only right once the pending measurement has been read.
+  window.diffscopeSettle();
+  updateTrack();
   return enabled;
 };
 
@@ -1650,6 +1673,33 @@ window.diffscopeHeights = function () {
 /// Reading a coordinate forces the pending measurement to be read synchronously. Called before each
 /// snapshot, so a picture shows the layout the reader gets rather than the one the frame scheduler
 /// never got round to.
+/// What the horizontal track is doing, and whether every line box still ends in the same place.
+///
+/// `28-…` item 3 is a rule with two halves — absent when there is nothing to scroll, present the
+/// moment there is — so both are asked of the live document rather than of `updateTrack`'s source.
+/// `sameEdge` is item 2's acceptance test in the case that actually exercises it: with wrapping off
+/// and one line far longer than the rest, a three-character line and a three-hundred-character line
+/// must still be tinted to the same right edge.
+window.diffscopeTrackState = function () {
+  const track = document.getElementById("track");
+  const view = layout === "unified" ? unified : left;
+  if (view) { view.requestMeasure(); if (view.state.doc.length) view.coordsAtPos(0); }
+  const scroller = view ? view.scrollDOM : null;
+  const widths = view
+    ? [...view.dom.querySelectorAll(".cm-line")].map(el => Math.round(el.getBoundingClientRect().width))
+    : [];
+  return {
+    layout,
+    hidden: track ? track.hidden : true,
+    disabled: track ? track.disabled : true,
+    span: scroller ? Math.max(0, Math.round(scroller.scrollWidth - scroller.clientWidth)) : 0,
+    lines: widths.length,
+    minLine: widths.length ? Math.min(...widths) : -1,
+    maxLine: widths.length ? Math.max(...widths) : -1,
+    sameEdge: widths.length > 1 && Math.min(...widths) === Math.max(...widths),
+  };
+};
+
 window.diffscopeSettle = function () {
   const views = [left, right, unified].filter(Boolean);
   const before = views.map(v => v.defaultLineHeight);

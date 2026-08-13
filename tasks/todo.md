@@ -1914,3 +1914,24 @@ Two changes made while chasing the wrong cause were kept and are recorded as hav
 observable: the unified view is built after its host is shown rather than inside a `display: none`
 element, and `.cm-content` joins the two elements that already share `--ds-line-height`. Both are
 right; neither was the bug.
+
+## Step 68 — `28-…` item 3: the horizontal track goes away when it cannot be used
+
+- [x] `updateTrack` sets `hidden` beside `disabled`; `#track[hidden] { display: none }`
+- [x] `--ds-track-idle` removed — nothing references it any more
+- [x] `diffscopeTrackState`, and an arm that asserts **both** halves on a two-line file of three
+      characters and three hundred: present with wrapping off, absent with wrapping on
+- [x] the span is read from the layout that is showing, and the unified scroller drives the track
+- [x] `24-…`'s DEC-077 table and its `#track` row rewritten in the same commit
+
+### Step 68 — dimming had been hiding a missing control
+
+`updateTrack` took its span from `left.scrollDOM` whatever layout was drawn. **Unified — the default
+since DEC-059 — therefore reported nothing to scroll however long its lines were**, so the one
+column had no keyboard-reachable horizontal control at all, which is the whole reason `12-…` §5.4
+asks for a range input instead of a scrollbar. While the track merely dimmed, that looked like a
+quiet control; the moment it disappears it is a missing one.
+
+Toggling wrap is the only act that creates something to scroll to without changing the document, so
+it updates the track — and settles the views first, because the widths it decides from are only
+right once the pending measurement has been read (step 67).
