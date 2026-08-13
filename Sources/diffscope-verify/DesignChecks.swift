@@ -210,8 +210,15 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
                offenders.isEmpty, offenders.joined(separator: ", "))
 
         // DEC-035: colour alone is not a signal. Every mark must declare at least one property that
-        // survives greyscale — a texture, an underline, an outline or an edge.
+        // survives greyscale — a texture, a decoration, an outline or an edge.
+        //
+        // **`background-image` is on this list since DEC-077**, and it is not a loosening: the
+        // textures were always declared that way, and until the underlines were removed every mark
+        // happened to carry `text-decoration` as well, so the list had never been asked to see one.
+        // The underline's own rule is not dropped either — it moves to the luminance check below,
+        // which is the greyscale question asked of the thing that replaced it.
         let shapeProperties = ["text-decoration", "background: repeating-linear-gradient",
+                               "background-image: var(--ds-tex",
                                "outline", "border", "font-weight", "background: var(--ds-fill"]
         var colourOnly: [String] = []
         for name in ["ds-changed", "ds-fallback", "ds-moved", "ds-formatting", "ds-behaviour",
@@ -235,6 +242,141 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
         }
     }
 
+    print("\n=== the two change tints are a luminance apart (DEC-077, restating DEC-035) ===")
+    do {
+        // The underline was the mark's greyscale carrier and it is gone, because it is also what
+        // made a changed line hard to read. What replaced it is a pair of tints — the whole line,
+        // and the bytes that changed at a lower transparency — and the rule the underline carried
+        // has to survive the substitution or DEC-035 was quietly dropped rather than restated.
+        //
+        // So the pair is *measured*, over the surface it is drawn on, in both appearances. A tint
+        // pair that differed only in hue would pass every other check in this file and vanish in a
+        // screenshot — which is the exact failure DEC-035 exists to prevent.
+        let halves = tokens.components(separatedBy: "@media (prefers-color-scheme: dark)")
+
+        /// A declared token's value in one appearance, falling back to the light half — the dark
+        /// block only restates what it changes.
+        func declared(_ name: String, dark: Bool) -> String? {
+            let source = dark ? (halves.last ?? "") : (halves.first ?? "")
+            guard let range = source.range(of: "\(name):\\s*[^;]+;", options: .regularExpression)
+            else { return dark ? declared(name, dark: false) : nil }
+            return String(source[range].dropFirst(name.count + 1).dropLast())
+                .trimmingCharacters(in: .whitespaces)
+        }
+        /// `rgba(r, g, b, a)` or `#rrggbb`, as four numbers. Anything else is not a colour this
+        /// check can measure, and saying so is better than measuring a zero.
+        func colour(_ text: String) -> (r: Double, g: Double, b: Double, a: Double)? {
+            if text.hasPrefix("#"), text.count == 7 {
+                let digits = Array(text.dropFirst())
+                let parts = stride(from: 0, to: 6, by: 2).map {
+                    Double(UInt8(String(digits[$0...$0 + 1]), radix: 16) ?? 0)
+                }
+                return (parts[0], parts[1], parts[2], 1)
+            }
+            guard let open = text.firstIndex(of: "("), let close = text.firstIndex(of: ")") else { return nil }
+            let parts = text[text.index(after: open)..<close]
+                .split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+            guard parts.count >= 3 else { return nil }
+            return (parts[0], parts[1], parts[2], parts.count > 3 ? parts[3] : 1)
+        }
+        func luminance(_ rgb: (r: Double, g: Double, b: Double)) -> Double {
+            func channel(_ value: Double) -> Double {
+                let unit = value / 255
+                return unit <= 0.03928 ? unit / 12.92 : pow((unit + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * channel(rgb.r) + 0.7152 * channel(rgb.g) + 0.0722 * channel(rgb.b)
+        }
+        /// What the reader actually sees: the tint composited over the surface behind it.
+        func over(_ tint: (r: Double, g: Double, b: Double, a: Double),
+                  _ surface: (r: Double, g: Double, b: Double, a: Double))
+            -> (r: Double, g: Double, b: Double) {
+            (tint.r * tint.a + surface.r * (1 - tint.a),
+             tint.g * tint.a + surface.g * (1 - tint.a),
+             tint.b * tint.a + surface.b * (1 - tint.a))
+        }
+        func step(_ a: (r: Double, g: Double, b: Double), _ b: (r: Double, g: Double, b: Double)) -> Double {
+            let la = luminance(a), lb = luminance(b)
+            return (max(la, lb) + 0.05) / (min(la, lb) + 0.05)
+        }
+
+        // Three pairs, because there are three places a line tint and a byte tint meet: the
+        // two-pane layout, where the pane says which side a line is on, and the two directions of
+        // the unified layout, where the sign column does.
+        let pairs: [(line: String, seg: String, where_: String)] = [
+            ("--ds-tint-line", "--ds-tint-seg", "a changed line in the two-pane layout"),
+            ("--ds-tint-add", "--ds-tint-add-strong", "an added line in unified"),
+            ("--ds-tint-del", "--ds-tint-del-strong", "a removed line in unified"),
+        ]
+        var failing: [String] = []
+        var measured: [String] = []
+        for pair in pairs {
+            for dark in [false, true] {
+                guard let surfaceText = declared("--ds-code", dark: dark),
+                      let surface = colour(surfaceText),
+                      let lineText = declared(pair.line, dark: dark), let lineTint = colour(lineText),
+                      let segText = declared(pair.seg, dark: dark), let segTint = colour(segText) else {
+                    failing.append("\(pair.line)/\(pair.seg): undeclared or unreadable"); continue
+                }
+                let lineOver = over(lineTint, surface)
+                let segOver = over(segTint, surface)
+                let apart = step(lineOver, segOver)
+                let fromSurface = step((surface.r, surface.g, surface.b), lineOver)
+                measured.append(String(format: "%@ %@ %.2f", pair.line, dark ? "dark" : "light", apart))
+                // 1.20 between the two tints, and 1.05 between the surface and the line tint: a
+                // line whose tint the paper swallows is a changed line nobody sees at all, which
+                // the byte tint being distinct would not repair.
+                if apart < 1.20 {
+                    failing.append(String(format: "%@ vs %@ %@ only %.3f:1 apart (%@)", pair.line,
+                                          pair.seg, dark ? "dark" : "light", apart, pair.where_))
+                }
+                if fromSurface < 1.05 {
+                    failing.append(String(format: "%@ %@ is %.3f:1 from the code surface", pair.line,
+                                          dark ? "dark" : "light", fromSurface))
+                }
+            }
+        }
+        report("every line tint and its byte tint differ in luminance, in both appearances",
+               failing.isEmpty, failing.joined(separator: " | "))
+        report("and the measurements are printed rather than merely passed",
+               measured.count == 6, measured.joined(separator: ", "))
+
+        // The negative control, and it is the one that matters: **a pair that differs only in
+        // hue.** This is what a designer reaching for "green for added, red for changed bytes"
+        // would produce, it satisfies every other rule in this file, and it is invisible in
+        // greyscale. Literal values, not read from the token file — a control a fix can satisfy
+        // is not a control (the lesson DEC-076's check was written around).
+        //
+        // The red's alpha is **solved for**, not guessed: the design's own green at .20 and red at
+        // .15 land on the same relative luminance over paper. The first attempt at this control
+        // used the two shipped alphas and measured 1.289:1 apart — it would have passed the check
+        // it exists to fail, which is the failure mode this project keeps finding in controls.
+        let hue = step(over((0, 132, 52, 0.20), (255, 255, 255, 1)),
+                       over((209, 0, 21, 0.15), (255, 255, 255, 1)))
+        report("negative control: two tints that differ only in hue are caught",
+               hue < 1.20, String(format: "%.3f:1 apart", hue))
+        // And the other half of the rule: a line tint the paper swallows.
+        let swallowed = step((255, 255, 255), over((0, 0, 0, 0.008), (255, 255, 255, 1)))
+        report("negative control: and so is a line tint the surface swallows",
+               swallowed < 1.05, String(format: "%.3f:1 from the surface", swallowed))
+
+        // The other half of the item: the underlines are *gone*, not merely restyled. Asserted
+        // over the change classes by name, because the terminal still draws one deliberately — a
+        // shell that has wandered out of the selected repository — and a file-wide ban would have
+        // to be worked around rather than kept.
+        var underlined: [String] = []
+        for name in ["ds-changed", "ds-fallback", "ds-moved", "ds-formatting", "ds-behaviour",
+                     "ds-uncertain", "ds-invisible"] {
+            guard let range = html.range(of: "\\.\(name)\\s*\\{[^}]*\\}", options: .regularExpression)
+            else { continue }
+            if String(html[range]).contains("text-decoration") { underlined.append(name) }
+        }
+        report("no change mark in the diff carries an underline any more (DEC-077)",
+               underlined.isEmpty, underlined.joined(separator: ", "))
+        let stillUnderlined = ".ds-changed { text-decoration: underline; }"
+        report("negative control: a mark that kept its underline is caught",
+               stillUnderlined.contains("text-decoration"))
+    }
+
     print("\n=== the design checks can actually fail ===")
     do {
         // Applied to a deliberately hostile stylesheet rather than to the real one. A check that has
@@ -254,8 +396,9 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
             .map { String(hostile[$0]) } ?? ""
         report("a hidden mark is caught", changedBody.contains("display: none"))
 
-        // And the mark that is *only* a colour: no texture, no underline, no outline, no edge.
+        // And the mark that is *only* a colour: no texture, no decoration, no outline, no edge.
         let shapeProperties = ["text-decoration", "background: repeating-linear-gradient",
+                               "background-image: var(--ds-tex",
                                "outline", "border", "font-weight"]
         let movedBody = hostile.range(of: "\\.ds-moved\\s*\\{[^}]*\\}", options: .regularExpression)
             .map { String(hostile[$0]) } ?? ""

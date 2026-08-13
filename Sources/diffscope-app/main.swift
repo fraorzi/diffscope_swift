@@ -1076,12 +1076,22 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             let text = (value as? String) ?? "nil"
             let numbered = !text.contains("\"lineNumbers\":0")
             let marked = !text.contains("\"gutterChanged\":0")
+            // DEC-077: the tint replaced the underline, so the changed line now has two carriers
+            // in this layout — the gutter edge and the tint behind it. Both are drawn from the
+            // engine's `changedLines`, so **they must agree**, and a count that agrees is the only
+            // way to catch a decoration that was computed and never reached a line.
+            let data = Data(text.utf8)
+            let probe = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+            let tinted = probe["tintedLines"] as? Int ?? -1
+            let gutterChanged = probe["gutterChanged"] as? Int ?? -2
+            let agree = tinted > 0 && tinted == gutterChanged
             self.webView.evaluateJavaScript("window.diffscopeCurrentLine()") { line, _ in
                 let reported = (line as? Int) ?? (line as? NSNumber)?.intValue ?? -1
                 // ⌘O used to hand the editor a literal 1 whatever the reader was looking at.
-                let ok = numbered && marked && reported >= 1
+                let ok = numbered && marked && agree && reported >= 1
                 FileHandle.standardError.write(
-                    Data("SELFTEST gutter=\(ok ? "OK" : "MISMATCH") line=\(reported) \(text.suffix(120))\n".utf8))
+                    Data(("SELFTEST gutter=\(ok ? "OK" : "MISMATCH") line=\(reported) "
+                        + "tinted=\(tinted) gutter-marked=\(gutterChanged) \(text.suffix(120))\n").utf8))
                 self.snapshot(named: "gutter") {
                     if ok { self.runUnifiedSelftest() } else { exit(23) }
                 }

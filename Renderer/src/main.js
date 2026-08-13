@@ -198,7 +198,7 @@ function markItems(state, segments) {
 /// thing `24-design-contract.md` §1 forbids outright.
 ///
 /// A note is an **annotation of a mark that is already there**, never the only carrier of anything:
-/// the sign column, the underline and the texture all still say it (DEC-035).
+/// the sign column, the tint and the texture all still say it (DEC-035).
 function noteItems(state, segments) {
   const byLine = new Map();
   const max = state.doc.length;
@@ -234,8 +234,26 @@ function noteItems(state, segments) {
   return items;
 }
 
-function decorationsFor(state, segments, side) {
-  const items = markItems(state, segments)
+/// A tint across every changed line (DEC-077), which is what replaced the underline. It is a
+/// **line** decoration rather than a mark, so it reaches the full width of the line box instead of
+/// stopping where the text stops, and the changed bytes inside it take the stronger tint.
+///
+/// Which lines are changed is the engine's answer (`changedLines`), the same one the gutter edge
+/// is drawn from — so the two carriers cannot disagree about which line changed, and the selftest
+/// asserts they do not.
+function lineTintItems(state, changedLines) {
+  const items = [];
+  for (const number of changedLines) {
+    if (number < 1 || number > state.doc.lines) continue;
+    items.push({ from: state.doc.line(number).from,
+                 deco: Decoration.line({ class: "ds-line-changed" }) });
+  }
+  return items;
+}
+
+function decorationsFor(state, segments, side, changedLines) {
+  const items = lineTintItems(state, changedLines || [])
+    .concat(markItems(state, segments))
     .concat(noteItems(state, segments))
     .concat(foldsFor(state, side));
   return Decoration.set(items.map(item => item.deco.range(item.from, item.to ?? item.from)), true);
@@ -322,22 +340,27 @@ const highlighting = HighlightStyle.define([
 ]);
 
 function makePane(parent, side) {
-  const field = StateField.define({
-    create: () => Decoration.none,
-    update: (value, tr) => {
-      for (const effect of tr.effects) if (effect.is(setSegments)) {
-        return decorationsFor(tr.state, effect.value, side);
-      }
-      return value.map(tr.changes);
-    },
-    provide: f => EditorView.decorations.from(f),
-  });
   const changedLineField = StateField.define({
     create: () => [],
     update: (value, tr) => {
       for (const effect of tr.effects) if (effect.is(setChangedLines)) return effect.value;
       return value;
     },
+  });
+  // **Declared after `changedLineField` and listed after it below**, so that this one may read it:
+  // CodeMirror updates fields in the order the extensions give them, and a field may only ask
+  // `tr.state` for one defined before it. The changed lines are read from the field rather than
+  // from the effect because a mode change re-dispatches `setSegments` alone — reading the effect
+  // would drop every line tint the moment the reader pressed ⌘2.
+  const field = StateField.define({
+    create: () => Decoration.none,
+    update: (value, tr) => {
+      for (const effect of tr.effects) if (effect.is(setSegments)) {
+        return decorationsFor(tr.state, effect.value, side, tr.state.field(changedLineField));
+      }
+      return value.map(tr.changes);
+    },
+    provide: f => EditorView.decorations.from(f),
   });
 
   const view = new EditorView({
@@ -379,8 +402,9 @@ const wrapping = new Compartment();
 // The unified pane has its own, because it is a separate view and a compartment belongs to one.
 const unifiedWrapping = new Compartment();
 
-// `12-…` §5.1 names the gutter as one of three carriers of change meaning, beside the underline and
-// the background texture. The two others were built; this is the third.
+// `12-…` §5.1 names the gutter as one of three carriers of change meaning, beside the line tint
+// (the underline until DEC-077) and the background texture. The two others were built; this is the
+// third.
 //
 // Which lines carry a difference is decided by the engine and arrives on the contract
 // (`changedLines`), for the same reason navigation stops and folds do: a fact about the model
@@ -1182,7 +1206,7 @@ window.diffscopeAnchorState = function () {
 // wins, or an inherited `opacity`. Computed style is what the reader actually gets.
 //
 // A mark is "visible" if it takes part in layout and is not transparent, and "distinguishable" if it
-// carries at least one non-colour signal — texture, underline, outline or edge (DEC-035, because
+// carries at least one non-colour signal — texture, decoration, outline or edge (DEC-035, because
 // colour alone fails in greyscale, in a screenshot and for a colour-blind reader).
 window.diffscopeStyleAudit = function () {
   const marks = ["ds-changed", "ds-fallback", "ds-moved", "ds-formatting", "ds-behaviour",
@@ -1605,6 +1629,9 @@ window.diffscopeProbe = function () {
     signGlyphs: [...document.querySelectorAll(".ds-sign")].map(el => el.textContent).join(""),
     addedLines: document.querySelectorAll(".ds-line-add").length,
     removedLines: document.querySelectorAll(".ds-line-del").length,
+    // DEC-077's line tint, counted so the selftest can hold it against `gutterChanged`: two
+    // carriers of "this line changed", read off the same `changedLines`, must agree.
+    tintedLines: document.querySelectorAll(".ds-line-changed").length,
     formattingMarks: document.querySelectorAll(".ds-formatting").length,
     notes: [...document.querySelectorAll(".ds-note")].map(el => el.textContent),
     footer: document.getElementById("diff-footer")?.hidden === false

@@ -91,7 +91,9 @@ All of them operate on the same pinned source pair and the same canonical diff, 
 
 ### 5.1 Colour discipline
 
-Change meaning is carried by **gutter, underline, and background texture — never by token colour** (DEC-035). Syntax highlighting is left untouched. Character-level intra-line changes are marked by underline or texture, not by recolouring characters.
+Change meaning is carried by **gutter, line tint, and background texture — never by token colour** (DEC-035, and **DEC-077** for the tint, which replaced the underline this line named for eight milestones). Syntax highlighting is left untouched. Character-level intra-line changes are marked by a **stronger tint of the same hue** and by texture, not by recolouring characters.
+
+The substitution keeps the reason the underline was here: the line tint and the byte tint must differ in **luminance**, so the distinction survives greyscale exactly as a line under a word did. That is measured, not asserted — `DesignChecks` composites each pair over the code surface in both appearances and refuses a pair that differs only in hue.
 
 This satisfies DEC-016 structurally: the information survives greyscale and colour-blindness because shape carries it.
 

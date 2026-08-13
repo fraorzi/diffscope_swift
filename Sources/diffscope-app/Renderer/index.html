@@ -128,7 +128,7 @@
   .cm-editor { height: 100%; background: var(--ds-code); color: var(--ds-plain); }
 
   /* The right margin (the adopted design). A note annotates a mark that is already on the line —
-     the sign column, the underline and the texture all still carry the meaning (DEC-035), so this
+     the sign column, the tint and the texture all still carry the meaning (DEC-035), so this
      may be clipped on a narrow pane without anything being lost. `position: relative` on the line
      is what the note is placed against. */
   .ds-note { margin-left: var(--ds-space-4); color: var(--ds-faint);
@@ -150,40 +150,36 @@
   #unrenderable { display: none; padding: var(--ds-space-6); white-space: pre-wrap;
                   color: var(--ds-dim); }
 
-  /* Change meaning is carried by texture and underline, never by token colour (DEC-035). Each
+  /* Change meaning is carried by texture and tint, never by token colour (DEC-035, DEC-077). Each
      mark's texture is a different angle, weight and period, so they stay tellable apart in
-     greyscale — which is the state a screenshot and a colour-blind reader are both in. */
+     greyscale — which is the state a screenshot and a colour-blind reader are both in.
+
+     **The underlines are gone** (DEC-077). They were the second shape carrier and they were also
+     what made a changed line hard to read, which is the complaint the owner reported. What
+     replaces them is the tint pair below: the whole line, and the changed bytes at a lower
+     transparency — a difference in *luminance*, so it survives greyscale exactly as the underline
+     did. The texture, the sign column and the gutter edge are untouched. */
   .ds-changed {
     background-image: var(--ds-tex-changed);
-    text-decoration: underline;
-    text-decoration-thickness: var(--ds-underline-thickness);
-    text-underline-offset: var(--ds-underline-offset);
   }
   .ds-fallback {
     background-image: var(--ds-tex-fallback);
-    text-decoration: underline dotted;
-    text-decoration-thickness: var(--ds-underline-thickness);
-    text-underline-offset: var(--ds-underline-offset);
   }
   .ds-moved {
     background-image: var(--ds-tex-moved);
     outline: var(--ds-hairline-width) dashed var(--ds-mark);
     outline-offset: calc(-1 * var(--ds-hairline-width));
   }
-  /* Grouping quietens, it never hides: the underline stays, only its weight drops (DEC-017). */
+  /* Grouping quietens, it never hides: the texture stays, only its weight drops (DEC-017). */
   .ds-formatting {
     background-image: var(--ds-tex-format);
-    text-decoration-style: dotted;
-    text-decoration-thickness: var(--ds-underline-thickness-quiet);
   }
   .ds-behaviour {
     background-image: var(--ds-tex-behaviour);
-    text-decoration-style: wavy;
   }
   /* An alignment the structural layer could not confirm (DEC-017 confidence indication). */
   .ds-uncertain {
     background-image: var(--ds-tex-ambiguous);
-    text-decoration-style: dashed;
   }
   /* A difference that is real in the bytes and absent on screen (DEC-023). */
   .ds-invisible {
@@ -237,8 +233,21 @@
   .ds-sign { display: inline-block; width: var(--ds-space-6);
              text-align: center; color: var(--ds-mark);
              font-weight: var(--ds-weight-emphasis); }
+  /* The change tints (DEC-077). A changed line is tinted **across its whole width** — the line
+     decoration is on `.cm-line`, so it reaches wherever the line box reaches — and the bytes that
+     changed take the same hue at a lower transparency. Two tints, one hue, a luminance apart.
+
+     `ds-line-changed` is the two-pane layout, where the pane says which side a line is on and the
+     tint therefore claims nothing about direction. `ds-line-add` / `ds-line-del` are unified,
+     where the sign column carries direction and the hue reinforces it (DEC-059). */
+  .ds-line-changed { background-color: var(--ds-tint-line); }
+  .ds-changed, .ds-fallback, .ds-moved { background-color: var(--ds-tint-seg); }
   .ds-line-add { background-color: var(--ds-tint-add); }
   .ds-line-del { background-color: var(--ds-tint-del); }
+  .ds-line-add .ds-changed, .ds-line-add .ds-fallback, .ds-line-add .ds-moved {
+    background-color: var(--ds-tint-add-strong); }
+  .ds-line-del .ds-changed, .ds-line-del .ds-fallback, .ds-line-del .ds-moved {
+    background-color: var(--ds-tint-del-strong); }
   .cm-editor .ds-gutter-old .cm-gutterElement,
   .cm-editor .ds-gutter-new .cm-gutterElement { padding: 0 var(--ds-space-2);
                                                 color: var(--ds-faint); text-align: right; }

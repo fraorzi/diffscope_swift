@@ -34,10 +34,14 @@ The order is by *what a reader hits first*, not by effort. Each item names the d
 
 ### Tranche 2 — the diff pane reads badly (do this first)
 
-**1. Underlines out, tint in** (DEC-077, amends DEC-035)
+**1. Underlines out, tint in** (DEC-077, amends DEC-035) — **landed**
 A changed line gets a tint across the **whole line**; the bytes that actually changed get the same hue at a **lower transparency**. No underlines — they are what makes the line hard to read.
 *What will refuse it:* `DesignChecks` requires every mark to carry a signal that survives greyscale, and the underline was that signal. The rule is restated, not dropped: **the two tints must differ in luminance**, and the sign column (`ds-sign`) and the gutter edge stay. Add the luminance assertion to the check in the same commit.
 *Done when:* the two tints differ measurably in luminance, both survive a greyscale conversion, and `structural.png` / `unified.png` are looked at full-size.
+
+*How it landed.* `ds-line-changed` is a **line** decoration in the two-pane layout, so it reaches the whole line box rather than stopping at the text, and it is built from the same `changedLines` the gutter edge is built from — the selftest holds the two counts equal, which is how a decoration that is computed and never drawn gets caught. Unified keeps `ds-line-add` / `ds-line-del` and gains `--ds-tint-add-strong` / `--ds-tint-del-strong` for the bytes, so the byte tint is the same hue as the line it sits on in every layout. Three pairs are measured over `--ds-code` in both appearances — **1.27:1 to 1.53:1 apart**, against a floor of 1.20 — and the line tint is held 1.05:1 off the paper as well, because a line tint the surface swallows is a changed line nobody sees and a distinct byte tint would not repair it.
+
+**The negative control failed first, and it was right to.** The obvious control — the design's own green and red at their shipped alphas — measures **1.289:1** apart and would have *passed* the check it exists to fail. The red's alpha is solved for instead, so green at .20 and red at .15 land on the same relative luminance over paper and the control measures 1.00:1. `--ds-underline-thickness` and its quiet twin are gone from the token file; `--ds-underline-offset` stays, because the terminal still draws a dotted underline for a shell that has wandered out of the selected repository.
 
 **2. The line background reaches the right edge**
 Reported with a screenshot: the tint stops where the text stops.

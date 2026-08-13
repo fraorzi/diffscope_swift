@@ -71,9 +71,24 @@
   --ds-tex-moved: repeating-linear-gradient(90deg, rgba(0,0,0,.07) 0 8px, transparent 8px 16px);
   --ds-tex-invisible: repeating-linear-gradient(45deg, rgba(0,0,0,.045) 0 1px, transparent 1px 6px);
 
-  /* Direction in unified: hue reinforcing the sign column, never carrying it (DEC-059). */
+  /* ---- The change tints (DEC-077) -----------------------------------------
+   * A changed line is tinted across its whole width, and the bytes that actually changed take the
+   * **same hue at a lower transparency**. This pair replaced the underline, which was the shape
+   * carrier and was also what made a line hard to read — so the rule it carried is restated rather
+   * than dropped: **`-line` and `-seg` must differ in luminance**, in both appearances, so the
+   * distinction survives greyscale. Checked, with a negative control.
+   *
+   * Neutral in the two-pane layout, where the pane itself says which side a line is on. */
+  --ds-tint-line: rgba(0, 0, 0, .05);
+  --ds-tint-seg: rgba(0, 0, 0, .15);
+
+  /* Direction in unified: hue reinforcing the sign column, never carrying it (DEC-059). The
+     `-strong` pair is the same hue for the changed bytes, so a mark on a tinted line reads as more
+     of the same thing rather than as a second meaning. */
   --ds-tint-add: rgba(0, 132, 52, .10);
   --ds-tint-del: rgba(209, 0, 21, .085);
+  --ds-tint-add-strong: rgba(0, 132, 52, .30);
+  --ds-tint-del-strong: rgba(209, 0, 21, .28);
 
   /* Where a search hit is (DEC-062). A fill, with weight beside it in the rule that uses it: a
    * highlight carried by colour alone is a hit that a greyscale screenshot loses. */
@@ -98,10 +113,10 @@
   --ds-motion-curve: cubic-bezier(0.2, 0, 0, 1);
 
   /* ---- Mark shape ------------------------------------------------------- */
-  --ds-underline-thickness: 2px;
-  --ds-underline-thickness-quiet: 1px;
+  /* The two underline thicknesses went with the underlines (DEC-077). The offset stays because the
+     terminal still draws one: a shell that has wandered out of the selected repository. */
   --ds-underline-offset: 2px;
-  /* The gutter edge, third carrier of change meaning beside the underline and the texture. */
+  /* The gutter edge, third carrier of change meaning beside the tint pair and the texture. */
   --ds-gutter-edge-width: 3px;
 
   /* ---- Syntax — light -----------------------------------------------------
@@ -201,8 +216,13 @@
     --ds-check-a: #141417;
     --ds-check-b: #232329;
 
+    --ds-tint-line: rgba(255, 255, 255, .055);
+    --ds-tint-seg: rgba(255, 255, 255, .17);
+
     --ds-tint-add: rgba(48, 209, 88, .11);
     --ds-tint-del: rgba(255, 69, 58, .11);
+    --ds-tint-add-strong: rgba(48, 209, 88, .30);
+    --ds-tint-del-strong: rgba(255, 69, 58, .30);
 
     --ds-tex-changed: repeating-linear-gradient(45deg, rgba(255,255,255,.062) 0 2px, transparent 2px 6px);
     --ds-tex-format: repeating-linear-gradient(45deg, rgba(255,255,255,.03) 0 1px, transparent 1px 8px);

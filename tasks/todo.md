@@ -1843,3 +1843,37 @@ against is a design behind a login that nobody in this repository can open.
 
 So `27-…` now says what it can honestly say — **which decisions the design produced** — and what is
 left to build lives in `28-…`, which is a list with acceptance tests rather than an adjective.
+
+## Step 66 — `28-…` item 1: the underlines come out of the diff and a tint pair goes in
+
+- [x] `--ds-tint-line` / `--ds-tint-seg` (neutral, two-pane) and `--ds-tint-add-strong` /
+      `--ds-tint-del-strong` (unified) declared in both appearances
+- [x] `ds-line-changed`, a **line** decoration, so the tint reaches the whole line box
+- [x] every `text-decoration` gone from the seven change classes; `--ds-underline-thickness` and
+      its quiet twin gone from the token file
+- [x] `DesignChecks` measures all three pairs over `--ds-code` in both appearances, with two
+      negative controls; `background-image: var(--ds-tex…)` added to the shape list
+- [x] the selftest holds `tintedLines == gutterChanged` — two carriers of one fact, one source
+- [x] `24-…`, `12-…` §5.1 and `28-…` item 1 record it
+
+### Step 66 — the control that would have passed
+
+The first negative control paired the design's own green and red at the alphas they ship at, and
+measured **1.289:1** apart — above the 1.20 floor, so it would have *passed the check it exists to
+fail*. The red's alpha is solved for instead: green at .20 and red at .15 land on the same relative
+luminance over paper, and the control now reads 1.00:1. **A control is only a control once it has
+been shown to fail**, and this one had to be measured before it did.
+
+The shipped pairs measure 1.27:1 (neutral, light), 1.37:1 (neutral, dark), 1.34:1 and 1.53:1 (added,
+light and dark), 1.46:1 and 1.31:1 (removed) — and each line tint is held 1.05:1 off the paper as
+well, because a line tint the surface swallows is a changed line nobody sees, which a distinct byte
+tint would not repair.
+
+### Step 66 — where the shape rule actually lived
+
+`DesignChecks`'s greyscale list had `text-decoration` and `background: repeating-linear-gradient` in
+it, and the textures are declared as `background-image: var(--ds-tex-…)` — so **every mark had been
+passing on its underline**, and the texture that was supposed to be the other carrier had never once
+satisfied the check. Removing the underlines failed six marks at a stroke and said so. The list now
+names the form the textures are actually written in, and the underline's own rule moves to the
+luminance measurement rather than disappearing with it.
