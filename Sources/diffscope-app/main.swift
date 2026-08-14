@@ -5092,7 +5092,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 // One bar per file, carrying the kind glyph: the design drew these bars
                 // distinguished by hue alone, which DEC-035 forbids. The bar's *length* is the
                 // design's other idea and now has a number behind it.
-                let spine = label(Theme.textSizeTiny, .regular, Theme.ink)
+                let spine = label(Theme.textSizeTiny, .regular, Theme.kind(file.kind))
                 let size = count.map { min(4, max(1, ($0.added + $0.deleted) / 12 + 1)) } ?? 1
                 spine.stringValue = "\(file.kind.glyph)\(String(repeating: "▍", count: size))"
                 spine.lineBreakMode = .byClipping
@@ -5102,7 +5102,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 return cell
             }
 
-            let glyph = label(Theme.textSizeSmall, .semibold, Theme.ink)
+            let glyph = label(Theme.textSizeSmall, .semibold, Theme.kind(file.kind))
             glyph.stringValue = file.kind.glyph
             glyph.setContentCompressionResistancePriority(.required, for: .horizontal)
             glyph.widthAnchor.constraint(equalToConstant: Theme.space6 - Theme.space2).isActive = true

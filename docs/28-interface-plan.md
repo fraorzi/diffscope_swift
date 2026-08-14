@@ -141,10 +141,18 @@ The four surfaces already have four tokens (`--ds-chrome`, `--ds-panel-repos`, `
 
 **This is the first time a transcribed value has moved,** which is why it is [DEC-080](04-decision-log.md) rather than a token edit. Ask the owner whether the ladder should be steeper or shallower; a screenshot would settle it in a second.
 
-**10. The file-kind glyphs carry no colour**
+**10. The file-kind glyphs carry no colour** ([DEC-081](04-decision-log.md)) — **landed**
 *"nie widzę żeby te ikonki miały kolor np żółty gdy było coś zmieniane w pliku."*
 Added / modified / deleted / renamed. Colour **and** the glyph, never colour alone (DEC-035), and the new chrome tokens must be mirrored in `Theme.swift` and clear 4.5:1 (DEC-076's check will refuse them otherwise).
 *Done when:* four kinds are distinguishable in colour and in shape, and in a greyscale screenshot.
+
+*How it landed.* Four tokens — `--ds-kind-added` `#16602a`/`#5cd67d`, `-modified` `#7a5300`/`#e8bd45`, `-deleted` `#9e1420`/`#ff8b84`, `-renamed` `#1a4f9c`/`#7fb8ff` — mirrored in `Theme.swift`, on the glyph in the list **and** on the collapsed spine's bar, so the rail and the full list say the same thing the same way. Untracked, type-changed and unmerged keep the ordinary ink: a kind with no colour is still a kind with a glyph, and three more hues invented to fill the table would weaken the four that mean something.
+
+**Twelve new pairs in the contrast list**, because a row is drawn on three surfaces — the file pane, the repository pane and a selected row — and they pass at 4.51:1 to 7.44:1. That list is hand-maintained for exactly this: DEC-076 built it after the tertiary ink was found failing on four surfaces nobody had measured, so adding a colour to the window means adding its rows.
+
+*Greyscale is unchanged, and that is the point.* The glyph vocabulary is untouched, so every kind survives a screenshot exactly as it did before — the check asserts that the seven glyphs are still seven different characters, with two kinds sharing one as its control. `24-…` records the adopted design getting this backwards once already, drawing the spine's bars by hue alone.
+
+The keyboard-tree fixture holds modified and deleted files only, so the picture shows two of the four; the other two are held by the check rather than by a photograph.
 
 ---
 

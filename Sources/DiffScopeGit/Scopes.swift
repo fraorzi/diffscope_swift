@@ -71,7 +71,7 @@ public enum ScopeAvailability: Sendable, Equatable {
     public var isAvailable: Bool { self == .available }
 }
 
-public enum ChangeKind: String, Sendable, Equatable {
+public enum ChangeKind: String, Sendable, Equatable, CaseIterable {
     case added, modified, deleted, renamed, untracked, typeChanged, unmerged
 
     /// One character that means the same thing with every colour removed (DEC-035, DEC-060). The

@@ -3441,3 +3441,39 @@ A check holds the ladder in both appearances, adjacent step by adjacent step, wi
 ### Revisit trigger
 
 Reopen if the owner reads the chrome as *dimmed* rather than as *behind*: a ladder that goes too far turns furniture into something that looks disabled, and the fix is a shallower step rather than a border.
+
+---
+
+## DEC-081 — The file-kind glyphs get colour, as the second carrier and never the first
+
+- **Date:** 2026-08-14 · **Topic:** *"nie widzę żeby te ikonki miały kolor np żółty gdy było coś zmieniane w pliku"* · **Status:** Accepted · **Extends DEC-035, DEC-066, DEC-080; item 10 of [28-interface-plan.md](28-interface-plan.md)**
+
+### Context
+
+Every row in the changed-file list carries a glyph for its kind — `+` added, `−` deleted, `→` renamed, `✎` modified — and all of them are drawn in the ordinary ink. The glyphs exist because DEC-035 forbids colour alone and `24-…` records the adopted design getting this wrong once already: it drew the collapsed spine's bars distinguished by **hue alone**, which is the failure this project refuses.
+
+Having corrected that, the interface went to the other extreme and used no hue at all. A reader scanning sixty rows for *what happened to this file* is doing character recognition on one glyph at the smallest size the window draws. Colour is the channel that answers that at a glance, and it costs nothing that DEC-035 protects — **as long as it is added to the shape rather than substituted for it.**
+
+### Options considered
+
+1. **Colour every kind.** Seven kinds, seven hues, four of which a reader meets rarely. Rejected: a palette sized to fill a table rather than to answer a question, and seven hues at 4.5:1 on three surfaces is a search with no good answers at the end of it.
+2. **Colour the row, not the glyph.** Rejected outright: a tinted row is the change language's own vocabulary (`24-…` — *tint and texture belong to the change language, and a second meaning for them is a meaning nobody can read*), and it would collide with the selected-row treatment.
+3. **Colour the four kinds the reader meets, leave the rest in the ordinary ink.** Chosen.
+
+### Final decision
+
+**Option 3.** `--ds-kind-added`, `--ds-kind-modified`, `--ds-kind-deleted` and `--ds-kind-renamed`, in both appearances, mirrored in `Theme.swift`. Untracked, type-changed and unmerged keep `--ds-text`: a kind with no colour of its own is still a kind with a glyph, and inventing three more hues to fill the table would weaken the four that mean something.
+
+**The glyph is the carrier and the colour is the reinforcement.** The order matters and is checked the way DEC-035 has always been checked — the glyph vocabulary is untouched, so every kind survives greyscale exactly as it did before this entry.
+
+Each colour clears **4.5:1 on all three surfaces a row is drawn on** — the file pane, the repository pane and a selected row — added to the hand-maintained pair list `runChromeChecks` holds. That list is the reason this is cheap: DEC-076 built it after the tertiary ink was found failing on four surfaces nobody had measured, and adding a colour to the window now means adding its rows.
+
+### Consequences
+
+- **Twelve new pairs in the contrast check**, and they pass at 4.51:1 to 7.44:1.
+- The collapsed spine's bar takes the kind's colour too, so the rail and the full list say the same thing in the same way.
+- **This is the second entry in two days to add tokens the design's table does not have** (after [DEC-080](04-decision-log.md)). Both are on `28-…`'s list and both are recorded here rather than in a stylesheet; ask the owner to review the four hues against theirs.
+
+### Revisit trigger
+
+Reopen if a kind ever becomes distinguishable by colour alone — a glyph dropped for space, a spine narrowed until only the bar fits. That is DEC-035's line and this entry does not move it.

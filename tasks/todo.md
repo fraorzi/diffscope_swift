@@ -2111,3 +2111,24 @@ The dark half was worse than flat: **the ladder was not monotone.** The reposito
 than the file pane, with the chrome above both lighter than either, so the window had no consistent
 sense of front and back. A step-size check alone would have passed that, which is why the direction
 is asserted separately and has the old ordering as its control.
+
+## Step 75 — `28-…` item 10: the file-kind glyphs get colour (DEC-081)
+
+- [x] **DEC-081 before the code**: colour is the second carrier, the glyph stays the first
+- [x] four tokens in both appearances, mirrored in `Theme.swift`, on the glyph **and** on the
+      collapsed spine's bar
+- [x] untracked, type-changed and unmerged keep the ordinary ink rather than being given a hue to
+      fill the table
+- [x] twelve new pairs in the contrast list — a row is drawn on three surfaces — passing 4.51:1 to
+      7.44:1
+- [x] a check that the seven glyphs are still seven different characters, with a shared glyph as its
+      control; greyscale screenshots in both appearances
+
+### Step 75 — the mirror check reads token names literally
+
+`Theme.swift`'s doc comment wrote the four tokens as `--ds-kind-added` / `-modified` / `-deleted` /
+`-renamed`, and the `@chrome` mirror check — which looks for each token's **full name** in that file
+— reported three of the four as unmirrored. The shorthand was for a human reader; the check is the
+other reader of that comment.
+
+1704 → 1707 checks.

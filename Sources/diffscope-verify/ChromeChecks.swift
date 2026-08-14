@@ -286,6 +286,21 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
             ("--ds-faint", "--ds-bg", "the pane behind the code"),
             ("--ds-faint", "--ds-code", "the gutters beside it"),
             ("--ds-faint", "--ds-fold", "a folded range's own row"),
+            // DEC-081: the file-kind glyphs, on **all three surfaces a row is drawn on**. Adding a
+            // colour to the window means adding its rows here — which is the whole reason DEC-076
+            // built this list by hand rather than as a cross product.
+            ("--ds-kind-added", "--ds-panel-files", "the + on an added file"),
+            ("--ds-kind-added", "--ds-panel-repos", "and on the collapsed spine's bar"),
+            ("--ds-kind-added", "--ds-row-selected", "and on the file the reader has open"),
+            ("--ds-kind-modified", "--ds-panel-files", "the ✎ on a modified file"),
+            ("--ds-kind-modified", "--ds-panel-repos", "and on the collapsed spine's bar"),
+            ("--ds-kind-modified", "--ds-row-selected", "and on the file the reader has open"),
+            ("--ds-kind-deleted", "--ds-panel-files", "the − on a deleted file"),
+            ("--ds-kind-deleted", "--ds-panel-repos", "and on the collapsed spine's bar"),
+            ("--ds-kind-deleted", "--ds-row-selected", "and on the file the reader has open"),
+            ("--ds-kind-renamed", "--ds-panel-files", "the → on a renamed file"),
+            ("--ds-kind-renamed", "--ds-panel-repos", "and on the collapsed spine's bar"),
+            ("--ds-kind-renamed", "--ds-row-selected", "and on the file the reader has open"),
         ]
         var failing: [String] = []
         for pair in pairs {
@@ -303,6 +318,24 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
         }
         report("every ink/surface pair the chrome draws clears 4.5:1 in both appearances",
                failing.isEmpty, failing.joined(separator: " | "))
+
+        // DEC-081: **the glyph is the carrier and the colour is the reinforcement**, in that order.
+        // Four kinds have a colour; the vocabulary that survives greyscale is untouched, so this
+        // asserts what the entry actually promises — that no kind is left to colour alone.
+        do {
+            let coloured: [ChangeKind] = [.added, .modified, .deleted, .renamed]
+            let glyphs = ChangeKind.allCases.map(\.glyph)
+            report("every kind still has a glyph of its own, coloured or not",
+                   Set(glyphs).count == glyphs.count, glyphs.joined(separator: " "))
+            report("and the four with a colour are four different glyphs",
+                   Set(coloured.map(\.glyph)).count == 4,
+                   coloured.map(\.glyph).joined(separator: " "))
+            // The control: a palette that answered the question on its own would mean the glyph
+            // could be dropped, which is exactly DEC-035's line and exactly what the adopted
+            // design's spine bars did.
+            report("negative control: two kinds sharing a glyph would be caught",
+                   Set(["+", "+", "−"]).count != 3)
+        }
 
         // DEC-080: **the four surfaces are a ladder, and every step is at least 1.10:1.**
         //

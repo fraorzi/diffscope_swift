@@ -1,4 +1,5 @@
 import AppKit
+import DiffScopeGit
 
 /// The AppKit half of the design tokens (G2, `docs/24-design-contract.md`).
 ///
@@ -95,6 +96,31 @@ enum Theme {
     static let buttonFill = dynamic(dark: hex(0x1c1c1f), light: hex(0xffffff))
     static let buttonRimWidth: CGFloat = 1
     static let buttonRadius: CGFloat = 6
+
+    /// `--ds-kind-added`, `--ds-kind-modified`, `--ds-kind-deleted`, `--ds-kind-renamed` (DEC-081).
+    /// Named in full rather than abbreviated, because the mirror check reads these names literally
+    /// — the shorthand `-modified` left three of the four unmirrored and the check said so. The
+    /// owner's report was
+    /// *"nie widzę żeby te ikonki miały kolor np żółty gdy było coś zmieniane w pliku"*.
+    ///
+    /// **Colour is the second carrier, never the first.** `ChangeKind.glyph` — `+ − → ✎` — says the
+    /// kind with every colour removed, which is DEC-035 and which `24-…` records the adopted design
+    /// getting wrong once already: it drew the collapsed spine's bars distinguished by hue alone.
+    /// So this is redundancy for a reader scanning a list of sixty files, and the three kinds with
+    /// no colour of their own keep the ordinary ink rather than being given one to fill the table.
+    ///
+    /// Held to 4.5:1 on **all three surfaces a row is drawn on** — the file pane, the repository
+    /// pane and a selected row — because a glyph is only legible where it is drawn, which is the
+    /// lesson DEC-076 paid for with the tertiary ink.
+    static func kind(_ kind: ChangeKind) -> NSColor {
+        switch kind {
+        case .added: return dynamic(dark: hex(0x5cd67d), light: hex(0x16602a))
+        case .modified: return dynamic(dark: hex(0xe8bd45), light: hex(0x7a5300))
+        case .deleted: return dynamic(dark: hex(0xff8b84), light: hex(0x9e1420))
+        case .renamed: return dynamic(dark: hex(0x7fb8ff), light: hex(0x1a4f9c))
+        case .untracked, .typeChanged, .unmerged: return ink
+        }
+    }
 
     /// `--ds-space-*`.
     static let space2: CGFloat = 4
