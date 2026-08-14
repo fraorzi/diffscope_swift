@@ -46,13 +46,13 @@
   --ds-hairline-width: 1px;
 
   /* ---- Surfaces and ink — light ----------------------------------------- */
-  --ds-bg: #f2f2f5;
+  --ds-bg: #eeeef2;
   --ds-code: #ffffff;
   --ds-fold: #f7f7f9;
   --ds-text: #16161a;
   --ds-plain: #16161a;
-  --ds-dim: #4f4f58;
-  --ds-faint: #62626b;
+  --ds-dim: #42424a;
+  --ds-faint: #57575f;
   /* The ink the change marks are drawn in: an alpha over the surface, so a mark reads the same
      way on the code background and on a fold row. */
   --ds-mark: rgba(0, 0, 0, .82);
@@ -180,17 +180,17 @@
    * AppKit draws these surfaces and cannot read this file. They are declared here so the design
    * stays one table in one place, and the check requires each of them to be named in
    * `Theme.swift`; a name that appears in neither is the failure this block exists to catch. */
-  --ds-chrome: #ececed;
-  --ds-panel-repos: #f6f6f8;
-  --ds-panel-files: #fbfbfd;
-  --ds-empty-bg: #f2f2f5;
-  --ds-row-selected: #e3e3e8;
-  --ds-row-ring: #cfcfd6;
+  --ds-chrome: #d9d9e1;
+  --ds-panel-repos: #e6e6ed;
+  --ds-panel-files: #f2f2f6;
+  --ds-empty-bg: #eeeef2;
+  --ds-row-selected: #d5d5de;
+  --ds-row-ring: #bcbcc8;
   --ds-win-edge: rgba(0, 0, 0, .18);
   --ds-focus-ring: #0064d2;
   /* The empty state's two buttons. The design gives them a rim and a fill of their own; they are
    * chrome, so the values live here and are drawn by `Theme.swift`. */
-  --ds-control-trough: #e8e8ec;
+  --ds-control-trough: #e3e3ea;
   --ds-control-thumb: #ffffff;
   --ds-control-border: #d0d0d8;
   --ds-button-rim: #b8b8c0;
@@ -202,7 +202,7 @@
   :root {
     --ds-bg: #000000;
     --ds-code: #000000;
-    --ds-fold: #0e0e11;
+    --ds-fold: #101014;
     --ds-text: #f2f2f5;
     --ds-plain: #e9e9ee;
     --ds-dim: #a8a8b1;
@@ -272,12 +272,12 @@
     --ds-term-bright-white: #ffffff;
 
     /* @chrome */
-    --ds-chrome: #161618;
-    --ds-panel-repos: #0b0b0d;
-    --ds-panel-files: #0e0e11;
-    --ds-empty-bg: #000000;
-    --ds-row-selected: #1d1d21;
-    --ds-row-ring: #34343a;
+    --ds-chrome: #26262d;
+    --ds-panel-repos: #1e1e25;
+    --ds-panel-files: #131317;
+    --ds-empty-bg: #0a0a0c;
+    --ds-row-selected: #2f2f38;
+    --ds-row-ring: #484852;
     --ds-win-edge: rgba(255, 255, 255, .14);
     --ds-focus-ring: #0a84ff;
     --ds-control-trough: #1a1a1e;

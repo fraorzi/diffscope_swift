@@ -2089,3 +2089,25 @@ proves the array and not the check. It runs the extraction over a hostile styles
 time in this session a control had to be made to fail before it was worth having.
 
 1692 → 1698 checks.
+
+## Step 74 — `28-…` item 9: the four surfaces become a ladder (DEC-080)
+
+- [x] **DEC-080 before the code** — the first change to a value transcribed from the design
+- [x] light `#ffffff → #f2f2f6 → #e6e6ed → #d9d9e1`, dark `#000000 → #131317 → #1e1e25 → #26262d`
+- [x] `--ds-row-selected`, `--ds-row-ring`, `--ds-bg`, `--ds-fold`, `--ds-control-trough` and
+      `--ds-empty-bg` move with them; `Theme.swift` mirrors all of it
+- [x] DEC-076's arithmetic redone: light's second and third inks are `#42424a` and `#57575f`, and
+      every ink/surface pair clears 4.91:1 light / 4.72:1 dark
+- [x] a check with two claims — every step ≥ 1.10:1, and the ladder runs one way — and two controls
+- [x] greyscale screenshots in both appearances, and the modal colour of a box per region measured
+
+### Step 74 — nothing had ever asked whether two surfaces differ
+
+Every colour check here is about **ink on a surface**: twenty-one pairs held to 4.5:1, three inks
+held a step apart. No check, and no sentence in any document, had ever compared one surface with
+another — so the four regions could sit nineteen values apart out of 255 and every gate stayed green.
+
+The dark half was worse than flat: **the ladder was not monotone.** The repository pane was darker
+than the file pane, with the chrome above both lighter than either, so the window had no consistent
+sense of front and back. A step-size check alone would have passed that, which is why the direction
+is asserted separately and has the old ordering as its control.

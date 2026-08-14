@@ -52,8 +52,8 @@ enum Theme {
     /// and three inks that read as two are worse than a tenth of headroom.
     /// `runChromeChecks` holds every pair to 4.5:1 in both appearances.
     static let ink = dynamic(dark: hex(0xf2f2f5), light: hex(0x16161a))
-    static let inkQuiet = dynamic(dark: hex(0xa8a8b1), light: hex(0x4f4f58))
-    static let inkFaint = dynamic(dark: hex(0x9e9ea7), light: hex(0x62626b))
+    static let inkQuiet = dynamic(dark: hex(0xa8a8b1), light: hex(0x42424a))
+    static let inkFaint = dynamic(dark: hex(0x9e9ea7), light: hex(0x57575f))
 
     /// The surfaces AppKit draws, mirrored from the `@chrome` block of `tokens.css` (DEC-066).
     /// The check suite requires every token in that block to be named here; a design that stops at
@@ -61,17 +61,17 @@ enum Theme {
     /// application.
     ///
     /// `--ds-chrome`
-    static let chrome = dynamic(dark: hex(0x161618), light: hex(0xececed))
+    static let chrome = dynamic(dark: hex(0x26262d), light: hex(0xd9d9e1))
     /// `--ds-panel-repos`
-    static let panelRepositories = dynamic(dark: hex(0x0b0b0d), light: hex(0xf6f6f8))
+    static let panelRepositories = dynamic(dark: hex(0x1e1e25), light: hex(0xe6e6ed))
     /// `--ds-panel-files`
-    static let panelFiles = dynamic(dark: hex(0x0e0e11), light: hex(0xfbfbfd))
+    static let panelFiles = dynamic(dark: hex(0x131317), light: hex(0xf2f2f6))
     /// `--ds-empty-bg`
-    static let emptyStateSurface = dynamic(dark: hex(0x000000), light: hex(0xf2f2f5))
+    static let emptyStateSurface = dynamic(dark: hex(0x0a0a0c), light: hex(0xeeeef2))
     /// `--ds-row-selected` and `--ds-row-ring`. Two halves of one signal: the ring is the shape
     /// that survives when the fill is disabled, so selection is never carried by colour alone.
-    static let rowSelected = dynamic(dark: hex(0x1d1d21), light: hex(0xe3e3e8))
-    static let rowRing = dynamic(dark: hex(0x34343a), light: hex(0xcfcfd6))
+    static let rowSelected = dynamic(dark: hex(0x2f2f38), light: hex(0xd5d5de))
+    static let rowRing = dynamic(dark: hex(0x484852), light: hex(0xbcbcc8))
     /// `--ds-win-edge`
     static let windowEdge = dynamic(dark: .white, light: .black).withAlphaComponent(0.16)
     /// `--ds-border`, for the one hairline a chrome bar draws.
@@ -125,7 +125,7 @@ enum Theme {
     /// outline where a segment cannot be chosen.
     ///
     /// `--ds-control-trough`, `--ds-control-thumb`, `--ds-control-border`.
-    static let controlTrough = dynamic(dark: hex(0x1a1a1e), light: hex(0xe8e8ec))
+    static let controlTrough = dynamic(dark: hex(0x1a1a1e), light: hex(0xe3e3ea))
     static let controlThumb = dynamic(dark: hex(0x33333a), light: hex(0xffffff))
     static let controlBorder = dynamic(dark: hex(0x3a3a42), light: hex(0xd0d0d8))
     static let pillHeight: CGFloat = 24

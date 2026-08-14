@@ -126,10 +126,20 @@ Eight rows ship: three that already existed (the notice bar, a chip's rim, a fol
 
 ### Tranche 4 — the window has no hierarchy
 
-**9. Sections are not visually separated**
+**9. Sections are not visually separated** ([DEC-080](04-decision-log.md)) — **landed**
 *"nie widać przejrzyście gdzie zaczyna się miejsce z diffem, gdzie z plikiem, gdzie wyboru opcji — pewnie przez to że 99% wyglądu to czarny i biały."*
 The four surfaces already have four tokens (`--ds-chrome`, `--ds-panel-repos`, `--ds-panel-files`, `--ds-code`) and they are within a few percent of each other. This is a token change plus, probably, a border and an elevation — and it is the one item where the design's own light/dark table is the starting point rather than the constraint.
 *Done when:* a greyscale screenshot shows four distinguishable regions, and the contrast check still passes for every ink/surface pair.
+
+*How it landed.* A **ladder**, from the content outward, with a floor of **1.10:1 per step** — DEC-076's floor, for DEC-076's reason. Light: `#ffffff` → `#f2f2f6` → `#e6e6ed` → `#d9d9e1`. Dark: `#000000` → `#131317` → `#1e1e25` → `#26262d`. No border and no elevation were needed; the values were the whole of it.
+
+**Every colour check this project has was about ink on a surface. Nothing had ever asked whether two surfaces differ.** In light they spanned nineteen values out of 255; in dark the ladder **was not monotone** — the repository pane sat darker than the file pane with the chrome above both lighter than either — so the window had no consistent sense of front and back at all. The check is now two claims: every adjacent step clears 1.10:1, and the ladder runs *one way*, with two controls — the shipped table (widest step 1.09:1) and the dark inversion, which large steps alone would have passed.
+
+**Two inks moved with the surfaces.** Darker panels take `--ds-faint` under 4.5:1, so DEC-076's arithmetic was redone rather than inherited: light's second and third inks are `#42424a` and `#57575f`, and every ink/surface pair now clears **4.91:1** in light and **4.72:1** in dark.
+
+*Measured off the picture, not looked at:* the modal colour of a box in each region, in both appearances, agrees with the token to the last channel — `#d9d9e0`, `#e6e6ec`, `#f2f2f6`, `#ffffff` in light at 93–100% of their boxes.
+
+**This is the first time a transcribed value has moved,** which is why it is [DEC-080](04-decision-log.md) rather than a token edit. Ask the owner whether the ladder should be steeper or shallower; a screenshot would settle it in a second.
 
 **10. The file-kind glyphs carry no colour**
 *"nie widzę żeby te ikonki miały kolor np żółty gdy było coś zmieniane w pliku."*

@@ -304,6 +304,65 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("every ink/surface pair the chrome draws clears 4.5:1 in both appearances",
                failing.isEmpty, failing.joined(separator: " | "))
 
+        // DEC-080: **the four surfaces are a ladder, and every step is at least 1.10:1.**
+        //
+        // Every colour check in this project until now has been about *ink on a surface*; nothing
+        // asked whether two surfaces are distinguishable from each other. Measured, they were not:
+        // in light `#ececed`, `#f6f6f8`, `#fbfbfd` and `#ffffff` — nineteen values out of 255 — and
+        // in dark the ladder was not even monotone, the repository pane sitting *darker* than the
+        // file pane with the chrome above both lighter than either. The owner reported it as not
+        // being able to see where one region ends and the next begins.
+        //
+        // The floor is DEC-076's, for DEC-076's reason: two things that must read as different
+        // should not be a hundredth apart.
+        let ladder: [(String, String, String)] = [
+            ("--ds-code", "--ds-panel-files", "the diff against the changed-file list"),
+            ("--ds-panel-files", "--ds-panel-repos", "the file list against the repository list"),
+            ("--ds-panel-repos", "--ds-chrome", "the repository list against the chrome band"),
+        ]
+        var flat: [String] = []
+        var steps: [String] = []
+        for dark in [false, true] {
+            for rung in ladder {
+                guard let below = value(rung.0, dark: dark), let above = value(rung.1, dark: dark) else {
+                    flat.append("\(rung.0)/\(rung.1): undeclared"); continue
+                }
+                let step = ratio(below, above)
+                steps.append(String(format: "%@ %.3f", dark ? "dark" : "light", step))
+                if step < 1.10 {
+                    flat.append(String(format: "%@ in %@ is %.3f:1 (%@)", rung.0,
+                                       dark ? "dark" : "light", step, rung.2))
+                }
+            }
+        }
+        report("the four surfaces are a ladder, every step at least 1.10:1 (DEC-080)",
+               flat.isEmpty, flat.joined(separator: " | "))
+        report("and the steps are printed rather than merely passed",
+               steps.count == 6, steps.joined(separator: ", "))
+
+        // The ladder must also run the same way in both appearances — the content is the extreme
+        // and the chrome is furthest from it. A monotone check catches the dark inversion this
+        // replaced, which every ratio above would have passed had the steps merely been large.
+        for dark in [false, true] {
+            let rungs = ["--ds-code", "--ds-panel-files", "--ds-panel-repos", "--ds-chrome"]
+                .compactMap { value($0, dark: dark) }.map { luminance($0) }
+            let monotone = dark ? zip(rungs, rungs.dropFirst()).allSatisfy { $0 < $1 }
+                : zip(rungs, rungs.dropFirst()).allSatisfy { $0 > $1 }
+            report("the ladder runs one way in \(dark ? "dark" : "light"): the content is the extreme",
+                   rungs.count == 4 && monotone,
+                   rungs.map { String(format: "%.4f", $0) }.joined(separator: " → "))
+        }
+        // The control is the shipped table, as literals: these are the four light values this entry
+        // replaced, and the widest step between them is under the floor.
+        let wasLight = ["#ffffff", "#fbfbfd", "#f6f6f8", "#ececed"]
+        let widest = zip(wasLight, wasLight.dropFirst()).map { ratio($0, $1) }.max() ?? 0
+        report("negative control: the table this replaced is caught",
+               widest < 1.10, String(format: "widest step %.3f:1", widest))
+        // And the dark inversion, which is a different failure: large enough steps, wrong order.
+        let wasDark = [0.0, luminance("#0e0e11"), luminance("#0b0b0d"), luminance("#161618")]
+        report("negative control: and so is a ladder that changes direction",
+               !zip(wasDark, wasDark.dropFirst()).allSatisfy { $0 < $1 })
+
         // Three controls, and the second is the one that matters: **the value this check was
         // written against, as a literal.** Reading it from the token file would have made the check
         // pass the moment DEC-076 changed the file — a control that the fix satisfies is not a

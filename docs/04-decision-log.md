@@ -3393,3 +3393,51 @@ The chrome is in the register too, and its off switch is `accessibilityDisplaySh
 ### Revisit trigger
 
 Reopen if the design's Motion table turns out to disagree with this list in kind rather than in wording — that would mean the interface moves in a way the design did not ask for, which is a design question rather than a bookkeeping one.
+
+---
+
+## DEC-080 — The four surfaces become a ladder, and the transcribed values move for the first time
+
+- **Date:** 2026-08-14 · **Topic:** *"nie widać przejrzyście gdzie zaczyna się miejsce z diffem, gdzie z plikiem, gdzie wyboru opcji"* · **Status:** Accepted · **Amends DEC-066, DEC-076; item 9 of [28-interface-plan.md](28-interface-plan.md)**
+
+### Context
+
+The window has four surfaces — the chrome band, the repository list, the changed-file list and the code — and DEC-066 gave each of them a token from the adopted design's table. Measured, they are within a few percent of each other: in light, `#ececed`, `#f6f6f8`, `#fbfbfd` and `#ffffff`, a spread of nineteen values out of 255. In dark the ladder is not even monotone — the repository pane (`#0b0b0d`) is *darker* than the file pane (`#0e0e11`) while the chrome above both is lighter than either.
+
+The owner's report is that they cannot see where one region ends and the next begins, and their own diagnosis — *"pewnie przez to że 99% wyglądu to czarny i biały"* — is right about the cause. Every check this project has about colour is about **ink on a surface**; nothing has ever asked whether two surfaces are distinguishable from each other.
+
+**This is the first change to a transcribed value.** DEC-066 delivered the design as a token table and every value since has been the design's. `28-…` item 9 says outright that this is the one item where that table is the starting point rather than the constraint, and `27-…` records that since the transcription this repository is the source of truth for what ships.
+
+### Options considered
+
+1. **Borders instead of values.** A hairline between panes already exists (`ChromeBar`), and adding more is what a design does when it cannot change the surfaces. Rejected as the primary answer: the complaint is that the regions look the same, and a line between two identical greys says *there is a boundary here* without saying *these are different places*.
+2. **Only the dark appearance**, where the ladder is not monotone and the defect is worst. Rejected: light is where the owner works and its spread is nineteen values.
+3. **A measured ladder in both appearances, with a floor, checked.** Chosen.
+
+### Final decision
+
+**Option 3.** The four surfaces are a ladder from the code outward, and **each step is at least 1.10:1** — the same floor DEC-076 put between the second and third inks, for the same reason: two things that must read as different should not be a hundredth apart.
+
+| Surface | Light | Dark |
+|---|---|---|
+| `--ds-code` — the diff | `#ffffff` | `#000000` |
+| `--ds-panel-files` | `#f2f2f6` | `#131317` |
+| `--ds-panel-repos` | `#e6e6ed` | `#1e1e25` |
+| `--ds-chrome` | `#d9d9e1` | `#26262d` |
+
+The content is the extreme in both appearances and the chrome is furthest from it, so the window reads as *the thing you are looking at, and the furniture around it*. `--ds-row-selected`, `--ds-row-ring`, `--ds-bg`, `--ds-fold`, `--ds-control-trough` and `--ds-empty-bg` move with them; the ANSI palette, the syntax colours and the change tints do not.
+
+**Two inks move with the surfaces, and DEC-076's arithmetic is redone rather than inherited.** Darker panels take `--ds-faint` below 4.5:1, so light's second and third inks become `#42424a` and `#57575f`. Every ink/surface pair the chrome draws clears **4.72:1** in dark and **4.91:1** in light, against the 4.5 threshold — better than the values this replaces, because DEC-076 sized them against surfaces that have now moved apart.
+
+A check holds the ladder in both appearances, adjacent step by adjacent step, with the shipped values as its negative control.
+
+### Consequences
+
+- **The window has a hierarchy that survives greyscale**, which is the same rule the change language follows: the distinction is luminance, so a screenshot and a colour-blind reader both keep it.
+- **DEC-076's check is unchanged and still passes**, at a wider margin. Its three negative controls are literals and remain valid.
+- **The design's table and this repository now disagree in four rows, deliberately.** Ask the owner whether the ladder should be steeper or shallower — a preference this document cannot answer and a screenshot would settle in a second.
+- Every recorded light-mode measurement from 2026-08-12 (`#ececed` for the title bar and so on) is now historical. It is left as written and superseded here rather than rewritten.
+
+### Revisit trigger
+
+Reopen if the owner reads the chrome as *dimmed* rather than as *behind*: a ladder that goes too far turns furniture into something that looks disabled, and the fix is a shallower step rather than a border.
