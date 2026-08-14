@@ -158,7 +158,7 @@ The keyboard-tree fixture holds modified and deleted files only, so the picture 
 
 ## 3. Two things that are not on the list and are not forgotten
 
-- **The default editor template has no `{line}`.** `⌘⏎` opens the file at the top until the reader configures one. One line to fix; it is the last real gap from the POC session's list.
+- **The default editor template has no `{line}`.** `⌘⏎` opens the file at the top until the reader configures one. **It is not one line, and calling it one was wrong** (2026-08-14): the template is `/usr/bin/open -a WebStorm {file}`, and `open -a` cannot take a line at all. The choice is between a `jetbrains://web-storm/navigate/reference?path={file}:{line}` URL, which honours the line and needs the JetBrains Toolbox handler registered, and a command that always opens the file and ignores the line. That is a question about the owner's install rather than a code decision, and it is a decision entry when it is answered.
 - **The definition of done has eight items and only the sixth is marked met.** The other seven are backed by checks that pass and by nobody's signature. Either sign them or say what is missing.
 
 ---
