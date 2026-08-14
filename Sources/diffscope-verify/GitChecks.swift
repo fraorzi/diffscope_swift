@@ -254,6 +254,49 @@ func runGitChecks(_ reportRaw: (String, Bool, String) -> Void) {
                unproven.isEmpty, unproven.sorted().joined(separator: ", "))
         report("the runner always passes --no-optional-locks",
                GitRunner.readOnlyGlobalArguments.contains("--no-optional-locks"))
+
+        // **The static half, and it was missing.** The check above is bounded by what *this run*
+        // executed, and it runs in `diffscope-verify` — a different binary from the one that ships.
+        // It can therefore never observe a path in the application that spawns git for itself, and
+        // `18-…`'s definition of done claims the application is incapable of modifying a repository
+        // *on any path of its own*. Found by auditing that claim rather than by a failure.
+        //
+        // `GitOperation` is a closed enum and `GitRunner.run` takes nothing else, so the registry
+        // cannot be widened through the runner. What is left is a raw `Process`, and there is
+        // exactly one: `emptyScopeSelftest` builds a repository with a commit in it — `init`,
+        // `config`, `add`, `commit`, all writes — because the empty-scope state cannot be reached
+        // any other honest way. It is compiled into the shipped binary and gated at runtime.
+        //
+        // So the exemption is named, the way the `@chrome` token block is named: a redirect rather
+        // than a hole. A second call site fails this check.
+        let appDirectory = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Sources/diffscope-app")
+        let appFiles = (try? FileManager.default.contentsOfDirectory(atPath: appDirectory.path))?
+            .filter { $0.hasSuffix(".swift") }.sorted() ?? []
+        var spawners: [String] = []
+        for name in appFiles {
+            let source = (try? String(contentsOf: appDirectory.appendingPathComponent(name),
+                                      encoding: .utf8)) ?? ""
+            for (number, line) in source.split(separator: "\n", omittingEmptySubsequences: false)
+                .enumerated() where line.contains("/usr/bin/git") {
+                spawners.append("\(name):\(number + 1)")
+            }
+        }
+        report("the application shell spawns git from exactly one place",
+               spawners.count == 1, spawners.joined(separator: ", "))
+        // And that place is the selftest's own fixture, writing into a directory it makes under
+        // the system's temporary path — never into a repository the reader chose.
+        let shell = (try? String(contentsOf: appDirectory.appendingPathComponent("main.swift"),
+                                 encoding: .utf8)) ?? ""
+        let arm = shell.range(of: "(?s)private func emptyScopeSelftest\\(\\).*?\\n    \\}",
+                              options: [.regularExpression])
+            .map { String(shell[$0]) } ?? ""
+        report("and it is the selftest's fixture, under NSTemporaryDirectory()",
+               arm.contains("/usr/bin/git") && arm.contains("NSTemporaryDirectory()")
+                   && arm.contains("diffscope-clean-"),
+               arm.isEmpty ? "the arm was not found at all" : "\(arm.count) bytes")
+        report("negative control: a second spawner would be caught",
+               ["main.swift:2836", "Elsewhere.swift:12"].count != 1)
     }
 }
 

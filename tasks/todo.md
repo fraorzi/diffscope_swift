@@ -2165,3 +2165,44 @@ reaches the status line.
 **The half no exit code answers** is whether the caret lands on the line. Only the owner can see that.
 
 1707 → 1710 checks.
+
+## Step 77 — `18-…`'s definition of done audited, item by item
+
+- [x] all eight items given **what backs them** and **what a signature would claim beyond that**
+- [x] three sentences corrected where the evidence was always there and the wording over-claimed
+      (items 1, 3, 7)
+- [x] one real gap found and closed (item 2), with a new static check and a negative control
+- [x] items 4, 5, 8 signed as written; item 6 unchanged
+
+### Step 77 — the gap: R-8's closing check runs in the wrong binary
+
+*Every operation executed during this run appears in the proven registry* is **dynamic** — bounded by
+what the verify run happens to exercise — and it runs inside `diffscope-verify`, which is not the
+binary that ships. It could never observe a path in the **application** that spawns git for itself.
+
+There is one. `emptyScopeSelftest` runs `init`, `config`, `add` and `commit` through a raw `Process`,
+because the empty-scope state cannot be reached any other honest way; it is compiled into the shipped
+binary and gated at runtime by an environment variable. It writes only into a directory it creates
+under `NSTemporaryDirectory()`, so item 8's claim was **true** — and **unproven**, which is the
+distinction this audit exists to make.
+
+Closed by a static check: the application shell spawns git from exactly one place, that place is the
+named arm, and it writes under the temporary path. A second call site fails. The exemption is named
+the way the `@chrome` token block is named — a redirect, not a hole.
+
+### Step 77 — three sentences claimed more than their checks
+
+- **1 and 7** said *every fixture*. Thirteen fixtures never reach the structural path — not valid
+  UTF-8, unsupported language, a merge-conflict marker, binary content — and pass on the only path
+  they have. The skips are printed by name and reason on every run; the sentences now say so.
+- **3** said the wrapper case *reads as a wrapper change*. That promises a reading the interface
+  **deliberately does not draw**: `24-…` records *wrapper removed* as prose with nothing behind it,
+  because `label`, `classification`, `group`, `disclosure` and `link` are the engine's whole
+  vocabulary. The sentence now says what is proven — children preserved, wrapper marked.
+
+**Item 4 is the model the other seven should be read against.** It does not rest on its own fixture:
+T-4 — *no-change is shown exactly when the sides are byte-equal* — is asserted on all 55 fixtures on
+every path they reach, so a model that reported "no change" for a non-identical pair fails 55 times.
+A definition-of-done item is strongest when the fixture that names it is not the thing proving it.
+
+1710 → 1713 checks.
