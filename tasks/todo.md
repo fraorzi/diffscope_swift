@@ -2031,3 +2031,22 @@ sentence comes from `ChromeLabels` and not from a string written by hand — and
 check about the scheduler. Its log line also printed three of `ok`'s six terms; it prints all six.
 
 1680 → 1688 checks.
+
+## Step 72 — `28-…` item 7: a switch shows one option and keeps the rest in a popover
+
+- [x] `PillControl` draws the chosen option, the glass thumb and a chevron
+- [x] `SegmentList` in an `NSPopover`: every option, the chosen one marked by a glyph **and** a
+      weight, an unavailable one dashed with its reason underneath
+- [x] sized to the **widest** option so choosing never moves the row (scope: 268 pt → 92 pt)
+- [x] `optionsReport`, and an arm that drives `selectMode(_:)` — the selector ⌘1 drives — **while
+      the scope popover is open**
+- [x] `SegmentList` added to `24-…` in the same commit; four source checks with a control
+
+### Step 72 — the reason had nowhere to go until now
+
+`12-…` §3 requires an unavailable scope to be disabled *with its reason*. In a four-segment control
+that reason could only be a tooltip and a status-line message, because there was no room for it. A
+row in a popover has a second line, so the reason is drawn where the option is: `vs base` sits above
+`no upstream branch is configured`, dashed, and the arm reads that string out of the open list.
+
+1688 → 1692 checks.

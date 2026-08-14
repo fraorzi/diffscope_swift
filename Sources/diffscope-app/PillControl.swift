@@ -170,22 +170,25 @@ final class PillControl: NSView {
         (segment.title as NSString).size(withAttributes: [.font: font]).width + 2 * Theme.pillPadding
     }
 
+    /// **One option, not all of them** (DEC-077, `28-…` item 7). The control is the chosen segment
+    /// and a chevron; the rest live in the popover the chevron opens. There is one segment on
+    /// screen, so this is the whole control less the inset — the multi-segment arithmetic went with
+    /// the multi-segment control.
     private func frame(ofSegment index: Int) -> NSRect {
-        var x = Theme.pillInset
-        for (position, segment) in segments.enumerated() {
-            let segmentWidth = width(of: segment)
-            if position == index {
-                return NSRect(x: x, y: Theme.pillInset,
-                              width: segmentWidth, height: bounds.height - 2 * Theme.pillInset)
-            }
-            x += segmentWidth
-        }
-        return .zero
+        guard index == selectedSegment else { return .zero }
+        return NSRect(x: Theme.pillInset, y: Theme.pillInset,
+                      width: max(0, bounds.width - 2 * Theme.pillInset - Theme.pillChevronWidth),
+                      height: bounds.height - 2 * Theme.pillInset)
     }
 
     override var intrinsicContentSize: NSSize {
-        NSSize(width: segments.reduce(2 * Theme.pillInset) { $0 + width(of: $1) },
-               height: Theme.pillHeight)
+        // Sized to the **widest** option rather than to the chosen one: a control that changes width
+        // when the reader chooses something moves everything beside it, and the scope row and the
+        // status line are both rows of neighbours (M9-K — a control that grows takes the window
+        // with it).
+        let widest = segments.map { width(of: $0) }.max() ?? Theme.pillPadding
+        return NSSize(width: widest + 2 * Theme.pillInset + Theme.pillChevronWidth,
+                      height: Theme.pillHeight)
     }
 
     // MARK: - Drawing
@@ -199,14 +202,16 @@ final class PillControl: NSView {
         trough.lineWidth = 1
         trough.stroke()
 
-        for (index, segment) in segments.enumerated() {
-            let box = frame(ofSegment: index)
-            if index == selectedSegment, segment.enabled {
-                // Drawn **only where there is no glass to use** — macOS 25 and earlier. Above that
-                // the thumb is an `NSGlassEffectView` and drawing a second pill under it would put
-                // an opaque fill behind a material whose whole business is what is behind it.
-                guard glassThumb == nil else { continue }
-                let pill = NSBezierPath(roundedRect: box.insetBy(dx: 0, dy: 0),
+        guard segments.indices.contains(selectedSegment) else { return }
+        let segment = segments[selectedSegment]
+        let box = frame(ofSegment: selectedSegment)
+
+        if segment.enabled {
+            // Drawn **only where there is no glass to use** — macOS 25 and earlier. Above that
+            // the thumb is an `NSGlassEffectView` and drawing a second pill under it would put
+            // an opaque fill behind a material whose whole business is what is behind it.
+            if glassThumb == nil {
+                let pill = NSBezierPath(roundedRect: box,
                                         xRadius: Theme.pillRadius - Theme.pillInset,
                                         yRadius: Theme.pillRadius - Theme.pillInset)
                 Theme.controlThumb.setFill()
@@ -214,26 +219,27 @@ final class PillControl: NSView {
                 Theme.controlBorder.setStroke()
                 pill.lineWidth = 1
                 pill.stroke()
-            } else if !segment.enabled {
-                // Disabled is a **shape**, not a shade: a dashed outline survives greyscale and a
-                // screenshot, which is the rule the whole change language follows (DEC-035).
-                let outline = NSBezierPath(roundedRect: box.insetBy(dx: 1, dy: 1),
-                                           xRadius: Theme.pillRadius - Theme.pillInset,
-                                           yRadius: Theme.pillRadius - Theme.pillInset)
-                outline.setLineDash([3, 2], count: 2, phase: 0)
-                Theme.controlBorder.setStroke()
-                outline.lineWidth = 1
-                outline.stroke()
             }
+        } else {
+            // Disabled is a **shape**, not a shade: a dashed outline survives greyscale and a
+            // screenshot, which is the rule the whole change language follows (DEC-035).
+            let outline = NSBezierPath(roundedRect: box.insetBy(dx: 1, dy: 1),
+                                       xRadius: Theme.pillRadius - Theme.pillInset,
+                                       yRadius: Theme.pillRadius - Theme.pillInset)
+            outline.setLineDash([3, 2], count: 2, phase: 0)
+            Theme.controlBorder.setStroke()
+            outline.lineWidth = 1
+            outline.stroke()
+        }
 
+        // The chosen option's title is drawn here only where there is no glass to hold it; above
+        // macOS 26 it is the glass's own `contentView`.
+        if glassThumb == nil || !segment.enabled {
             // Tertiary again since DEC-076 re-sized that ink against the trough and the thumb.
             // The dashed outline is what says *unavailable*; the colour never was.
-            let colour: NSColor = !segment.enabled ? Theme.inkFaint
-                : index == selectedSegment ? Theme.ink : Theme.inkQuiet
-            let weight: NSFont.Weight = index == selectedSegment ? .semibold : .regular
             let attributes: [NSAttributedString.Key: Any] = [
-                .font: Theme.prose(Theme.textSizeSmall, weight: weight),
-                .foregroundColor: colour,
+                .font: Theme.prose(Theme.textSizeSmall, weight: .semibold),
+                .foregroundColor: segment.enabled ? Theme.ink : Theme.inkFaint,
             ]
             let text = segment.title as NSString
             let size = text.size(withAttributes: attributes)
@@ -241,18 +247,29 @@ final class PillControl: NSView {
                       withAttributes: attributes)
         }
 
+        // The chevron. **A control that shows one of several options has to say that there are
+        // several** — without it this reads as a label, and DEC-016's rule that nothing is
+        // reachable by pointer alone would be met by a route no reader would look for.
+        let chevron = "⌄" as NSString
+        let chevronAttributes: [NSAttributedString.Key: Any] = [
+            .font: Theme.prose(Theme.textSizeSmall),
+            .foregroundColor: Theme.inkQuiet,
+        ]
+        let chevronSize = chevron.size(withAttributes: chevronAttributes)
+        chevron.draw(at: NSPoint(x: bounds.maxX - Theme.pillChevronWidth / 2 - chevronSize.width / 2,
+                                 y: bounds.midY - chevronSize.height / 2 + 1),
+                     withAttributes: chevronAttributes)
     }
 
     // MARK: - Acting
 
+    /// Clicking opens the list; it never chooses. **The keyboard does not run through here**
+    /// (`12-…` §9): every one of these options is also a menu item, so ⌘1 selects Structural
+    /// whether or not this popover has ever been opened, and ←/→ below still move the selection
+    /// directly. A popover on the pointer path and a menu on the key path are two routes to one
+    /// command, which is DEC-071's rule rather than an exception to it.
     override func mouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        for index in segments.indices where frame(ofSegment: index).contains(point) {
-            guard segments[index].enabled else { return }
-            selectedSegment = index
-            if let action { NSApp.sendAction(action, to: target, from: self) }
-            return
-        }
+        showOptions()
     }
 
     override var acceptsFirstResponder: Bool { true }
@@ -277,6 +294,154 @@ final class PillControl: NSView {
         guard segments.indices.contains(index), segments[index].enabled else { return }
         selectedSegment = index
         if let action { NSApp.sendAction(action, to: target, from: self) }
+    }
+
+    // MARK: - The options list (DEC-077, `28-…` item 7)
+
+    private var popover: NSPopover?
+
+    /// Opens the list of options. Public because the selftest opens it: what the popover holds —
+    /// every option, each with its state, and an unavailable one **with its reason** (`12-…` §3) —
+    /// is not something a picture of a closed control can answer.
+    func showOptions() {
+        if let open = popover, open.isShown { open.close(); popover = nil; return }
+        let list = SegmentList(segments: segments, selected: selectedSegment) { [weak self] index in
+            guard let self, self.segments.indices.contains(index),
+                  self.segments[index].enabled else { return }
+            self.popover?.close()
+            self.popover = nil
+            self.selectedSegment = index
+            if let action = self.action { NSApp.sendAction(action, to: self.target, from: self) }
+        }
+        let controller = NSViewController()
+        controller.view = list
+        let sheet = NSPopover()
+        sheet.contentViewController = controller
+        sheet.behavior = .transient
+        sheet.contentSize = list.fittingSize
+        popover = sheet
+        sheet.show(relativeTo: bounds, of: self, preferredEdge: .maxY)
+    }
+
+    /// What the open list holds, for the arm that cannot photograph it: the titles in order, which
+    /// one is marked as chosen, and the reason beside each option that cannot be chosen.
+    var optionsReport: (shown: Bool, titles: [String], chosen: String, reasons: [String]) {
+        guard let sheet = popover, sheet.isShown,
+              let list = sheet.contentViewController?.view as? SegmentList else {
+            return (false, [], "", [])
+        }
+        return (true, list.titles, list.chosenTitle, list.reasons)
+    }
+}
+
+/// The options a `PillControl` is not showing: one row each, the chosen one marked, and every
+/// unavailable one **with the reason it cannot be chosen beside it** rather than merely greyed
+/// (`12-…` §3, which a system control renders as grey and silent).
+///
+/// Rows are drawn rather than built from buttons for the reason `PillControl` is drawn: the
+/// unavailable state is a *shape* — a dashed rim — and a system control has no way to say it.
+final class SegmentList: NSView {
+    private let segments: [PillControl.Segment]
+    private let selected: Int
+    private let choose: (Int) -> Void
+
+    var titles: [String] { segments.map(\.title) }
+    var chosenTitle: String { segments.indices.contains(selected) ? segments[selected].title : "" }
+    var reasons: [String] { segments.compactMap { $0.enabled ? nil : ($0.reason ?? "no reason given") } }
+
+    init(segments: [PillControl.Segment], selected: Int, choose: @escaping (Int) -> Void) {
+        self.segments = segments
+        self.selected = selected
+        self.choose = choose
+        super.init(frame: .zero)
+        setFrameSize(fittingSize)
+    }
+
+    @available(*, unavailable) required init?(coder: NSCoder) { nil }
+
+    private var font: NSFont { Theme.prose(Theme.textSizeSmall) }
+    private var reasonFont: NSFont { Theme.prose(Theme.textSizeTiny) }
+
+    private func height(ofRow index: Int) -> CGFloat {
+        segments[index].enabled ? Theme.optionRowHeight : Theme.optionRowHeight + Theme.optionReasonHeight
+    }
+
+    private func frame(ofRow index: Int) -> NSRect {
+        var y = bounds.height - Theme.optionInset
+        for position in segments.indices {
+            let rowHeight = height(ofRow: position)
+            y -= rowHeight
+            if position == index {
+                return NSRect(x: Theme.optionInset, y: y,
+                              width: bounds.width - 2 * Theme.optionInset, height: rowHeight)
+            }
+        }
+        return .zero
+    }
+
+    override var fittingSize: NSSize {
+        let widest = segments.map { segment -> CGFloat in
+            let title = (segment.title as NSString).size(withAttributes: [.font: font]).width
+            let reason = segment.enabled ? 0
+                : ((segment.reason ?? "") as NSString).size(withAttributes: [.font: reasonFont]).width
+            return max(title, reason)
+        }.max() ?? 0
+        return NSSize(width: widest + Theme.optionMarkWidth + 3 * Theme.optionInset,
+                      height: segments.indices.reduce(2 * Theme.optionInset) { $0 + height(ofRow: $1) })
+    }
+
+    override var intrinsicContentSize: NSSize { fittingSize }
+
+    override func draw(_ dirtyRect: NSRect) {
+        for (index, segment) in segments.enumerated() {
+            let row = frame(ofRow: index)
+            if !segment.enabled {
+                let rim = NSBezierPath(roundedRect: row.insetBy(dx: 0, dy: 1),
+                                       xRadius: Theme.pillRadius, yRadius: Theme.pillRadius)
+                rim.setLineDash([3, 2], count: 2, phase: 0)
+                Theme.controlBorder.setStroke()
+                rim.lineWidth = 1
+                rim.stroke()
+            }
+            // The chosen one is marked by a glyph as well as by weight: a mark that is only a
+            // weight is a mark a greyscale screenshot keeps and a hurried reader does not
+            // (DEC-035, the same rule the diff marks follow).
+            if index == selected {
+                let tick = "✓" as NSString
+                let attributes: [NSAttributedString.Key: Any] = [
+                    .font: font, .foregroundColor: Theme.ink,
+                ]
+                tick.draw(at: NSPoint(x: row.minX + Theme.optionInset,
+                                      y: row.maxY - Theme.optionRowHeight / 2
+                                          - tick.size(withAttributes: attributes).height / 2),
+                          withAttributes: attributes)
+            }
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: Theme.prose(Theme.textSizeSmall,
+                                   weight: index == selected ? .semibold : .regular),
+                .foregroundColor: segment.enabled ? Theme.ink : Theme.inkFaint,
+            ]
+            let title = segment.title as NSString
+            let titleSize = title.size(withAttributes: attributes)
+            title.draw(at: NSPoint(x: row.minX + Theme.optionMarkWidth,
+                                   y: row.maxY - Theme.optionRowHeight / 2 - titleSize.height / 2),
+                       withAttributes: attributes)
+            guard !segment.enabled, let reason = segment.reason else { continue }
+            let reasonAttributes: [NSAttributedString.Key: Any] = [
+                .font: reasonFont, .foregroundColor: Theme.inkFaint,
+            ]
+            (reason as NSString).draw(at: NSPoint(x: row.minX + Theme.optionMarkWidth,
+                                                  y: row.minY + 2),
+                                      withAttributes: reasonAttributes)
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        for index in segments.indices where frame(ofRow: index).contains(point) {
+            choose(index)
+            return
+        }
     }
 }
 

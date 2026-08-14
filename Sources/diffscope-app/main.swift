@@ -2163,6 +2163,57 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 + "control: an unavailable choice is not raised=\(hiddenWhenDisabled) "
                 + "\(failures.joined(separator: " | "))\n").utf8))
         guard ok else { exit(66) }
+        optionsSelftest()
+    }
+
+    /// `28-…` item 7: **a switch shows one option, not all of them.**
+    ///
+    /// Three claims, and the third is the one the plan warns about. The control shows the chosen
+    /// option; the popover holds every option with its state; and **the keyboard does not run
+    /// through the popover** — every one of these is also a menu item (`12-…` §9), so ⌘1 selects
+    /// Structural whether or not this list has ever been opened.
+    private func optionsSelftest() {
+        let before = scopeControl.selectedSegment
+        // A scope that cannot be chosen, with its reason — the state `12-…` §3 is about, and the
+        // one a system control renders as grey and silent.
+        let unavailable = (0..<ComparisonScope.allCases.count).first { $0 != before } ?? 0
+        scopeControl.setEnabled(false, forSegment: unavailable)
+        scopeControl.setToolTip("no upstream branch is configured", forSegment: unavailable)
+
+        let closed = scopeControl.optionsReport
+        scopeControl.showOptions()
+        let open = scopeControl.optionsReport
+
+        let chosenOnly = scopeControl.bounds.width
+            < ComparisonScope.allCases.map(\.shortTitle)
+                .reduce(0) { $0 + CGFloat($1.count) * 10 }
+        let listsAll = open.titles == ComparisonScope.allCases.map(\.shortTitle)
+        let marksChosen = open.chosen == ComparisonScope.allCases[before].shortTitle
+        let saysWhy = open.reasons == ["no upstream branch is configured"]
+
+        // **The keyboard, with the popover open.** ⌘1…⌘3 are menu items and the menu calls
+        // `selectMode(_:)` with the mode's tag — so this drives the same selector the key drives,
+        // through a real `NSMenuItem`, while the scope list is on screen. If the popover were on
+        // the path, this would either do nothing or need the list open on the right control.
+        let modeBefore = modeControl.selectedSegment
+        let target = PresentationMode.displayOrder.firstIndex(of: .raw) ?? 0
+        let item = NSMenuItem()
+        item.tag = PresentationMode.allCases.firstIndex(of: .raw) ?? 0
+        selectMode(item)
+        let keyboardWorked = modeControl.selectedSegment == target && modeBefore != target
+
+        scopeControl.showOptions()   // closes it again
+        scopeControl.setEnabled(true, forSegment: unavailable)
+        scopeControl.setToolTip(nil, forSegment: unavailable)
+
+        let ok = !closed.shown && open.shown && listsAll && marksChosen && saysWhy
+            && chosenOnly && keyboardWorked
+        FileHandle.standardError.write(Data(
+            ("SELFTEST options=\(ok ? "OK" : "MISMATCH") closed-shows-nothing=\(!closed.shown) "
+                + "open=\(open.titles) chosen=\"\(open.chosen)\" reasons=\(open.reasons) "
+                + "control-width=\(Int(scopeControl.bounds.width))pt one-option=\(chosenOnly) "
+                + "keyboard-without-the-popover=\(keyboardWorked)\n").utf8))
+        guard ok else { exit(67) }
         statusBarSelftest()
     }
 

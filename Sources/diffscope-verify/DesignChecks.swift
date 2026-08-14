@@ -146,7 +146,7 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
                pill.contains("guard #available(macOS 26, *) else { return }"))
         report("and the drawn pill is still the fallback, not a deleted branch",
                pill.contains("Theme.controlThumb.setFill()")
-                   && pill.contains("guard glassThumb == nil else { continue }"))
+                   && pill.contains("if glassThumb == nil {"))
 
         // **The owner asked for the real thing or nothing.** No blur, no vibrancy, no gradient
         // standing in for a material the system does not have — on any of the three surfaces the
@@ -168,6 +168,20 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // the fallback system rather than merely look wrong there.
         report("negative control: an ungated use is caught",
                !"let thumb = NSGlassEffectView()".contains("#available(macOS 26"))
+
+        // `28-…` item 7. The live arm asks the open popover what it holds; these two are about the
+        // path a *key* takes, which is the thing the plan warns about and which no picture of the
+        // control could show.
+        report("a click opens the list rather than choosing",
+               pill.contains("override func mouseDown(with event: NSEvent) {\n        showOptions()"))
+        report("and the arrow keys still choose without it",
+               pill.contains("override func keyDown(with event: NSEvent)")
+                   && pill.contains("selectedSegment = index"))
+        report("the reason an option cannot be chosen goes in the list, not in a tooltip",
+               pill.contains("guard !segment.enabled, let reason = segment.reason else { continue }"))
+        report("negative control: a click that chose directly would be caught",
+               !"override func mouseDown(with event: NSEvent) { selectedSegment = 1 }"
+                   .contains("showOptions()"))
     }
 
     print("\n=== the two panes share one horizontal position (12-… §5.4) ===")

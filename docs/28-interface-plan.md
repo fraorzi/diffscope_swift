@@ -100,10 +100,16 @@ The package targets `.macOS(.v13)`, so this goes behind `if #available(macOS 26,
 
 **The picture cannot be taken here, and this is the gap to close with the owner.** `cacheDisplay` renders an `NSGlassEffectView` as a flat fill exactly as it renders a `WKWebView` as black, and the window-server path needs screen-recording permission and an unoccluded window, which a terminal-launched selftest is not. So the arm asserts what a photograph could not settle anyway — that the view is **real AppKit** (`NSGlassEffectView`, by class name), that it covers the chosen segment and only it, that it is not raised when that segment is unavailable, and that the title is inside the glass with the right words and a non-zero frame, which is the one failure a flat capture could be hiding. **Ask the owner for a screenshot of the scope row in both appearances.**
 
-**7. A switch shows one option, not all of them** (DEC-077)
+**7. A switch shows one option, not all of them** (DEC-077) — **landed**
 Clicking opens a popover with the rest. Applies to scope, mode, lens and layout.
 *Watch:* every one of these is also a menu item (`12-…` §9), and the keyboard path must not run through the popover. ⌘1 selects Structural whether or not the popover has ever been opened.
 *Done when:* each control shows the chosen option only, the popover lists the others with their states (an unavailable scope still says why), and the keyboard arm still walks all four scopes.
+
+*How it landed.* The control is the chosen option, the glass thumb, and a chevron — **a control showing one of several with nothing to say so reads as a label**. Clicking opens an `NSPopover` holding `SegmentList`: one row per option, the chosen one marked by a **glyph as well as by weight** (a mark that is only a weight is a mark greyscale keeps and a hurried reader does not), and every option that cannot be chosen carrying a dashed rim and **the reason underneath it** rather than in a tooltip — which is `12-…` §3, and the thing a system control renders as grey and silent.
+
+**The control is sized to the widest option, not to the chosen one.** A switch that changes width when the reader chooses something moves every neighbour in the row, and both the scope row and the status line are rows of neighbours (M9-K: a control that grows takes the window with it). The scope switch went from 268 pt to 92.
+
+*The keyboard does not go near it.* ⌘1 is a menu item calling `selectMode(_:)`, and the arm drives that selector **while the scope popover is open** — if the popover were on the path, that would either do nothing or need the list open on the right control. Two routes to one command is DEC-071's rule, not an exception to it.
 
 **8. The whole application has no motion** (DEC-064 already admits it)
 The register exists and almost nothing uses it. Popovers, the collapse, a scope change, a file selection.

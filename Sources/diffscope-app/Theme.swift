@@ -133,6 +133,18 @@ enum Theme {
     static let pillInset: CGFloat = 2
     static let pillPadding: CGFloat = 12
 
+    /// The chevron that says a switch has more options than the one it is showing (DEC-077).
+    /// A control showing one of several with nothing to say so reads as a label.
+    static let pillChevronWidth: CGFloat = 14
+
+    /// The popover holding the options a switch is not showing. A row is one option; an option that
+    /// cannot be chosen is a row and a half, because the reason goes under it rather than into a
+    /// tooltip (`12-…` §3).
+    static let optionRowHeight: CGFloat = 22
+    static let optionReasonHeight: CGFloat = 14
+    static let optionInset: CGFloat = 6
+    static let optionMarkWidth: CGFloat = 20
+
     /// How close two glass views have to be before `NSGlassEffectContainerView` merges them
     /// (macOS 26, DEC-077). The system does the morph; this is the only number it takes, and it is
     /// here rather than at the call site so the three switches cannot merge at three distances.
