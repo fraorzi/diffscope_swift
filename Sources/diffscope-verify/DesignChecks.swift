@@ -279,11 +279,87 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // directly, and the check says so rather than trusting that someone remembered.
         let shell = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/main.swift"),
                                  encoding: .utf8)) ?? ""
+        let pillSource = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/PillControl.swift"),
+                                      encoding: .utf8)) ?? ""
         let animatesChrome = shell.contains("NSAnimationContext")
         report("the chrome asks the system before it animates",
                !animatesChrome || shell.contains("accessibilityDisplayShouldReduceMotion"))
         report("and its duration is the same token the webviews use",
                !animatesChrome || shell.contains("Theme.motionQuick"))
+
+        // **Every chrome site, not the first one.** One file reading the setting satisfied this
+        // check while three animations shipped, which is the failure mode DEC-064 named outright:
+        // the guard is remembered for the first five transitions and forgotten for the sixth.
+        // Counted rather than merely found — each of the three registered chrome rows has its own.
+        let chromeAnimations = (shell + pillSource).ranges(of: "NSAnimationContext|\\.animates =").count
+        let chromeGuards = (shell + pillSource)
+            .ranges(of: "accessibilityDisplayShouldReduceMotion").count
+        report("and every animated site in the chrome reads it, not just the first",
+               chromeGuards >= chromeAnimations,
+               "\(chromeGuards) guards for \(chromeAnimations) animated sites")
+        report("negative control: an animated site with no guard is caught",
+               "NSAnimationContext.runAnimationGroup { $0.duration = 1 }"
+                   .ranges(of: "accessibilityDisplayShouldReduceMotion").isEmpty)
+
+        // DEC-079: **the register and the code name the same set.** DEC-064 put the register in a
+        // document nobody in this repository can open, so *is this transition registered* was a
+        // question with no answer; it is `24-…` §5's Motion table now, and this is what makes it a
+        // list rather than a promise.
+        let contract = (try? String(contentsOf: root.appendingPathComponent("docs/24-design-contract.md"),
+                                    encoding: .utf8)) ?? ""
+        // The selector each `transition:` belongs to — read from the rule it sits in, because that
+        // is the name the register uses. A property alone would say `background-color` five times.
+        // Comments stripped first, or the note *above* a rule is read as part of its selector; and
+        // `@media` skipped, because the reduced-motion block is the off switch rather than a
+        // transition of its own — it is checked by `guarded` two reports above.
+        let sheet = html.replacingOccurrences(of: "(?s)/\\*.*?\\*/", with: "\n",
+                                              options: [.regularExpression])
+            // And the off switch itself, whose `transition: none` on `*` is what turns the register
+            // off rather than an entry in it.
+            .replacingOccurrences(of: "(?s)@media \\(prefers-reduced-motion: reduce\\).*?\\}\\s*\\}",
+                                  with: "\n", options: [.regularExpression])
+        let animated = Set(sheet.ranges(of: "(?m)^[^\\n{}]*\\{[^{}]*transition:[^{}]*\\}")
+            .compactMap { rule -> String? in
+                guard let brace = rule.firstIndex(of: "{") else { return nil }
+                let selector = String(rule[rule.startIndex..<brace])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return selector.hasPrefix("@") || selector.isEmpty ? nil : selector
+            })
+        let registered = ["#notices", ".ds-chip", ".ds-fold", "#diff-footer button", ".ds-lens-row"]
+        let unregistered = animated.filter { name in
+            !registered.contains { name == $0 || name.hasPrefix($0 + ",") || name.hasPrefix($0 + ":") }
+        }.sorted()
+        report("every transition in the stylesheet is in the register (DEC-079)",
+               unregistered.isEmpty, unregistered.joined(separator: " | "))
+        let unbuilt = registered.filter { !html.contains("\($0) { transition:") }
+        report("and every row of the register is in the stylesheet",
+               unbuilt.isEmpty, unbuilt.joined(separator: ", "))
+        // The register is a table in a document, so the document has to hold it.
+        let rows = registered + ["`NSPopover`", "the glass thumb", "`NSSplitView`"]
+        let missingRows = rows.filter { !contract.contains($0) }
+        report("and the register itself is in the contract, chrome included",
+               missingRows.isEmpty, missingRows.joined(separator: ", "))
+        // **The control runs the extraction, not a `contains` beside it.** A control that only
+        // asserts a made-up name is absent from an array proves the array, not the check — which is
+        // the shape two controls in this session's earlier items were found to have.
+        let hostileSheet = """
+        /* a comment mentioning transition: opacity, which is not a rule */
+        .ds-changed { background-image: none; }
+        .ds-smuggled { transition: transform var(--ds-motion-quick) var(--ds-motion-curve); }
+        """
+        let hostileAnimated = Set(hostileSheet
+            .replacingOccurrences(of: "(?s)/\\*.*?\\*/", with: "\n", options: [.regularExpression])
+            .ranges(of: "(?m)^[^\\n{}]*\\{[^{}]*transition:[^{}]*\\}")
+            .compactMap { rule -> String? in
+                guard let brace = rule.firstIndex(of: "{") else { return nil }
+                let selector = String(rule[rule.startIndex..<brace])
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                return selector.hasPrefix("@") || selector.isEmpty ? nil : selector
+            })
+        report("negative control: a transition on an unregistered selector is caught",
+               hostileAnimated == [".ds-smuggled"]
+                   && !registered.contains(".ds-smuggled"),
+               hostileAnimated.sorted().joined(separator: ", "))
 
         report("negative control: an animation with no reduce block is caught", !guarded(hostile))
         let hostileWithEmptyBlock = """

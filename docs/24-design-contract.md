@@ -190,6 +190,23 @@ An image or an SVG is compared by being drawn, and the drawing is a surface with
 
 - **A disclosed count stays legible wherever grouping quietens something** (DEC-017). Grouping is permitted *because* the count is shown; a design that shrinks it to four grey pixels keeps the letter and loses the point.
 - **Quietening is not disappearing.** `ds-formatting` should read as "present and less shouty", never as "absent".
+- **The motion register** ([DEC-079](04-decision-log.md)). DEC-064 put it in the adopted design's Motion table, which is behind the owner's login — so *is this transition in the register* was a question nobody here could answer, and the register was a promise about a document rather than a list. It is this table, and a check requires it and the stylesheet to name the same set: **a transition in the code with no row fails, and a row with nothing behind it fails.**
+
+| What moves | Where | Duration | Reduced-motion path |
+|---|---|---|---|
+| The notice bar arriving | webview, `#notices` | `--ds-motion-quick` | no transition |
+| A notice chip's rim | webview, `.ds-chip` | `--ds-motion-quick` | no transition |
+| A folded range under the pointer | webview, `.ds-fold` | `--ds-motion-quick` | no transition |
+| The footer's Expand/Collapse button under the pointer | webview, `#diff-footer button` | `--ds-motion-quick` | no transition |
+| A blame or history row under the pointer | webview, `.ds-lens-row` | `--ds-motion-quick` | no transition |
+| A pane collapsing to its rail or spine | chrome, `NSSplitView` | `Theme.motionQuick` | the other width, set outright |
+| A switch's options arriving | chrome, `NSPopover` | the system's | `animates = false` |
+| The chosen option changing | chrome, the glass thumb | `Theme.motionQuick` | the other title, with nothing in between |
+
+**Nothing that carries meaning moves.** Every row above is furniture: a notice arriving, a control under a pointer, a pane the reader asked to fold. A change mark is where the engine put it the moment the document arrived, and it stays there.
+
+The webview's off switch is `@media (prefers-reduced-motion: reduce)` and it disables `*`, not a list — a list is a thing that can be incomplete, and the one transition missing from it is the one a reader with vestibular sensitivity gets. **The chrome has no media query**, so it reads `accessibilityDisplayShouldReduceMotion` directly, and there is no preference of our own that could disagree with the system's.
+
 - **Nothing animates without an off switch** (DEC-064, amending this line). Until 2026-08-09 the rule was *nothing animates*, and reduced motion was honoured by there being nothing to disable — a guarantee by construction, which is the strongest kind. That is gone by decision: the product owner wants the interface to move. What replaces it is a register and a check — every transition declares duration, curve and its reduced-motion path, and rule 9 above refuses an animation that lacks one. The register is the design's Motion table. **A transition that is not in it does not ship**, and this line is the reason to be strict about a rule that used to be free.
 - **The two panes must stay vertically aligned** in the side-by-side mode. Anything that changes line height on one side only breaks the comparison the product exists to show. Unified has one column and is not exposed to this, which is part of why it is the default (DEC-059).
 

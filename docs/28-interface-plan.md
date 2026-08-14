@@ -111,10 +111,18 @@ Clicking opens a popover with the rest. Applies to scope, mode, lens and layout.
 
 *The keyboard does not go near it.* ⌘1 is a menu item calling `selectMode(_:)`, and the arm drives that selector **while the scope popover is open** — if the popover were on the path, that would either do nothing or need the list open on the right control. Two routes to one command is DEC-071's rule, not an exception to it.
 
-**8. The whole application has no motion** (DEC-064 already admits it)
+**8. The whole application has no motion** (DEC-064 already admits it; [DEC-079](04-decision-log.md) makes the register real) — **landed, with one half of its acceptance test recorded as unphotographable**
 The register exists and almost nothing uses it. Popovers, the collapse, a scope change, a file selection.
 *Watch:* every animation must be neutralised under `prefers-reduced-motion`, the chrome must read `accessibilityDisplayShouldReduceMotion`, durations come from `--ds-motion-*`, and the check already refuses an unguarded one.
 *Done when:* the register in the design and the transitions in the code list the same set, and the reduced-motion path is photographed.
+
+*How it landed, and the first half of that test could not be run as written.* **The register was in a document nobody here can open.** DEC-064 put it in the adopted design's Motion table, so *is this transition registered* had no answer — [DEC-079](04-decision-log.md) moves it into `24-…` §5 and a check requires the table and the stylesheet to name the same set, in both directions. A transition added to the code with no row fails; a row with nothing behind it fails. Ask the owner to **review** the table against theirs rather than to supply it.
+
+Eight rows ship: three that already existed (the notice bar, a chip's rim, a fold under the pointer) and five that did not — the footer's button and a lens row under the pointer, the pane collapse (which was built but unregistered), **a switch's options arriving**, and **the chosen option changing**, which is the one a reader can otherwise miss: the control shows one option, so the change of that option is the whole answer to what they pressed.
+
+**The guard check had been satisfied by one file.** It asked whether the chrome reads `accessibilityDisplayShouldReduceMotion` *anywhere*, which is exactly DEC-064's named failure mode — remembered for the first five transitions, forgotten for the sixth. It counts now: as many guards as animated sites, with an unguarded site as its control.
+
+*The reduced-motion path is not photographed, and it is not photographable here.* It is a **system setting**, and the contract forbids a preference of our own that could disagree with it — so a selftest cannot turn it on, and adding a switch to make the picture possible would break the rule the picture exists to prove. What the path produces is in every case a *static state that is already photographed*: the pane at the other width (`collapsed.png`), the list simply present, the other title with nothing in between. The guarantee is carried by the two checks instead: every animated property neutralised under `prefers-reduced-motion` with two negative controls, and every chrome site reading the system setting.
 
 ### Tranche 4 — the window has no hierarchy
 

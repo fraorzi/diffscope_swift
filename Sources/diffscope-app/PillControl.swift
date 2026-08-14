@@ -31,7 +31,37 @@ final class PillControl: NSView {
     var action: Selector?
 
     var selectedSegment: Int = 0 {
-        didSet { needsDisplay = true; layoutGlass() }
+        didSet {
+            needsDisplay = true
+            // DEC-079's register: **the chosen option changes.** The control shows one option, so
+            // the change of that option is the only thing about this control a reader can miss —
+            // it happens on a keystroke as often as on a click, and a title that swaps with no
+            // motion at all reads as a redraw rather than as an answer to what they pressed.
+            guard oldValue != selectedSegment else { return }
+            crossFadeChosenOption()
+            layoutGlass()
+        }
+    }
+
+    /// The chosen title fades out and back. Under reduced motion it is simply the other title, with
+    /// nothing in between — `accessibilityDisplayShouldReduceMotion`, because AppKit has no media
+    /// query and the system setting is the authority.
+    private func crossFadeChosenOption() {
+        guard let thumb = glassThumb else { return }
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            thumb.alphaValue = 1
+            return
+        }
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = Theme.motionQuick / 2
+            thumb.animator().alphaValue = 0
+        }, completionHandler: { [weak self] in
+            self?.layoutGlass()
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = Theme.motionQuick / 2
+                thumb.animator().alphaValue = 1
+            }
+        })
     }
 
     // MARK: - Glass (DEC-077, `28-…` item 6)
@@ -319,6 +349,10 @@ final class PillControl: NSView {
         sheet.contentViewController = controller
         sheet.behavior = .transient
         sheet.contentSize = list.fittingSize
+        // DEC-064/DEC-079: the list arrives, unless the reader has asked the system for less
+        // motion. AppKit has no media query, so the system setting is read directly — and there is
+        // no preference of our own that could disagree with it.
+        sheet.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         popover = sheet
         sheet.show(relativeTo: bounds, of: self, preferredEdge: .maxY)
     }

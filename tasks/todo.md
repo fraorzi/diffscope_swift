@@ -2050,3 +2050,42 @@ row in a popover has a second line, so the reason is drawn where the option is: 
 `no upstream branch is configured`, dashed, and the arm reads that string out of the open list.
 
 1688 → 1692 checks.
+
+## Step 73 — `28-…` item 8: the motion register becomes a list (DEC-079)
+
+- [x] **DEC-079 before the code**: the register moves from the adopted design's Motion table — which
+      is behind the owner's login — into `24-…` §5, where a check can read it
+- [x] a check in both directions: a transition with no row fails, a row with nothing behind it fails
+- [x] five rows added to the three that existed: the footer button and a lens row under the pointer,
+      the pane collapse (built but unregistered), a switch's options arriving, the chosen option
+      changing
+- [x] the chrome's guard check **counts** now — as many `accessibilityDisplayShouldReduceMotion`
+      reads as animated sites, with an unguarded site as its control
+
+### Step 73 — the register was a promise about a document
+
+DEC-064 replaced a guarantee by construction with a guarantee by check, and the check had two halves.
+The reduced-motion half was built and carries two negative controls. **The register half was never
+enforceable**: it lived in a table nobody in this repository can open, so *is this transition
+registered* was a question with no answer, and three transitions shipped against a list of none.
+
+### Step 73 — and the guard check was satisfied by one file
+
+*Does the chrome read `accessibilityDisplayShouldReduceMotion`* was answered by a single `contains`
+over `main.swift`, and it stayed true while a second and a third animated site were added elsewhere.
+That is DEC-064's own named failure mode — remembered for the first five transitions, forgotten for
+the sixth — written into the check that exists to prevent it.
+
+### Step 73 — the reduced-motion path cannot be photographed here
+
+It is a system setting, and the contract forbids a preference of our own that could disagree with it,
+so a selftest cannot turn it on — and adding a switch to make the picture possible would break the
+rule the picture exists to prove. What the path produces is in every case a static state that is
+already photographed: the pane at the other width, the list simply present, the other title with
+nothing in between. Recorded as unmet rather than worked around.
+
+The first negative control for the register check was `!registered.contains(".ds-invented…")`, which
+proves the array and not the check. It runs the extraction over a hostile stylesheet now — the third
+time in this session a control had to be made to fail before it was worth having.
+
+1692 → 1698 checks.

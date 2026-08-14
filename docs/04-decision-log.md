@@ -3354,3 +3354,42 @@ There is a second-order cost. Folding exists because unchanged text is noise; a 
 ### Revisit trigger
 
 Reopen if a reader asks for *this fold* back rather than all of them — that is option 2, and it needs a per-fold record and a label that can describe it.
+
+---
+
+## DEC-079 — The motion register lives in this repository, and it is a checked list rather than a promise
+
+- **Date:** 2026-08-14 · **Topic:** DEC-064's register is a table in a document nobody here can open · **Status:** Accepted · **Amends DEC-064; item 8 of [28-interface-plan.md](28-interface-plan.md)**
+
+### Context
+
+DEC-064 admitted motion and replaced a guarantee by construction — *nothing animates, so reduced motion cannot be got wrong* — with a guarantee by check. The check it named has two halves: **every animated property is neutralised under `prefers-reduced-motion`**, which is built and carries two negative controls; and **the register**, which it placed in the adopted design's Motion table: *"a transition with no entry in that column is not shippable."*
+
+The register half has never been enforceable. The design lives behind the owner's login (`27-…`, `21-…` §0 have said so since the transcription), so *is this transition in the register* is a question nobody in this repository can answer. `28-…` item 8 asks for the register and the code to list the same set, which is the first time that gap has had to be closed rather than noted.
+
+The second half of the problem is that the register is empty in practice. Three transitions ship, all in the webview, and DEC-064's own list of what should move — popovers, the collapse, a scope change, a file selection — is mostly unbuilt.
+
+### Options considered
+
+1. **Ask the owner for the Motion table and transcribe it.** Rejected as the primary answer for the reason the token table was transcribed rather than linked: a table that arrives once and is then hand-copied drifts, and the drift is invisible. It remains worth asking for as a *review* of what is written here.
+2. **Drop the register and keep only the reduced-motion check.** Rejected: that check answers *does this animation have an off switch*, never *should this animation exist*. Option 2 of DEC-064 — motion allowed, review left to reviewers — was rejected there for the same reason, and this would arrive at it by omission.
+3. **The register is a table in `24-design-contract.md`, and a check requires it and the stylesheet to list the same set.** Chosen.
+
+### Final decision
+
+**Option 3.** The register is `24-…` §5's Motion table: one row per transition, naming **what moves, where, its duration token, and its reduced-motion path**. Two rules, both checked:
+
+- **Every animated property in the stylesheet appears in the register**, and every row of the register appears in the stylesheet. A transition added to the code without a row fails; a row with nothing behind it fails.
+- The reduced-motion half of DEC-064 is unchanged and still carries its two negative controls.
+
+The chrome is in the register too, and its off switch is `accessibilityDisplayShouldReduceMotion` rather than a media query — AppKit has no media queries, which is why that clause was already in the contract's rule 9.
+
+### Consequences
+
+- **The register is now falsifiable**, which is the whole of what it was missing. It was a promise about a document, and it is a list two files have to agree on.
+- **Ask the owner to review it against their Motion table** rather than to supply it. That is a smaller, answerable question, and it is the same shape as the outstanding request for the light-mode screenshots.
+- A snapshot still cannot photograph motion (DEC-064's own consequence). What is photographed is the **reduced-motion path**, which is a static state and the one that matters for the guarantee.
+
+### Revisit trigger
+
+Reopen if the design's Motion table turns out to disagree with this list in kind rather than in wording — that would mean the interface moves in a way the design did not ask for, which is a design question rather than a bookkeeping one.

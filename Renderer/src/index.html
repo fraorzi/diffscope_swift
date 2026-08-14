@@ -287,6 +287,16 @@
   .ds-chip { transition: border-color var(--ds-motion-quick) var(--ds-motion-curve); }
   .ds-fold { transition: background-color var(--ds-motion-quick) var(--ds-motion-curve); }
   .ds-fold:hover { background-color: var(--ds-syn-active-line); }
+  /* The two controls in this pane that a pointer can be *on* without having pressed. Both are
+     furniture — the footer's button opens what is folded, a lens row is a line of blame — and
+     neither carries a difference, so both are safe to move under `24-…` §5's rule that nothing
+     meaningful does. Registered in `24-…`'s Motion table (DEC-079). */
+  #diff-footer button { transition: background-color var(--ds-motion-quick) var(--ds-motion-curve),
+                                    border-color var(--ds-motion-quick) var(--ds-motion-curve); }
+  #diff-footer button:hover { background-color: var(--ds-fold);
+                              border-color: var(--ds-border-strong); }
+  .ds-lens-row { transition: background-color var(--ds-motion-quick) var(--ds-motion-curve); }
+  .ds-lens-row:hover { background-color: var(--ds-syn-active-line); }
 
   @media (prefers-reduced-motion: reduce) {
     /* Everything, not a list: a list is a thing that can be incomplete, and the one transition
