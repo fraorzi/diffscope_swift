@@ -8,7 +8,28 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
-**2026-08-14 — the whole of tranche 2 is built: the diff pane is what DEC-077 asked for.** Five of the ten items in [28-interface-plan.md](28-interface-plan.md) are done, in the order that document gives, and **1659 → 1680 checks**. Look at `structural.png` and `unified.png` in both appearances before anything else — the pane is unrecognisable and the plan's remaining five items are all about the chrome around it.
+**2026-08-14 — all ten items of [28-interface-plan.md](28-interface-plan.md) are built. 1659 → 1707 checks.** Four decisions came out of it: **DEC-078** (⌘E is reversible), **DEC-079** (the motion register moves into this repository), **DEC-080** (the four surfaces become a ladder) and **DEC-081** (the file-kind glyphs get colour). Each was written before its code.
+
+**Two halves of two acceptance tests could not be met on this machine, and they are recorded as unmet rather than declared done.** Neither is a defect and both need the owner:
+
+- **The glass cannot be photographed here.** `cacheDisplay` renders an `NSGlassEffectView` as a flat fill exactly as it renders a `WKWebView` as black, and the window-server path needs screen-recording permission *and* an unoccluded window. What the arm asserts instead is what a picture could not have settled: the class is AppKit's own, the thumb covers the chosen segment and only it, and the title is **inside** the glass with the right words and a non-zero frame. **Ask the owner for a screenshot of the scope row in both appearances.**
+- **The reduced-motion path cannot be photographed here.** It is a system setting and the contract forbids a preference of our own that could disagree with it — so a selftest cannot turn it on, and adding a switch to make the picture possible would break the rule the picture exists to prove. Its states are the static ones already photographed.
+
+**Three things to ask the owner**, all small and all answerable with a screenshot: the scope row in glass (above); whether [DEC-080](04-decision-log.md)'s surface ladder should be steeper or shallower; and whether [DEC-081](04-decision-log.md)'s four kind hues match theirs. **Two values transcribed from the design have now been changed deliberately** — the four surfaces and the two lower inks — and that is the first time since DEC-066.
+
+**Four findings worth more than the features.**
+
+**Three negative controls in a row passed.** The tint control used the design's own green and red at their shipped alphas and measured 1.289:1 apart — above the floor it exists to sit below. The width control put the missing `flex-direction` back, which shrinks the scroller *and* the lines together, so every relation inside the editor still agreed while the pane sat half empty. The register control asserted a made-up name was absent from an array, which proves the array. **Measure the control before believing the check**, and measure a thing against what it is supposed to fill rather than against itself.
+
+**Two checks had never seen the thing they were written for.** `DesignChecks`'s greyscale list held `text-decoration` and `background: repeating-linear-gradient`, and the textures are declared `background-image: var(--ds-tex-…)` — so every mark had been passing on its *underline* and the texture satisfied nothing; removing the underlines failed six marks at a stroke. And *does the chrome read `accessibilityDisplayShouldReduceMotion`* was a single `contains` over one file, which stayed true while a second and a third animated site were added elsewhere — DEC-064's own named failure mode, written into the check meant to prevent it.
+
+**Nothing had ever compared two surfaces.** Twenty-one pairs of ink on surface, three inks held a step apart, and no check or sentence anywhere asking whether the four regions differ from each other. They spanned nineteen values out of 255 in light, and in dark the ladder **was not monotone**.
+
+**Every snapshot before today has a drifted gutter in it that no reader has ever seen.** CodeMirror re-measures inside an animation frame and **`requestAnimationFrame` is suspended while the window is occluded** — which a terminal-launched selftest always is (T1-A, third occurrence). Each view keeps its construction-time line height, 14 or 16.87 px against the 15 the stylesheet lays lines out at, and the *gutter rows* are sized from it. `window.diffscopeSettle()` forces the pending measurement and `snapshot(named:)` calls it first now. **A picture of an occluded window is a picture of a layout that never ran.**
+
+**What is left**, and it is the same two things `28-…` §3 has carried since the plan was written: `EditorCommand.defaultTemplate` still has no `{line}`, and it is *not* a one-line fix — `open -a` cannot take a line at all, so the choice is between a `jetbrains://` URL that needs the Toolbox handler registered and a command that always opens the file and ignores the line. That is the owner's environment, not a code decision. And `18-version-one-scope.md`'s definition of done still has seven items backed by passing checks and nobody's signature.
+
+**2026-08-14 — tranche 2 (items 1–5): the diff pane is what DEC-077 asked for.** **1659 → 1680 checks**. Look at `structural.png` and `unified.png` in both appearances — the pane is unrecognisable.
 
 - **The underlines are gone and a tint pair replaced them.** A changed line is tinted across its whole line box; the bytes that changed take the same hue at a lower transparency. The greyscale rule the underline carried moved to a *measurement*: three pairs composited over `--ds-code` in both appearances, 1.27:1 to 1.53:1 apart against a floor of 1.20.
 - **The tint reaches the right edge**, which was one missing `flex-direction` on the unified host — `display: flex` had made it a row container whose single item was as wide as its content.
@@ -24,7 +45,7 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 **Every snapshot before today has a drifted gutter in it that no reader has ever seen.** CodeMirror re-measures inside an animation frame and **`requestAnimationFrame` is suspended while the window is occluded** — which a terminal-launched selftest always is (T1-A, third occurrence). Each view keeps whatever line height it was constructed with, 14 or 16.87 px against the 15 the stylesheet lays lines out at, and the *gutter rows* are sized from that number. Eleven of fourteen lines had no gutter row level with them, and a full-resolution crop appeared to confirm it. `window.diffscopeSettle()` forces the pending measurement to be read and `snapshot(named:)` calls it first now. `tasks/todo.md` step 67 has the whole chase; the short version is **a picture of an occluded window is a picture of a layout that never ran**.
 
-**Five items are left and they are `28-…` items 6–10**: real `NSGlassEffectView` glass, switches as popovers, motion, visible section hierarchy, coloured file-kind glyphs. All five are the AppKit chrome rather than the webview.
+*(Items 6–10 landed the same day; see the entry above.)*
 
 **2026-08-13 — the owner used the finished chrome and asked for most of its voice back off. Start at [28-interface-plan.md](28-interface-plan.md).** Fourteen items in one message, and together they are one sentence the owner wrote themselves: build for a **junior frontend developer, not for the author of a diff engine** — *"jeśli coś nie wiadomo czy mi się przyda jako info czy nie, to usuń."* That is **DEC-077**, and it reverses parts of DEC-016, DEC-017, DEC-035, DEC-058, DEC-070, DEC-073 and one rule of the design contract.
 
