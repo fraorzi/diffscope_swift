@@ -273,6 +273,12 @@ func runFixtureChecks(_ reportRaw: (String, Bool, String) -> Void) {
            !fixturesWithMultiLineMoves.isEmpty, fixturesWithMultiLineMoves.joined(separator: ", "))
     report("and one that produces two independent moves, so the links are pairing rather than counting",
            !fixturesWithMultipleMoves.isEmpty, fixturesWithMultipleMoves.joined(separator: ", "))
+    // **Printed, not only asserted.** These three passed on one fixture each for two milestones and
+    // the output never said which — so a fixture added *for* T-11 could stop producing a move and
+    // the section would still read green, carried by the older one. The names are the measurement.
+    print("      moves: \(fixturesWithMoves.sorted().joined(separator: ", "))")
+    print("      multi-line: \(fixturesWithMultiLineMoves.sorted().joined(separator: ", "))")
+    print("      two or more: \(fixturesWithMultipleMoves.sorted().joined(separator: ", "))")
 }
 
 /// One assertion set, applied to every fixture on every path, named by T-number so the output reads

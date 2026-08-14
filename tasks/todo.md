@@ -2206,3 +2206,58 @@ every path they reach, so a model that reported "no change" for a non-identical 
 A definition-of-done item is strongest when the fixture that names it is not the thing proving it.
 
 1710 → 1713 checks.
+
+## Step 78 — the two P1 fixtures §4.5 had named and never had
+
+- [x] `moved-jsx-subtree` — a `<Legend>` subtree relocated above the `<table>` it followed
+- [x] `multiple-similar-siblings` — a near-identical `<Item />` inserted among three others
+- [x] both recorded in `MANIFEST.json`, both through T-0…T-11 on both paths
+- [x] T-11's three shape lists are **printed** now, not only asserted
+- [x] `15-…` and `18-…` updated: every P0 **and** P1 case in the plan exists
+
+1713 → **1748 checks**. Every P0 and P1 case named in the plan is now built; the six that remain
+are P2, for languages version one does not parse.
+
+### Step 78 — the first `moved-jsx-subtree` produced no move at all
+
+It swapped a nine-line `<table>` with a ten-line `<aside>`, both full of `{xs.map((x) => (` and
+`key={x.id}`, and measured **62 hunks / 272B and zero moves**. Two blocks of the same shape share
+so much line-internal text that the canonical diff interleaves them instead of deleting one and
+inserting it elsewhere — so no line is wholly inside a changed run and there is nothing to pair.
+
+The rebuilt fixture moves a subtree that is *lexically unlike* what it moves past, and produces
+`2 hunks/192B, 1 move` spanning several lines.
+
+### Step 78 — and it pairs only the text lines, which is the finding
+
+```
+old 272..<296 changed "\n      <Legend>\n        "
+old 296..<317 moved   "Reported by DiffScope"
+old 326..<352 moved   "Warsaw office, third floor"
+old 352..<367 changed "\n      </Legend"
+```
+
+`<Legend>` and `</Legend>` are **changed, not moved**: DEC-038 pairs a line only when its trimmed
+content lies entirely inside a changed run, and a tag's `<` is matched as unchanged against the
+`<table>`/`<tbody>`/`<tr>` it moved past. **One byte of common prefix disqualifies the line.**
+
+This is `moved-function`'s trap reproduced in JSX, and JSX makes it the normal case rather than the
+unlucky one — every line begins with `<` or `{`. Nothing is lost when it happens: the unpaired
+lines are still presented as changed (T-3), and a move regroups what is presented rather than
+removing it.
+
+### Step 78 — the siblings fixture changes nothing on the old side
+
+The whole difference is two segments, **both on the new side**. No existing sibling is claimed to
+have been edited. And the boundary is not where a reader would draw it: the minimal edit aligns the
+new row's `<Item icon="` with the *first* row's prefix, so the change is charged to the tail of the
+new row plus the head of the row after it. Recorded rather than "fixed" — snapping to node
+boundaries for tidiness is a claim the engine cannot make (DEC-024, INV-1).
+
+### Step 78 — and T-11's three lists were passing without saying on what
+
+*the corpus contains a fixture that produces a move* / *one whose move spans several lines* / *one
+that produces two independent moves* each passed on one fixture and the output never named it. A
+fixture added **for** T-11 could stop producing a move and the section would still read green,
+carried by an older one. The names are printed now: moves on four fixtures, multi-line on three,
+two-or-more on one.

@@ -347,6 +347,18 @@
       "sha256" : "81f10f54a8cf0e2307e88ab7d642b6f2d9f7f020bbc445e290adedbd364c0b73"
     }
   },
+  "moved-jsx-subtree" : {
+    "after" : {
+      "bytes" : 391,
+      "ext" : "tsx",
+      "sha256" : "340f54edc310f2d999a7f577bb075eb3da059bdf44b29176e8d94764f088c120"
+    },
+    "before" : {
+      "bytes" : 391,
+      "ext" : "tsx",
+      "sha256" : "280f9144f93cfbd6a7f4fcd9ce8a6fd31e12a78e4bb7cf8d867869ac0c3cdbd7"
+    }
+  },
   "moved-two-blocks" : {
     "after" : {
       "bytes" : 352,
@@ -357,6 +369,18 @@
       "bytes" : 352,
       "ext" : "ts",
       "sha256" : "574ddf6b91b822411079c186185221530a558649156766ef4c238dbabfed08de"
+    }
+  },
+  "multiple-similar-siblings" : {
+    "after" : {
+      "bytes" : 320,
+      "ext" : "tsx",
+      "sha256" : "e9af44cadda9e7f746653869207ee4ff6f4d2fb3387a2e67472e19ec3f4e4f9a"
+    },
+    "before" : {
+      "bytes" : 258,
+      "ext" : "tsx",
+      "sha256" : "d1ca131996f61f98a3f9a4dc6ebeacef2edf52ae41360090801156daa0575c41"
     }
   },
   "nbsp-vs-space" : {

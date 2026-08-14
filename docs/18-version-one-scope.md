@@ -111,7 +111,7 @@ Three verdicts are used. **Met** — the evidence covers the sentence. **Met, se
 
 *What the sentence was claiming beyond that:* **13 fixtures do not reach the structural path**, each for a stated reason — not valid UTF-8, unsupported language, a merge-conflict marker, binary content. They pass T-0 … T-11 on the raw path, which is the only path they have; "every fixture passes on both paths" would have been false. The skips are printed by name and reason on every run.
 
-*Also outstanding and not blocking:* two **P1** cases are named in the plan and not built — `moved-jsx-subtree`, `multiple-similar-siblings` — with six P2 cases behind them. P1 is *should*, not *must*.
+*Also outstanding when this was audited, and closed the same day:* the two **P1** cases §4.5 named and never had — `moved-jsx-subtree` and `multiple-similar-siblings` — are built. **Every P0 and P1 case in the plan now exists**; what remains is six P2 cases for languages version one does not parse.
 
 **2. The read-only proof (R-8) covers every Git operation the application can issue.** — **Met 2026-08-14, and it was not before the audit**
 
@@ -157,4 +157,4 @@ Three verdicts are used. **Met** — the evidence covers the sentence. **Met, se
 
 ---
 
-**What is left, and it is not a signature.** Two P1 fixtures are named in the plan and unbuilt (`moved-jsx-subtree`, `multiple-similar-siblings`), and three questions need the owner's eye rather than a check: the glass material, which cannot be photographed on the build machine; [DEC-080](04-decision-log.md)'s surface ladder; and [DEC-081](04-decision-log.md)'s four kind hues. All three are in `21-agent-handoff.md` §0.
+**What is left, and none of it is a signature.** Three questions need the owner's eye rather than a check: the glass material, which cannot be photographed on the build machine; [DEC-080](04-decision-log.md)'s surface ladder; and [DEC-081](04-decision-log.md)'s four kind hues. All three are in `21-agent-handoff.md` §0. Six **P2** fixtures remain unbuilt, for CSS, JSON, Markdown and HTML — languages version one does not parse (DEC-004), so they are deferred scope rather than missing coverage.
