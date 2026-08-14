@@ -25,7 +25,7 @@ Optional settings, both read once at launch:
 |---|---|---|
 | `DIFFSCOPE_ROOT` | Adds a folder for this launch only, without saving it | none |
 | `DIFFSCOPE_CONFIG` | Use a different settings file, for trying things out | `~/Library/Application Support/DiffScope/config.json` |
-| `DIFFSCOPE_EDITOR` | Command for "Open in Editor". `{file}` and `{line}` get filled in | `/usr/bin/open -a WebStorm {file}` |
+| `DIFFSCOPE_EDITOR` | Command for "Open in Editor". `{file}` and `{line}` get filled in | `/Applications/WebStorm.app/Contents/MacOS/webstorm --line {line} {file}` (DEC-082) |
 
 If your editor is not WebStorm:
 
@@ -170,7 +170,7 @@ All of these are already recorded. Reporting them costs you time and tells me no
 
 - ~~There is still no per-repository way to override the base branch, so the "vs base" scope is unusable where detection lands on the wrong branch (`carrefour-inapp`).~~ **Closed 2026-07-31** — ⇧⌘B, stored in the configuration (DEC-011), and the base is drawn as a block in the scope row since DEC-072.
 - ~~The file list has **no keyboard navigation of its own**.~~ **Closed 2026-08-09** (DEC-057, measured in M8-J): ⌥↑ / ⌥↓ and the bare arrow keys both walk 63 files past nine group headers with no blind stops. **Type-to-find is still absent** and is the half of this entry that stands.
-- **The default editor command cannot jump to a line.** `EditorCommand.defaultTemplate` is still `/usr/bin/open -a WebStorm {file}` — no `{line}` — so ⌘⏎ opens the file at the top until you set a template containing `{line}` in Settings. **Still open**, and it is the last surviving interface gap from this report.
+- ~~**The default editor command cannot jump to a line.**~~ **Closed 2026-08-14 by [DEC-082](04-decision-log.md).** It was the last surviving interface gap from this report. The default is the IDE's own launcher with `--line {line} {file}` rather than `open -a`, which cannot take a line at all; the `jetbrains://` URL that could was rejected because `open` leaves `#` and `?` raw in a path and the editor then opens the wrong file with a zero exit code.
 - ~~The mode pill can say `mode: structural` next to a notice saying structural analysis was unavailable.~~ **Closed 2026-08-09** (DEC-058): the pill reported the path taken as well as the selection. **And then the pill itself was removed** — DEC-077 takes the three technical chips off the screen entirely.
 - ~~There is no picker for arbitrary branches or commits.~~ **Partly closed 2026-08-10** (DEC-061): the History lens picks one commit or two and compares them. A branch picker is still not built.
 

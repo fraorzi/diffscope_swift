@@ -8,7 +8,22 @@ public struct EditorCommand: Sendable, Equatable {
     public let executable: String
     public let arguments: [String]
 
-    public static let defaultTemplate = "/usr/bin/open -a WebStorm {file}"
+    /// DEC-082. This was `/usr/bin/open -a WebStorm {file}` for eight milestones, and the missing
+    /// `{line}` was the last open item of the POC audit — `⌘⏎` opened the file at the top whatever
+    /// the reader was looking at.
+    ///
+    /// **The IDE's own launcher rather than `open`**, for a measured reason. `open -a` cannot take
+    /// a line at all, and the obvious replacement — a `jetbrains://…?path={file}:{line}` URL —
+    /// leaves `#` and `?` raw in the path: `…/note#1/a.ts` becomes a URL fragment and the editor
+    /// receives `path=…/note`, which is **the wrong file, opened silently**. This form parses no
+    /// URL, so those are ordinary characters, and the split-before-substitute rule below is what
+    /// keeps a path with a space one argument.
+    ///
+    /// The path is an install location: a WebStorm reached only through JetBrains Toolbox is not
+    /// here, and the default then fails **visibly** as `notLaunched` (F13, `13-…` §2). A default
+    /// that fails loudly is worth more than one that opens the wrong line quietly.
+    public static let defaultTemplate =
+        "/Applications/WebStorm.app/Contents/MacOS/webstorm --line {line} {file}"
 
     /// `file` and `line` are substituted; nothing else is. A template with no `{file}` is accepted
     /// as written rather than repaired — a silently corrected command opens the wrong thing.

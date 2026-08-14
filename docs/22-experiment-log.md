@@ -1515,7 +1515,7 @@ Twelve lines, one edit on line 7 (`7` → `77`). The snapshot (`gutter.png`) sho
 
 It had been a literal `1` since DEC-015 was implemented: correct in the sense that the file opened, useless on the 900-line file whose change is at the bottom.
 
-**A caveat that belongs on record:** the default template `/usr/bin/open -a WebStorm {file}` contains no `{line}`, so the default still cannot jump. A template that includes `{line}` now receives a real one.
+**A caveat that belonged on record and is now closed:** the default template `/usr/bin/open -a WebStorm {file}` contained no `{line}`, so the default could not jump. [DEC-082](04-decision-log.md) replaced it — see **M10-A** below for what was measured to choose the mechanism.
 
 ---
 
@@ -2606,3 +2606,48 @@ The pane is a plain view that places its two children from `bounds` — in `layo
 **Inside a split view's pane, `bounds` is the only number that is true.** This project has now paid three times at this boundary: panes that began at zero width and stayed there (M8-D), a width constraint the split ignored at priority 600 (M9-A), and a child laid out against a width its parent had already lost. The rule that survives all three: *ask the frame, place by hand, and re-place after the split has had its turn.*
 
 And the diagnostic that ended it in one run was a **subclass that logged its own `setFrameSize` with a stack trace**. Three rounds of reasoning about which constraint was losing produced three wrong answers; the first stack trace produced the right one.
+
+---
+
+## M10-A — Which mechanism can open a file *at a line*, measured rather than assumed (DEC-082)
+
+**Question.** `EditorCommand.defaultTemplate` had no `{line}` and had been described twice as *one line to fix*. `open -a` cannot take a line at all, so the question was which mechanism, not which string. Three candidates, measured on this machine (macOS 26.5, WebStorm in `/Applications` and `~/Applications`).
+
+### The `jetbrains://` URL
+
+`LSHandlerURLScheme => jetbrains` is registered, to `com.jetbrains.app.daemon.helper` — so the handler being absent, which was the assumed objection, is not the problem.
+
+What `open` does to a path substituted raw into the URL, read back out of its own error message with an unregistered scheme so nothing was launched:
+
+| Path | What `open` sent |
+|---|---|
+| `/Users/a/My Projects/a.ts` | `My%20Projects` — **encoded for us** |
+| `/Users/a/100%/a.ts` | `100%25` — **encoded for us** |
+| `/Users/a/Zażółć/a.ts` | `Za%C5%BC%C3%B3%C5%82%C4%87` — **encoded for us** |
+| `/Users/a/note#1/a.ts` | `…/note#1/a.ts` — **raw**, so the path ends at `note` and the rest is a fragment |
+| `/Users/a/q?x/a.ts` | `…/q?x/a.ts` — **raw**, so the rest is a second query parameter |
+
+So the encoding worry was three-quarters unfounded and one-quarter fatal: `#` and `?` are legal in paths, and the result is **the wrong file, opened, with `open` exiting 0**. `open` does return 1 when no application claims the scheme, so the *missing handler* arm would have been reported.
+
+Fixing it needs a second substitution token — `{file}` must stay raw for every `open -a`-shaped template — which is a new item in the template vocabulary rather than one line.
+
+### The IDE's own launcher
+
+`/Applications/WebStorm.app/Contents/MacOS/webstorm --line 11 <file>`, on a path holding **both** a space and a `#`:
+
+```
+rc=0, 0.51 s wall
+```
+
+No URL is parsed, so `#` and `?` are ordinary characters, and `EditorCommand`'s split-before-substitute rule already keeps the path one argument.
+
+**Its limit, measured and not hidden:** the launcher exits 0 whatever it is given.
+
+| Argument | rc |
+|---|---|
+| a file that does not exist | **0** |
+| `--line notanumber` | **0** |
+
+So `launchEditor` cannot tell *opened* from *forwarded and ignored*. That limit is the same one the URL form has, and narrower: the only way to reach it is a file that is not there, and the file being opened is the one the diff has just read. The other failure — WebStorm not at that path — is caught, because `Process.run()` throws for an executable that does not exist and F13 already reports that in the status line.
+
+**What only the owner can confirm** is the half no exit code answers: that the caret actually lands on line 11. Everything above says the arguments arrive; nothing here can see the editor's window.

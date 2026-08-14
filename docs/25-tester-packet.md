@@ -135,7 +135,7 @@ An hour, roughly in this order.
    - **⌥⌘T opens a second shell** in the same drawer, ⌃⌘] and ⌃⌘[ move between them and ⌃⌘W closes one. Each tab says where *its own* shell is; a dotted underline on a tab means that shell is not in the repository you are looking at. Run something long in one and keep working in the other — the two scrollbacks should never mix.
 9. **Point it at your own editor** — ⌘, opens Settings, where the command is a template with `{file}` and `{line}`. Break it on purpose: the failure must be visible rather than nothing happening, and Settings remembers the last attempt.
 
-**Using a different editor?** ⌘⏎ defaults to WebStorm, and ⌘, is the place to change it. If you would rather set it for one session without touching the settings, launch the app from Terminal with your own command:
+**Using a different editor?** ⌘⏎ defaults to WebStorm **at the line you are looking at** (DEC-082), through the IDE's own launcher rather than `open -a`, which cannot take a line at all. ⌘, is the place to change it. If you would rather set it for one session without touching the settings, launch the app from Terminal with your own command:
 
 ```bash
 DIFFSCOPE_EDITOR="/usr/bin/open -a Visual\ Studio\ Code {file}" /Applications/DiffScope.app/Contents/MacOS/DiffScope
@@ -155,7 +155,7 @@ Already recorded. Reporting them costs you time and tells us nothing new.
 - A reformat that **changes the number of lines** is never grouped as formatting.
 - **Reordered object properties** are marked as possibly-behaviour-affecting, not formatting. Intentional — property order is observable.
 - In files over about 2000 lines, a refresh puts you back within a few lines of where you were, not exactly.
-- ⌘⏎ opens the file but not at the right line unless the editor command contains `{line}`.
+- ⌘⏎ **is silent about a file it cannot open.** The default runs WebStorm's own launcher, which exits successfully whatever you hand it — so if the editor does nothing, the app has no way to know. It *does* say so loudly if WebStorm is not installed where it expects (`/Applications/WebStorm.app`); that case is reported in the status line. Measured in `22-…` → M10-A.
 - **No screen-reader support.** Everything works from the keyboard and nothing relies on colour, but the app has not been tested with VoiceOver and does not claim to work with it.
 - **In the terminal:** ↑ and ↓ walk only the commands you typed in *this* session, not your shell's own history — ⌃R gets you that, from the shell itself. There are no Warp-style command blocks and no completion of our own; Tab hands the line to your shell instead.
 - Opening the terminal takes about a third of a second, because it runs your real shell startup files. Each shell also leaves an `ssh-agent` behind if your configuration starts one — that is your setup doing what it always does, not the app.

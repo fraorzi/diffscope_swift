@@ -2132,3 +2132,36 @@ is asserted separately and has the old ordering as its control.
 other reader of that comment.
 
 1704 → 1707 checks.
+
+## Step 76 — `28-…` §3: ⌘⏎ opens the line (DEC-082)
+
+- [x] the mechanism **measured before the decision** — `22-…` → M10-A
+- [x] `EditorCommand.defaultTemplate` is `/Applications/WebStorm.app/Contents/MacOS/webstorm
+      --line {line} {file}`
+- [x] three checks: the default carries both tokens, it produces the right argv over a path holding
+      `#`, `?` and a space, and the template it replaced is the negative control
+- [x] `23a-…` §10 and `23b-…` §1.6 closed — the last open item of both
+- [x] `25-…` corrected on both sides: the line *is* opened, and the silence when it cannot be
+
+### Step 76 — *one line to fix* was written twice and was wrong twice
+
+It is one line. But `open -a` cannot take a line number at all, so the string was never the question —
+the mechanism was, and the mechanism is a fact about what is installed.
+
+The `jetbrains://` URL was the obvious answer and it is the wrong one, for a reason no amount of
+reading would have produced: **`open` percent-encodes a space, a `%` and non-ASCII for you and
+leaves `#` and `?` raw.** Both are legal in a path, and the result is the wrong file opened with a
+zero exit code — *silent and wrong*, which is the failure this whole product is built against.
+
+### Step 76 — and the chosen mechanism's limit is on record
+
+The launcher returns 0 for a file that does not exist and for `--line notanumber`. So `launchEditor`
+cannot tell *opened* from *forwarded and ignored*. That limit is written into DEC-082 and into the
+tester packet rather than left for a tester to discover, and it is narrower than the URL's: the only
+way to reach it is a file that is not there, and the file being opened is the one the diff has just
+read. The failure that can really happen — WebStorm somewhere else — throws in `Process.run()` and
+reaches the status line.
+
+**The half no exit code answers** is whether the caret lands on the line. Only the owner can see that.
+
+1707 → 1710 checks.

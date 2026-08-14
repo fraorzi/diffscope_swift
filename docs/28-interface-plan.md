@@ -158,7 +158,7 @@ The keyboard-tree fixture holds modified and deleted files only, so the picture 
 
 ## 3. Two things that are not on the list and are not forgotten
 
-- **The default editor template has no `{line}`.** `⌘⏎` opens the file at the top until the reader configures one. **It is not one line, and calling it one was wrong** (2026-08-14): the template is `/usr/bin/open -a WebStorm {file}`, and `open -a` cannot take a line at all. The choice is between a `jetbrains://web-storm/navigate/reference?path={file}:{line}` URL, which honours the line and needs the JetBrains Toolbox handler registered, and a command that always opens the file and ignores the line. That is a question about the owner's install rather than a code decision, and it is a decision entry when it is answered.
+- **The default editor template had no `{line}`** — **closed 2026-08-14 by [DEC-082](04-decision-log.md)**, and calling it *one line to fix* was wrong twice over. It is one line, but `open -a` cannot take a line at all, so the question was which mechanism rather than which string. Measured: the `jetbrains://` URL leaves `#` and `?` raw in a path, so `…/note#1/a.ts` arrives as a URL fragment and the editor opens **the wrong file, silently**. The default is `/Applications/WebStorm.app/Contents/MacOS/webstorm --line {line} {file}` — no URL is parsed, so those are ordinary characters, and a WebStorm that is not at that path fails **visibly** as `notLaunched` rather than opening the wrong line quietly.
 - **The definition of done has eight items and only the sixth is marked met.** The other seven are backed by checks that pass and by nobody's signature. Either sign them or say what is missing.
 
 ---

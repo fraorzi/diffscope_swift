@@ -59,7 +59,7 @@ Was: two of the three carriers built, no gutter and no line numbers in either pa
 
 Now: line numbers in both panes and a gutter marking every line that carries a difference, computed in the engine and carried on the contract so it is checkable headlessly. ⌘O asks the renderer which line the reader is on — the active change stop, or the first visible line. See `22-experiment-log.md` → M8-E.
 
-**Still open:** the default editor template has no `{line}`, so the default cannot jump to a line. A template that includes one now receives a real line.
+~~**Still open:** the default editor template has no `{line}`~~ — **closed 2026-08-14 by [DEC-082](04-decision-log.md)**, and it was the last item this audit had open. The default is the IDE's own launcher, `--line {line} {file}`, because `open -a` cannot take a line and the `jetbrains://` URL that can truncates a path at `#` or `?` and opens the wrong file with a zero exit code.
 
 ### 1.7 ~~The empty-diff state does not use its specified wording~~ — **built 2026-07-31**
 

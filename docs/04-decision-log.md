@@ -3477,3 +3477,42 @@ Each colour clears **4.5:1 on all three surfaces a row is drawn on** — the fil
 ### Revisit trigger
 
 Reopen if a kind ever becomes distinguishable by colour alone — a glyph dropped for space, a spine narrowed until only the bar fits. That is DEC-035's line and this entry does not move it.
+
+---
+
+## DEC-082 — The default editor template opens the line, through the launcher rather than through a URL
+
+- **Date:** 2026-08-14 · **Topic:** `⌘⏎` opens the file at the top, because the default template has no `{line}` · **Status:** Accepted · **Completes DEC-015; §3 of [28-interface-plan.md](28-interface-plan.md)**
+
+### Context
+
+DEC-015 made opening the editor a template the reader sets, with `{file}` and `{line}` substituted. The template shipped is `/usr/bin/open -a WebStorm {file}` — **no `{line}`** — so the default cannot jump to a line and `⌘⏎` opens the file at the top until the reader configures something else. `23b-…` §1 recorded it as the last open item of the POC audit, and `21-…` and `28-…` both described it as *one line to fix*.
+
+**It is one line, and calling it that was still wrong**, because the line is not the hard part: `open -a` cannot take a line number at all. The choice is between three mechanisms, and it is a question about what is installed rather than about what to write.
+
+### Options considered
+
+Measured on this machine rather than reasoned about (`22-experiment-log.md` → M10-A).
+
+1. **`open` with a `jetbrains://web-storm/navigate/reference?path={file}:{line}` URL.** The handler *is* registered here, and `open` percent-encodes a space, a `%` and non-ASCII by itself — so the encoding worry is mostly unfounded. **It leaves `#` and `?` raw**, and both are legal in a path: `…/note#1/a.ts` arrives as a URL fragment and WebStorm receives `path=…/note`. That is **the wrong file, opened silently**, with `open` exiting 0. Rejected on that alone; `#` in a path is not exotic in a JavaScript project. Fixing it needs a second substitution token, because `{file}` must stay raw for every `open -a`-shaped template — so it stops being one line and becomes a new item in the template vocabulary.
+2. **Leave it as it is** and let the reader configure a template. Rejected: the default is what a stranger meets, and `25-…` tells them `⌘⏎` opens the file — at the top, without saying so.
+3. **The IDE's own launcher: `/Applications/WebStorm.app/Contents/MacOS/webstorm --line {line} {file}`.** Chosen.
+
+### Final decision
+
+**Option 3.** No URL is parsed, so `#` and `?` in a path are ordinary characters — and `EditorCommand` already splits the template *before* substituting, which is what keeps a path with a space one argument (the defect `05-…` OQ-041 records finding).
+
+**Two limits, both measured and neither hidden:**
+
+- **The launcher exits 0 whatever it is given** — a missing file and a non-numeric line both returned 0 in 0.5 s. So `launchEditor` cannot distinguish *opened* from *forwarded and ignored*. This is the same limit option 1 has, and it is narrower here: the only way to reach it is a file that does not exist, and the file being opened is the one the diff has just read.
+- **The path is an install location.** A WebStorm installed only through JetBrains Toolbox is not at `/Applications`, and the default then fails — **visibly**, as `.notLaunched`, because `Process.run()` throws for an executable that is not there and `13-…` §2's F13 already reports it in the status line. A default that fails loudly is worth more than one that opens the wrong line quietly.
+
+### Consequences
+
+- **`⌘⏎` lands on the line the reader is looking at**, which is what DEC-015 promised and what `diffscopeCurrentLine` was built to supply.
+- `23b-…` §1's last open item is closed; `23a-…`, `19-…`, `25-…` and `21-…` carry the new default.
+- A check requires the default to contain both tokens, with the old template as its negative control — a default that silently loses `{line}` again is the regression this entry exists to prevent.
+
+### Revisit trigger
+
+Reopen if the owner's WebStorm moves, or if a reader reports `⌘⏎` doing nothing — that is the silent arm above, and the answer is a template pointing at their own install rather than a change here.

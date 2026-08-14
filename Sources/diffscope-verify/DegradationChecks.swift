@@ -213,6 +213,25 @@ func runDegradationChecks(_ report: (String, Bool, String) -> Void) {
         let working = launchEditor(EditorCommand(template: "/bin/echo {file}",
                                                  file: "/tmp/x.ts", line: 1)!, file: "x.ts")
         check("and the negative control still reports success", working.succeeded, working.message)
+
+        // DEC-082: **the default carries the line.** It did not for eight milestones, and the
+        // reason nobody noticed is that every check here supplies its own template — the shipped
+        // one was the single string in this system that nothing asserted.
+        check("the default template opens the line the reader is looking at (DEC-082)",
+              EditorCommand.defaultTemplate.contains("{line}")
+                  && EditorCommand.defaultTemplate.contains("{file}"),
+              EditorCommand.defaultTemplate)
+        // And it produces the argv it is supposed to, over a path holding **both** characters the
+        // URL form of this would have truncated at.
+        let awkward = EditorCommand(template: EditorCommand.defaultTemplate,
+                                    file: "/Users/x/note#1/q?a/My File.ts", line: 42)
+        check("and a path holding # ? and a space stays one argument with the line beside it",
+              awkward?.arguments == ["--line", "42", "/Users/x/note#1/q?a/My File.ts"],
+              String(describing: awkward?.arguments))
+        // The control is the template this replaced: it names the file and never the line, which
+        // is a default that a reader cannot tell from a working one until they press the key.
+        check("negative control: the template this replaced is caught",
+              !"/usr/bin/open -a WebStorm {file}".contains("{line}"))
     }
 
     print("\n=== DEC-028: the registry cannot execute repository-configured commands ===")
