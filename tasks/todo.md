@@ -2463,3 +2463,34 @@ length are identical. INV-1 through INV-5 are untouched by construction; 1776/17
 - [ ] the empty comparison when a row is a directory — it draws nothing and says nothing (INV-4)
 - [ ] a clause in DEC-083 for `ds-formatting`, `ds-behaviour` and `ds-uncertain`: removing the
       textures leaves them with no declaration at all
+
+## Step 84 — `28-…` §6 item 1: a dragged divider stays dragged (DEC-085)
+
+- [x] an arm that **drags** — `setPosition`, a layout pass, then read the width *after* it
+- [x] the pinning `equalToConstant` is inactive outside a collapse, and 999 during one
+- [x] the repository caption gives way horizontally
+- [x] both dividers asserted, because the two panes hold different priorities
+
+### Step 84 — the write-back was writing 280 to 280
+
+DEC-077 recorded this fixed and the owner reported it twice more. Instrumenting the delegate settled
+it in one run: `splitViewDidResizeSubviews` **did** fire, and the widths it received were already
+back at the constant. An `equalToConstant` on a split view's pane is restored by the layout engine on
+every pass, so `setPosition` moved the frame and the next pass moved it back — and the delegate then
+wrote the restored width into the constant and called that a drag.
+
+**It survived a session that fixed it because nothing had ever dragged a divider.** Every pane
+assertion in this suite is about a state a *command* produces, ⌃⌘0 and back. The entire middle ground
+was untested, and that is where two of this session's six defects were.
+
+### Step 84 — and three things were pinning it, not one
+
+Removing the constraint fixed the **second** divider only. The first still would not move: the
+repository pane's caption resists horizontal compression at the default 750, so **the label's own
+text was the pane's floor**. Lowering that let it move.
+
+Then the collapse broke — 54.5 pt where 44 was wanted, the split redistributing proportionally
+because the constraint was only priority 500 when it mattered. It is 999 **while collapsed** and off
+otherwise: strong for the one instruction that needs it, absent for the interaction it was breaking.
+
+Priority alone was never the answer; the first attempt lowered it to 500 and changed nothing at all.

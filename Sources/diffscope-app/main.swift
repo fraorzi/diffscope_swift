@@ -352,6 +352,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // this pane rendered the caption at three lines with the third clipped, and squeezed it out
         // of existence entirely when the text got shorter. M8-D's defect class, one pane over.
         conventionLabel.setContentCompressionResistancePriority(.required, for: .vertical)
+        // **Horizontally it gives way**, which is the last thing pinning this pane at 280 (`28-…`
+        // §6 item 1). Vertical resistance is required because the sentence must not be clipped to
+        // one line; horizontal resistance at the default 750 made the label's own text the pane's
+        // floor, so the second divider dragged and the first would not move at all.
+        conventionLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         conventionLabel.setContentHuggingPriority(.required, for: .vertical)
         let repoScroll = scrollWrapping(repoTable, surface: Theme.panelRepositories)
         // The convention caption belongs to the repository list, not to the status bar: it
@@ -534,12 +539,27 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         for (pane, width) in [(leftScroll, Theme.repositoryPaneWidth), (filePane, Theme.filePaneWidth)] {
             pane.translatesAutoresizingMaskIntoConstraints = false
             let constraint = pane.widthAnchor.constraint(equalToConstant: width)
-            // 999, not 600: the divider stays draggable (that needs a priority below required),
-            // and a collapse wins against whatever the pane's own content would rather be. At 600
-            // the repository rail collapsed and the file spine did not, which is worse than
-            // neither — half a layout is a layout nobody designed.
-            constraint.priority = NSLayoutConstraint.Priority(999)
-            constraint.isActive = true
+            // **500, not 999, and this is `28-…` §6 item 1** — the regression the owner reported
+            // twice. At 999 the constraint beat `setPosition` outright: the arm asked the split for
+            // a 220 pt pane and read 280 back *in the same layout pass*, so a drag never moved
+            // anything and the delegate's write-back was writing the old number to itself.
+            //
+            // The reason 999 was chosen — *a collapse must win against the pane's own content* —
+            // is met without it, because `applyCollapses` sets the constant **and** calls
+            // `setPosition`, which is the instruction the split cannot reinterpret. That was
+            // already the case when this said 999; the priority was insurance against a bug that
+            // had been fixed a different way, and it cost the interaction.
+            constraint.priority = NSLayoutConstraint.Priority(500)
+            // **Inactive until a collapse wants it**, which is `28-…` §6 item 1. An `equalToConstant`
+            // constraint on a split view's pane is restored by the layout engine on every pass, so
+            // `setPosition` moved the frame and the next pass moved it straight back — the delegate
+            // then wrote the restored width into the constant and called it a drag. That is why this
+            // was reported fixed and reported again twice: the write-back was writing 280 to 280.
+            //
+            // What holds the width instead is the split's own divider position plus the minimum
+            // below, and a collapse still wins because `applyCollapses` calls `setPosition` — the
+            // instruction the split cannot reinterpret — and switches this on for the duration.
+            constraint.isActive = false
             widthConstraints.append(constraint)
             let minimum = pane.widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.paneMinimumWidth)
             minimum.isActive = true
@@ -2499,7 +2519,52 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 + "rows=\(state.fileRows.count) filesInScope=\(files) "
                 + "repoSelected=\(repoTable.selectedRow)\n").utf8))
         guard ok else { exit(64) }
-        collapseSelftest()
+        dragSelftest()
+    }
+
+    /// `28-…` §6 item 1: **a dragged divider stays where it was dragged.**
+    ///
+    /// DEC-077 recorded this as fixed and the owner has reported it twice since. It survived because
+    /// **nothing in this suite has ever dragged a divider** — every pane assertion is about a state
+    /// a *command* produces, ⌃⌘0 and back, and the whole middle ground between the rail and the full
+    /// pane was untested. Two of the fourth session's six defects live in that gap.
+    ///
+    /// A drag is `setPosition` followed by the layout pass that comes after it, so the arm does both
+    /// and reads the width *after* the pass. Reading it before is what would have called this fixed:
+    /// the split moves the frame immediately and the constraint takes it back on the next pass.
+    private func dragSelftest() {
+        let wanted: CGFloat = 220
+        splitView.setPosition(wanted, ofDividerAt: 0)
+        window.contentView?.layoutSubtreeIfNeeded()
+        splitView.layoutSubtreeIfNeeded()
+        let immediately = splitView.arrangedSubviews[0].frame.width
+
+        // **After a turn of the run loop**, which is when the constraint would win it back — and the
+        // status line ticks once a second, so a layout pass is never far away in the real window.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            self.window.contentView?.layoutSubtreeIfNeeded()
+            let settled = self.splitView.arrangedSubviews[0].frame.width
+            let held = abs(settled - wanted) < 2
+
+            // The second divider, because the two panes hold different priorities and a fix that
+            // only reaches the first is a fix for half the window.
+            let secondWanted = settled + self.splitView.dividerThickness + 260
+            self.splitView.setPosition(secondWanted, ofDividerAt: 1)
+            self.window.contentView?.layoutSubtreeIfNeeded()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+                self.window.contentView?.layoutSubtreeIfNeeded()
+                let secondSettled = self.splitView.arrangedSubviews[1].frame.width
+                let secondHeld = abs(secondSettled - 260) < 2
+                let ok = held && secondHeld
+                FileHandle.standardError.write(Data(
+                    ("SELFTEST drag=\(ok ? "OK" : "MISMATCH") "
+                        + "repo asked=\(Int(wanted)) at-once=\(Int(immediately)) "
+                        + "after-a-pass=\(Int(settled)) held=\(held) "
+                        + "files asked=260 after-a-pass=\(Int(secondSettled)) held=\(secondHeld)\n").utf8))
+                guard ok else { exit(69) }
+                self.collapseSelftest()
+            }
+        }
     }
 
     private func collapseSelftest() {
@@ -3830,6 +3895,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         guard !applyingCollapse, (notification.object as? NSSplitView) === splitView else { return }
         let widths = splitView.arrangedSubviews.map(\.frame.width)
         guard widths.count == 3 else { return }
+        if ProcessInfo.processInfo.environment["DIFFSCOPE_SELFTEST"] != nil {
+            FileHandle.standardError.write(Data(
+                ("SELFTEST split-resized widths=\(widths.map { Int($0) }) "
+                    + "constants=[\(Int(repoPaneWidth?.constant ?? -1)),"
+                    + "\(Int(filePaneWidth?.constant ?? -1))]\n").utf8))
+        }
         if !reposCollapsed, widths[0] > Theme.paneMinimumWidth { repoPaneWidth?.constant = widths[0] }
         if !filesCollapsed, widths[1] > Theme.paneMinimumWidth { filePaneWidth?.constant = widths[1] }
     }
@@ -3851,8 +3922,18 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // completion — the selftest caught a collapse that had been asked for and not made, which
         // is the failure mode worth having a check for at all.
         let animate = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        // The width constraints are switched on only while a collapse is being applied: outside
+        // that they are what prevented a drag from sticking.
         repoPaneWidth?.constant = reposCollapsed ? Theme.railWidth : Theme.repositoryPaneWidth
         filePaneWidth?.constant = filesCollapsed ? Theme.spineWidth : Theme.filePaneWidth
+        // **Strong, and only while collapsed.** At 500 the split redistributed proportionally and
+        // the rail came out at 54.5 instead of 44; at 999 it wins, which is what a collapse needs.
+        // Outside a collapse the constraint is off entirely, because an active `equalToConstant` is
+        // what the layout engine restores after every drag.
+        repoPaneWidth?.priority = NSLayoutConstraint.Priority(999)
+        filePaneWidth?.priority = NSLayoutConstraint.Priority(999)
+        repoPaneWidth?.isActive = reposCollapsed
+        filePaneWidth?.isActive = filesCollapsed
         repoPaneMinimum?.constant = reposCollapsed ? Theme.railWidth : Theme.paneMinimumWidth
         filePaneMinimum?.constant = filesCollapsed ? Theme.spineWidth : Theme.paneMinimumWidth
 
