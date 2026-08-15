@@ -2653,3 +2653,64 @@ So `launchEditor` cannot tell *opened* from *forwarded and ignored*. That limit 
 **The half no exit code answers — confirmed by the owner, 2026-08-14.** Everything above says the arguments *arrive*; nothing measurable from here can see the editor's window. Asked directly, against a probe file whose eleventh line reads `TARGET LINE 11` and whose directory holds both a space and a `#`: **the caret landed on line 11.**
 
 That closes the one claim DEC-082 rests on that this repository cannot check, and it is worth naming as a category. `rc=0` proves the launcher accepted the arguments and nothing more — a launcher that took `--line` and discarded it would have produced the identical exit code, the identical timing, and an identical set of passing checks. **The only instrument for it was a person looking at a screen**, which is the same shape as the outstanding requests for the glass and the surface ladder: three questions a screenshot answers in a second and no check answers at all.
+
+---
+
+## M11-A — How many marks one change is drawn as, measured on the owner's own repository
+
+**2026-08-15.** The owner reviewed a real Next.js working tree in the packaged build and reported that
+the diff does not say what changed. Four cases were named; the sweep found eleven classes. This entry
+measures only the first fix — `coalesceAdjacent` — because it is the one that costs no invariant.
+
+### The instrument
+
+`diffscope-verify --emit-structural <old> <new> [path]` prints the structural model the application
+builds, marked up inline, one `⟦label|…⟧` per segment. Before it existed the only way to ask this
+question was a screenshot. The corpus is the eleven modified files of `5bonsai__website__nextjs`,
+exported at `HEAD` versus the worktree.
+
+### What was measured
+
+Segments presented, per file, before and after the pass. All eleven take the structural path; none
+falls back; `validate()` passes on all eleven both before and after.
+
+| | before | after |
+|---|---|---|
+| presented segments, whole corpus | **443** | **175** |
+| `ImageText.tsx` alone | 178 | 72 |
+| `BannerWithImage.tsx` | 131 | 41 |
+| segments ≤ 3 bytes | 209 (47%) | — |
+| `formatting-only` count on `ImageText.tsx` | 24 | 10 |
+
+**60% of the marks on screen were saying something the mark beside them already said.** The shredding
+is the visible half: `typeof img.h⟧⟦changed|e⟧⟦changed|igh⟧⟦changed|t⟧⟦changed| === 'n⟧…` — eight marks
+inside one wholly-new line — is now one run, and
+`width={⟦changed|compactImageD⟧⟦changed|im⟧⟦changed|ensions?.width ?? im⟧⟦changed|g⟧.width}` is one.
+
+### Why the fragments were there
+
+Nothing upstream wanted them apart. `reconcile` emits one segment per overlap of the canonical mask
+with an **input** segment, so the *other* side's structure decides where this side is cut; then
+`snapPresentation` contributes widened flanks carrying a different confidence, and its own merge
+(`Boundaries.swift:127-139`) requires every field to be equal, confidence included. Four provenances,
+four confidences, four marks, one change.
+
+### What the merge refuses to do, and what it cost
+
+Three things keep their own edges: a `disclosure`, a `link`, and **a run on the other side of
+`confidenceFloor`**. The floor is the line the interface reads, so merging across it would either lend
+confidence to bytes that had none or spread doubt onto bytes that were attributed cleanly.
+
+That last constraint is not free and was not chosen on taste — it was chosen by a check. Merging
+across the floor and taking the minimum confidence made
+*"an ordinary changed segment is not marked uncertain"* (`DisclosureChecks.swift:81`) fail: on the
+attribute-reordering fixture every changed segment had absorbed a below-floor neighbour, and `uncertain`
+stopped discriminating. Constraining the merge to one side of the floor is what keeps that check
+honest, and it costs **175 segments rather than 108** — the count a floor-blind merge reaches.
+
+### What this does not fix, and must not be read as fixing
+
+Mid-line anchoring, the indentation smear, and the emphasis landing on an unchanged token after a
+reflow are all artefacts of *where the canonical byte diff put its boundaries*, not of how many
+segments carry them. `import ⟦changed~|styles …⟧` still splits an untouched `import ButtonLink` line.
+Those need the alignment itself to move, which is a decision and not a pass.

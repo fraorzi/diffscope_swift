@@ -2414,3 +2414,52 @@ maps to an arm through the `exit(N)` constants, and the gate prints both.
 
 The arm count itself varies between runs — 49, 50, 49 — so *N arms passed* is not a number to assert
 on either.
+
+## M11 — the diff says what changed (the owner's fourth session)
+
+The owner reviewed a real Next.js tree and reported that the diff misrepresents it: an untouched
+import reads as removed-and-re-added, an inserted interface member puts its highlight on the *next*
+line's indentation, and a reflowed JSX attribute list emphasises the one attribute that did not
+change. Four analyses ran; they are in the session scratchpad, and the findings that matter are in
+`22-experiment-log.md` → M11-A and in the decision to be written for the alignment fix.
+
+### Step 84 — an instrument, before any fix
+
+- [x] `diffscope-verify --emit-structural <old> <new> [path]` — the structural model marked up
+      inline, one `⟦label|…⟧` per segment, `*` on lines the model calls changed
+- [x] the eleven modified files of the owner's repository exported as old/new pairs and swept
+
+The four reported cases were symptoms of five mechanisms and eleven classes. Without a way to print
+the model, every one of them was a screenshot and an opinion.
+
+### Step 85 — one change is one mark (`coalesceAdjacent`)
+
+- [x] `coalesceAdjacent` in `DiffScopeEngine`, applied last in `structuralDiff` so it catches
+      fragmentation from `reconcile`, the boundary snap **and** `markUnparsed`
+- [x] `disclosure`, `link` and crossing `confidenceFloor` keep their own edges; a disagreeing
+      classification leaves the run unclassified; confidence takes the lower of the two
+- [x] `CoalesceChecks.swift` — mechanics, six negative controls, idempotence, and the assertion that
+      no two segments in a shipping result still say the same thing side by side
+- [x] measured: **443 → 175 segments** over the corpus, `ImageText.tsx` 178 → 72 (M11-A)
+
+**The floor constraint was found by a check, not by taste.** Merging across `confidenceFloor` and
+taking the minimum made *"an ordinary changed segment is not marked uncertain"* fail — every changed
+segment in the reordering fixture had absorbed a below-floor neighbour and `uncertain` stopped
+discriminating. Keeping runs separated at the floor costs 175 segments where 108 were available, and
+keeps the check true.
+
+**Nothing about what is presented changed**, which is the whole reason this step could go first:
+merged segments are adjacent and share a label, so the presented byte set, the coverage and the total
+length are identical. INV-1 through INV-5 are untouched by construction; 1776/1776 checks pass.
+
+### Still open, in the order the analyses recommend
+
+- [ ] **the alignment itself** — a deterministic line-boundary shift of the canonical `MatchBlock`s.
+      Needs a DEC first: it is not DEC-047's forbidden sliding, because `D` moves and the validator
+      recomputes it, so INV-2 holds verbatim. The boundary set must be `0x0A` and not the lexer, or
+      "no structural input" stops being true.
+- [ ] minimum-run absorption of unchanged gaps shorter than a token (phantom retention)
+- [ ] `-uall` for the file list **and** the count, together, plus `-z` parsing and the `AM` glyph
+- [ ] the empty comparison when a row is a directory — it draws nothing and says nothing (INV-4)
+- [ ] a clause in DEC-083 for `ds-formatting`, `ds-behaviour` and `ds-uncertain`: removing the
+      textures leaves them with no declaration at all

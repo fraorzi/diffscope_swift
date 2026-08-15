@@ -284,8 +284,11 @@ public func structuralDiff(
         movedNew, boundaries: SyntaxBoundaries(tree: newTree), budget: settings.boundarySnapBudget
     ), bytes: newBytes)
 
-    let oldMarked = markUnparsed(oldPartition, regions: oldErrors)
-    let newMarked = markUnparsed(newPartition, regions: newErrors)
+    // Last, so it catches fragmentation from every pass above it rather than only from its
+    // neighbour: `reconcile` cut by the other side's structure, the snap added flanks of its own,
+    // and `markUnparsed` may have split a run again.
+    let oldMarked = coalesceAdjacent(markUnparsed(oldPartition, regions: oldErrors))
+    let newMarked = coalesceAdjacent(markUnparsed(newPartition, regions: newErrors))
 
     unchangedOld = oldMarked.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
     unchangedNew = newMarked.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }

@@ -288,6 +288,7 @@ runSyntaxChecks { name, ok, detail in report(name, ok, detail) }
 runMatchingChecks { name, ok, detail in report(name, ok, detail) }
 runClassificationChecks { name, ok, detail in report(name, ok, detail) }
 runBoundaryChecks { name, ok, detail in report(name, ok, detail) }
+runCoalesceChecks { name, ok, detail in report(name, ok, detail) }
 runDisclosureChecks { name, ok, detail in report(name, ok, detail) }
 runMoveChecks { name, ok, detail in report(name, ok, detail) }
 runNavigationChecks { name, ok, detail in report(name, ok, detail) }
