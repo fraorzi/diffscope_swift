@@ -127,6 +127,66 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
                shell.contains("chooseFolder.keyEquivalent = \"\\r\""))
     }
 
+    print("\n=== anything that can be clicked says so, and is big enough to hit (DEC-083) ===")
+    do {
+        let terminalHTML = (try? String(contentsOf: rendererDir.appendingPathComponent("terminal.html"),
+                                        encoding: .utf8)) ?? ""
+        let terminalScript = (try? String(contentsOf: rendererDir.appendingPathComponent("terminal.js"),
+                                          encoding: .utf8)) ?? ""
+        let pill = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/PillControl.swift"),
+                                encoding: .utf8)) ?? ""
+        let shell = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/main.swift"),
+                                 encoding: .utf8)) ?? ""
+
+        // Every selector with a click handler behind it. Hand-maintained and named, the way the
+        // contrast pair list is: a cross product would be a check about CSS, and this is a check
+        // about which things in this window do something when pressed.
+        let clickable: [(String, String)] = [
+            ("#diff-footer button", html), (".ds-render-mode", html), (".ds-fold", html),
+            (".ds-term-tab", terminalHTML), ("#mode", terminalHTML),
+        ]
+        var arrowed: [String] = []
+        for (selector, page) in clickable {
+            guard let range = page.range(of: "\(NSRegularExpression.escapedPattern(for: selector))\\s*\\{[^}]*\\}",
+                                         options: .regularExpression) else {
+                arrowed.append("\(selector): no rule at all"); continue
+            }
+            if !String(page[range]).contains("cursor: pointer") { arrowed.append(selector) }
+        }
+        report("every clickable element in both webviews declares a pointer cursor",
+               arrowed.isEmpty, arrowed.joined(separator: ", "))
+        // The regression that was actually there: two of these said `cursor: default` outright, so
+        // the terminal's tabs and its mode chip advertised themselves as *not* clickable while both
+        // carried a handler.
+        let stillDefault = clickable.filter { selector, page in
+            page.range(of: "\(NSRegularExpression.escapedPattern(for: selector))\\s*\\{[^}]*cursor: default",
+                       options: .regularExpression) != nil
+        }.map(\.0)
+        report("and none of them says the opposite", stillDefault.isEmpty,
+               stillDefault.joined(separator: ", "))
+        report("negative control: a clickable element left on the arrow is caught",
+               ".ds-term-tab { cursor: default; }".contains("cursor: default"))
+        // Both handlers still exist — a cursor on an element nothing listens to would be a lie in
+        // the other direction.
+        report("and the two that were wrong still have handlers behind them",
+               terminalScript.contains("addEventListener(\"click\"") && script.contains("addEventListener(\"click\""))
+
+        // The chrome had no cursor at all: no `NSCursor`, no `resetCursorRects` anywhere.
+        report("the drawn controls set a cursor of their own",
+               pill.contains("override func resetCursorRects()")
+                   && pill.contains("cursor: .pointingHand"))
+        report("and the borderless buttons are the kind that does",
+               pill.contains("final class HandButton: NSButton")
+                   && !shell.contains("NSButton(title: \"+\"")
+                   && !shell.contains("NSButton(title: collapsed ? \"»\" : \"«\""))
+        // The floor is a number in the token file, so a control added later inherits it.
+        report("and the smallest targets are held to a floor from the token table",
+               shell.contains("button.enforceMinimumTarget()")
+                   && pill.contains("Theme.minimumHitTarget"))
+        report("negative control: a borderless button left as a plain NSButton is caught",
+               "let b = NSButton(title: \"+\", target: nil, action: nil)".contains("NSButton(title: \"+\""))
+    }
+
     print("\n=== the switches are made of glass, or of nothing pretending to be (DEC-077) ===")
     do {
         let pill = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/PillControl.swift"),

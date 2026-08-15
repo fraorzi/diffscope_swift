@@ -2292,3 +2292,47 @@ Aligning two of them then exposed the third: the repository pane is an `NSStackV
 spacing applied between the header and the list, where the file pane's hand layout has no gap. Two
 surfaces agreeing from one constant is not evidence that a third agrees with them — which is why the
 arm measures **drawn tops in window coordinates** rather than the constant it set.
+
+## Step 80 — `28-…` §5 item 3: things that can be clicked say so, and can be hit
+
+- [x] `cursor: pointer` on every clickable element in both webviews; `#track` gets `grab`/`grabbing`
+- [x] `HandButton` — `pointingHand` and a **24 × 24 pt floor** — on the `+`, both chevrons and
+      `Sources ⌄`; `resetCursorRects` on `PillControl` and on `SegmentList`
+- [x] the `pane-headers` arm measures the three targets from their **drawn frames**
+- [x] six source checks with two controls; `HandButton` added to `24-…` in the same commit
+
+### Step 80 — two elements advertised themselves as **not** clickable
+
+`.ds-term-tab` and `#mode` in the terminal both said `cursor: default` while both carried a click
+handler — a tab that switches shells and a chip that forces raw mode. That is worse than a missing
+declaration: it is the interface saying *this does nothing*, in the one pane where a wrong keystroke
+goes to a shell. The check asserts both directions now — every clickable selector declares
+`pointer`, and none of them declares `default`.
+
+### Step 80 — the floor cost eight points, and the rail paid differently
+
+A 24 pt target beside a 12 pt count does not fit in a 34 pt spine, so **`spineWidth` is 42**. The
+rail beside it holds *two* targets and would have gone to 66 — a third of the width the collapse
+exists to give back — so there the `+` leaves the rail instead and the chevron stays: adding a
+source has two other pointer routes (`Sources ⌄`, the menu bar) and the chevron, which is the way
+back, has none.
+
+Both numbers are in the token file with the reason beside them. A floor with no stated cost is a
+floor somebody quietly lowers later.
+
+### Step 80 — and the subclass check had a hole I walked straight through
+
+*Every view the chrome draws is described in the contract* was matching the literal string
+`NSView`, so `HandButton: NSButton` passed without a contract row. The pattern takes `NSButton` and
+`NSControl` now. **The check that exists to catch a new view missed the first new view added after
+it was written**, which is the same shape as the greyscale list that had never seen a texture.
+
+### Step 80 — the options arm was gated on something AppKit owns
+
+`NSPopover.show` refuses on a window that is not visible, and a terminal-launched selftest cannot
+promise one — so the arm reported an empty list and failed for that reason alone. What the popover
+*contains* is this project's claim and is true whether or not a window is in front of anybody;
+whether it is presented is AppKit's. The content is gated and the presentation is reported, which is
+the division the composition timings settled on when an occluded WebKit view stopped being a clock.
+
+1748 → 1756 checks.

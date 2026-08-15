@@ -306,6 +306,14 @@ final class PillControl: NSView {
     override func becomeFirstResponder() -> Bool { needsDisplay = true; return true }
     override func resignFirstResponder() -> Bool { needsDisplay = true; return true }
 
+    /// DEC-083: a control that opens something on a click says so before the click. There was no
+    /// `NSCursor` anywhere in the chrome — the whole window showed an arrow, and the only way to
+    /// find out what was live was to press it.
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
     override func keyDown(with event: NSEvent) {
         let step: Int
         switch event.keyCode {
@@ -329,17 +337,21 @@ final class PillControl: NSView {
     // MARK: - The options list (DEC-077, `28-…` item 7)
 
     private var popover: NSPopover?
+    /// The list the last `showOptions()` built, held so the arm can read it without depending on
+    /// AppKit having presented it. Cleared when the popover closes.
+    private var openList: SegmentList?
 
     /// Opens the list of options. Public because the selftest opens it: what the popover holds —
     /// every option, each with its state, and an unavailable one **with its reason** (`12-…` §3) —
     /// is not something a picture of a closed control can answer.
     func showOptions() {
-        if let open = popover, open.isShown { open.close(); popover = nil; return }
+        if let open = popover, open.isShown { open.close(); popover = nil; openList = nil; return }
         let list = SegmentList(segments: segments, selected: selectedSegment) { [weak self] index in
             guard let self, self.segments.indices.contains(index),
                   self.segments[index].enabled else { return }
             self.popover?.close()
             self.popover = nil
+            self.openList = nil
             self.selectedSegment = index
             if let action = self.action { NSApp.sendAction(action, to: self.target, from: self) }
         }
@@ -354,17 +366,29 @@ final class PillControl: NSView {
         // no preference of our own that could disagree with it.
         sheet.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         popover = sheet
+        openList = list
         sheet.show(relativeTo: bounds, of: self, preferredEdge: .maxY)
     }
 
     /// What the open list holds, for the arm that cannot photograph it: the titles in order, which
     /// one is marked as chosen, and the reason beside each option that cannot be chosen.
-    var optionsReport: (shown: Bool, titles: [String], chosen: String, reasons: [String]) {
-        guard let sheet = popover, sheet.isShown,
-              let list = sheet.contentViewController?.view as? SegmentList else {
-            return (false, [], "", [])
-        }
-        return (true, list.titles, list.chosenTitle, list.reasons)
+    /// **What the list holds, and separately whether AppKit put it on screen.**
+    ///
+    /// The two are asserted differently on purpose. What the popover *contains* — every option, the
+    /// chosen one marked, an unavailable one with its reason — is this project's claim and is true
+    /// whether or not a window is in front of anybody. Whether it is **shown** is AppKit's business
+    /// and depends on the window being visible, which a terminal-launched selftest cannot promise:
+    /// `NSPopover.show` refuses on an invisible window, and this arm spent a run reporting an empty
+    /// list for that reason alone. So the content is gated and the presentation is reported — the
+    /// same division the composition timings settled on when an occluded WebKit view stopped being
+    /// a reliable clock.
+    var optionsReport: (built: Bool, shown: Bool, titles: [String], chosen: String,
+                        reasons: [String], why: String) {
+        guard let list = openList else { return (false, false, [], "", [], "no list was built") }
+        let shown = popover?.isShown ?? false
+        return (true, shown, list.titles, list.chosenTitle, list.reasons,
+                shown ? "shown" : "built; AppKit did not present it — window visible="
+                    + "\(window?.isVisible ?? false)")
     }
 }
 
@@ -476,6 +500,40 @@ final class SegmentList: NSView {
             choose(index)
             return
         }
+    }
+
+    /// A row that can be chosen shows the hand; one that cannot keeps the arrow, which is the same
+    /// distinction the dashed rim draws and the reason the reason is written under it.
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        for index in segments.indices where segments[index].enabled {
+            addCursorRect(frame(ofRow: index), cursor: .pointingHand)
+        }
+    }
+}
+
+/// An `NSButton` that says it is one. AppKit gives a borderless button no cursor of its own, so
+/// every control the chrome draws showed an arrow until DEC-083 — and the two chevrons and the `+`
+/// were the glyph's own size, which in a 44 pt collapsed rail is a target a reader misses.
+///
+/// The minimum is **24 × 24 pt**: the hit area is the button's frame rather than its title, so this
+/// is the whole of making them clickable. It is a floor, not a size — a button with more to say
+/// stays as wide as its words.
+final class HandButton: NSButton {
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        guard isEnabled else { return }
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+
+    /// Applied as a constraint rather than by growing the intrinsic size, so a button that is
+    /// already wider than the floor is left alone.
+    func enforceMinimumTarget() {
+        translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.minimumHitTarget),
+            heightAnchor.constraint(greaterThanOrEqualToConstant: Theme.minimumHitTarget),
+        ])
     }
 }
 

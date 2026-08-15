@@ -153,10 +153,18 @@
                  background: var(--ds-chrome);
                  color: var(--ds-dim); font-size: var(--ds-text-size-small); }
   #diff-footer[hidden] { display: none; }
+  /* DEC-083: **anything that can be clicked says so.** The rule for both webviews is that a
+     `cursor: pointer` and a click handler are the same list — a control that acts on a click and
+     shows an arrow is one a reader has to discover by trying, and this pane is drawn for someone
+     who should not have to. Checked against the handlers rather than trusted. */
   #diff-footer button { font: inherit; color: var(--ds-text); background: var(--ds-bg);
                         border: var(--ds-hairline-width) solid var(--ds-border);
                         border-radius: var(--ds-radius-chip);
+                        cursor: pointer;
                         padding: var(--ds-space-1) var(--ds-space-3); }
+  /* The one horizontal position two panes share: a range input, dragged rather than pressed. */
+  #track { cursor: grab; }
+  #track:active { cursor: grabbing; }
   .cm-editor .cm-scroller { overflow: auto; font: var(--ds-text-size) var(--ds-font); }
 
   #unrenderable { display: none; padding: var(--ds-space-6); white-space: pre-wrap;

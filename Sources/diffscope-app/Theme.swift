@@ -165,6 +165,15 @@ enum Theme {
     static let pillInset: CGFloat = 2
     static let pillPadding: CGFloat = 12
 
+    /// The smallest a pointer target may be (DEC-083). The `+` and the two collapse chevrons were
+    /// borderless buttons with no size of their own, so the target was the glyph — 11 pt — and a
+    /// pane collapsed to a 44 pt rail left that chevron as the only thing in it to hit.
+    ///
+    /// 24 rather than the 44 the phone guidelines use: this is a pointer with a pixel of precision
+    /// on a dense window, not a fingertip, and 44 pt of chrome per chevron would cost the lists the
+    /// room they exist to give. It is a **floor** — a control with more to say stays wider.
+    static let minimumHitTarget: CGFloat = 24
+
     /// The chevron that says a switch has more options than the one it is showing (DEC-077).
     /// A control showing one of several with nothing to say so reads as a label.
     static let pillChevronWidth: CGFloat = 14
@@ -203,7 +212,14 @@ enum Theme {
     /// per file with its kind glyph. Neither is a hidden pane — both still answer *which* and
     /// *how many*.
     static let railWidth: CGFloat = 44
-    static let spineWidth: CGFloat = 34
+    /// 42 since DEC-083, and the eight points are the cost of a clickable chevron. Collapsed, this
+    /// pane's header holds two things that both have to be there: the **count**, because DEC-060
+    /// drops the word and keeps the number, and the **chevron**, because it is the only way back.
+    /// A 24 pt target beside a 12 pt count does not fit in 34.
+    ///
+    /// The rail beside it stayed at 44 by dropping its `+` instead — adding a source has two other
+    /// pointer routes and the chevron has none, so that is where the room came from there.
+    static let spineWidth: CGFloat = 42
     static let diffPaneMinimumWidth: CGFloat = 300
     static let windowWidth: CGFloat = 1400
     static let windowHeight: CGFloat = 860

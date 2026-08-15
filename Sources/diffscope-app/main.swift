@@ -135,6 +135,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var repoHeaderBar: NSView!
     var fileHeaderBar: NSView!
     /// The two collapse controls (DEC-077). Held because their glyph says which way the pane will go.
+    /// Held since DEC-083, so the arm can measure the target rather than trust the constraint.
+    var addSourceButton: NSButton!
     var repoCollapseButton: NSButton!
     var fileCollapseButton: NSButton!
     var rendererReady = false
@@ -318,7 +320,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                                  collapsed: reposCollapsed)
         fileCollapseButton = buildCollapseButton(action: #selector(toggleFilesPane),
                                                  collapsed: filesCollapsed)
-        let repoTrailing = NSStackView(views: [buildAddSourceButton(), repoCollapseButton])
+        addSourceButton = buildAddSourceButton()
+        let repoTrailing = NSStackView(views: [addSourceButton, repoCollapseButton])
         repoTrailing.orientation = .horizontal
         repoTrailing.spacing = Theme.space2
         let fileTrailing = NSStackView(views: [fileHeaderCount, fileCollapseButton])
@@ -2237,6 +2240,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let chosenOnly = scopeControl.bounds.width
             < ComparisonScope.allCases.map(\.shortTitle)
                 .reduce(0) { $0 + CGFloat($1.count) * 10 }
+        let built = open.built
         let listsAll = open.titles == ComparisonScope.allCases.map(\.shortTitle)
         let marksChosen = open.chosen == ComparisonScope.allCases[before].shortTitle
         let saysWhy = open.reasons == ["no upstream branch is configured"]
@@ -2256,11 +2260,16 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         scopeControl.setEnabled(true, forSegment: unavailable)
         scopeControl.setToolTip(nil, forSegment: unavailable)
 
-        let ok = !closed.shown && open.shown && listsAll && marksChosen && saysWhy
+        // **The content is gated; the presentation is reported.** `NSPopover.show` refuses on a
+        // window that is not visible, which a terminal-launched selftest cannot promise — this arm
+        // spent a run reporting an empty list for that reason and nothing else. What the list holds
+        // is this project's claim; whether AppKit put it on screen is AppKit's.
+        let ok = !closed.built && built && listsAll && marksChosen && saysWhy
             && chosenOnly && keyboardWorked
         FileHandle.standardError.write(Data(
-            ("SELFTEST options=\(ok ? "OK" : "MISMATCH") closed-shows-nothing=\(!closed.shown) "
+            ("SELFTEST options=\(ok ? "OK" : "MISMATCH") closed-shows-nothing=\(!closed.built) "
                 + "open=\(open.titles) chosen=\"\(open.chosen)\" reasons=\(open.reasons) "
+                + "why=\"\(open.why)\" presented=\(open.shown) "
                 + "control-width=\(Int(scopeControl.bounds.width))pt one-option=\(chosenOnly) "
                 + "keyboard-without-the-popover=\(keyboardWorked)\n").utf8))
         guard ok else { exit(67) }
@@ -2445,11 +2454,32 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // AppKit's origin is bottom-left, so the *top* of a pane is its larger y.
         let aligned = abs(repoTop - fileTop) < 1 && abs(fileTop - codeTop) < 1
 
+        // DEC-083: **the three smallest targets in the window are big enough to hit.** Measured
+        // from the drawn frames, because a constraint is what was asked for — and these three had
+        // no size of their own at all, so the target was the glyph: 11 pt for a chevron, and in a
+        // collapsed 44 pt rail that chevron is the only thing there is to aim at.
+        let targets: [(String, NSButton?)] = [
+            ("+", addSourceButton), ("repos «", repoCollapseButton), ("files «", fileCollapseButton),
+        ]
+        var undersized: [String] = []
+        var sizes: [String] = []
+        for (name, button) in targets {
+            let box = button?.frame ?? .zero
+            sizes.append("\(name)=\(Int(box.width))×\(Int(box.height))")
+            if box.width < Theme.minimumHitTarget || box.height < Theme.minimumHitTarget {
+                undersized.append("\(name) \(Int(box.width))×\(Int(box.height))")
+            }
+        }
+        // And they say they can be clicked. There was no `NSCursor` anywhere in the chrome.
+        let handed = targets.allSatisfy { $0.1 is HandButton }
+
         let ok = spanned && tall && worded && counted && repositorySelected && aligned
+            && undersized.isEmpty && handed
         FileHandle.standardError.write(Data(
             ("SELFTEST pane-headers=\(ok ? "OK" : "MISMATCH") "
                 + "tops repos=\(Int(repoTop)) files=\(Int(fileTop)) code=\(Int(codeTop)) "
-                + "aligned=\(aligned) "
+                + "aligned=\(aligned) targets \(sizes.joined(separator: " ")) "
+                + "hand=\(handed) undersized=[\(undersized.joined(separator: ", "))] "
                 + "repos=\"\(repoHeaderCaption.stringValue)\"@\(Int(repoBar.width))×\(Int(repoBar.height)) "
                 + "of pane \(Int(repoPane.width)) "
                 + "files=\"\(fileHeaderCaption.stringValue)\" count=\"\(fileHeaderCount.stringValue)\""
@@ -3157,8 +3187,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         titlePathLabel.textColor = Theme.inkFaint
         titlePathLabel.lineBreakMode = .byTruncatingMiddle
 
-        sourcesButton = NSButton(title: "Sources ⌄", target: self,
-                                 action: #selector(showSourcesMenu(_:)))
+        // DEC-083 draws the line at **borderless**: a control AppKit gives no affordance to gets the
+        // hand, and a standard bordered button keeps the arrow the platform gives it. The empty
+        // state's two buttons and Settings' are already unmistakably buttons — the complaint was
+        // about the ones that are not, and a push button with a pointing hand looks like the web.
+        sourcesButton = HandButton(title: "Sources ⌄", target: self,
+                                   action: #selector(showSourcesMenu(_:)))
         sourcesButton.isBordered = false
         sourcesButton.font = Theme.prose(Theme.textSizeSmall)
         sourcesButton.contentTintColor = Theme.inkQuiet
@@ -3296,7 +3330,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// be the third hand-written copy of the keyboard map, which is exactly the drift M8-P found in
     /// the tester packet.
     private func buildAddSourceButton() -> NSButton {
-        let button = NSButton(title: "+", target: self, action: #selector(showAddSourceMenu(_:)))
+        let button = HandButton(title: "+", target: self, action: #selector(showAddSourceMenu(_:)))
         button.isBordered = false
         button.font = Theme.font(Theme.textSize, weight: .semibold)
         button.contentTintColor = Theme.inkQuiet
@@ -3306,6 +3340,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             .filter { $0.id.hasPrefix("sources.add") }
             .map { "\($0.title)  \($0.shortcut)" }
             .joined(separator: "\n")
+        // DEC-083: the glyph was the target. A `+` at 12 pt in a header a reader is aiming at with
+        // a pointer is a control that gets missed, and missing it opens nothing.
+        button.enforceMinimumTarget()
         return button
     }
 
@@ -3330,12 +3367,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// says what it will do rather than what state it is in — which is the one thing a reader cannot
     /// work out from a collapsed rail.
     private func buildCollapseButton(action: Selector, collapsed: Bool) -> NSButton {
-        let button = NSButton(title: collapsed ? "»" : "«", target: self, action: action)
+        let button = HandButton(title: collapsed ? "»" : "«", target: self, action: action)
         button.isBordered = false
         button.font = Theme.font(Theme.textSizeSmall, weight: .semibold)
         button.contentTintColor = Theme.inkFaint
         button.setButtonType(.momentaryChange)
-        button.translatesAutoresizingMaskIntoConstraints = false
+        // The chevron at 11 pt was the smallest target in the window, and **collapsed it is the
+        // only one in a 44 pt rail** — the state in which a reader most needs it.
+        button.enforceMinimumTarget()
         return button
     }
 
@@ -3805,6 +3844,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         filePaneMinimum?.constant = filesCollapsed ? Theme.spineWidth : Theme.paneMinimumWidth
 
         conventionLabel.isHidden = reposCollapsed
+        // DEC-083's 24 pt floor meets DEC-060's 44 pt rail: two targets side by side need 48 pt of
+        // header and the rail grew to 66, taking the width out of the diff pane it was collapsed to
+        // give. **The `+` leaves the rail and the chevron stays** — the chevron is the control that
+        // un-collapses the pane and has nowhere else to be, while adding a source is reachable from
+        // `Sources ⌄` in the title bar and from the menu bar. DEC-060's *reduced, never hidden* is
+        // about the pane's content; this is a second pointer route to a function that keeps two.
+        addSourceButton.isHidden = reposCollapsed
         updatePaneHeaders()
         updateCollapseButtons()
         repoTable.reloadData()

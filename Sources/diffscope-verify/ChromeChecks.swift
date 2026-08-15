@@ -439,8 +439,14 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
             let source = (try? String(
                 contentsOf: root.appendingPathComponent("Sources/diffscope-app/\(name)"),
                 encoding: .utf8)) ?? ""
+            // **`NSButton` and `NSControl` are on this list since DEC-083**, and adding them is a
+            // repair rather than an extension: the rule this enforces is *every view the chrome
+            // draws is described in the contract*, and it was matching the literal string `NSView`.
+            // `HandButton: NSButton` is a view the chrome draws and would have walked straight
+            // through — which it did, on the run that added it.
             let regex = try! NSRegularExpression(
-                pattern: "final class ([A-Za-z]+): (NSView|NSTableRowView|NSObject, WKNavigationDelegate)")
+                pattern: "final class ([A-Za-z]+): (NSView|NSButton|NSControl|NSTableRowView"
+                    + "|NSObject, WKNavigationDelegate)")
             let text = source as NSString
             for match in regex.matches(in: source, range: NSRange(location: 0, length: text.length)) {
                 drawn.append(text.substring(with: match.range(at: 1)))

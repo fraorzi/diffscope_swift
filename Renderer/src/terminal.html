@@ -16,7 +16,7 @@
           border-bottom: var(--ds-hairline-width) solid var(--ds-border); }
   .ds-term-tab { padding: var(--ds-space-1) var(--ds-space-3);
                  font: var(--ds-text-size-small) var(--ds-font);
-                 color: var(--ds-faint); cursor: default;
+                 color: var(--ds-faint); cursor: pointer;
                  border-bottom: var(--ds-gutter-edge-width) solid transparent; }
   .ds-term-tab[data-active="true"] { color: var(--ds-term-fg);
                                      font-weight: var(--ds-weight-emphasis);
@@ -43,7 +43,7 @@
           border: var(--ds-hairline-width) solid var(--ds-border-strong);
           border-radius: var(--ds-radius-chip);
           font: var(--ds-text-size-small) var(--ds-font);
-          color: var(--ds-term-fg); white-space: nowrap; cursor: default; }
+          color: var(--ds-term-fg); white-space: nowrap; cursor: pointer; }
   /* Raw is a different state, not a worse one, so it is marked by shape rather than by colour
      alone (DEC-035). */
   #mode[data-raw="true"] { border-style: dashed; font-weight: var(--ds-weight-emphasis); }
