@@ -459,13 +459,26 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // happened to carry `text-decoration` as well, so the list had never been asked to see one.
         // The underline's own rule is not dropped either — it moves to the luminance check below,
         // which is the greyscale question asked of the thing that replaced it.
+        // **`background-color: var(--ds-tint` is on this list since DEC-083**, and it is the third
+        // restatement of one rule rather than a third loosening of it. The underline went (DEC-077)
+        // and the tint pair took over; the textures went (DEC-083) and the tint pair is what is
+        // left. It qualifies for one reason only, and the reason is a *measurement*: the line tint
+        // and the byte tint are held **1.20:1 apart in luminance** over the code surface in both
+        // appearances, three checks above, with a hue-only pair as the control. A difference in
+        // lightness is what survives greyscale; a difference in hue is what DEC-035 forbids.
         let shapeProperties = ["text-decoration", "background: repeating-linear-gradient",
                                "background-image: var(--ds-tex",
+                               "background-color: var(--ds-tint",
                                "outline", "border", "font-weight", "background: var(--ds-fill"]
         var colourOnly: [String] = []
         for name in ["ds-changed", "ds-fallback", "ds-moved", "ds-formatting", "ds-behaviour",
                      "ds-uncertain", "ds-invisible", "ds-gutter-changed"] {
-            guard let range = html.range(of: "\\.\(name)\\s*\\{[^}]*\\}", options: .regularExpression)
+            // **Grouped selectors, not just bare ones.** Four of these marks share one rule now, so
+            // a pattern anchored on `.name {` reported *no rule at all* for every one of them — a
+            // check that fails closed, which is the right direction, but for the wrong reason and
+            // with a message that pointed nowhere.
+            let selector = "(?:^|[,{}\\n])[^{}\\n]*\\.\(name)\\b[^{}]*\\{[^}]*\\}"
+            guard let range = html.range(of: selector, options: [.regularExpression])
             else { colourOnly.append("\(name): no rule at all"); continue }
             let body = String(html[range])
             if !shapeProperties.contains(where: { body.contains($0) }) { colourOnly.append(name) }

@@ -187,12 +187,12 @@ Measured: the pane headers are `Theme.paneHeaderHeight` = **22 pt**, and the dif
 `cursor: pointer` appears twice in `index.html` and **nowhere in the chrome** — no `NSCursor`, no `resetCursorRects` in `Sources/diffscope-app`. The `+` and the two chevrons are unbordered buttons with no size of their own, so the target is the glyph at 11 pt; collapsed, that chevron is the only thing in a 44 pt rail.
 *Done when:* every pointer affordance in both webviews declares `cursor: pointer`, every control the chrome draws sets `pointingHand`, and the `+` and both chevrons measure at least **24 × 24 pt**, asserted from their frames.
 
-**4. The change textures go** (amends DEC-035)
+**4. The change textures go** (amends DEC-035) — **landed**
 Seven `--ds-tex-*` gradients, whose only job is to tell one *kind* of mark from another.
 *What will refuse it:* the greyscale rule — and it is restated rather than dropped for the second time in two days: **the tint pair is the signal**, and it already differs in luminance by measurement. `ds-moved` keeps its dashed outline, `ds-invisible` its dotted one.
 *Done when:* no `--ds-tex-*` token remains, every mark still passes the greyscale check on its tint pair, and `structural.png` is looked at full-size in both appearances.
 
-**5. The line notes go, and the legend with them** (narrows DEC-017, DEC-058)
+**5. The line notes go, and the legend with them** (narrows DEC-017, DEC-058) — **landed**
 `ds-note` — `formatting`, `uncertain`, `reordered`, `M1`, `inserted` — and `#showing`'s *"+ added, − removed in the sign column"*.
 *The floor:* `#showing` keeps **what is being compared**, and `#diff-footer` keeps the grouped count DEC-017 permits grouping *because of*. INV-4's sentence is untouched.
 *Done when:* no `.ds-note` is emitted, `#showing` names the comparison and nothing else, the footer's count still draws, and `ds-note` leaves the contract's class table in the same commit.
@@ -200,3 +200,9 @@ Seven `--ds-tex-*` gradients, whose only job is to tell one *kind* of mark from 
 **6. The metal-rimmed buttons of the adopted design** — **blocked, and not on effort**
 The design is behind the owner's login. This is the fourth thing that cannot be read from here, after the glass, DEC-080's ladder and DEC-081's hues.
 *Done when:* the owner sends a screenshot of the `+` button, its values are transcribed the way the token table was, and `Theme.swift` and the contract carry them.
+
+*How items 4 and 5 landed, and they are one change.* All seven `--ds-tex-*` gradients are gone, and with them `.ds-note` and `#showing`'s legend. What a changed byte keeps is the **tint**, which is what made it visible in the first place; the greyscale rule lands where it was already being measured, so `background-color: var(--ds-tint` joins the shape list **because** the line and byte tints are held 1.20:1 apart in luminance with a hue-only pair as the control. A lightness difference is what survives greyscale; a hue difference is what DEC-035 forbids.
+
+**Three marks keep a shape, and all three are outlines rather than patterns** — each marks something a reader cannot otherwise detect. `ds-moved` dashed, `ds-invisible` dotted, and `ds-fallback` **gains a solid one**: it had only a texture, and it is INV-4 in the case the notice cannot reach — a *partial* parse, where the result stands and named regions inside it were never read as code. The sentence says how many; the outline says which.
+
+*Two checks had to be repaired rather than relaxed.* The shape check was anchored on `.name {` and four marks now share one rule, so it reported **no rule at all** for every one of them — failing closed, which is the right direction, for the wrong reason and with a message pointing nowhere. And the `formatting-collapse` arm asserted the word `formatting` appeared *after the code*; DEC-017's actual requirement is the disclosed count, which the footer and the fold marker carry, so the arm asserts `notes: []` and the three places the count appears.

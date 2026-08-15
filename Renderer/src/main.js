@@ -91,17 +91,6 @@ class FoldWidget extends WidgetType {
 /// Alignment of the number columns is load-bearing — it is how a reader says *where* — and the
 /// note's exact position is not. So the note follows the code inline, in the shape `ds-badge`
 /// already uses for the same reason.
-class NoteWidget extends WidgetType {
-  constructor(text) { super(); this.text = text; }
-  eq(other) { return other.text === this.text; }
-  toDOM() {
-    const el = document.createElement("span");
-    el.className = "ds-note";
-    el.textContent = this.text;
-    return el;
-  }
-}
-
 class DisclosureWidget extends WidgetType {
   constructor(text) { super(); this.text = text; }
   eq(other) { return other.text === this.text; }
@@ -187,53 +176,6 @@ function markItems(state, segments) {
   return items;
 }
 
-/// The right margin (the adopted design). One short note per line, saying what the marks on it
-/// already mean but in words: which move a line belongs to, that a difference is invisible, that a
-/// change is formatting, that an alignment was not certain.
-///
-/// **Everything here is read off the model and nothing is invented.** The design also writes
-/// *wrapper removed* in this margin, and the engine has no such notion — `label`, `classification`,
-/// `group`, `disclosure` and `link` are the whole vocabulary (DEC-046, DEC-038). A margin that said
-/// *wrapper removed* would be the renderer making a claim the engine never made, which is the one
-/// thing `24-design-contract.md` §1 forbids outright.
-///
-/// A note is an **annotation of a mark that is already there**, never the only carrier of anything:
-/// the sign column, the tint and the texture all still say it (DEC-035).
-function noteItems(state, segments) {
-  const byLine = new Map();
-  const max = state.doc.length;
-  function add(line, text) {
-    const notes = byLine.get(line) || [];
-    if (!notes.includes(text)) notes.push(text);
-    byLine.set(line, notes);
-  }
-  for (const seg of segments) {
-    const from = Math.max(0, Math.min(seg.start, max));
-    if (seg.end <= from) continue;
-    const line = state.doc.lineAt(from).number;
-    // `link` pairs the two sides of one move and both sides carry the same value, so the same
-    // number appears on both — which is the whole point of printing it.
-    // `M1` upward, as the design numbers them. `link` is an identity, not an ordinal — nothing
-    // else displays it — so shifting it by one costs nothing and reads as a label rather than as
-    // an array index.
-    if (seg.label === "moved" && seg.link != null) add(line, "M" + (seg.link + 1));
-    if (seg.disclosure) add(line, seg.disclosure);
-    if (seg.group === "formatting-only") add(line, "formatting");
-    if (seg.group === "potentially-behavior-affecting") add(line, "reordered");
-    if (seg.uncertain) add(line, "uncertain");
-  }
-  const items = [];
-  for (const [number, notes] of byLine) {
-    if (number < 1 || number > state.doc.lines) continue;
-    const line = state.doc.line(number);
-    items.push({
-      from: line.to,
-      deco: Decoration.widget({ widget: new NoteWidget(notes.join(" · ")), side: 1 }),
-    });
-  }
-  return items;
-}
-
 /// A tint across every changed line (DEC-077), which is what replaced the underline. It is a
 /// **line** decoration rather than a mark, so it reaches the full width of the line box instead of
 /// stopping where the text stops, and the changed bytes inside it take the stronger tint.
@@ -254,7 +196,6 @@ function lineTintItems(state, changedLines) {
 function decorationsFor(state, segments, side, changedLines) {
   const items = lineTintItems(state, changedLines || [])
     .concat(markItems(state, segments))
-    .concat(noteItems(state, segments))
     .concat(foldsFor(state, side));
   return Decoration.set(items.map(item => item.deco.range(item.from, item.to ?? item.from)), true);
 }
@@ -294,27 +235,8 @@ function foldsForUnified(state) {
   return items;
 }
 
-/// `inserted` / `removed` on a block that has only one side — the design writes it, and unlike
-/// *wrapper removed* it is derivable: a merged block whose old side is empty added lines and took
-/// none away. Block-level, so it goes on the block's first line rather than on every line of it.
-function blockNotes(state) {
-  const items = [];
-  for (const hunk of unifiedHunks) {
-    if (hunk.at > state.doc.length) continue;
-    const word = hunk.oldCount === 0 ? "inserted" : (hunk.newCount === 0 ? "removed" : null);
-    if (!word) continue;
-    items.push({
-      from: state.doc.lineAt(hunk.at).to,
-      deco: Decoration.widget({ widget: new NoteWidget(word), side: 1 }),
-    });
-  }
-  return items;
-}
-
 function decorationsForUnified(state, segments) {
   const items = markItems(state, segments)
-    .concat(noteItems(state, segments))
-    .concat(blockNotes(state))
     .concat(directionDecorations(state))
     .concat(foldsForUnified(state));
   return Decoration.set(items.map(item => item.deco.range(item.from, item.to ?? item.from)), true);
@@ -884,10 +806,11 @@ function updateShowing() {
   const row = document.getElementById("showing");
   if (!row) return;
   if (!comparison) { row.textContent = ""; return; }
+  // **What is being compared, and nothing else** (DEC-083). The legend that followed it —
+  // *"+ added, − removed in the sign column"* — explained a convention every reader of a diff
+  // already has, on every file they opened. The comparison stays because it is the fact DEC-058
+  // was paid for three times: it was stated only in the chrome, far from the pane being read.
   const parts = ["SHOWING " + comparison, layout === "unified" ? "unified" : "side by side"];
-  // Only where it is true. In two panes the side a line is on carries the direction, and a legend
-  // for a column that is not there would be an instruction to look at nothing.
-  if (layout === "unified") parts.push("+ added, − removed in the sign column");
   const before = row.textContent;
   row.textContent = parts.join(" · ");
   // The shell pushes the comparison on its own schedule, **not** inside a render — so this row can
@@ -1251,6 +1174,12 @@ window.diffscopeStyleAudit = function () {
       style.textDecorationLine !== "none" ? "underline" : null,
       style.textDecorationStyle !== "solid" ? "decoration-style" : null,
       style.backgroundImage !== "none" ? "texture" : null,
+      // **The tint, since DEC-083**, and it counts for the reason the source check says: the line
+      // tint and the byte tint are held a measured 1.20:1 apart in *luminance*, so the pair is a
+      // lightness difference rather than a hue one and survives greyscale. Asked of the computed
+      // style, which is where an inherited or overridden value would show up.
+      style.backgroundColor !== "rgba(0, 0, 0, 0)" && style.backgroundColor !== "transparent"
+        ? "tint" : null,
       style.outlineStyle !== "none" ? "outline" : null,
       parseFloat(style.borderRightWidth) > 0 || parseFloat(style.borderTopWidth) > 0 ? "border" : null,
       style.fontWeight !== "400" && style.fontWeight !== "normal" ? "weight" : null,
@@ -1826,6 +1755,8 @@ window.diffscopeProbe = function () {
     // carriers of "this line changed", read off the same `changedLines`, must agree.
     tintedLines: document.querySelectorAll(".ds-line-changed").length,
     formattingMarks: document.querySelectorAll(".ds-formatting").length,
+    // `ds-note` is gone (DEC-083); the probe keeps the key so an arm that still asks
+    // gets an empty list rather than `undefined`, and so the count is assertable.
     notes: [...document.querySelectorAll(".ds-note")].map(el => el.textContent),
     footer: document.getElementById("diff-footer")?.hidden === false
       ? (document.getElementById("diff-footer-text")?.textContent || "") : "",

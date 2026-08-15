@@ -1047,8 +1047,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             // past them saw nothing. The bar is where it now stays put, so the bar is asserted.
             let grouped = !text.contains("\"formattingFoldMarks\":0") && text.contains("formatting-only changes")
                 && text.contains("formatting differences") && text.contains("unchanged lines folded")
-                // The note beside the line, from `group` on the segment (the adopted design).
-                && text.contains("\"formatting\"")
+                // **The note beside the line is gone** (DEC-083), so what carries DEC-017's
+                // requirement is what always did: the disclosed count, in the footer and on the
+                // fold marker. The three assertions above are that count in three places; the
+                // fourth was the word `formatting` printed after the code, which the contract had
+                // already called annotation only and forbidden from being anything's sole carrier.
+                && text.contains("\"notes\":[]")
             FileHandle.standardError.write(
                 Data("SELFTEST formatting-collapse=\(grouped ? "OK" : "MISMATCH") groups=\(render.formattingCollapses.count) \(text.suffix(200))\n".utf8))
             if !grouped { exit(16) }

@@ -2336,3 +2336,26 @@ whether it is presented is AppKit's. The content is gated and the presentation i
 the division the composition timings settled on when an occluded WebKit view stopped being a clock.
 
 1748 → 1756 checks.
+
+## Step 81 — `28-…` §5 items 4 and 5: the textures and the notes leave the pane
+
+- [x] all seven `--ds-tex-*` tokens gone; `.ds-note` and `#showing`'s legend gone
+- [x] `background-color: var(--ds-tint` joins the shape list, **because** the tint pair is measured
+      1.20:1 apart in luminance with a hue-only control behind it
+- [x] `ds-fallback` gains a **solid outline** — it had only a texture, and it is INV-4 in the one
+      case the notice cannot reach
+- [x] the live audit counts a tint as a signal; `ds-note` retired from the contract
+
+### Step 81 — the shape check failed closed for the wrong reason
+
+Four marks share one rule now, and the check was anchored on `\.name\s*\{` — so it reported **no
+rule at all** for `ds-changed`, `ds-formatting`, `ds-behaviour` and `ds-uncertain`. Failing closed is
+the right direction and the message pointed nowhere. It matches a grouped selector now.
+
+### Step 81 — and an arm was asserting the annotation rather than the rule
+
+`formatting-collapse` required the word `formatting` to appear **after the code**. DEC-017's
+requirement is the *disclosed count*, which the footer and the fold marker carry and which the arm
+already asserted in three other places. The fourth assertion was about a thing the contract itself
+called annotation only and forbade from being anything's sole carrier — so it asserts `notes: []`
+now, which is the opposite claim and the one DEC-083 makes.

@@ -139,12 +139,11 @@
   #right { border-right: none; }
   .cm-editor { height: 100%; background: var(--ds-code); color: var(--ds-plain); }
 
-  /* The right margin (the adopted design). A note annotates a mark that is already on the line —
-     the sign column, the tint and the texture all still carry the meaning (DEC-035), so this
-     may be clipped on a narrow pane without anything being lost. `position: relative` on the line
-     is what the note is placed against. */
-  .ds-note { margin-left: var(--ds-space-4); color: var(--ds-faint);
-             font-size: var(--ds-text-size-tiny); white-space: nowrap; user-select: none; }
+  /* `.ds-note` lived here: a grey word after the line saying *formatting*, *uncertain*, *M1*,
+     *inserted*. DEC-083 removes it — the contract already called it annotation only and forbade it
+     from being the sole carrier of anything, so nothing became invisible: the sign column, the
+     gutter edge and the tint say what changed, and the footer keeps the grouped count DEC-017
+     permits grouping because of. */
 
   /* Closes the pane the way the design does: what was grouped away, and one keystroke to open it. */
   #diff-footer { flex: none; display: flex; align-items: center; justify-content: space-between;
@@ -179,31 +178,39 @@
      replaces them is the tint pair below: the whole line, and the changed bytes at a lower
      transparency — a difference in *luminance*, so it survives greyscale exactly as the underline
      did. The texture, the sign column and the gutter edge are untouched. */
-  .ds-changed {
-    background-image: var(--ds-tex-changed);
+  /* **The textures are gone** (DEC-083). Seven repeating diagonal gradients whose only job was to
+     tell one *kind* of mark from another — and the kinds themselves are what the owner asked to
+     stop seeing. What every changed byte keeps is the tint, which is what makes it visible at all.
+
+     The greyscale rule is restated for the second time in two days, and lands where it was already
+     being measured: **the line tint and the byte tint differ in luminance**, checked over the code
+     surface in both appearances. A mark is not colour alone because the pair is a *lightness*
+     difference, not a hue one.
+
+     Three marks keep a shape of their own, and all three are outlines rather than patterns —
+     each marks something a reader **cannot otherwise detect** at all. */
+  .ds-changed,
+  .ds-formatting,
+  .ds-behaviour,
+  .ds-uncertain {
+    /* The tint from the rule below is the whole of these now. The classes stay because the segment
+       still carries its classification for the probes and the footer's count (DEC-017); what has
+       gone is drawing four indistinguishable things four different ways. */
+    background-color: var(--ds-tint-seg);
   }
+  /* INV-4, in the one case the notice cannot reach: a **partial** parse, where the result stands
+     and named regions inside it were never read as code. The sentence says how many; this says
+     which. Solid, against `ds-moved`'s dashed and `ds-invisible`'s dotted. */
   .ds-fallback {
-    background-image: var(--ds-tex-fallback);
+    outline: var(--ds-hairline-width) solid var(--ds-mark);
+    outline-offset: calc(-1 * var(--ds-hairline-width));
   }
   .ds-moved {
-    background-image: var(--ds-tex-moved);
     outline: var(--ds-hairline-width) dashed var(--ds-mark);
     outline-offset: calc(-1 * var(--ds-hairline-width));
   }
-  /* Grouping quietens, it never hides: the texture stays, only its weight drops (DEC-017). */
-  .ds-formatting {
-    background-image: var(--ds-tex-format);
-  }
-  .ds-behaviour {
-    background-image: var(--ds-tex-behaviour);
-  }
-  /* An alignment the structural layer could not confirm (DEC-017 confidence indication). */
-  .ds-uncertain {
-    background-image: var(--ds-tex-ambiguous);
-  }
   /* A difference that is real in the bytes and absent on screen (DEC-023). */
   .ds-invisible {
-    background-image: var(--ds-tex-invisible);
     outline: var(--ds-hairline-width) dotted var(--ds-mark);
     outline-offset: var(--ds-hairline-width);
   }
@@ -219,10 +226,12 @@
   }
   /* A group holding real differences, not unchanged text (DEC-048) — so it is marked as
      changed content that happens to be grouped, and never reads as "nothing here". */
+  /* The border style is the whole distinction now: solid says *this fold holds real differences*
+     against the dashed border of one that holds byte-equal text. The texture that used to say it
+     as well went with the rest of them (DEC-083). */
   .ds-fold-formatting {
     border-top-style: solid;
     border-bottom-style: solid;
-    background-image: var(--ds-tex-format);
   }
   /* The gutter is the third carrier of change meaning (`12-…` §5.1), so it marks by shape —
      a solid edge against the text — rather than by colour, which DEC-035 forbids as a sole signal. */
