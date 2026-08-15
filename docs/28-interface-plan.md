@@ -214,3 +214,34 @@ The design is behind the owner's login. This is the fourth thing that cannot be 
 **The gradient ran the wrong way and only a measurement said so.** `NSButton` draws in a flipped space, where 90° points at increasing y — visually *downward* — so the highlight landed at the bottom and the disc read as pressed rather than raised. Sampling the ring's crossings on the snapshot caught it; squinting at the picture had already suggested light was wrong and dark was right, which was itself wrong, because the brightest pixel on the centre line is the `+` glyph rather than the ring. `isFlipped` is false now and both appearances measure the highlight on top: **+94 in dark, +27 in light**.
 
 That gap is worth the owner's eye: the light rim is a good deal subtler than the dark one, because a white highlight on an already-light surface has less room to work in. It passes the 1.30:1 floor at 2.72:1 and it may still want to be steeper.
+
+---
+
+## 6. The fourth session ([DEC-085](04-decision-log.md)), on `25ef945`
+
+Six reports, in the order a reader hits them.
+
+**1. The sidebars cannot be dragged** — a regression, reported twice
+The collapse button works both ways; what is missing is every width between the rail and the full pane. DEC-077 called this fixed and **nothing in the suite has ever dragged a divider** — every pane check is about a state a command produces.
+*Done when:* an arm sets the divider, forces a layout pass, and asserts the pane **still** has the dragged width afterwards; and the same for the second divider. The control is the priority that caused it: a width constraint that wins the pass fails the arm.
+
+**2. The lens switch sits at the scope switch's height** (amends DEC-072)
+Diff / Blame / History belongs in the scope row, not in a band of its own.
+*Done when:* both controls' drawn frames share a `midY` to the pixel, and the scope row still spans the window.
+
+**3. The diff surface begins level with `CHANGED FILES`**
+Not level with the file list under it. Last session aligned the three *contents*; this is one band higher and it is the line the first report meant.
+*Done when:* the webview's top equals the **pane headers'** top, asserted from drawn frames at two window widths.
+
+**4. A row that can be chosen shows the hand**
+The file list and the repository list are the two things a reader clicks most and neither says so. DEC-083 drew the line at *borderless controls* and left rows on the arrow, which was the wrong line.
+*Done when:* both tables set `pointingHand` over their rows, and an arm asserts the cursor rects exist.
+
+**5. The rim becomes a specular highlight, and spreads** (amends DEC-084)
+Two stops make a ramp. Light on a curved metal edge is bright along a narrow arc, falls off quickly, and lifts again at the far edge. Applies to the `+`, **the search field** and **the checkbox** — which also stops being the system's blue.
+*What will refuse it:* the rim pair check still holds, and gains a second claim — **more than two stops, and the brightest one off-centre**. A two-stop ramp is what this replaces.
+*Done when:* the ramp has ≥3 stops with the highlight off-centre, all three surfaces draw it, the checkbox is drawn rather than tinted, and both appearances are photographed.
+
+**6. `Sources ⌄` is the same control as the rest, and the chevron is drawn**
+It is a bare `NSButton` with a typed `⌄`, which reads as `>`; the glyph is also mis-centred against its text and against its own padding.
+*Done when:* `Sources` opens the same popover the switches do, the chevron is a **drawn path** rather than a character, and its box is centred against the control to the pixel — asserted from frames, because a font's idea of where `⌄` sits is exactly what is wrong with it now.

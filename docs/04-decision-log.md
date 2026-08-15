@@ -3605,3 +3605,46 @@ Applied to the `+` alone. The empty state's two buttons keep their flat rim: the
 ### Revisit trigger
 
 Reopen if the owner reads the disc as *pressed* rather than as *raised*: that is the gradient running the wrong way, and the fix is to swap the two tokens rather than to redraw anything.
+
+---
+
+## DEC-085 — The fourth session: the window becomes adjustable, and the metal becomes real metal
+
+- **Date:** 2026-08-16 · **Topic:** the owner's fourth session, on `25ef945` · **Status:** Accepted · **Amends DEC-072, DEC-083, DEC-084; work list in [28-interface-plan.md](28-interface-plan.md) §6**
+
+### Context
+
+Six reports, and they fall into three groups rather than six problems.
+
+**One is a regression, and it is the worst of the six.** The sidebars cannot be resized by dragging their edge. The collapse button works and un-collapses again, so the pane is not stuck — what is gone is the manual middle ground between 44 pt and 320. DEC-077 recorded this as *fixed* (`splitViewDidResizeSubviews` writes the drawn widths back), and the owner has now reported it twice. **A defect reported twice after being called fixed is a defect that was never measured**: nothing in the suite drags a divider, so every check about panes has been about the two states a button produces.
+
+**Two are the same layout question asked more precisely than last time.** The lens switch — Diff / Blame / History — should sit at the height of the **scope** switch, not in a band of its own, and the diff pane's surface should begin level with `CHANGED FILES` rather than level with the list under it. Last session's fix aligned the three *contents*; the owner wants the diff surface to start one band higher, where the headers are. That is a different line, and re-reading the original report it is the line they meant.
+
+**Three are about the material.** The rim reads as *a gradient* rather than as *light falling on metal* — which is fair: [DEC-084](04-decision-log.md) built a two-stop axial ramp, and a specular highlight is not a ramp. The same treatment is wanted on the search field and on the checkbox, which is still drawing the system's blue. And `Sources ⌄` is not the same control as the other switches, its chevron reads as a plain `>`, and that chevron sits wrong against both its text and its own padding.
+
+### Options considered
+
+1. **Take the six as styling.** Rejected for the reason DEC-083 was: one is a regression with no check behind it, and three change what a material *is* rather than what colour it takes.
+2. **Rebuild the switches on `NSPopUpButton`** so `Sources ⌄` and the rest are the same control for free. Rejected: `PillControl` exists because the system control cannot draw an unavailable option with its reason (`12-…` §3), and DEC-077's popover carries that. Converging on the system control would drop the thing the custom one was built for.
+3. **Fix the regression with a check under it, move the band, and make the material a material.** Chosen.
+
+### Final decision
+
+**Option 3**, and the parts that are decisions rather than work:
+
+- **A dragged divider is a checked behaviour, not a fixed one.** The arm drags — `setPosition`, then a layout pass — and asserts the pane *keeps* the width across the pass that follows. Nothing in this suite has ever done that, which is why the regression survived a session that fixed it.
+- **The lens switch moves into the scope row** (amending DEC-072, which put the scope row above the panes and left the lens in the pane). One row of switches, at one height, across the window: the scope changes what the file list holds, and the lens changes what the diff pane answers, but a reader reads them as one row of controls and the window should agree.
+- **The diff surface begins at the pane headers' top**, not at the lists' top. The three panes then share a single horizontal seam.
+- **The rim becomes specular.** Two stops make a ramp; light on a curved metal edge is bright along a narrow arc, falls off quickly either side, and lifts again at the opposite edge. That is a multi-stop gradient, and it is the difference between *a gradient* and *a highlight*. It is applied wherever the design uses a rim: the `+`, the search field and the checkbox.
+- **The checkbox stops being the system's blue.** It is drawn, and this is a cost accepted with the entry: a drawn checkbox loses the system's own focus ring and pressed state, which is exactly why the empty state's buttons are **not** drawn. The difference is that a checkbox's whole surface is the affordance, while a push button's is its rim.
+- **`Sources ⌄` becomes the same control as the other switches**, and the chevron becomes a drawn glyph rather than a typed character — sized, weighted and **centred against its own box** rather than against a font's idea of where a `⌄` sits.
+
+### Consequences
+
+- **A drag arm is a new class of check for this window**: every pane assertion until now has been about a state a *command* produces. Two of the three defects this session are in the space between those states.
+- **The chrome grows a drawn control** (the checkbox) for the first time since `PillControl`, and the contract's table grows with it.
+- The specular rim is a **shape of light**, so it is checked as one: the ramp must have more than two stops and the highlight must be off-centre, or it is the thing this entry replaced.
+
+### Revisit trigger
+
+Reopen the material if the owner reads the specular arc as *dirt* rather than as *light* — that is a highlight too narrow or too bright for the surface it sits on, and the fix is the stop positions rather than the colours.
