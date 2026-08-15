@@ -11,6 +11,14 @@ if CommandLine.arguments.count > 3, CommandLine.arguments[1] == "--emit-model" {
     exit(0)
 }
 
+if CommandLine.arguments.count > 3, CommandLine.arguments[1] == "--emit-structural" {
+    runEmitStructural(oldPath: CommandLine.arguments[2],
+                      newPath: CommandLine.arguments[3],
+                      displayPath: CommandLine.arguments.count > 4
+                          ? CommandLine.arguments[4] : CommandLine.arguments[3])
+    exit(0)
+}
+
 if CommandLine.arguments.count > 1, CommandLine.arguments[1] == "--write-manifest" {
     writeFixtureManifest(root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         .appendingPathComponent("fixtures"))
