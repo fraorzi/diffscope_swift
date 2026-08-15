@@ -142,10 +142,16 @@ enum Theme {
     static let trafficLightInset: CGFloat = 78
     /// The scope row across the window (DEC-072): a 24 pt pill with the row's own padding around it.
     static let scopeBarHeight: CGFloat = 36
-    /// The column header over each list (DEC-071). Shorter than the status line, because it holds one
-    /// upper-cased word at the smallest size and a count beside it — a bar as tall as the title's
-    /// would read as a second title bar.
-    static let paneHeaderHeight: CGFloat = 22
+    /// The header over each of the **three** panes (DEC-071, sized by DEC-083). Two of them hold an
+    /// upper-cased word and a count; the third holds the lens switch, and a 24 pt pill does not fit
+    /// in the 22 pt this was.
+    ///
+    /// **One number, because the three surfaces have to begin at the same height.** The diff pane's
+    /// band was built separately at `space4 + pill + space4` = 40 pt, so the code's background
+    /// started 18 pt below the two lists' and the window read as three things laid out apart — which
+    /// they were. Sized to the control rather than to the word: still well under the 44 pt title
+    /// bar, so it does not read as a second one.
+    static let paneHeaderHeight: CGFloat = pillHeight + 2 * space2
 
     /// The segmented pills (the adopted design): a trough, one raised segment in it, and a dashed
     /// outline where a segment cannot be chosen.

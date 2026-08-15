@@ -366,6 +366,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // inset is expressed once, as each member's width against the pane's.
         leftStack.alignment = .centerX
         leftStack.spacing = Theme.space2
+        // DEC-083: **nothing between the header and the list.** The stack's 4 pt spacing applied
+        // there too, so this pane's surface began 4 pt below the other two — the file pane lays its
+        // header and list out by hand with no gap, and the diff pane's webview now butts onto its
+        // band. The spacing is still wanted *below* the list, where the caption sits.
+        leftStack.setCustomSpacing(0, after: repoHeader)
         leftStack.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: Theme.space3, right: 0)
         // Without this the scroll view's own content width becomes the pane's floor, and a 44 px
         // rail comes out at 87: the constraint said 44, the constant read 44, and the window drew
@@ -456,12 +461,18 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         rightStack.addSubview(webView)
         band.translatesAutoresizingMaskIntoConstraints = false
         webView.translatesAutoresizingMaskIntoConstraints = false
+        // DEC-083: **the three panes' contents begin at the same height.** This band was
+        // `space4 + 24 + space4` = 40 pt against the two lists' 22 pt headers, so the code's
+        // background started 18 pt below theirs and the window read as three surfaces that had
+        // been laid out separately — which they had. The band is now the same one number the
+        // headers are, and `paneHeaderHeight` is sized to hold a control because this one does.
         NSLayoutConstraint.activate([
-            band.topAnchor.constraint(equalTo: rightStack.topAnchor, constant: Theme.space4),
+            band.topAnchor.constraint(equalTo: rightStack.topAnchor),
+            band.heightAnchor.constraint(equalToConstant: Theme.paneHeaderHeight),
             band.leadingAnchor.constraint(equalTo: rightStack.leadingAnchor, constant: Theme.space6),
             band.trailingAnchor.constraint(lessThanOrEqualTo: rightStack.trailingAnchor,
                                            constant: -Theme.space6),
-            webView.topAnchor.constraint(equalTo: band.bottomAnchor, constant: Theme.space4),
+            webView.topAnchor.constraint(equalTo: band.bottomAnchor),
             webView.leadingAnchor.constraint(equalTo: rightStack.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: rightStack.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: rightStack.bottomAnchor),
@@ -1856,12 +1867,51 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                 // picture into a black rectangle — which is exactly how six
                                 // rounds went into "why do the panes stop two thirds down".
                                 self.setTerminalVisible(false, startingShell: false)
-                                self.windowSnapshot(named: "keyboard") { self.focusRingSelftest() }
+                                self.windowSnapshot(named: "keyboard") { self.fileSelectionSelftest() }
                             }
                         }
                     }
                 }
             }
+        }
+    }
+
+    /// `28-…` §5 item 1: **the file being shown is the selected row**, after a sweep and not only
+    /// after a click.
+    ///
+    /// The arm exists because the defect could not be seen from anywhere else. The three calls to
+    /// `fileTable.selectRowIndexes` in this file were all in the selftest, so every walk *set* the
+    /// selection it then measured — a check asking what it had just asked for, which is the shape
+    /// `23b-…` §2 records for the unified layout. This asks the opposite way round: the pane is
+    /// told which file to show, the list is rebuilt from Git, and only then is the row read.
+    private func fileSelectionSelftest() {
+        guard let file = state.selectedFile else {
+            FileHandle.standardError.write(Data(
+                "SELFTEST file-selected=MISMATCH nothing is being shown\n".utf8))
+            exit(68)
+        }
+        // The control first: drop the selection the way a reload used to, and confirm the arm can
+        // see it gone. A check that has only ever run against a selected row would pass on a list
+        // that selects everything.
+        fileTable.deselectAll(nil)
+        let cleared = selectedFileRowPath == nil
+
+        // Then the product path — the whole list rebuilt from Git, which is what a refresh does.
+        reloadFiles()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+            let marked = self.selectedFileRowPath
+            let agrees = marked == file.path
+            // And it must be marked the way the repository row is: a fill *and* a leading bar, so
+            // the mark survives greyscale (DEC-035, the same rule the diff marks follow).
+            let rowView = self.fileTable.rowView(atRow: self.fileTable.selectedRow, makeIfNecessary: false)
+            let drawnBySelectedRowView = rowView is SelectedRowView
+            let ok = cleared && agrees && drawnBySelectedRowView
+            FileHandle.standardError.write(Data(
+                ("SELFTEST file-selected=\(ok ? "OK" : "MISMATCH") shown=\"\(file.path)\" "
+                    + "marked=\"\(marked ?? "nothing")\" control-saw-it-cleared=\(cleared) "
+                    + "drawn-by-SelectedRowView=\(drawnBySelectedRowView)\n").utf8))
+            guard ok else { exit(68) }
+            self.focusRingSelftest()
         }
     }
 
@@ -2383,9 +2433,23 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // The open repository has to be the selected row: a sweep replaces the snapshots, and until
         // DEC-077 nothing re-selected, so the list said nothing about which repository was open.
         let repositorySelected = state.repositories.isEmpty || repoTable.selectedRow >= 0
-        let ok = spanned && tall && worded && counted && repositorySelected
+
+        // DEC-083: **the three panes' contents begin at the same height.** Asked of the drawn
+        // frames in window coordinates, because the constraint is what was *asked for* — and the
+        // two that agreed did so from one constant while the third was built from three (`space4`,
+        // a pill, `space4`) and came out 18 pt lower. The webview is the third surface; its top is
+        // where the code's background starts.
+        let repoTop = repoTable.enclosingScrollView.map { $0.convert($0.bounds, to: nil).maxY } ?? 0
+        let fileTop = fileTable.enclosingScrollView.map { $0.convert($0.bounds, to: nil).maxY } ?? 0
+        let codeTop = webView.convert(webView.bounds, to: nil).maxY
+        // AppKit's origin is bottom-left, so the *top* of a pane is its larger y.
+        let aligned = abs(repoTop - fileTop) < 1 && abs(fileTop - codeTop) < 1
+
+        let ok = spanned && tall && worded && counted && repositorySelected && aligned
         FileHandle.standardError.write(Data(
             ("SELFTEST pane-headers=\(ok ? "OK" : "MISMATCH") "
+                + "tops repos=\(Int(repoTop)) files=\(Int(fileTop)) code=\(Int(codeTop)) "
+                + "aligned=\(aligned) "
                 + "repos=\"\(repoHeaderCaption.stringValue)\"@\(Int(repoBar.width))×\(Int(repoBar.height)) "
                 + "of pane \(Int(repoPane.width)) "
                 + "files=\"\(fileHeaderCaption.stringValue)\" count=\"\(fileHeaderCount.stringValue)\""
@@ -3566,6 +3630,30 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
+    /// DEC-083: **the file being shown is the selected row**, the way the open repository is.
+    ///
+    /// The repository list had exactly this defect and DEC-077 fixed it there: the row was set on a
+    /// click and lost on the next `reloadData`, so after any refresh the list had no selected row
+    /// while the pane beside it showed that row's diff. Nobody carried the fix to the second list —
+    /// `fileTable.selectRowIndexes` was called in three places and **all three were in the
+    /// selftest**, so the product path had never existed and no arm could notice.
+    ///
+    /// Matched by path rather than by index, because a sweep reorders and regroups: the row a file
+    /// was on is not the row it is on now, and selecting the old index would mark the wrong file.
+    private func restoreFileSelection() {
+        guard let path = state.selectedFile?.path else { return }
+        let row = state.fileRows.firstIndex { $0.file?.path == path }
+        guard let row, fileTable.selectedRow != row else { return }
+        fileTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+    }
+
+    /// The selected row's file path, for the arm that asks whether the mark and the pane agree.
+    var selectedFileRowPath: String? {
+        guard fileTable.selectedRow >= 0,
+              state.fileRows.indices.contains(fileTable.selectedRow) else { return nil }
+        return state.fileRows[fileTable.selectedRow].file?.path
+    }
+
     private func rescan() {
         var sources = state.configuration.sources
         if let hook = ProcessInfo.processInfo.environment["DIFFSCOPE_ROOT"],
@@ -4028,6 +4116,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 self.state.annotations = found
                 self.state.counts = counts
                 self.fileTable.reloadData()
+                // The annotations arrive on a background sweep and land after the list is already
+                // on screen. `reloadData` keeps the selected *index* and this pass does not change
+                // the rows — but it is the one place a selection could be dropped without anybody
+                // seeing it happen, so it is restored here too rather than assumed safe.
+                self.restoreFileSelection()
             }
         }
     }
@@ -4666,6 +4759,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         state.annotations = [:]
         updatePaneHeaders()
         fileTable.reloadData()
+        restoreFileSelection()
         annotateFiles(of: repository)
         // DEC-010/DEC-011: the age is the signal, not the date. The application never fetches, so
         // this line is the only thing telling the reader how old the comparison actually is.

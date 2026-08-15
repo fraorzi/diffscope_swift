@@ -2261,3 +2261,34 @@ that produces two independent moves* each passed on one fixture and the output n
 fixture added **for** T-11 could stop producing a move and the section would still read green,
 carried by an older one. The names are printed now: moves on four fixtures, multi-line on three,
 two-or-more on one.
+
+## Step 79 — `28-…` §5 items 1 and 2: the selected file, and three surfaces on one line
+
+- [x] `restoreFileSelection()` on every path that rebuilds `state.fileRows`, matched **by path**
+- [x] `Theme.paneHeaderHeight` sized to the control it holds (`pillHeight + 2·space2` = 32 pt) and
+      the diff pane's band built from that one number instead of three
+- [x] `setCustomSpacing(0, after: repoHeader)` — the third pane was 4 pt lower than the other two
+- [x] two arms: `file-selected` with a control that clears the row first, and `pane-headers`
+      extended to compare the three panes' **drawn tops** in window coordinates
+
+### Step 79 — the file list's selection had no product path at all
+
+`fileTable.selectRowIndexes` appeared three times and **all three were in the selftest**. So every
+walk set the selection it then measured — a check asking what it had just asked for, the shape
+`23b-…` §2 records for the unified layout. The new arm asks the other way round: the pane is told
+which file to show, the list is rebuilt from Git, and only then is the row read. Its control drops
+the selection first and requires the arm to see it gone.
+
+Matched by **path**, not by index: a sweep reorders and regroups, so the row a file was on is not
+the row it is on now, and restoring the old index would mark the wrong file.
+
+### Step 79 — 18 pt, then 4 pt
+
+The diff pane's band was `space4 + pill + space4` = 40 pt against two 22 pt headers, so the code's
+background began 18 pt below the lists'. One number for all three fixes that — and the number had to
+grow to 32, because a 24 pt pill does not fit in 22 and the third pane's header holds a control.
+
+Aligning two of them then exposed the third: the repository pane is an `NSStackView` whose 4 pt
+spacing applied between the header and the list, where the file pane's hand layout has no gap. Two
+surfaces agreeing from one constant is not evidence that a third agrees with them — which is why the
+arm measures **drawn tops in window coordinates** rather than the constant it set.
