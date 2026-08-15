@@ -5,6 +5,17 @@
 
 ---
 
+## Positioning line
+
+> **"In a world of AI we don't need another text editor, we need a better code reviewer."**
+
+The product owner's line, 2026-08-15. Kept here because it is the shortest true statement of why this
+application exists: the volume of code a person is asked to *read* rather than *write* is what
+changed, and the interface that has not caught up is the diff. It is a positioning line for a future
+promotional site, not interface copy — nothing in the application says it.
+
+---
+
 ## One-paragraph summary
 
 A macOS desktop application for reviewing diffs in local Git repositories. It discovers repositories under any number of user-chosen root directories — and accepts individually added repositories anywhere (DEC-037) — presents them with their branch and change state, and lets the user review changes under a chosen comparison scope.
