@@ -168,3 +168,35 @@ The keyboard-tree fixture holds modified and deleted files only, so the picture 
 Every item above is presentation. None of them may change what is compared, aligned or validated. The suite is the guard: **1659 checks**, and the ones that matter here are the invariants (INV-1 … INV-5), R-8, and the design contract's two rules — *a design may restyle any mark, it may never hide one*, and *every mark survives greyscale*.
 
 If an item seems to require breaking one of those, it is a decision, not an implementation detail. Write the entry first.
+
+---
+
+## 5. The third session ([DEC-083](04-decision-log.md)), on the packaged build `03d963e`
+
+The owner used it against five real repositories. Seven reports, in the order a reader hits them, each with what will refuse it and how to prove it is done.
+
+**1. The selected file is not marked** — a defect, not a styling gap
+The repository list marks the open repository with a fill and a leading bar; the file list marks nothing. `fileTable.selectRowIndexes` is called in **three places and all three are in the selftest** — the product path was never written. This is DEC-077's repository fix, on the second list, never carried across.
+*Done when:* the row for the file being shown is selected after a sweep and after a refresh, not only after a click, and an arm asserts the selected row's path equals the shown file's.
+
+**2. The three surfaces do not start at the same height**
+Measured: the pane headers are `Theme.paneHeaderHeight` = **22 pt**, and the diff pane's control band is `space4 + 24 + space4` = **40 pt**. The code's background begins 18 pt below the lists'.
+*Done when:* the tops of the three panes' content agree to the pixel, asserted from the drawn frames rather than from the constraints, at two window widths.
+
+**3. Nothing says it can be clicked, and some of it is hard to hit**
+`cursor: pointer` appears twice in `index.html` and **nowhere in the chrome** — no `NSCursor`, no `resetCursorRects` in `Sources/diffscope-app`. The `+` and the two chevrons are unbordered buttons with no size of their own, so the target is the glyph at 11 pt; collapsed, that chevron is the only thing in a 44 pt rail.
+*Done when:* every pointer affordance in both webviews declares `cursor: pointer`, every control the chrome draws sets `pointingHand`, and the `+` and both chevrons measure at least **24 × 24 pt**, asserted from their frames.
+
+**4. The change textures go** (amends DEC-035)
+Seven `--ds-tex-*` gradients, whose only job is to tell one *kind* of mark from another.
+*What will refuse it:* the greyscale rule — and it is restated rather than dropped for the second time in two days: **the tint pair is the signal**, and it already differs in luminance by measurement. `ds-moved` keeps its dashed outline, `ds-invisible` its dotted one.
+*Done when:* no `--ds-tex-*` token remains, every mark still passes the greyscale check on its tint pair, and `structural.png` is looked at full-size in both appearances.
+
+**5. The line notes go, and the legend with them** (narrows DEC-017, DEC-058)
+`ds-note` — `formatting`, `uncertain`, `reordered`, `M1`, `inserted` — and `#showing`'s *"+ added, − removed in the sign column"*.
+*The floor:* `#showing` keeps **what is being compared**, and `#diff-footer` keeps the grouped count DEC-017 permits grouping *because of*. INV-4's sentence is untouched.
+*Done when:* no `.ds-note` is emitted, `#showing` names the comparison and nothing else, the footer's count still draws, and `ds-note` leaves the contract's class table in the same commit.
+
+**6. The metal-rimmed buttons of the adopted design** — **blocked, and not on effort**
+The design is behind the owner's login. This is the fourth thing that cannot be read from here, after the glass, DEC-080's ladder and DEC-081's hues.
+*Done when:* the owner sends a screenshot of the `+` button, its values are transcribed the way the token table was, and `Theme.swift` and the contract carry them.

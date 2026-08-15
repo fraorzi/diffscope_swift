@@ -3516,3 +3516,47 @@ Measured on this machine rather than reasoned about (`22-experiment-log.md` → 
 ### Revisit trigger
 
 Reopen if the owner's WebStorm moves, or if a reader reports `⌘⏎` doing nothing — that is the silent arm above, and the answer is a template pointing at their own install rather than a change here.
+
+---
+
+## DEC-083 — The third session: the interface stops explaining itself, and starts being clickable
+
+- **Date:** 2026-08-14 · **Topic:** the product owner's third session, on the packaged build `03d963e` · **Status:** Accepted · **Amends DEC-017, DEC-035, DEC-058, DEC-077; work list in [28-interface-plan.md](28-interface-plan.md) §5**
+
+### Context
+
+The owner used the packaged build against real repositories — five of their own, twenty changed files — and reported seven things. Read one by one they are a mixed bag; read together they are two sentences, and both are continuations rather than reversals.
+
+**The first is DEC-077 carried one step further.** That entry took the *machinery's* vocabulary off the screen — `parser:`, `confidence:`, `mode:`. What is left is the same vocabulary in two quieter forms: a diagonal texture behind changed bytes whose only job is to distinguish `formatting` from `behaviour` from `uncertain`, and a grey word after the line saying which of those it is. The owner asked for both to go. The reasoning that admitted them is DEC-017's — *the invariant becomes visible* — and DEC-077 already established the answer: the apparatus is not the display, and a distinction the reader has not asked for is noise however quietly it is drawn.
+
+**The second is that things do not look clickable, and some are hard to hit.** No `cursor: pointer` anywhere in the chrome and in two places in the webview; the `+` and the two collapse chevrons are unbordered buttons with no size of their own, so the hit area is the glyph — 11 pt — and when a pane is collapsed to a 44 pt rail the chevron is the only target in it. This is not a taste report. `12-…` §9 and DEC-016 are about the keyboard being sufficient; nothing has ever said the pointer has to be *comfortable*, and the result is a window that is fully operable and unpleasant to operate.
+
+Two of the seven are plain defects rather than either sentence: **the selected file is not marked**, and **the diff pane's background starts 18 pt below the two lists'**.
+
+### Options considered
+
+1. **Take the reports one at a time as styling.** Rejected for the reason DEC-077 was written rather than a stylesheet edit: two of these reverse recorded decisions and one collides with DEC-035, and a check that is loosened without an entry is a rule that quietly stops holding.
+2. **Keep the textures and drop only the words.** Rejected: the texture exists *to* carry the distinction the words spell out. Keeping one and dropping the other leaves a signal nobody can read.
+3. **Both go; the tint pair carries greyscale; the pointer gets sized targets.** Chosen.
+
+### Final decision
+
+**Option 3**, item by item.
+
+- **The change textures go** (`--ds-tex-*`, all seven). This touches DEC-035, so the rule is restated rather than dropped, exactly as DEC-077 restated it for the underline: **the mark's greyscale signal is the tint pair**, which differs in luminance by measurement and is already checked. `ds-moved` keeps its dashed outline and `ds-invisible` its dotted one — those two are shapes rather than textures, and both mark something a reader cannot otherwise detect.
+- **The line notes go** (`ds-note`): `formatting`, `uncertain`, `reordered`, `M1`, `inserted`, `removed`. The contract already calls them *annotation only* and forbids them from being the sole carrier of anything, so nothing becomes invisible — the sign column, the gutter edge and the tint pair say what changed, and `#diff-footer` still discloses the grouped count DEC-017 requires.
+- **`#showing`'s legend goes with them.** *"+ added, − removed in the sign column"* explains a convention every reader of a diff already has. What the row keeps is **what is being compared**, which is the half DEC-058 was paid for three times.
+- **The selected file is marked**, the way the selected repository is — a fill and a bar at the leading edge. It was never a styling gap: the row is selected on click and lost on the next sweep, which is the defect DEC-077 fixed for repositories and nobody carried to the second list.
+- **The three surfaces start at the same height.** The pane headers are 22 pt and the diff pane's control band is 40, so the code's background sits 18 pt below the lists'. The band matches the headers.
+- **Anything that can be clicked says so**, and is big enough to hit: `cursor: pointer` on every pointer affordance in both webviews, `NSCursor.pointingHand` on every control the chrome draws, and a **minimum 24 × 24 pt hit area** on the `+` and the two chevrons — which is what makes a collapsed 44 pt rail usable.
+- **The metal-rimmed buttons of the adopted design are deferred**, not rejected. The design is behind the owner's login and this is the fourth thing that cannot be read from here; it is written down as blocked on one screenshot rather than guessed at.
+
+### Consequences
+
+- **Six of the seven marks lose their texture and keep their meaning.** The greyscale rule moves onto a measurement that already exists, so DEC-035 is satisfied by fewer mechanisms rather than by a weaker one — and the checks that enforced the texture are re-expressed, not deleted.
+- **`ds-note` leaves the class table** and the design contract loses a row. Nothing referenced it as a sole carrier, which is why this is cheap.
+- **Four questions are now queued for the owner**, all answerable with a screenshot: the glass, DEC-080's ladder, DEC-081's hues, and this entry's button rim. That is a standing cost of a design nobody in the repository can open, and it is worth stating plainly rather than re-discovering.
+
+### Revisit trigger
+
+Reopen the first point if a reader ever asks *why is this line marked* — the textures and the notes were the answer to that question, and what replaces them is the footer's count plus Expanded. Reopen the second if a pointer target still misses at any window size the reader actually uses.
