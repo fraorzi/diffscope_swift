@@ -94,7 +94,15 @@ if (cd / && DIFFSCOPE_SELFTEST=1 DIFFSCOPE_CONFIG="$PROOF_CONFIG" \
     echo "!! the keyboard walk was skipped — the 63-file tree never reached the selftest"; exit 1
   fi
 else
-  echo "!! the packaged application failed away from the source tree:"; cat "$PROOF/log"; exit 1
+  STATUS=$?
+  # **The exit code, and the last arm that reported.** A run died here once in four and the log
+  # simply stopped: the code maps to the arm through the `exit(N)` constants, and the last line
+  # says which arm got that far. Without both, the whole log is a haystack.
+  echo "!! the packaged application failed away from the source tree (exit $STATUS):"
+  echo "   last arm to report: $(grep 'SELFTEST' "$PROOF/log" | tail -1 | cut -c1-120)"
+  echo "   the whole log is kept at $PROOF/log"
+  cat "$PROOF/log"
+  exit 1
 fi
 rm -rf "$PROOF"
 

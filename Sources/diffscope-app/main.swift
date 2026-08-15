@@ -1679,7 +1679,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 let count = self.terminal.tabs.count
                 // Back to the first tab: its scrollback must still hold what it held, which is the
                 // whole claim behind one emulator per tab.
-                guard let first = self.terminal.tabs.first else { exit(54) }
+                // **Never silently.** A packaging run died here once in four and the log simply
+                // stopped after the previous arm — no MISMATCH, no trace, nothing to grep for. An
+                // `exit` with no message is a failure that cannot be read, which is the shape M9-C
+                // was written about.
+                guard let first = self.terminal.tabs.first else {
+                    FileHandle.standardError.write(Data(
+                        "SELFTEST terminal-tabs=MISMATCH the tab list was empty after opening one\n".utf8))
+                    exit(54)
+                }
                 self.terminal.selectTab(first.id)
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                     self.terminal.probe { back in

@@ -2388,3 +2388,29 @@ the 1.30:1 floor at 2.72:1, so no check objects — this is a question for the o
 in `28-…` §5 rather than left for them to notice.
 
 1756 → 1759 checks.
+
+## Step 83 — the packaging gate failed once in four, and the log said nothing
+
+`./Scripts/package.sh` refused to package on the first attempt of this session — **27 arms, then
+nothing**. Three further runs passed at 49, 50 and 49. The log ends after `terminal-follow=OK` with
+no `MISMATCH`, no trace and no exit code: **an `exit` with no message**, which is a failure that
+cannot be read.
+
+- [x] the one silent `exit` on that path — `guard let first = terminal.tabs.first else { exit(54) }`
+      — says what happened first
+- [x] `package.sh` prints the **exit status** and the **last arm to report** on failure, and names
+      where the whole log is kept
+
+### Step 83 — and I threw the evidence away myself
+
+The script already `cat`s the whole log and leaves `$PROOF` on disk. The first run's output was lost
+because I piped it through `tail -20` — **M9-C's lesson pointed at the person running the command
+rather than at the instrument.** The log was recoverable from the temporary directory, which is how
+the cause was narrowed at all.
+
+**The intermittent is not closed.** One failure in four, in the second-shell arm, on a path untouched
+by this session's work. What has changed is that the next occurrence will name itself: the exit code
+maps to an arm through the `exit(N)` constants, and the gate prints both.
+
+The arm count itself varies between runs — 49, 50, 49 — so *N arms passed* is not a number to assert
+on either.
