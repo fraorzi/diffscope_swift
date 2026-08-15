@@ -97,6 +97,24 @@ enum Theme {
     static let buttonRimWidth: CGFloat = 1
     static let buttonRadius: CGFloat = 6
 
+    /// `--ds-rim-highlight`, `--ds-rim-shadow`, `--ds-rim-fill` (DEC-084): the adopted design's
+    /// rimmed disc, which the `+` wears.
+    ///
+    /// **The rim is a pair, and the pair is the effect.** A gradient whose two ends are the same
+    /// colour is a flat stroke with extra steps, so the two are held **1.30:1 apart in luminance** —
+    /// the same form of assertion the change tints get, and for the same reason: metal is a
+    /// *lightness* gradient, and a check on hue would pass a rim nobody can see. Measured at 4.49:1
+    /// in dark and 2.72:1 in light.
+    ///
+    /// Derived from `--ds-button-rim` opened out in both directions along DEC-080's ladder rather
+    /// than transcribed: the design arrived as a small paste and never as a file, so nothing in it
+    /// was measured. If the design's own values differ this is a token edit and nothing else.
+    static let rimHighlight = dynamic(dark: hex(0x9a9aa6), light: hex(0xffffff))
+    static let rimShadow = dynamic(dark: hex(0x33333c), light: hex(0x9c9ca8))
+    static let rimFill = dynamic(dark: hex(0x1b1b21), light: hex(0xe9e9f0))
+    /// A guess, and named as one in DEC-084: legible on this machine, unmeasured from the design.
+    static let rimWidth: CGFloat = 1.5
+
     /// `--ds-kind-added`, `--ds-kind-modified`, `--ds-kind-deleted`, `--ds-kind-renamed` (DEC-081).
     /// Named in full rather than abbreviated, because the mirror check reads these names literally
     /// — the shorthand `-modified` left three of the four unmirrored and the check said so. The

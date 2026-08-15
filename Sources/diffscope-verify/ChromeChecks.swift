@@ -289,6 +289,9 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
             // DEC-081: the file-kind glyphs, on **all three surfaces a row is drawn on**. Adding a
             // colour to the window means adding its rows here — which is the whole reason DEC-076
             // built this list by hand rather than as a cross product.
+            // DEC-084: the rimmed disc. The glyph on its fill, and the fill against the surface
+            // it is cut into — a disc the chrome swallows is a control nobody sees.
+            ("--ds-text", "--ds-rim-fill", "the + inside the rimmed disc"),
             ("--ds-kind-added", "--ds-panel-files", "the + on an added file"),
             ("--ds-kind-added", "--ds-panel-repos", "and on the collapsed spine's bar"),
             ("--ds-kind-added", "--ds-row-selected", "and on the file the reader has open"),
@@ -318,6 +321,35 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
         }
         report("every ink/surface pair the chrome draws clears 4.5:1 in both appearances",
                failing.isEmpty, failing.joined(separator: " | "))
+
+        // DEC-084: **the rim is a pair, and the pair is the effect.** A gradient whose two ends are
+        // the same colour is a flat stroke wearing a gradient's clothes — so the two are held apart
+        // in *luminance*, the same form the change tints are held to and for the same reason: metal
+        // is a lightness gradient, and a check on hue would pass a rim nobody can see.
+        do {
+            var flat: [String] = []
+            var measured: [String] = []
+            for dark in [false, true] {
+                guard let high = value("--ds-rim-highlight", dark: dark),
+                      let low = value("--ds-rim-shadow", dark: dark) else {
+                    flat.append("undeclared in \(dark ? "dark" : "light")"); continue
+                }
+                let apart = ratio(high, low)
+                measured.append(String(format: "%@ %.2f", dark ? "dark" : "light", apart))
+                if apart < 1.30 {
+                    flat.append(String(format: "%@ only %.2f:1 apart", dark ? "dark" : "light", apart))
+                }
+            }
+            report("the rim's two ends differ in luminance, so it reads as metal (DEC-084)",
+                   flat.isEmpty, flat.joined(separator: " | "))
+            report("and the measurements are printed", measured.count == 2,
+                   measured.joined(separator: ", "))
+            // The control is the thing the entry rejected: `--ds-button-rim` used at both ends,
+            // which is what "add a border" would have produced.
+            let flatRim = ratio("#b8b8c0", "#b8b8c0")
+            report("negative control: a rim whose ends are one colour is caught", flatRim < 1.30,
+                   String(format: "%.2f:1", flatRim))
+        }
 
         // DEC-081: **the glyph is the carrier and the colour is the reinforcement**, in that order.
         // Four kinds have a colour; the vocabulary that survives greyscale is untouched, so this
@@ -445,7 +477,7 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
             // `HandButton: NSButton` is a view the chrome draws and would have walked straight
             // through — which it did, on the run that added it.
             let regex = try! NSRegularExpression(
-                pattern: "final class ([A-Za-z]+): (NSView|NSButton|NSControl|NSTableRowView"
+                pattern: "(?:final )?class ([A-Za-z]+): (NSView|NSButton|NSControl|HandButton|NSTableRowView"
                     + "|NSObject, WKNavigationDelegate)")
             let text = source as NSString
             for match in regex.matches(in: source, range: NSRange(location: 0, length: text.length)) {

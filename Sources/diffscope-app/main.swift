@@ -3334,7 +3334,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// be the third hand-written copy of the keyboard map, which is exactly the drift M8-P found in
     /// the tester packet.
     private func buildAddSourceButton() -> NSButton {
-        let button = HandButton(title: "+", target: self, action: #selector(showAddSourceMenu(_:)))
+        // DEC-084: the design draws this as a rimmed disc rather than as a character.
+        let button = RimButton(title: "+", target: self, action: #selector(showAddSourceMenu(_:)))
         button.isBordered = false
         button.font = Theme.font(Theme.textSize, weight: .semibold)
         button.contentTintColor = Theme.inkQuiet

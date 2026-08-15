@@ -2359,3 +2359,32 @@ requirement is the *disclosed count*, which the footer and the fold marker carry
 already asserted in three other places. The fourth assertion was about a thing the contract itself
 called annotation only and forbade from being anything's sole carrier — so it asserts `notes: []`
 now, which is the opposite claim and the one DEC-083 makes.
+
+## Step 82 — `28-…` §5 item 6: the `+` becomes the design's rimmed disc (DEC-084)
+
+- [x] **DEC-084 before the code**, and it names which values were read and which were guessed
+- [x] `RimButton: HandButton` — a disc, a clipped-and-filled gradient ring, the glyph inside
+- [x] `--ds-rim-highlight`, `--ds-rim-shadow`, `--ds-rim-fill`, mirrored in `Theme.swift`
+- [x] the pair is held **1.30:1 apart in luminance**, with a flat rim as the control; the glyph joins
+      the contrast list against its fill
+- [x] `RimButton` in `24-…` in the same commit — the widened subclass check demanded it
+
+### Step 82 — the gradient ran the wrong way, and squinting got it backwards
+
+`NSButton` draws in a **flipped** space, so 90° points at increasing y — visually downward — and the
+highlight landed at the bottom: a disc that reads as *pressed* rather than raised.
+
+Looking at the two pictures suggested light was wrong and dark was right. **Both readings were
+wrong**: the brightest pixel on the disc's centre line is the `+` glyph, not the ring, so the probe
+that ranked by brightness was measuring the text. Sampling the ring's *crossings* — the first and
+last y that departs from the surface — settled it: both appearances had the highlight at the bottom.
+
+`isFlipped` is false now, and the same probe reads **+94 in dark, +27 in light**.
+
+### Step 82 — and the light rim is much subtler than the dark one
+
++27 against +94. A white highlight on an already-light surface has less room to work in. It clears
+the 1.30:1 floor at 2.72:1, so no check objects — this is a question for the owner's eye, and it is
+in `28-…` §5 rather than left for them to notice.
+
+1756 → 1759 checks.

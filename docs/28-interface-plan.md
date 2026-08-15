@@ -197,7 +197,7 @@ Seven `--ds-tex-*` gradients, whose only job is to tell one *kind* of mark from 
 *The floor:* `#showing` keeps **what is being compared**, and `#diff-footer` keeps the grouped count DEC-017 permits grouping *because of*. INV-4's sentence is untouched.
 *Done when:* no `.ds-note` is emitted, `#showing` names the comparison and nothing else, the footer's count still draws, and `ds-note` leaves the contract's class table in the same commit.
 
-**6. The metal-rimmed buttons of the adopted design** — **blocked, and not on effort**
+**6. The metal-rimmed buttons of the adopted design** ([DEC-084](04-decision-log.md)) — **landed**
 The design is behind the owner's login. This is the fourth thing that cannot be read from here, after the glass, DEC-080's ladder and DEC-081's hues.
 *Done when:* the owner sends a screenshot of the `+` button, its values are transcribed the way the token table was, and `Theme.swift` and the contract carry them.
 
@@ -206,3 +206,11 @@ The design is behind the owner's login. This is the fourth thing that cannot be 
 **Three marks keep a shape, and all three are outlines rather than patterns** — each marks something a reader cannot otherwise detect. `ds-moved` dashed, `ds-invisible` dotted, and `ds-fallback` **gains a solid one**: it had only a texture, and it is INV-4 in the case the notice cannot reach — a *partial* parse, where the result stands and named regions inside it were never read as code. The sentence says how many; the outline says which.
 
 *Two checks had to be repaired rather than relaxed.* The shape check was anchored on `.name {` and four marks now share one rule, so it reported **no rule at all** for every one of them — failing closed, which is the right direction, for the wrong reason and with a message pointing nowhere. And the `formatting-collapse` arm asserted the word `formatting` appeared *after the code*; DEC-017's actual requirement is the disclosed count, which the footer and the fold marker carry, so the arm asserts `notes: []` and the three places the count appears.
+
+*How item 6 landed.* The owner sent the button and it settled three things a guess would have got wrong: it is a **disc**, not a glyph in a row; the rim is a **gradient** around the ring, bright along the top and falling away toward the bottom; and the fill is close to the surface behind it, so the disc reads as cut into the chrome. `RimButton` subclasses `HandButton`, so DEC-083's pointing hand and 24 pt floor come with it. AppKit cannot stroke a path with a gradient, so the ring is clipped and *filled* instead.
+
+**What the screenshot could not settle is written down as guessed**, not quietly decided: it arrived as a small paste and never as a file, so nothing in it was measured. The rim width (1.5 pt) and the diameter (24 pt) are guesses; the colours are derived from `--ds-button-rim` opened out along DEC-080's ladder. If the design's values differ, this is a token edit and nothing else.
+
+**The gradient ran the wrong way and only a measurement said so.** `NSButton` draws in a flipped space, where 90° points at increasing y — visually *downward* — so the highlight landed at the bottom and the disc read as pressed rather than raised. Sampling the ring's crossings on the snapshot caught it; squinting at the picture had already suggested light was wrong and dark was right, which was itself wrong, because the brightest pixel on the centre line is the `+` glyph rather than the ring. `isFlipped` is false now and both appearances measure the highlight on top: **+94 in dark, +27 in light**.
+
+That gap is worth the owner's eye: the light rim is a good deal subtler than the dark one, because a white highlight on an already-light surface has less room to work in. It passes the 1.30:1 floor at 2.72:1 and it may still want to be steeper.

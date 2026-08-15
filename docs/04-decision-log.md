@@ -3560,3 +3560,48 @@ Two of the seven are plain defects rather than either sentence: **the selected f
 ### Revisit trigger
 
 Reopen the first point if a reader ever asks *why is this line marked* — the textures and the notes were the answer to that question, and what replaces them is the footer's count plus Expanded. Reopen the second if a pointer target still misses at any window size the reader actually uses.
+
+---
+
+## DEC-084 — The `+` becomes a rimmed disc, and the rim is a gradient because that is what "metal" means
+
+- **Date:** 2026-08-14 · **Topic:** the adopted design's button treatment, unblocked by a screenshot · **Status:** Accepted · **Extends DEC-066, DEC-076, DEC-083; item 6 of [28-interface-plan.md](28-interface-plan.md) §5**
+
+### Context
+
+[DEC-083](04-decision-log.md) deferred this item rather than guessing at it: the adopted design is behind the owner's login, and *metalowe obramowanie* can be built three ways that look nothing like each other. The owner sent the button.
+
+**What the screenshot settles**, and these are read off the image rather than inferred:
+
+- The control is a **disc**, not a glyph in a row. The current `+` is a borderless button whose whole appearance is the character.
+- The rim is a **gradient around the ring** — brighter along the top, falling away toward the bottom. That is the whole of why it reads as metal: a specular highlight where light would land, and a flat stroke of the same colour does not read that way at any width.
+- The fill is **darker than the rim and close to the surface behind it**, so the disc reads as cut into the chrome rather than sitting on it.
+- The glyph is light, thin, and centred.
+
+**What the screenshot does not settle, and this is stated rather than quietly decided.** It arrived as a small paste and never reached this machine as a file, so nothing in it was *measured*: no hex values, no rim width in points, no gradient stops. Every number below is derived from the token ladder this repository already holds, so the button stays inside the design system instead of importing four colours nobody can check. **Two of them are guesses and are named as such in the consequences.**
+
+### Options considered
+
+1. **A flat stroke in `--ds-button-rim`.** This is what the empty state's two buttons already draw, and it is what "add a border" would have produced. Rejected on the evidence: the screenshot's ring is plainly lighter at one edge than the other, and a flat ring is the thing the owner has now asked twice not to get.
+2. **An image asset.** Rejected — a bitmap rim cannot follow the appearance, cannot be held to a contrast ratio, and would be the first value in this window that a design could not change from the token table.
+3. **A gradient-clipped ring drawn from two tokens.** Chosen.
+
+### Final decision
+
+**Option 3.** `RimButton` draws a disc: the fill, then the rim as an `NSGradient` clipped to the ring between two circles, running from `--ds-rim-highlight` at the top to `--ds-rim-shadow` at the bottom. It subclasses `HandButton`, so it inherits DEC-083's pointing hand and 24 × 24 pt floor rather than restating them.
+
+Four tokens, in both appearances and mirrored in `Theme.swift`: `--ds-rim-highlight`, `--ds-rim-shadow`, `--ds-rim-fill`, and the glyph keeps `--ds-text`.
+
+**The rim is a pair, and the pair is what is checked.** A gradient whose two ends are the same colour is a flat stroke wearing a gradient's clothes, so the two are held **1.30:1 apart in luminance** — the same form of assertion the change tints get, for the same reason: the effect is a *lightness* difference and a check on hue would pass a rim nobody can see. The glyph is added to the contrast list against the fill it is drawn on, which is DEC-076's rule and the reason that list is hand-maintained.
+
+Applied to the `+` alone. The empty state's two buttons keep their flat rim: they are standard `NSButton`s by decision, drawn *around* rather than replacing, and a gradient there would mean drawing them ourselves and losing the key-equivalent ring.
+
+### Consequences
+
+- **Two numbers are guesses**, and the owner should overrule either: the **rim width** (1.5 pt) and the **diameter** (24 pt, DEC-083's floor). Both are legible on this machine and neither was measured from the design.
+- The colours are derived, not transcribed: the highlight and shadow are the existing `--ds-button-rim` opened out in both directions along the ladder DEC-080 established. **If the design's values differ, this is a token edit and nothing else** — which is the whole point of them being tokens.
+- **This is the fourth question answered out of four asked**, and the first one where the answer arrived as a picture. The other three — the glass, DEC-080's ladder, DEC-081's hues — are still open.
+
+### Revisit trigger
+
+Reopen if the owner reads the disc as *pressed* rather than as *raised*: that is the gradient running the wrong way, and the fix is to swap the two tokens rather than to redraw anything.

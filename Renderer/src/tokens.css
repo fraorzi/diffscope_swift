@@ -192,6 +192,12 @@
   /* The file-kind glyphs (DEC-081). Colour **and** the glyph, never colour alone — `+ − → ✎` carry
    * the kind with every colour removed (DEC-035), and these say it a second way for the reader who
    * is scanning rather than reading. Held to 4.5:1 on all three surfaces a row is drawn on. */
+  /* The adopted design's rimmed disc (DEC-084), which the `+` wears. The rim is a **gradient**:
+   * a flat ring of one colour does not read as metal at any width. Highlight at the top, shadow at
+   * the bottom, held 1.30:1 apart in luminance because the effect is a lightness difference. */
+  --ds-rim-highlight: #ffffff;
+  --ds-rim-shadow: #9c9ca8;
+  --ds-rim-fill: #e9e9f0;
   --ds-kind-added: #16602a;
   --ds-kind-modified: #7a5300;
   --ds-kind-deleted: #9e1420;
@@ -279,6 +285,9 @@
     --ds-control-border: #3a3a42;
     --ds-button-rim: #6e6e78;
     --ds-button-fill: #1c1c1f;
+    --ds-rim-highlight: #9a9aa6;
+    --ds-rim-shadow: #33333c;
+    --ds-rim-fill: #1b1b21;
     --ds-kind-added: #5cd67d;
     --ds-kind-modified: #e8bd45;
     --ds-kind-deleted: #ff8b84;

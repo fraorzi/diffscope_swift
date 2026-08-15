@@ -519,7 +519,7 @@ final class SegmentList: NSView {
 /// The minimum is **24 × 24 pt**: the hit area is the button's frame rather than its title, so this
 /// is the whole of making them clickable. It is a floor, not a size — a button with more to say
 /// stays as wide as its words.
-final class HandButton: NSButton {
+class HandButton: NSButton {
     override func resetCursorRects() {
         super.resetCursorRects()
         guard isEnabled else { return }
@@ -534,6 +534,68 @@ final class HandButton: NSButton {
             widthAnchor.constraint(greaterThanOrEqualToConstant: Theme.minimumHitTarget),
             heightAnchor.constraint(greaterThanOrEqualToConstant: Theme.minimumHitTarget),
         ])
+    }
+}
+
+/// The adopted design's button (DEC-084): a disc with a **metallic** rim and the glyph inside it.
+///
+/// The rim is a gradient around the ring rather than a stroke, and that is the whole of the effect:
+/// a flat ring of the same colour does not read as metal at any width, because what the eye is
+/// looking for is a **specular highlight where light would land**. Bright along the top, falling
+/// away toward the bottom.
+///
+/// AppKit cannot stroke a path with a gradient, so the ring is drawn the other way round: clip to
+/// the area between two circles and fill *that* with the gradient.
+///
+/// It subclasses `HandButton` so DEC-083's pointing hand and 24 × 24 pt floor come with it rather
+/// than being restated — this is the same control, wearing the design's clothes.
+final class RimButton: HandButton {
+    /// **Unflipped, and this is what makes the highlight land on top.** `NSButton` draws in a
+    /// flipped space, where 90° points at increasing y — which is visually *downward* — so the
+    /// gradient ran shadow-over-highlight and the disc read as pressed rather than raised. Measured
+    /// off the snapshot rather than argued: the ring's bottom sampled lighter than its top.
+    /// Overriding this is safe because `draw(_:)` below never calls `super` and the cell draws
+    /// nothing of its own.
+    override var isFlipped: Bool { false }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let side = min(bounds.width, bounds.height)
+        let disc = NSRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2,
+                          width: side, height: side)
+            .insetBy(dx: Theme.rimWidth / 2, dy: Theme.rimWidth / 2)
+
+        NSBezierPath(ovalIn: disc).addClip()
+        Theme.rimFill.setFill()
+        disc.fill()
+
+        // The ring: everything between the disc's edge and `rimWidth` inside it. Filling a clipped
+        // annulus is what gives the gradient somewhere to run — a stroked path takes one colour.
+        NSGraphicsContext.saveGraphicsState()
+        let ring = NSBezierPath(ovalIn: disc)
+        ring.append(NSBezierPath(ovalIn: disc.insetBy(dx: Theme.rimWidth, dy: Theme.rimWidth)))
+        ring.windingRule = .evenOdd
+        ring.addClip()
+        // 90° is *upward* in AppKit's coordinates, so the highlight lands on top.
+        NSGradient(starting: Theme.rimShadow, ending: Theme.rimHighlight)?
+            .draw(in: disc, angle: 90)
+        NSGraphicsContext.restoreGraphicsState()
+
+        // The glyph last, and drawn rather than left to `NSButton`: the title would be laid out
+        // against the whole frame, and this control's subject is the disc inside it.
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: Theme.prose(Theme.textSize, weight: .semibold),
+            .foregroundColor: Theme.ink,
+        ]
+        let glyph = title as NSString
+        let size = glyph.size(withAttributes: attributes)
+        glyph.draw(at: NSPoint(x: disc.midX - size.width / 2, y: disc.midY - size.height / 2),
+                   withAttributes: attributes)
+    }
+
+    /// What the disc is made of, for the arm: a picture of a gradient cannot say whether its two
+    /// ends differ, and two ends that do not differ are a flat ring with extra steps.
+    var rimReport: (diameter: CGFloat, width: CGFloat, highlight: NSColor, shadow: NSColor) {
+        (min(bounds.width, bounds.height), Theme.rimWidth, Theme.rimHighlight, Theme.rimShadow)
     }
 }
 

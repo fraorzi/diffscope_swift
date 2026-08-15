@@ -175,8 +175,11 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("the drawn controls set a cursor of their own",
                pill.contains("override func resetCursorRects()")
                    && pill.contains("cursor: .pointingHand"))
+        // `HandButton` lost its `final` when `RimButton` came to inherit the hand and the 24 pt
+        // floor rather than restate them (DEC-084), so the check reads the declaration without it.
         report("and the borderless buttons are the kind that does",
-               pill.contains("final class HandButton: NSButton")
+               pill.contains("class HandButton: NSButton")
+                   && pill.contains("final class RimButton: HandButton")
                    && !shell.contains("NSButton(title: \"+\"")
                    && !shell.contains("NSButton(title: collapsed ? \"»\" : \"«\""))
         // The floor is a number in the token file, so a control added later inherits it.
