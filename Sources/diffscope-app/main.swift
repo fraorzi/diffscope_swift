@@ -110,11 +110,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var fileFocusRing: NSView?
     var diffFocusRing: NSView?
     var searchField: NSSearchField!
+    /// The rim around it (DEC-085 item 5); what the title bar actually lays out.
+    var searchFieldHost: NSView!
+    /// The title bar's row, held so its centre can be matched to the traffic lights (DEC-086).
+    var titleRowStack: NSStackView!
     /// Which scope the next submission searches. ⇧⌘F sets it and the placeholder says so — the
     /// alternative is a field that answers a different question depending on how it was opened.
     var searchScope: SearchScope = .changedFiles
     /// The sentence stating which convention the uncommitted counts use (`12-…` §2).
-    var conventionLabel: NSTextField!
     /// The status line's own fields (DEC-075): what the watcher is doing, how old the window is,
     /// the layout, and the wrap switch. The transient message keeps `statusLabel`.
     var watchLabel: NSTextField!
@@ -336,34 +339,22 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         fileHeaderBar = fileHeader
         updatePaneHeaders()
 
-        // `12-…` §2: the uncommitted count *"must state which convention it uses"*. On screen,
-        // under the counts it describes, rather than in a tooltip or a document the reader does
-        // not have. The sentence comes from the Git layer, beside the operation it is about.
-        conventionLabel = NSTextField(labelWithString: RepositoryReader.uncommittedCountConvention)
-        // A sentence, so the proportional face rather than the monospace the paths use — it fits
-        // the pane in two lines instead of three, and the third was being clipped.
-        conventionLabel.font = Theme.prose(Theme.textSizeTiny)
-        conventionLabel.textColor = Theme.inkQuiet
-        conventionLabel.maximumNumberOfLines = 2
-        conventionLabel.lineBreakMode = .byWordWrapping
-        conventionLabel.preferredMaxLayoutWidth = Theme.repositoryPaneWidth - 2 * Theme.space3
-        // Both priorities, or the sentence vanishes: a stack view will happily give a label zero
-        // height next to a scroll view that grows without limit, and it did — the first version of
-        // this pane rendered the caption at three lines with the third clipped, and squeezed it out
-        // of existence entirely when the text got shorter. M8-D's defect class, one pane over.
-        conventionLabel.setContentCompressionResistancePriority(.required, for: .vertical)
-        // **Horizontally it gives way**, which is the last thing pinning this pane at 280 (`28-…`
-        // §6 item 1). Vertical resistance is required because the sentence must not be clipped to
-        // one line; horizontal resistance at the default 750 made the label's own text the pane's
-        // floor, so the second divider dragged and the first would not move at all.
-        conventionLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        conventionLabel.setContentHuggingPriority(.required, for: .vertical)
+        // DEC-086: **the convention sentence has left the pane.** `12-…` §2 requires the
+        // uncommitted count to state which convention it uses, and it does — on the count's own
+        // tooltip, where a reader asks. Drawn permanently under the list it was an explanation of
+        // how a number was reached, on every window, for everyone who had not asked: DEC-077's
+        // subject exactly. The sentence still comes from the Git layer beside the operation it is
+        // about, and `TrustSurfaceChecks` still holds the wording.
         let repoScroll = scrollWrapping(repoTable, surface: Theme.panelRepositories)
         // The convention caption belongs to the repository list, not to the status bar: it
         // explains what that list's counts mean, and it is a sentence — in a 24 pt bar it wrapped
         // to two lines and pushed the bar out of shape. `12-…` §2 asks for it *shown*, so it is
         // not a tooltip either.
-        let leftStack = NSStackView(views: [repoHeader, repoScroll, conventionLabel])
+        // DEC-086: **the convention caption is gone from the pane.** DEC-012's disclosure — the
+        // count is of `git status --porcelain` entries, so an untracked directory counts once — is
+        // real and surprising, and it was drawn permanently under the list for every reader who had
+        // not asked. It is on the count's own tooltip now, where the question gets asked.
+        let leftStack = NSStackView(views: [repoHeader, repoScroll])
         // The caption under the repository list sits on the list's own surface, not on the
         // window's: it belongs to that pane and the seam would say otherwise (`--ds-panel-repos`).
         leftStack.wantsLayer = true
@@ -386,8 +377,6 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         repoScroll.translatesAutoresizingMaskIntoConstraints = false
         repoScroll.widthAnchor.constraint(equalTo: leftStack.widthAnchor,
                                           constant: -2 * Theme.space3).isActive = true
-        conventionLabel.widthAnchor.constraint(equalTo: leftStack.widthAnchor,
-                                               constant: -2 * Theme.space3).isActive = true
         // The header takes the whole pane, because the hairline under it is the seam between the
         // header and the list: a rule stopping 6 pt short of the divider reads as a mistake.
         repoHeader.widthAnchor.constraint(equalTo: leftStack.widthAnchor).isActive = true
@@ -445,6 +434,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         searchField.sendsSearchStringImmediately = false
         searchField.sendsWholeSearchString = true
         searchField.widthAnchor.constraint(equalToConstant: Theme.emptyStateMaximumWidth / 2).isActive = true
+        // DEC-085 item 5: the same metal as the `+`. The field keeps its own editing, its focus
+        // behaviour and its cancel button — the rim is a container around a system control, not a
+        // control drawn from scratch.
+        searchField.isBezeled = false
+        searchField.drawsBackground = false
+        searchField.focusRingType = .none
+        searchFieldHost = RimHost.wrapping(searchField)
 
         // The scope and what it compares have left this band for a row of their own, across the
         // window (DEC-072): changing the scope changes the *file list*, so the control belongs
@@ -637,6 +633,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // drag sticking), so without this the split distributes by holding priority and the window
         // opened with a 150 pt repository pane instead of 280. `setPosition` is a starting point a
         // drag can move; a constraint was a floor it could not.
+        alignTitleRowToTrafficLights()
         window.contentView?.layoutSubtreeIfNeeded()
         splitView.setPosition(Theme.repositoryPaneWidth, ofDividerAt: 0)
         splitView.setPosition(Theme.repositoryPaneWidth + splitView.dividerThickness
@@ -1335,14 +1332,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
-    /// `28-…` item 3: **the horizontal track is absent when there is nothing to scroll**, and
-    /// present the moment there is. DEC-077 reverses `24-…`'s *quietened, never removed* here, and
-    /// the reversal only holds if both halves are checked — a control that is always gone is as
-    /// wrong as one that is always there.
-    ///
-    /// The document is two lines, three characters and three hundred, which is also `28-…` item 2's
-    /// stated acceptance test: with wrapping off they must be tinted to the **same** right edge,
-    /// and that edge is the long line's, not the pane's.
+    /// `28-…` item 2's acceptance test, on the document that exercises it — and all that is left
+    /// of the track arm, because DEC-086 removed the control. What that arm proved besides the
+    /// slider is worth keeping: with wrapping off, a three-character line and a three-hundred
+    /// character line are tinted to the **same right edge**, which is the long line's rather than
+    /// the pane's.
     private func runTrackSelftest(then next: @escaping () -> Void) {
         let short = "abc\n"
         let long = String(repeating: "const someRatherLongIdentifier = 1; ", count: 9) + "\n"
@@ -1355,39 +1349,23 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                       notices: outcome.notices)
         guard let json = try? encodeRenderModel(render) else { exit(27) }
         push(json)
-
-        func state(_ label: String, _ handler: @escaping (Bool, Bool, String) -> Void) {
-            webView.evaluateJavaScript("JSON.stringify(window.diffscopeTrackState())") { value, _ in
-                let text = (value as? String) ?? "nil"
-                let data = Data(text.utf8)
-                let probe = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
-                let hidden = probe["hidden"] as? Bool ?? true
-                let span = probe["span"] as? Int ?? 0
-                let sameEdge = probe["sameEdge"] as? Bool ?? false
-                FileHandle.standardError.write(Data(
-                    ("SELFTEST track-\(label) hidden=\(hidden) span=\(span) "
-                        + "sameEdge=\(sameEdge) \(text)\n").utf8))
-                handler(hidden, sameEdge, text)
-            }
-        }
-        // Wrapping off: the long line overflows, so there is something to scroll and the control
-        // has to be there. Wrapping on: nothing overflows and it has to be gone. The two states are
-        // each other's control — neither on its own distinguishes the rule from a constant.
         webView.evaluateJavaScript("window.diffscopeSetWrap(false)") { _, _ in
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                state("overflowing") { hidden, sameEdge, _ in
-                    let present = !hidden && sameEdge
+                self.webView.evaluateJavaScript("JSON.stringify(window.diffscopeTrackState())") { value, _ in
+                    let text = (value as? String) ?? "nil"
+                    let data = Data(text.utf8)
+                    let probe = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+                    let sameEdge = probe["sameEdge"] as? Bool ?? false
+                    let span = probe["span"] as? Int ?? 0
+                    // And nothing draws a slider for it any more.
+                    let hidden = probe["hidden"] as? Bool ?? false
+                    let ok = sameEdge && span > 0 && hidden
+                    FileHandle.standardError.write(Data(
+                        ("SELFTEST same-edge=\(ok ? "OK" : "MISMATCH") sameEdge=\(sameEdge) "
+                            + "span=\(span) no-slider=\(hidden)\n").utf8))
                     self.webView.evaluateJavaScript("window.diffscopeSetWrap(true)") { _, _ in
-                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
-                            state("fits") { hiddenNow, _, _ in
-                                FileHandle.standardError.write(Data(
-                                    ("SELFTEST track=\(present && hiddenNow ? "OK" : "MISMATCH") "
-                                        + "present-when-scrollable=\(present) "
-                                        + "absent-when-not=\(hiddenNow)\n").utf8))
-                                guard present && hiddenNow else { exit(28) }
-                                next()
-                            }
-                        }
+                        guard ok else { exit(28) }
+                        next()
                     }
                 }
             }
@@ -3280,8 +3258,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // hand, and a standard bordered button keeps the arrow the platform gives it. The empty
         // state's two buttons and Settings' are already unmistakably buttons — the complaint was
         // about the ones that are not, and a push button with a pointing hand looks like the web.
-        sourcesButton = HandButton(title: "Sources ⌄", target: self,
-                                   action: #selector(showSourcesMenu(_:)))
+        // DEC-085 item 6: the same chevron the switches draw, rather than a character in the
+        // title. The button keeps its menu — `Sources` opens the four things a reader does to
+        // *which repositories exist* (DEC-071), which is a different question from the switches'
+        // *what am I looking at*, so it keeps a menu rather than gaining a popover of options.
+        sourcesButton = ChevronButton(title: "Sources", target: self,
+                                      action: #selector(showSourcesMenu(_:)))
         sourcesButton.isBordered = false
         sourcesButton.font = Theme.prose(Theme.textSizeSmall)
         sourcesButton.contentTintColor = Theme.inkQuiet
@@ -3294,14 +3276,20 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             .joined(separator: "\n")
 
         let stack = NSStackView(views: [name, titleRepositoryLabel, titlePathLabel,
-                                        spacerView(), sourcesButton, searchField])
+                                        spacerView(), sourcesButton, searchFieldHost])
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = Theme.space3
         // The traffic lights live at the left of this bar and the system draws them there, so the
         // content starts clear of them rather than under them.
+        //
+        // **Horizontally that was already right; vertically it was not** (DEC-086). The lights are
+        // centred in the *titlebar* the system owns, and this stack is centred in a 44 pt bar of
+        // ours — two different centre lines, which is what the owner saw. `titleRowCentring` is
+        // applied once the window exists, because only then is there a button to measure.
         stack.edgeInsets = NSEdgeInsets(top: 0, left: Theme.trafficLightInset,
                                         bottom: 0, right: Theme.space6)
+        titleRowStack = stack
 
         let bar = ChromeBar(surface: Theme.chrome, edge: .bottom)
         bar.addSubview(stack)
@@ -3534,6 +3522,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
         // A real checkbox: it keeps its own drawn state, its accessibility and its behaviour, which
         // is the same reasoning the empty state's buttons are built on.
+        // DEC-086: the system's blue tick goes, and the metal takes its place. Still an
+        // `NSButton` checkbox underneath, so the key equivalent and the state are the system's.
         wrapButton = NSButton(checkboxWithTitle: ChromeLabels.wrapTitle, target: self,
                               action: #selector(toggleWrap))
         wrapButton.font = Theme.prose(Theme.textSizeSmall)
@@ -3788,6 +3778,29 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         return state.fileRows[fileTable.selectedRow].file?.path
     }
 
+    /// DEC-086: **the title row sits on the traffic lights' centre line**, not on its own bar's.
+    ///
+    /// The system centres its three buttons in the titlebar it owns; this row is centred in the
+    /// 44 pt bar the window draws. The two are different numbers, and the difference is what the
+    /// owner reported as *not aligned*. Measured from the button rather than assumed: a constant
+    /// would be a guess about a height the system chooses.
+    func alignTitleRowToTrafficLights() {
+        guard let close = window.standardWindowButton(.closeButton),
+              let bar = titleRowStack?.superview else { return }
+        let buttonCentre = close.convert(close.bounds, to: bar).midY
+        let offset = buttonCentre - bar.bounds.midY
+        titleRowStack.edgeInsets = NSEdgeInsets(top: max(0, -2 * offset), left: Theme.trafficLightInset,
+                                                bottom: max(0, 2 * offset), right: Theme.space6)
+    }
+
+    /// What the arm measures: the two centre lines, in the window's own coordinates.
+    var titleAlignmentReport: (row: CGFloat, lights: CGFloat) {
+        let rowBox = titleRowStack.map { $0.convert($0.bounds, to: nil) } ?? .zero
+        let lightBox = window.standardWindowButton(.closeButton)
+            .map { $0.convert($0.bounds, to: nil) } ?? .zero
+        return (rowBox.midY, lightBox.midY)
+    }
+
     private func rescan() {
         var sources = state.configuration.sources
         if let hook = ProcessInfo.processInfo.environment["DIFFSCOPE_ROOT"],
@@ -3954,7 +3967,6 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         repoPaneMinimum?.constant = reposCollapsed ? Theme.railWidth : Theme.paneMinimumWidth
         filePaneMinimum?.constant = filesCollapsed ? Theme.spineWidth : Theme.paneMinimumWidth
 
-        conventionLabel.isHidden = reposCollapsed
         // DEC-083's 24 pt floor meets DEC-060's 44 pt rail: two targets side by side need 48 pt of
         // header and the rail grew to 66, taking the width out of the diff pane it was collapsed to
         // give. **The `+` leaves the rail and the chevron stays** — the chevron is the control that
@@ -5318,8 +5330,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             stack.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
             top.widthAnchor.constraint(equalTo: stack.widthAnchor),
         ])
+        // DEC-086: the convention rides with the count it is about. `12-…` §2 asks the count to
+        // state its convention; it does so where the question is asked rather than in a caption
+        // under the whole list.
         cell.toolTip = "\(snapshot.url.path)\n\(snapshot.head.displayText)\n"
-            + "\(snapshot.baseRefUsed ?? "base: prompt")"
+            + "\(snapshot.baseRefUsed ?? "base: prompt")\n"
+            + RepositoryReader.uncommittedCountConvention
         return cell
     }
 

@@ -619,33 +619,11 @@ function link(a, b) {
   });
 }
 
-/// The one horizontal track under the pane (the adopted design). Two panes that scroll together
-/// have one horizontal position, so they get one control for it — and a range input is reachable
-/// from the keyboard, which a scrollbar is not.
-/// **The view the track is about.** It read `left` unconditionally, which in unified holds the
-/// empty document — so the one layout that is the default reported nothing to scroll however long
-/// its lines were. Harmless while the track merely dimmed; with DEC-077 it is the difference
-/// between a control that is absent because it cannot be used and one that is absent while the
-/// reader needs it.
-function trackedScrollers() {
-  if (layout === "unified") return unified ? [unified.scrollDOM] : [];
-  return [left.scrollDOM, right.scrollDOM];
-}
-
-function updateTrack() {
-  const track = document.getElementById("track");
-  if (!track) return;
-  const scroller = trackedScrollers()[0];
-  const span = scroller ? Math.max(0, scroller.scrollWidth - scroller.clientWidth) : 0;
-  track.max = String(span);
-  track.value = String(scroller ? scroller.scrollLeft : 0);
-  track.disabled = span === 0;
-  // DEC-077: **absent**, not dimmed. The rule it reverses was written about a control a reader
-  // might need; this one cannot be used at all, and a dead control is worse than an absent one.
-  track.hidden = span === 0;
-  track.title = span === 0 ? "nothing to scroll horizontally"
-    : `column ${Math.round(scroller.scrollLeft)} of ${Math.round(span)}`;
-}
+/// `updateTrack` lived here. The control it drove is gone (DEC-086): a range input only a pointer
+/// could use, under two panes that already scroll with the wheel and the keyboard. `12-…` §5.4 asks
+/// that the two panes share a horizontal position — which `link()` does, on both axes — and never
+/// asked for a slider to do it with.
+function updateTrack() {}
 link(left, right);
 link(right, left);
 
@@ -656,12 +634,6 @@ document.getElementById("diff-footer-expand")?.addEventListener("click", () => {
   if (lastModel) updateFooter(lastModel);
 });
 
-document.getElementById("track")?.addEventListener("input", event => {
-  const position = Number(event.target.value);
-  syncing = true;
-  for (const scroller of trackedScrollers()) scroller.scrollLeft = position;
-  syncing = false;
-});
 
 let currentPin = null;
 let lastSummary = null;
@@ -1641,6 +1613,8 @@ window.diffscopeHeights = function () {
 /// and one line far longer than the rest, a three-character line and a three-hundred-character line
 /// must still be tinted to the same right edge.
 window.diffscopeTrackState = function () {
+  // The slider is gone (DEC-086); `hidden` now reports that nothing draws one, which is the
+  // claim that replaced *it is absent when there is nothing to scroll*.
   const track = document.getElementById("track");
   const view = layout === "unified" ? unified : left;
   if (view) { view.requestMeasure(); if (view.state.doc.length) view.coordsAtPos(0); }

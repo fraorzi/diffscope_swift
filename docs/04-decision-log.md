@@ -3648,3 +3648,47 @@ Six reports, and they fall into three groups rather than six problems.
 ### Revisit trigger
 
 Reopen the material if the owner reads the specular arc as *dirt* rather than as *light* — that is a highlight too narrow or too bright for the surface it sits on, and the fix is the stop positions rather than the colours.
+
+---
+
+## DEC-086 — The window sits on the desktop, stops explaining itself, and stops ticking
+
+- **Date:** 2026-08-16 · **Topic:** the owner's fourth session, second half · **Status:** Accepted · **Amends DEC-012, DEC-075, DEC-077, DEC-083; work list in [28-interface-plan.md](28-interface-plan.md) §7**
+
+### Context
+
+Five more reports, and one of them makes a check of this project's own refuse the work.
+
+**The uncommitted-count convention is on screen.** *`counts: git status --porcelain — an untracked directory counts once`* sits under the repository list. It is DEC-012's disclosure — the number beside a repository is a count of *entries*, not of files, and an untracked directory is one entry however much is inside it. It is also, exactly, the thing DEC-077 was written about: an explanation of how the tool arrived at a number, drawn permanently, for a reader who wants to know what changed.
+
+**The horizontal track is still there and still does nothing.** DEC-077 made `#track` absent when there is nothing to scroll, and the owner reports a strip they can grab that moves nothing. Two candidates and they need telling apart: `#track` shown when it should not be, or CodeMirror's own scroller showing a bar under the code. The second is not ours and has to be styled away rather than hidden.
+
+**The title bar does not line up with the window's own buttons**, and the band behind it should be **transparent with a blur** so the desktop shows through.
+
+That last one is refused by a check written three days ago. DEC-083 forbids `NSVisualEffectView` anywhere in the chrome, under the heading *nothing imitates the material where the system has none*. **The rule was right and its wording was too wide.** What that entry banned was a *drawn approximation of glass* on systems that do not have `NSGlassEffectView`. A window whose title band is the system's own vibrancy is not an imitation of anything — it is the platform's API for exactly this, and it has been since long before glass existed.
+
+**The status line ticks once a second.** *refreshed 4s ago* becomes *5s ago* becomes *6s*, in the corner of the eye, forever. The owner wants to keep the fact and lose the flicker.
+
+### Options considered
+
+For the ticking, three: **static** (write it once and let it go stale — rejected, a stale *2s ago* is a false sentence and DEC-075's whole point is that a window which has stopped following the disk says so); **coarser wording** (*just now / under a minute / 3 minutes* — the number changes rarely and means the same thing); **a longer interval** (still per-second wording, redrawn every 15 s — the same flicker, less often, and the sentence is wrong for up to fifteen seconds).
+
+Chosen: **coarser wording**. It is the only one of the three where the sentence is never false and the pixels rarely change.
+
+### Final decision
+
+- **The convention caption goes.** DEC-012's disclosure moves to the tooltip on the count it describes, which is where a reader asks the question — and the count itself is unchanged, which is what that decision was actually about.
+- **`#track` is removed outright**, not conditionally. DEC-077 kept it for the case where there *is* something to scroll; the owner reports it dead in that case too, and two linked panes that scroll with the wheel and the keyboard do not need a second control that only a pointer can use. CodeMirror's own horizontal bar is styled away with it, so one gesture does not leave two strips.
+- **The title bar's content lines up with the traffic lights** — `trafficLightInset` is applied as a *leading* inset on the row rather than to the stack inside it, which is what left the label a few points out.
+- **The title band is the system's material.** `NSVisualEffectView`, `.headerView`, behind a transparent titlebar. **DEC-083's ban is narrowed rather than dropped**: it forbids vibrancy *standing in for glass on a control*, which is what it was written about; a window band is not a control and the system's blur is not an imitation of the system's blur. The check is re-expressed to name the surface rather than the class.
+- **The watcher's age is worded in steps** — *just now*, *under a minute*, *N minutes*, *N hours* — so the label is rewritten when the meaning changes rather than when the clock does.
+
+### Consequences
+
+- **A check of ours was in the way and it was our wording, not the request.** Re-expressed rather than deleted: the ban on imitation still holds where DEC-083 aimed it, and now names *where* instead of *what*.
+- **The status line stops changing every second**, which also removes the one thing in this window that laid out on a timer — the reason M9-K's centring defect was ever observable.
+- Losing `#track` loses the only pointer-reachable horizontal control; the panes still scroll with the wheel, and `12-…` §5.4's requirement was that the two panes share a position, not that a slider exist.
+
+### Revisit trigger
+
+Reopen the caption if a reader is ever surprised by the uncommitted count — that number is a count of entries and the disclosure exists because the surprise is real; it has moved, not gone.

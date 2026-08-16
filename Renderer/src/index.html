@@ -41,15 +41,15 @@
   #showing:empty { display: none; }
 
   #stage { display: flex; flex: 1; min-height: 0; }
-  /* One horizontal position for two panes that scroll together (`12-…` §5.4). A range input
-     rather than a scrollbar, because a scrollbar cannot be reached from the keyboard. */
-  #track { flex: none; width: 100%; margin: 0; accent-color: var(--ds-mark);
-           background: var(--ds-fold); }
-  /* **Absent, not quietened** (DEC-077, reversing `24-…`). The old rule — *a control that vanishes
-     teaches a reader it does not exist* — was written about a control a reader might need. This one
-     **cannot be used**: there is nothing to scroll to. A dead control that stays on screen is a
-     strip of interface the reader has to learn to ignore. */
-  #track[hidden] { display: none; }
+  /* `#track` lived here: a range input under the panes, sharing one horizontal position between
+     them. **Removed entirely** (DEC-086). DEC-077 had already made it absent when there was nothing
+     to scroll; the owner reported it dead in the case where there *is*, and two panes that scroll
+     with the wheel and the keyboard do not need a second control only a pointer can use. `12-…`
+     §5.4 asks for the two panes to share a position, which `link()` does — it never asked for a
+     slider. CodeMirror's own horizontal bar goes with it, so removing one gesture does not leave
+     two strips. */
+  .cm-editor .cm-scroller { scrollbar-width: none; }
+  .cm-editor .cm-scroller::-webkit-scrollbar:horizontal { height: 0; }
   /* One column instead of two (DEC-059). Only one of the two layouts holds a document at a
      time, so nothing is drawn twice and no probe counts a mark that is not on screen. */
   /* **`flex-direction: column`, and it is the whole of `28-…` item 2.** The layout switch sets
@@ -370,7 +370,6 @@
     <div id="left"></div>
     <div id="right"></div>
   </div>
-  <input id="track" type="range" min="0" max="0" value="0" aria-label="Horizontal position">
   <div id="diff-footer" hidden><span id="diff-footer-text"></span><button id="diff-footer-expand" type="button">Expand</button></div>
   <div id="unified"></div>
   <div id="lens"></div>

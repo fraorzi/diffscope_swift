@@ -228,9 +228,13 @@ func runTrustSurfaceChecks(_ reportRaw: (String, Bool, String) -> Void) {
                                  encoding: .utf8)) ?? ""
         report("the shell reads the sentence from the Git layer rather than restating it",
                shell.contains("RepositoryReader.uncommittedCountConvention"))
-        report("and puts it in the window beside the counts",
-               shell.contains("conventionLabel = NSTextField")
-                   && shell.contains("leftStack = NSStackView"))
+        // **On the count's own row, since DEC-086.** `12-…` §2 asks the count to state its
+        // convention; it did so in a caption under the whole list, drawn permanently for every
+        // reader who had not asked — DEC-077's subject exactly. It rides with the row now, which is
+        // where the question gets asked. The requirement is unchanged and its address is not.
+        report("and puts it on the row whose count it is about",
+               shell.contains("+ RepositoryReader.uncommittedCountConvention")
+                   && shell.contains("cell.toolTip"))
     }
 
     print("\n=== an unavailable scope states its reason where it can be read (12-… §3) ===")

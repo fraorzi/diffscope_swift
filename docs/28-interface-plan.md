@@ -237,15 +237,33 @@ Not level with the file list under it. Last session aligned the three *contents*
 The file list and the repository list are the two things a reader clicks most and neither says so. DEC-083 drew the line at *borderless controls* and left rows on the arrow, which was the wrong line.
 *Done when:* both tables set `pointingHand` over their rows, and an arm asserts the cursor rects exist.
 
-**5. The rim becomes a specular highlight, and spreads** (amends DEC-084)
+**5. The rim becomes a specular highlight, and spreads** (amends DEC-084) — **landed**
 Two stops make a ramp. Light on a curved metal edge is bright along a narrow arc, falls off quickly, and lifts again at the far edge. Applies to the `+`, **the search field** and **the checkbox** — which also stops being the system's blue.
 *What will refuse it:* the rim pair check still holds, and gains a second claim — **more than two stops, and the brightest one off-centre**. A two-stop ramp is what this replaces.
 *Done when:* the ramp has ≥3 stops with the highlight off-centre, all three surfaces draw it, the checkbox is drawn rather than tinted, and both appearances are photographed.
 
-**6. `Sources ⌄` is the same control as the rest, and the chevron is drawn**
+**6. `Sources ⌄` is the same control as the rest, and the chevron is drawn** — **landed**
 It is a bare `NSButton` with a typed `⌄`, which reads as `>`; the glyph is also mis-centred against its text and against its own padding.
 *Done when:* `Sources` opens the same popover the switches do, the chevron is a **drawn path** rather than a character, and its box is centred against the control to the pixel — asserted from frames, because a font's idea of where `⌄` sits is exactly what is wrong with it now.
 
 *How items 1–4 landed.* The lens joined the scope row's stack and the diff pane lost its band entirely, so the webview starts at the pane's top — level with `REPOSITORIES` and `CHANGED FILES`. All three tops measure **777**, and the two switches share a centre line at **795**. `HandTableView` puts the pointing hand over both lists.
 
 **Removing the pinning constraint took the starting width with it.** With nothing holding 280, the split distributed by holding priority and the window opened with a **150 pt** repository pane. The starting widths are set once through `setPosition` after the window is shown — a starting point a drag can move, where a constraint was a floor it could not.
+
+*How items 5 and 6 landed.* The ramp became five stops with the brightest at **.88** rather than at the end, so the arc is narrow and the very top edge turns away again — light on a curved edge, not a fade. `Theme.rimGradient` is the one place it is built, so the `+`, the search field and the checkbox cannot end up with three different metals; `RimHost` wraps a **system** control rather than replacing it, so the field keeps its editing and its cancel button and the checkbox keeps its key equivalent.
+
+The chevron is **drawn**. `⌄` is a modifier letter with its own side bearings and baseline — which is why it read as a `>` and sat wrong against both the text and its padding. Two mitred strokes centred on the box by arithmetic, from `Theme.drawChevron`, so one glyph cannot be a string in one place and a path in another. `Sources` uses it through `ChevronButton` and keeps its menu: the four things a reader does to *which repositories exist* (DEC-071) is a different question from the switches' *what am I looking at*.
+
+---
+
+## 7. The fourth session, second half ([DEC-086](04-decision-log.md))
+
+**1. The uncommitted-count convention** — **landed.** *`counts: git status --porcelain — an untracked directory counts once`* was drawn permanently under the repository list. DEC-012's disclosure is real and surprising, so it moved to the tooltip on the count it describes rather than being deleted; `TrustSurfaceChecks` follows it there.
+
+**2. The dead horizontal slider** — **landed.** Removed outright rather than conditionally, and CodeMirror's own bar styled away with it so one gesture does not leave two strips. `12-…` §5.4 asks that the two panes share a position, which `link()` does on both axes; it never asked for a slider. What survives of its arm is item 2's real claim: with wrapping off, a three-character line and a three-hundred-character line reach the **same right edge**.
+
+**3. The title row on the traffic lights' centre line** — **landed.** Horizontally it was already clear of them; **vertically it was not**, because the system centres its buttons in the titlebar it owns and this row was centred in the 44 pt bar the window draws. Measured from the button rather than assumed — a constant would be a guess about a height the system chooses.
+
+**4. The status line stops ticking** — **landed.** *4s ago → 5s ago → 6s* redrew once a second forever. Static was rejected (a stale *2s ago* is a false sentence, and DEC-075 exists so a window that has stopped following the disk says so) and so was a longer redraw interval (the same flicker, wrong in between). The wording **steps** instead, and the check asserts the property rather than the strings: over a full minute of ticks the sentence takes **two** forms, not sixty.
+
+**5. The title band becomes the system's material** — **NOT LANDED.** DEC-086 decided it and the code is not written. It is the largest of the six and it needs DEC-083's ban on `NSVisualEffectView` re-expressed first — that ban is right where it was aimed (vibrancy standing in for glass *on a control*) and too wide as worded (a window band is not a control, and the system's blur is not an imitation of the system's blur). Left for a fresh session with the reasoning written down rather than half-built.

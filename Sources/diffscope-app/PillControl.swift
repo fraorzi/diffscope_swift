@@ -280,15 +280,13 @@ final class PillControl: NSView {
         // The chevron. **A control that shows one of several options has to say that there are
         // several** — without it this reads as a label, and DEC-016's rule that nothing is
         // reachable by pointer alone would be met by a route no reader would look for.
-        let chevron = "⌄" as NSString
-        let chevronAttributes: [NSAttributedString.Key: Any] = [
-            .font: Theme.prose(Theme.textSizeSmall),
-            .foregroundColor: Theme.inkQuiet,
-        ]
-        let chevronSize = chevron.size(withAttributes: chevronAttributes)
-        chevron.draw(at: NSPoint(x: bounds.maxX - Theme.pillChevronWidth / 2 - chevronSize.width / 2,
-                                 y: bounds.midY - chevronSize.height / 2 + 1),
-                     withAttributes: chevronAttributes)
+        //
+        // **Drawn, not typed** (DEC-085 item 6). `⌄` is a modifier letter with its own side
+        // bearings and its own baseline, so it read as a `>` and sat wrong against both the text
+        // and its own padding — a font's idea of where that glyph belongs is exactly what was
+        // wrong. Two strokes, centred on the box by arithmetic.
+        Theme.drawChevron(in: NSRect(x: bounds.maxX - Theme.pillChevronWidth, y: 0,
+                                     width: Theme.pillChevronWidth, height: bounds.height))
     }
 
     // MARK: - Acting
@@ -575,9 +573,10 @@ final class RimButton: HandButton {
         ring.append(NSBezierPath(ovalIn: disc.insetBy(dx: Theme.rimWidth, dy: Theme.rimWidth)))
         ring.windingRule = .evenOdd
         ring.addClip()
-        // 90° is *upward* in AppKit's coordinates, so the highlight lands on top.
-        NSGradient(starting: Theme.rimShadow, ending: Theme.rimHighlight)?
-            .draw(in: disc, angle: 90)
+        // 90° is *upward* in AppKit's coordinates, so the highlight lands on top. Five stops
+        // rather than two (DEC-085): a ramp is not a reflection, and the brightest one is at .88
+        // rather than at the end, so the arc is narrow and the very top edge turns away again.
+        Theme.rimGradient?.draw(in: disc, angle: 90)
         NSGraphicsContext.restoreGraphicsState()
 
         // The glyph last, and drawn rather than left to `NSButton`: the title would be laid out
@@ -768,4 +767,77 @@ final class HandTableView: NSTableView {
         super.resetCursorRects()
         addCursorRect(bounds, cursor: .pointingHand)
     }
+}
+
+/// The search field and the checkbox, wearing the same metal as the `+` (DEC-085 item 5).
+///
+/// A rim around a control the system draws, rather than a control drawn from scratch: the field
+/// keeps its own editing, its focus behaviour and its cancel button, and the checkbox keeps its
+/// key equivalent and its state. That is the same trade the empty state's buttons made, and it is
+/// why the rim is a *container* here — what the owner asked for is the material, not a rebuild.
+final class RimHost: NSView {
+    override func draw(_ dirtyRect: NSRect) {
+        let box = bounds.insetBy(dx: Theme.rimWidth / 2, dy: Theme.rimWidth / 2)
+        let radius = min(Theme.buttonRadius, box.height / 2)
+        let shape = NSBezierPath(roundedRect: box, xRadius: radius, yRadius: radius)
+
+        NSGraphicsContext.saveGraphicsState()
+        shape.addClip()
+        Theme.rimFill.setFill()
+        box.fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        // The ring, clipped and filled — AppKit cannot stroke with a gradient, and this is the
+        // same construction `RimButton` uses so the two cannot drift to different metals.
+        NSGraphicsContext.saveGraphicsState()
+        let ring = NSBezierPath(roundedRect: box, xRadius: radius, yRadius: radius)
+        let innerBox = box.insetBy(dx: Theme.rimWidth, dy: Theme.rimWidth)
+        ring.append(NSBezierPath(roundedRect: innerBox,
+                                 xRadius: max(0, radius - Theme.rimWidth),
+                                 yRadius: max(0, radius - Theme.rimWidth)))
+        ring.windingRule = .evenOdd
+        ring.addClip()
+        Theme.rimGradient?.draw(in: box, angle: 90)
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    override var isFlipped: Bool { false }
+
+    /// Wraps a control in the rim and pins it inside, inset by the rim's own width so the metal is
+    /// never drawn under the thing it frames.
+    static func wrapping(_ control: NSView, padding: CGFloat = Theme.space3) -> RimHost {
+        let host = RimHost()
+        host.translatesAutoresizingMaskIntoConstraints = false
+        control.translatesAutoresizingMaskIntoConstraints = false
+        host.addSubview(control)
+        NSLayoutConstraint.activate([
+            control.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: padding),
+            control.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -padding),
+            control.topAnchor.constraint(equalTo: host.topAnchor, constant: Theme.rimWidth),
+            control.bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: -Theme.rimWidth),
+        ])
+        return host
+    }
+}
+
+/// A borderless button that draws the switches' chevron beside its title (DEC-085 item 6).
+///
+/// `Sources ⌄` typed the character into its own title, so it read as a `>` and sat wherever the
+/// font put it. This draws the same two strokes `PillControl` draws, in a box of the same width, so
+/// the two controls cannot end up with two different chevrons — which is what happens every time a
+/// glyph is a string in one place and a path in another.
+final class ChevronButton: HandButton {
+    override var intrinsicContentSize: NSSize {
+        var size = super.intrinsicContentSize
+        size.width += Theme.pillChevronWidth
+        return size
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        Theme.drawChevron(in: NSRect(x: bounds.maxX - Theme.pillChevronWidth, y: 0,
+                                     width: Theme.pillChevronWidth, height: bounds.height))
+    }
+
+    override var isFlipped: Bool { false }
 }

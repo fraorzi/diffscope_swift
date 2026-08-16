@@ -2510,3 +2510,36 @@ the window opened with a **150 pt** repository pane. The starting widths are set
 `setPosition` after the window is shown — **a starting point a drag can move, where a constraint was
 a floor it could not**. Caught by the same arm that measures the headers, because it prints the pane
 width beside the caption.
+
+## Step 86 — `28-…` §6 items 5–6 and §7 items 1–4 (DEC-085, DEC-086)
+
+- [x] the rim is five stops with the highlight at **.88**, built once in `Theme.rimGradient`
+- [x] `RimHost` wraps the search field and the checkbox — a rim around a system control, not a
+      rebuild
+- [x] `Theme.drawChevron` — two mitred strokes centred by arithmetic; `ChevronButton` for `Sources`
+- [x] the convention caption moves to the count's tooltip; `#track` removed outright
+- [x] the title row matches the traffic lights' centre line, measured from the button
+- [x] the watcher's age steps instead of ticking
+
+### Step 86 — the flicker check asserts a property, not a string
+
+*refreshed 4s ago* redrew once a second. The fix could have been checked by asserting the new
+wording, which would pass on any wording at all. What is asserted instead: **over a full minute of
+ticks the sentence takes two forms, not sixty** — with a per-second wording as the control. That is
+the property the owner asked for; the strings are an implementation of it.
+
+### Step 86 — three checks had to follow their subjects rather than be deleted
+
+The convention check now looks for the sentence on the row's tooltip; the track checks became *no
+slider is drawn* plus *the panes still share a position*; the age checks became the two-forms
+property. **A requirement that moves is not a requirement that goes** — each check kept its subject
+and changed its address.
+
+### Step 86 — one item is decided and not built
+
+DEC-086's transparent, blurred title band is **not landed**. It needs DEC-083's ban on
+`NSVisualEffectView` re-expressed first: that ban is right where it was aimed — vibrancy standing in
+for glass *on a control* — and too wide as written, because a window band is not a control and the
+system's blur is not an imitation of the system's blur. Recorded as unmet rather than half-built.
+
+1776 → 1779 checks.

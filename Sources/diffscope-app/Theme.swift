@@ -115,6 +115,33 @@ enum Theme {
     /// A guess, and named as one in DEC-084: legible on this machine, unmeasured from the design.
     static let rimWidth: CGFloat = 1.5
 
+    /// **Light on metal, not a ramp** (DEC-085 item 5). DEC-084 built a two-stop axial gradient and
+    /// the owner read it as exactly that: *a gradient*, not a reflection.
+    ///
+    /// What a curved metal edge actually does under a light above it: **bright along a narrow arc
+    /// at the top, falling off quickly either side, and lifting again at the bottom** where the
+    /// surface below bounces light back. Five stops, and the brightest is not in the middle — a
+    /// symmetric ramp is the thing this replaces, so the check asserts both the count and the
+    /// asymmetry.
+    ///
+    /// Positions run bottom (0) to top (1), which is how `draw(in:angle:)` reads 90° in an
+    /// unflipped view.
+    static let rimStops: [(colour: NSColor, at: CGFloat)] = [
+        (rimShadow.blended(withFraction: 0.35, of: rimHighlight) ?? rimShadow, 0.0),
+        (rimShadow, 0.30),
+        (rimShadow.blended(withFraction: 0.45, of: rimHighlight) ?? rimShadow, 0.72),
+        (rimHighlight, 0.88),
+        (rimHighlight.blended(withFraction: 0.25, of: rimShadow) ?? rimHighlight, 1.0),
+    ]
+
+    /// The one place the specular ramp is built, so the `+`, the search field and the checkbox
+    /// cannot end up with three different metals.
+    static var rimGradient: NSGradient? {
+        NSGradient(colors: rimStops.map(\.colour),
+                   atLocations: rimStops.map(\.at),
+                   colorSpace: .sRGB)
+    }
+
     /// `--ds-kind-added`, `--ds-kind-modified`, `--ds-kind-deleted`, `--ds-kind-renamed` (DEC-081).
     /// Named in full rather than abbreviated, because the mirror check reads these names literally
     /// — the shorthand `-modified` left three of the four unmirrored and the check said so. The
@@ -192,7 +219,33 @@ enum Theme {
     /// room they exist to give. It is a **floor** — a control with more to say stays wider.
     static let minimumHitTarget: CGFloat = 24
 
-    /// The chevron that says a switch has more options than the one it is showing (DEC-077).
+    /// **The chevron, drawn** (DEC-085 item 6). It was the character `⌄`, which is a *modifier
+    /// letter*: it carries its own side bearings and its own baseline, so it read as a `>` and sat
+    /// off-centre against both the label beside it and the padding around it. A font's idea of
+    /// where that glyph sits is precisely what was wrong with it.
+    ///
+    /// Two strokes, mitred, centred on the box by arithmetic rather than by metrics — so the same
+    /// call centres it in a pill, in the title bar, and anywhere else a switch appears.
+    static func drawChevron(in box: NSRect, colour: NSColor? = nil) {
+        let width = chevronArmWidth
+        let height = chevronArmHeight
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: box.midX - width, y: box.midY + height / 2))
+        path.line(to: NSPoint(x: box.midX, y: box.midY - height / 2))
+        path.line(to: NSPoint(x: box.midX + width, y: box.midY + height / 2))
+        path.lineWidth = chevronStroke
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        (colour ?? inkQuiet).setStroke()
+        path.stroke()
+    }
+    /// Half the chevron's span and its drop. Sized against the small text it sits beside rather
+    /// than against a font's glyph box.
+    static let chevronArmWidth: CGFloat = 3.5
+    static let chevronArmHeight: CGFloat = 3.5
+    static let chevronStroke: CGFloat = 1.5
+
+    /// The width of the box the chevron is centred in (DEC-077).
     /// A control showing one of several with nothing to say so reads as a label.
     static let pillChevronWidth: CGFloat = 14
 

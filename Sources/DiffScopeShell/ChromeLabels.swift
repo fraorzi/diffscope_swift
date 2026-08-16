@@ -127,7 +127,14 @@ public enum ChromeLabels {
         switch seconds {
         case ..<0: return "just now"
         case 0...2: return "just now"
-        case 3..<60: return "\(seconds)s ago"
+        // **DEC-086: no per-second wording.** The status line was rewritten once a second — *4s
+        // ago*, *5s ago*, *6s* — in the corner of the eye, forever, and the owner reported the
+        // flicker while wanting to keep the fact. Static was rejected (a stale *2s ago* is a false
+        // sentence, and DEC-075 exists so a window that has stopped following the disk says so) and
+        // so was a longer redraw interval (the same flicker, less often, and wrong in between).
+        // Coarser wording is the only one of the three where the sentence is never false and the
+        // pixels change rarely.
+        case 3..<60: return "under a minute ago"
         case 60..<3600: return "\(seconds / 60)m ago"
         case 3600..<86_400: return "\(seconds / 3600)h ago"
         default: return "\(seconds / 86_400)d ago"

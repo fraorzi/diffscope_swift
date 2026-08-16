@@ -128,7 +128,7 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
     do {
         report("watching says so, with how old the window is",
                ChromeLabels.watcherStatus(.watching, refreshedSecondsAgo: 4)
-                   == "● Watching · refreshed 4s ago",
+                   == "● Watching · refreshed under a minute ago",
                ChromeLabels.watcherStatus(.watching, refreshedSecondsAgo: 4))
         // A window that has never refreshed does not say it refreshed zero seconds ago: the age is
         // absent, because the clause exists to make the counts honest and `0s` would do the opposite.
@@ -142,14 +142,25 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("and it carries the reason, which is the half a reader can act on",
                ChromeLabels.watcherStatus(.stopped("kbtree was moved or renamed"),
                                           refreshedSecondsAgo: 30)
-                   == "○ Watching stopped — kbtree was moved or renamed · refreshed 30s ago")
+                   == "○ Watching stopped — kbtree was moved or renamed · refreshed under a minute ago")
 
+        // **DEC-086: the wording steps, so the label is rewritten when the meaning changes rather
+        // than when the clock does.** It said `4s ago`, `5s ago`, `6s ago` — a status line that
+        // redrew once a second in the corner of the eye. What is asserted now is that no wording
+        // exists which changes every second: every age under a minute reads the same.
         report("the age reads in the units of a window being watched",
                ChromeLabels.refreshedAgo(seconds: 0) == "just now"
-                   && ChromeLabels.refreshedAgo(seconds: 4) == "4s ago"
+                   && ChromeLabels.refreshedAgo(seconds: 4) == "under a minute ago"
                    && ChromeLabels.refreshedAgo(seconds: 90) == "1m ago"
                    && ChromeLabels.refreshedAgo(seconds: 7200) == "2h ago",
                ChromeLabels.refreshedAgo(seconds: 90))
+        // The property that removes the flicker, asserted rather than eyeballed: over a full
+        // minute of ticks the sentence takes **two** forms, not sixty.
+        let firstMinute = Set((0..<60).map { ChromeLabels.refreshedAgo(seconds: $0) })
+        report("and no wording under a minute changes with the clock", firstMinute.count == 2,
+               firstMinute.sorted().joined(separator: " | "))
+        report("negative control: a per-second wording would be caught",
+               Set((0..<60).map { "\($0)s ago" }).count == 60)
         // A clock that goes backwards — a sweep stamped in the future by a skewed clock — must not
         // print a negative age, for the same reason `stalenessDescription` says *dated in the future*.
         report("negative control: a negative age is not printed as one",
