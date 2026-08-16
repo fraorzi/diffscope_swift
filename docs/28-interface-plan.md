@@ -225,15 +225,15 @@ Six reports, in the order a reader hits them.
 The collapse button works both ways; what is missing is every width between the rail and the full pane. DEC-077 called this fixed and **nothing in the suite has ever dragged a divider** — every pane check is about a state a command produces.
 *Done when:* an arm sets the divider, forces a layout pass, and asserts the pane **still** has the dragged width afterwards; and the same for the second divider. The control is the priority that caused it: a width constraint that wins the pass fails the arm.
 
-**2. The lens switch sits at the scope switch's height** (amends DEC-072)
+**2. The lens switch sits at the scope switch's height** (amends DEC-072) — **landed**
 Diff / Blame / History belongs in the scope row, not in a band of its own.
 *Done when:* both controls' drawn frames share a `midY` to the pixel, and the scope row still spans the window.
 
-**3. The diff surface begins level with `CHANGED FILES`**
+**3. The diff surface begins level with `CHANGED FILES`** — **landed**
 Not level with the file list under it. Last session aligned the three *contents*; this is one band higher and it is the line the first report meant.
 *Done when:* the webview's top equals the **pane headers'** top, asserted from drawn frames at two window widths.
 
-**4. A row that can be chosen shows the hand**
+**4. A row that can be chosen shows the hand** — **landed**
 The file list and the repository list are the two things a reader clicks most and neither says so. DEC-083 drew the line at *borderless controls* and left rows on the arrow, which was the wrong line.
 *Done when:* both tables set `pointingHand` over their rows, and an arm asserts the cursor rects exist.
 
@@ -245,3 +245,7 @@ Two stops make a ramp. Light on a curved metal edge is bright along a narrow arc
 **6. `Sources ⌄` is the same control as the rest, and the chevron is drawn**
 It is a bare `NSButton` with a typed `⌄`, which reads as `>`; the glyph is also mis-centred against its text and against its own padding.
 *Done when:* `Sources` opens the same popover the switches do, the chevron is a **drawn path** rather than a character, and its box is centred against the control to the pixel — asserted from frames, because a font's idea of where `⌄` sits is exactly what is wrong with it now.
+
+*How items 1–4 landed.* The lens joined the scope row's stack and the diff pane lost its band entirely, so the webview starts at the pane's top — level with `REPOSITORIES` and `CHANGED FILES`. All three tops measure **777**, and the two switches share a centre line at **795**. `HandTableView` puts the pointing hand over both lists.
+
+**Removing the pinning constraint took the starting width with it.** With nothing holding 280, the split distributed by holding priority and the window opened with a **150 pt** repository pane. The starting widths are set once through `setPosition` after the window is shown — a starting point a drag can move, where a constraint was a floor it could not.

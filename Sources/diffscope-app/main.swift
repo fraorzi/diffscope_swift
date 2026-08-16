@@ -451,10 +451,6 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // above the lists rather than inside the pane on the other side of them.
         // The mode switch has moved to the status line (DEC-075); the lens stays, because a lens is
         // about this pane and a mode is about the whole window's reading of a file.
-        let band = NSStackView(views: [lensControl])
-        band.orientation = .horizontal
-        band.alignment = .centerY
-        band.spacing = Theme.space6
 
         // The right pane is a view with two constraints, not a stack. A stack view inside a split
         // view asks for its *fitting* height, and a fitting height built from a control band and a
@@ -465,9 +461,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                               height: Theme.windowHeight))
         rightStack.wantsLayer = true
         rightStack.layer?.backgroundColor = Theme.chrome.cgColor
-        rightStack.addSubview(band)
+        // DEC-085 item 3: **no band at all.** The lens has moved to the scope row, so the webview
+        // starts at the pane's top — which is level with `REPOSITORIES` and `CHANGED FILES`, one
+        // band higher than last session's fix put it. That fix aligned the three *contents*; the
+        // owner's line is the headers' top, and re-read, it is the line the first report meant.
         rightStack.addSubview(webView)
-        band.translatesAutoresizingMaskIntoConstraints = false
         webView.translatesAutoresizingMaskIntoConstraints = false
         // DEC-083: **the three panes' contents begin at the same height.** This band was
         // `space4 + 24 + space4` = 40 pt against the two lists' 22 pt headers, so the code's
@@ -475,12 +473,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // been laid out separately — which they had. The band is now the same one number the
         // headers are, and `paneHeaderHeight` is sized to hold a control because this one does.
         NSLayoutConstraint.activate([
-            band.topAnchor.constraint(equalTo: rightStack.topAnchor),
-            band.heightAnchor.constraint(equalToConstant: Theme.paneHeaderHeight),
-            band.leadingAnchor.constraint(equalTo: rightStack.leadingAnchor, constant: Theme.space6),
-            band.trailingAnchor.constraint(lessThanOrEqualTo: rightStack.trailingAnchor,
-                                           constant: -Theme.space6),
-            webView.topAnchor.constraint(equalTo: band.bottomAnchor),
+            webView.topAnchor.constraint(equalTo: rightStack.topAnchor),
             webView.leadingAnchor.constraint(equalTo: rightStack.leadingAnchor),
             webView.trailingAnchor.constraint(equalTo: rightStack.trailingAnchor),
             webView.bottomAnchor.constraint(equalTo: rightStack.bottomAnchor),
@@ -639,6 +632,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
         window.contentView = container
         window.makeKeyAndOrderFront(nil)
+        // **The starting widths, set once through the split rather than held by a constraint.**
+        // Nothing holds them any more (DEC-085 item 1: an active `equalToConstant` is what stopped a
+        // drag sticking), so without this the split distributes by holding priority and the window
+        // opened with a 150 pt repository pane instead of 280. `setPosition` is a starting point a
+        // drag can move; a constraint was a floor it could not.
+        window.contentView?.layoutSubtreeIfNeeded()
+        splitView.setPosition(Theme.repositoryPaneWidth, ofDividerAt: 0)
+        splitView.setPosition(Theme.repositoryPaneWidth + splitView.dividerThickness
+                                  + Theme.filePaneWidth, ofDividerAt: 1)
         // The age changes with nothing else happening, so something has to ask. One second, and the
         // label is only assigned when the sentence changes.
         refreshTicker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
@@ -661,7 +663,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     }
 
     private func makeTable(identifier: String) -> NSTableView {
-        let table = NSTableView()
+        let table = HandTableView()
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier(identifier))
         column.width = Theme.repositoryPaneWidth - 2 * Theme.space6 + Theme.space4
         table.addTableColumn(column)
@@ -2480,11 +2482,19 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // two that agreed did so from one constant while the third was built from three (`space4`,
         // a pill, `space4`) and came out 18 pt lower. The webview is the third surface; its top is
         // where the code's background starts.
-        let repoTop = repoTable.enclosingScrollView.map { $0.convert($0.bounds, to: nil).maxY } ?? 0
-        let fileTop = fileTable.enclosingScrollView.map { $0.convert($0.bounds, to: nil).maxY } ?? 0
+        // **The headers' top, not the lists'** (DEC-085 item 3). Last session aligned the three
+        // *contents* and the owner asked again: the diff surface should begin level with
+        // `CHANGED FILES`, one band higher. The lens has left the diff pane for the scope row, so
+        // there is nothing above the webview to push it down.
+        let repoTop = repoHeaderBar.convert(repoHeaderBar.bounds, to: nil).maxY
+        let fileTop = fileHeaderBar.convert(fileHeaderBar.bounds, to: nil).maxY
         let codeTop = webView.convert(webView.bounds, to: nil).maxY
         // AppKit's origin is bottom-left, so the *top* of a pane is its larger y.
         let aligned = abs(repoTop - fileTop) < 1 && abs(fileTop - codeTop) < 1
+        // And the two switches are one row: same centre line, to the pixel.
+        let scopeBox = scopeControl.convert(scopeControl.bounds, to: nil)
+        let lensBox = lensControl.convert(lensControl.bounds, to: nil)
+        let oneRow = abs(scopeBox.midY - lensBox.midY) < 1
 
         // DEC-083: **the three smallest targets in the window are big enough to hit.** Measured
         // from the drawn frames, because a constraint is what was asked for — and these three had
@@ -2506,11 +2516,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let handed = targets.allSatisfy { $0.1 is HandButton }
 
         let ok = spanned && tall && worded && counted && repositorySelected && aligned
-            && undersized.isEmpty && handed
+            && undersized.isEmpty && handed && oneRow
         FileHandle.standardError.write(Data(
             ("SELFTEST pane-headers=\(ok ? "OK" : "MISMATCH") "
                 + "tops repos=\(Int(repoTop)) files=\(Int(fileTop)) code=\(Int(codeTop)) "
-                + "aligned=\(aligned) targets \(sizes.joined(separator: " ")) "
+                + "aligned=\(aligned) one-row=\(oneRow) "
+                + "scope-midY=\(Int(scopeBox.midY)) lens-midY=\(Int(lensBox.midY)) "
+                + "targets \(sizes.joined(separator: " ")) "
                 + "hand=\(handed) undersized=[\(undersized.joined(separator: ", "))] "
                 + "repos=\"\(repoHeaderCaption.stringValue)\"@\(Int(repoBar.width))×\(Int(repoBar.height)) "
                 + "of pane \(Int(repoPane.width)) "
@@ -3319,8 +3331,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         baseBlock.action = #selector(setBaseBranch)
         updateBaseBlock(for: nil)
 
+        // DEC-085: **the lens sits at the scope switch's height.** DEC-072 put the scope row above
+        // the panes and left the lens in a band of its own inside the diff pane, so the window had
+        // two rows of switches at two heights. A reader reads them as one row — the scope changes
+        // what the file list holds and the lens changes what the diff pane answers, but both are
+        // *what am I looking at* — so they are one row.
         let stack = NSStackView(views: [caption, scopeControl, comparisonLabel,
-                                        spacerView(), baseBlock])
+                                        spacerView(), lensControl, baseBlock])
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = Theme.space4

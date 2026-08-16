@@ -751,3 +751,21 @@ final class FilePane: NSView {
                             height: max(0, bounds.height - Theme.paneHeaderHeight))
     }
 }
+
+/// The two lists, which say they can be clicked (DEC-085 item 4).
+///
+/// DEC-083 gave the pointing hand to every borderless *control* and left the repository list and the
+/// changed-file list on the arrow — and those are the two things a reader clicks most in this
+/// window. The line was drawn in the wrong place: what decides is whether a click does something,
+/// not whether AppKit calls the thing a control.
+///
+/// A cursor rect over the whole table rather than per row, because every row in both lists is
+/// either selectable or a group header the selection steps over (DEC-033) — and a header that
+/// showed the arrow while the rows either side showed the hand would be an invitation to read the
+/// cursor as a claim about *that* row.
+final class HandTableView: NSTableView {
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .pointingHand)
+    }
+}

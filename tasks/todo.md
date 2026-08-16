@@ -2494,3 +2494,19 @@ because the constraint was only priority 500 when it mattered. It is 999 **while
 otherwise: strong for the one instruction that needs it, absent for the interaction it was breaking.
 
 Priority alone was never the answer; the first attempt lowered it to 500 and changed nothing at all.
+
+## Step 85 — `28-…` §6 items 2, 3 and 4
+
+- [x] the lens switch joins the scope row; the diff pane loses its band entirely
+- [x] the webview starts at the pane's top — all three tops at **777**, both switches at **795**
+- [x] `HandTableView` — the pointing hand over both lists
+- [x] the arm asserts the **headers'** tops rather than the lists', and that the two switches share
+      a centre line
+
+### Step 85 — the fix for item 1 took the starting width with it
+
+With the pinning constraint gone, nothing held 280 and the split distributed by holding priority:
+the window opened with a **150 pt** repository pane. The starting widths are set once through
+`setPosition` after the window is shown — **a starting point a drag can move, where a constraint was
+a floor it could not**. Caught by the same arm that measures the headers, because it prints the pane
+width beside the caption.
