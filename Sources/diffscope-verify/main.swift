@@ -15,7 +15,9 @@ if CommandLine.arguments.count > 3, CommandLine.arguments[1] == "--emit-structur
     runEmitStructural(oldPath: CommandLine.arguments[2],
                       newPath: CommandLine.arguments[3],
                       displayPath: CommandLine.arguments.count > 4
-                          ? CommandLine.arguments[4] : CommandLine.arguments[3])
+                          ? CommandLine.arguments[4] : CommandLine.arguments[3],
+                      snapBudget: CommandLine.arguments.count > 5
+                          ? Int(CommandLine.arguments[5]) : nil)
     exit(0)
 }
 
@@ -288,6 +290,7 @@ runSyntaxChecks { name, ok, detail in report(name, ok, detail) }
 runMatchingChecks { name, ok, detail in report(name, ok, detail) }
 runClassificationChecks { name, ok, detail in report(name, ok, detail) }
 runBoundaryChecks { name, ok, detail in report(name, ok, detail) }
+runAlignmentChecks { name, ok, detail in report(name, ok, detail) }
 runCoalesceChecks { name, ok, detail in report(name, ok, detail) }
 runDisclosureChecks { name, ok, detail in report(name, ok, detail) }
 runMoveChecks { name, ok, detail in report(name, ok, detail) }
