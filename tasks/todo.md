@@ -2562,3 +2562,41 @@ system's blur**.
 The check names the surface now. No control file may reach for it; the window file may, **once**,
 and the check asserts the count, the material, the blending mode and the transparent titlebar — so
 the exemption is a named line rather than an open door.
+### Step 86 — the alignment moves onto line boundaries (DEC-086)
+
+Written in a worktree, because a second session was working in the checkout at the same time.
+
+- [x] DEC-086 written before the code, including why this is not the sliding DEC-047 refused: `D`
+      itself moves, inside the one function the model and the validator both call
+- [x] `shiftToLineBoundaries` in `CanonicalDiff.swift`, applied inside `canonicalMatches`
+- [x] the boundary set is `0x0A` and nothing else — tokens would make `D` depend on a parse
+- [x] `AlignmentChecks.swift`: both owner cases, a negative control that a mid-line edit stays
+      mid-line, tiling over 200 random pairs, and the snap guard's positive and negative arms
+- [x] measured, three builds over the same corpus → `22-experiment-log.md` M11-B
+
+**The shift alone made the corpus worse**, and only measurement caught it: 35 wrong lines → 42. The
+alignment was landing on line boundaries and DEC-047's outward snap was carrying it back off them.
+With the snap taught not to widen what is already whole-line: **24**. Both cases the owner reported
+are exact now, and `get-api-media-url.ts` is the first file in this corpus the model describes with no
+error at all.
+
+- [x] `findMoves` no longer extends a move across an unchanged line. `moved-two-blocks` had started
+      producing one record for two blocks that land in different places, which is `link` counting
+      instead of pairing — T-11's third assertion caught it.
+
+**Two checks fail in the worktree and pass in the checkout**: the slider corpus and the relocatable
+imports corpus both walk the *parent directory* for real `.tsx` files, and a worktree's parent is
+`.claude/worktrees/`. Re-run from the checkout before merging — that is where 1776 becomes the number
+that counts.
+
+### Still open
+
+- [ ] minimum-run absorption of unchanged gaps shorter than a token (phantom retention). `alpha` →
+      `gamma` still shreds into two hunks around a coincidental `a`.
+- [ ] the old pane's silence on a reflow — 20 of 31 removed lines carry no mark, and no alignment
+      fixes it. Needs substitutions presented on both sides.
+- [ ] insertions separated by a single unchanged line cannot shift: the search is bounded by the
+      neighbouring match lengths. `PageComponents.tsx` and `BannerWithImage.tsx` are what is left.
+- [ ] `-uall` for the file list **and** the count, `-z` parsing, the `AM` glyph
+- [ ] the empty comparison when a row is a directory (INV-4)
+- [ ] a clause in DEC-083 for `ds-formatting`, `ds-behaviour`, `ds-uncertain`

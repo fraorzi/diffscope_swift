@@ -8,12 +8,15 @@ import Foundation
 /// usable when the question is *why does this look wrong on screen*. This prints the structural
 /// model the application builds, marked up inline, so a segment can be read against the line it
 /// falls on.
-func runEmitStructural(oldPath: String, newPath: String, displayPath: String) {
+func runEmitStructural(oldPath: String, newPath: String, displayPath: String, snapBudget: Int?) {
     let old = [UInt8]((try? Data(contentsOf: URL(fileURLWithPath: oldPath))) ?? Data())
     let new = [UInt8]((try? Data(contentsOf: URL(fileURLWithPath: newPath))) ?? Data())
     let parser = TSXParser()
+    // The snap budget is settable here because it is the pass most likely to be *mistaken* for the
+    // alignment: a widened flank and a badly placed boundary look identical on screen.
+    let settings = snapBudget.map { MatcherSettings(boundarySnapBudget: $0) } ?? MatcherSettings()
     let result = structuralDiff(oldPath: displayPath, oldBytes: old, newPath: displayPath,
-                                newBytes: new, parser: parser)
+                                newBytes: new, parser: parser, settings: settings)
     let stats = result.stats
     let validation = validate(result.model)
 

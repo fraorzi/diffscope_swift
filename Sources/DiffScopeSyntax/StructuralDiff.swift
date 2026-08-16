@@ -278,10 +278,12 @@ public func structuralDiff(
     let unparsedBytes = (oldErrors + newErrors).reduce(0) { $0 + ($1.end - $1.start) }
 
     let oldPartition = snapToGraphemeBoundaries(snapPresentation(
-        movedOld, boundaries: SyntaxBoundaries(tree: oldTree), budget: settings.boundarySnapBudget
+        movedOld, boundaries: SyntaxBoundaries(tree: oldTree),
+        budget: settings.boundarySnapBudget, bytes: oldBytes
     ), bytes: oldBytes)
     let newPartition = snapToGraphemeBoundaries(snapPresentation(
-        movedNew, boundaries: SyntaxBoundaries(tree: newTree), budget: settings.boundarySnapBudget
+        movedNew, boundaries: SyntaxBoundaries(tree: newTree),
+        budget: settings.boundarySnapBudget, bytes: newBytes
     ), bytes: newBytes)
 
     // Last, so it catches fragmentation from every pass above it rather than only from its

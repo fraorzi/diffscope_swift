@@ -2714,3 +2714,72 @@ Mid-line anchoring, the indentation smear, and the emphasis landing on an unchan
 reflow are all artefacts of *where the canonical byte diff put its boundaries*, not of how many
 segments carry them. `import ⟦changed~|styles …⟧` still splits an untouched `import ButtonLink` line.
 Those need the alignment itself to move, which is a decision and not a pass.
+
+---
+
+## M11-B — What moving the alignment onto line boundaries is worth, and what it costs without the snap guard
+
+**2026-08-16.** DEC-087. Same corpus as M11-A — the eleven modified files of
+`5bonsai__website__nextjs` — and a new instrument beside `--emit-structural`: `measure_shift.py`
+compares the lines the **model** reports as changed against the lines **git** reports, per file, so
+"the highlight is in the wrong place" becomes a number instead of a screenshot.
+
+### What was measured
+
+`false` = a line the model stars that `git diff -U0` says is untouched. `missed` = a line git removes
+that the old side does not mark. Three builds, one corpus.
+
+| | segments | lines reported new-side | **false** | missed old-side |
+|---|---|---|---|---|
+| M11-A baseline (coalescing only) | 175 | 159 | **35** | 20 |
+| \+ line-boundary shift, snap unchanged | 171 | 167 | **42** | 20 |
+| \+ shift **and** the snap guard | 174 | 147 | **24** | 20 |
+
+**The middle row is the finding.** The shift does exactly what it was written to do and the corpus got
+*worse* — 35 wrong lines became 42. The alignment was landing on line boundaries and DEC-047's
+16-byte outward snap was then spending its budget carrying it back off them, into the neighbouring
+line. Two passes, each correct, and the second undoing the first.
+
+Per file, with both:
+
+| file | false before | false after |
+|---|---|---|
+| `get-api-media-url.ts` | 3 | **0** |
+| `ImageText.tsx` | 11 | **4** |
+| `BannerWithImage.tsx` | 10 | 8 |
+| `DBannerWithImage.model.ts` | 1 | **0** |
+| `DImageText.model.ts` | 1 | **0** |
+
+`get-api-media-url.ts` is the one to read: a four-line insertion into a nine-line file, and the sole
+defect in it was the segment ending inside line 12's indentation. It now reports lines 8–11 and
+nothing else — the first file in this corpus the model describes exactly.
+
+### The two cases the owner reported, before and after
+
+```
+  before                                        after
+* 3 | import ⟦changed|styles …;               * 3 | ⟦changed|import styles …;
+* 4 |                                         * 4 |
+* 5 | ⟧⟦changed~|import ⟧ButtonLink …           5 | ⟧import ButtonLink …
+```
+
+```
+* 2 |   title?: string⟦changed|;               2 |   title?: string;
+* 3 |   hasDivider?: boolean;                * 3 | ⟦changed|  hasDivider?: boolean;
+* 4 |   ⟧text: string;                         4 | ⟧  text: string;
+```
+
+The `~` on the first is gone with it, which is the second half of the same fact: 0.6 confidence is
+produced only where `reconcile` overrules a tree anchor, and the tree had that `import` right all
+along.
+
+### What did not move
+
+**`missed` is unchanged at 20 of 31.** When a block is reflowed the old bytes become a subsequence of
+the new, and a minimal alignment legitimately puts every changed byte on the new side — so the old
+pane stays silent about fifteen removed lines in `ImageText.tsx`. No alignment choice fixes that; it
+is minimality itself, and the answer is a presentation that shows a substitution on both sides.
+
+`PageComponents.tsx` (4 false) and `BannerWithImage.tsx` (8) are the remaining shape: adjacent
+single-line insertions whose surrounding matches are too short to shift within — `current.length` and
+`previous.length` bound the search, and a one-line match between two insertions bounds it to nothing.

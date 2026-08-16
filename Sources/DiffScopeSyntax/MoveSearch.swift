@@ -75,6 +75,21 @@ private func changedLines(_ bytes: [UInt8], _ segments: [Segment]) -> [(start: I
     return lines
 }
 
+/// Whether two changed lines are neighbours in the file, with nothing but whitespace between them.
+///
+/// `changedLines` holds only the lines a change covers, so two entries are adjacent in the *array*
+/// whenever the lines between them are unchanged — and extending a move across that gap claims one
+/// relocation where there are two, which is exactly the pairing `link` exists to carry. A blank line
+/// is not such a gap: a block that moved with a blank line inside it moved as one block.
+private func adjacent(
+    _ first: (start: Int, end: Int),
+    _ second: (start: Int, end: Int),
+    in bytes: [UInt8]
+) -> Bool {
+    guard second.start >= first.end else { return false }
+    return !bytes[first.end..<second.start].contains { !asciiWhitespace.contains($0) }
+}
+
 private func trimmed(_ range: (start: Int, end: Int), in bytes: [UInt8]) -> (start: Int, end: Int) {
     var start = range.start
     var end = range.end
@@ -121,7 +136,9 @@ public func findMoves(
         var length = 1
         while oldIndex + length < oldLines.count, start + length < newLines.count,
               !used.contains(start + length),
-              oldContent[oldIndex + length] == newContent[start + length] {
+              oldContent[oldIndex + length] == newContent[start + length],
+              adjacent(oldLines[oldIndex + length - 1], oldLines[oldIndex + length], in: oldBytes),
+              adjacent(newLines[start + length - 1], newLines[start + length], in: newBytes) {
             length += 1
         }
 

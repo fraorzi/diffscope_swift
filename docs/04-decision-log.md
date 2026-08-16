@@ -3692,3 +3692,69 @@ Chosen: **coarser wording**. It is the only one of the three where the sentence 
 ### Revisit trigger
 
 Reopen the caption if a reader is ever surprised by the uncommitted count — that number is a count of entries and the disclosure exists because the surprise is real; it has moved, not gone.
+## DEC-087 — The canonical diff shifts its match boundaries onto line boundaries, and the validator shifts with it
+
+- **Date:** 2026-08-16 · **Topic:** Reopens the question DEC-047 left open, on the evidence of `22-experiment-log.md` → M11-A · **Status:** Accepted · **Amends DEC-039**
+- **Prompted by:** the owner's fourth diff session — an untouched `import` line drawn as removed-and-re-added, and an inserted interface member putting its highlight on the *next* line's indentation
+
+### Context
+
+DEC-047 closed with a sentence that has now come due: *"the equally-minimal-alternative question stays open."* M11-A is what came of leaving it open. Against eleven real files:
+
+- **35 of 159 lines** the model reports as changed on the new side are untouched by the change.
+- **9 of 11 files** contain at least one insertion that makes its *neighbour* read as edited.
+- **36 segments** end inside the following line's leading whitespace, which reads as *this line was re-indented* — a claim the tool never made.
+
+The mechanism is one line of `CanonicalDiff.swift`: the common-prefix scan (`:107-115`) runs over **bytes**, so an insertion before `import ButtonLink …` anchors after the shared word `import `, and an insertion before `  text: string;` anchors after the shared indent. Myers does not select a unique alignment; where several are equally short it picks arbitrarily, and the arbitrary one is usually the one that starts mid-line.
+
+`coalesceAdjacent` (M11-A) took the corpus from 443 marks to 175 and could not touch any of this: how many segments carry a boundary is a different question from where the boundary is.
+
+### Why this is not the sliding DEC-047 refused
+
+DEC-047's objection was precise and it was about **one thing moving while the other stood still**:
+
+> Sliding moves bytes **out** of the presented set. INV-2 as recorded requires every byte of *the canonical diff's* hunks to lie within a presented range, and the validator recomputes those hunks with the same deterministic implementation. A slid presentation therefore fails validation by construction.
+
+That is an argument against sliding the **presentation** away from a fixed `D`. It is not an argument about which `D` is the canonical one. Here `D` itself moves: the shift happens inside `canonicalMatches`, which is the single function both the model and `Validation` call, so the presentation and the check move together and containment holds byte for byte.
+
+INV-2 names four properties of `D` — *minimal*, *deterministic*, *over bytes*, *no structural input*. A shift keeps all four:
+
+- **Minimal.** A shift moves the boundary between a hunk and its neighbouring match by the same amount at both ends, so the total matched length is unchanged. The suite already asserts this directly — *"matched length equals LCS on 600 random pairs"* (`diffscope-verify/main.swift:155-158`) — and that check is the reason this option is safe to take rather than a check to weaken.
+- **Deterministic.** One shift is chosen by a total order over candidates, below.
+- **Over bytes**, and **no structural input** — which is why **the boundary set is `0x0A` and nothing else.** Snapping to lexer tokens or tree-sitter nodes would fix more and would make `D` depend on a parse that can fail, at which point the independent check is no longer independent of the thing it checks. That door stays shut.
+
+### Options considered
+
+1. **Nothing.** Rejected on the numbers above: 22% of the reported changed lines are wrong, and a reviewer who finds one wrong line stops trusting the other five.
+2. **Line-granular canonical `D`.** Rejected, and with a counterexample rather than a preference: for `O = "a\nb\n"`, `N = "b\na\n"` a line-level LCS marks `old[2..4)`/`new[0..2)` while the byte diff marks `old[0..2)`/`new[2..4)` — **disjoint**. Line hunks do not contain byte hunks, so this re-bases INV-2 and reopens DEC-021.
+3. **Present `lineExpand(D)`** — widen every hunk to whole lines. Free and monotone, but it does not fix the report: the untouched `import ButtonLink` line is still inside a hunk, and now inside a wider one.
+4. **Shift the match boundaries onto line boundaries inside `canonicalMatches`.** Chosen.
+
+### Decision
+
+**Option 4.** For each hunk, compute the range of shifts over which the alignment stays valid — the standard condition, and the same one git uses — then choose among the reachable positions by this total order:
+
+1. positions where the hunk **begins at a line start and ends at a line start** (a whole number of lines);
+2. among those, **the largest shift** — the position furthest down the file;
+3. if there is no such position, **shift 0**: the alignment is left exactly where Myers put it.
+
+Rule 2 is not a taste. For the owner's import case both `import styles …;\n\n` and `\nimport styles …;\n` are whole-line candidates, and only the later one renders as *two lines added after the blank line* rather than as *a blank line added, then an import*. It is also what git prints for the same file, which is worth matching where nothing argues against it.
+
+Rule 3 is what keeps this honest on the cases it cannot help: a replacement whose two sides cannot shift together stays where it was, and no boundary is invented.
+
+**And, in the same entry because it is the same fact: the boundary snap stops widening a boundary that is already on a line boundary.** This was not foreseen when the shift was written; it was measured afterwards, and the measurement is the argument. DEC-047's snap exists to rescue a change that *begins mid-structure*. Once the alignment lands on whole lines there is nothing to rescue, and the 16-byte budget is spent spilling into the neighbouring line instead — which is precisely how an inserted interface member came to put its highlight on the *next* line's indentation. With the shift in place and this guard absent, the corpus reports **42** wrong lines against a baseline of 35: the shift alone is a regression. With it, **24**. A mid-structure boundary is still widened exactly as before.
+
+### Consequences
+
+- **DEC-039's independence is weakened in a way that must be said plainly.** `canonicalMatches` is already the single implementation behind both the model and its check — that predates this entry — and shifting inside it means a defect in the shift is a defect in both. The honest reading is that INV-2's runtime check has been a regression guard rather than an independent test for some time; this entry does not create that and does not fix it. It is written down as the next thing to repair.
+- **Move detection changes, and a latent defect in it came out.** `findMoves` extended a move while consecutive entries of its *changed-lines array* matched — and those entries are adjacent whenever the lines between them are unchanged. With the new alignment, `moved-two-blocks` produced **one** record spanning two blocks that land in different places, so `link` counted instead of pairing and T-11's third assertion failed. Extension now requires the two lines to be neighbours in the file with nothing but whitespace between them; a blank line inside a moved block is still one move.
+- **The 16-byte snap budget (DEC-047, M6-B) keeps its value and loses its reach.** Rather than re-deriving a number, the pass is given the one condition it was always missing: it does not widen what is already whole-line.
+- Presented bytes go **down**, not up, for the first time in this series — the opposite direction from the snap. That is safe only because `D` moved first, and it is the whole reason the order of the two passes matters.
+
+### Revisit trigger
+
+Reopen if a corpus measurement shows the whole-line preference losing to the alternative on files with no blank lines between blocks — minified or generated sources, where "the furthest position down the file" may run a hunk past the construct it belongs to.
+
+> **Numbering.** This entry was written as DEC-086 on a branch while DEC-086 was being
+> written on `main`. Both are wanted and both are kept; the branch's became **DEC-087** at
+> the merge. Two entries sharing a number is the one thing this log cannot carry.

@@ -58,9 +58,112 @@ public func canonicalMatches(
     old.withUnsafeBufferPointer { a in
         new.withUnsafeBufferPointer { b in
             divide(a, 0, a.count, b, 0, b.count, &forward, &backward, half, &matches, budget)
+            if !budget.exceeded {
+                matches = shiftToLineBoundaries(matches, old: a, new: b)
+            }
         }
     }
     return (matches, budget.exceeded, budget.used)
+}
+
+/// Moves each hunk along the file, while the alignment stays equally minimal, to the position where
+/// it covers a whole number of lines (DEC-087).
+///
+/// Myers does not select a unique alignment. Where several are equally short it picks arbitrarily,
+/// and the arbitrary one is usually the one that begins mid-line: an insertion before
+/// `import ButtonLink …` anchors after the shared word `import `, so an untouched line reads as
+/// removed-and-re-added, and an insertion before `  text: string;` anchors after the shared indent,
+/// so the highlight lands on the *next* line's whitespace.
+///
+/// **This is not the sliding DEC-047 refused.** That objection was against moving the presentation
+/// while `D` stood still, which fails a validator recomputing `D`. Here `D` itself moves, inside the
+/// one function both the model and `Validation` call, so containment holds byte for byte.
+///
+/// A shift moves the boundary between a hunk and each of its neighbouring matches by the same
+/// amount, so **the total matched length is invariant** and the result is still minimal — the
+/// property `diffscope-verify` already asserts against a brute-force LCS on random pairs.
+///
+/// **The boundary set is `0x0A` and nothing else.** Snapping to tokens or tree nodes would fix more
+/// and would make `D` depend on a parse that can fail, at which point the independent check is no
+/// longer independent of the thing it checks.
+func shiftToLineBoundaries(
+    _ matches: [MatchBlock],
+    old: UnsafeBufferPointer<UInt8>,
+    new: UnsafeBufferPointer<UInt8>
+) -> [MatchBlock] {
+    guard matches.count > 1 else { return matches }
+    var blocks = matches
+
+    // A range is whole-line when it begins at a line start and ends at one. An empty range is a
+    // point, and a point is aligned when it sits at a line start.
+    @inline(__always)
+    func aligned(_ buffer: UnsafeBufferPointer<UInt8>, _ start: Int, _ end: Int) -> Bool {
+        guard start == 0 || buffer[start - 1] == 0x0A else { return false }
+        return end == start || end == 0 || buffer[end - 1] == 0x0A
+    }
+
+    // One step is legal when the byte leaving the front of the hunk equals the byte entering the
+    // back of it — for every side that has content. A side with an empty hunk imposes no condition;
+    // its boundary simply travels with the other side's.
+    @inline(__always)
+    func stepHolds(_ buffer: UnsafeBufferPointer<UInt8>, _ start: Int, _ end: Int, down: Bool) -> Bool {
+        guard end > start else { return true }
+        if down {
+            guard end < buffer.count else { return false }
+            return buffer[start] == buffer[end]
+        }
+        guard start > 0 else { return false }
+        return buffer[start - 1] == buffer[end - 1]
+    }
+
+    for index in 1..<blocks.count {
+        let previous = blocks[index - 1]
+        let current = blocks[index]
+        let oldStart = previous.oldStart + previous.length
+        let newStart = previous.newStart + previous.length
+        let oldEnd = current.oldStart
+        let newEnd = current.newStart
+        guard oldEnd > oldStart || newEnd > newStart else { continue }
+
+        // Neither neighbouring match may be consumed: a match shrinking to nothing merges two hunks
+        // into one, which is a different edit script rather than the same one written down better.
+        var best: Int?
+        var shift = 0
+        while shift + 1 < current.length,
+              stepHolds(old, oldStart + shift, oldEnd + shift, down: true),
+              stepHolds(new, newStart + shift, newEnd + shift, down: true) {
+            shift += 1
+            if aligned(old, oldStart + shift, oldEnd + shift),
+               aligned(new, newStart + shift, newEnd + shift) {
+                best = shift
+            }
+        }
+        // The furthest position down the file wins, so the upward search only runs when the
+        // downward one found nothing, and stops at the first candidate it reaches.
+        if best == nil {
+            shift = 0
+            while -shift + 1 < previous.length,
+                  stepHolds(old, oldStart + shift, oldEnd + shift, down: false),
+                  stepHolds(new, newStart + shift, newEnd + shift, down: false) {
+                shift -= 1
+                if aligned(old, oldStart + shift, oldEnd + shift),
+                   aligned(new, newStart + shift, newEnd + shift) {
+                    best = shift
+                    break
+                }
+            }
+        }
+        // No reachable position covers whole lines: the alignment stays exactly where Myers put it,
+        // and no boundary is invented.
+        guard let chosen = best, chosen != 0 else { continue }
+
+        blocks[index - 1] = MatchBlock(oldStart: previous.oldStart, newStart: previous.newStart,
+                                       length: previous.length + chosen)
+        blocks[index] = MatchBlock(oldStart: current.oldStart + chosen,
+                                   newStart: current.newStart + chosen,
+                                   length: current.length - chosen)
+    }
+    return blocks
 }
 
 public func canonicalDiff(

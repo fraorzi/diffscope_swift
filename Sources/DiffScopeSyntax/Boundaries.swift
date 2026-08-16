@@ -71,13 +71,25 @@ public let boundarySnapBudget = 16
 public func snapToBoundaries(
     _ mask: [(start: Int, end: Int)],
     boundaries: SyntaxBoundaries,
-    budget: Int
+    budget: Int,
+    bytes: [UInt8] = []
 ) -> [(start: Int, end: Int)] {
     guard budget > 0, !boundaries.offsets.isEmpty, !mask.isEmpty else { return mask }
 
+    // A boundary already on a line boundary is not widened (DEC-087). This pass exists to rescue a
+    // change that *begins mid-structure*; once the canonical alignment lands on whole lines, the
+    // same widening spends its budget spilling into the neighbouring line — which is how an
+    // inserted member came to put its highlight on the *next* line's indentation. Measured: with
+    // the shift in place and this guard absent, the corpus reports **more** wrong lines than before
+    // the shift, not fewer.
+    func atLineStart(_ offset: Int) -> Bool {
+        guard !bytes.isEmpty else { return false }
+        return offset == 0 || (offset <= bytes.count && bytes[offset - 1] == 0x0A)
+    }
+
     var widened = mask.map { range -> (start: Int, end: Int) in
-        (boundaries.snapDown(range.start, budget: budget),
-         boundaries.snapUp(range.end, budget: budget))
+        (atLineStart(range.start) ? range.start : boundaries.snapDown(range.start, budget: budget),
+         atLineStart(range.end) ? range.end : boundaries.snapUp(range.end, budget: budget))
     }
     widened.sort { $0.start < $1.start }
 
@@ -102,11 +114,12 @@ public func snapToBoundaries(
 public func snapPresentation(
     _ partition: Partition,
     boundaries: SyntaxBoundaries,
-    budget: Int = boundarySnapBudget
+    budget: Int = boundarySnapBudget,
+    bytes: [UInt8] = []
 ) -> Partition {
     let presented = partition.segments.filter(\.isPresented).map { (start: $0.start, end: $0.end) }
     guard !presented.isEmpty else { return partition }
-    let snapped = snapToBoundaries(presented, boundaries: boundaries, budget: budget)
+    let snapped = snapToBoundaries(presented, boundaries: boundaries, budget: budget, bytes: bytes)
 
     // A widened flank is unchanged content, so it cannot make a run behave differently. It may
     // therefore carry the run's classification — but only where every change inside that run
