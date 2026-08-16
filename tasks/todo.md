@@ -2695,6 +2695,33 @@ quiet by design — the row would simply have looked the way it looked before. T
 asserting that an OSC is *not* a refusal is the only thing between that and shipping.
 
 
+## Step 90 — the terminal drawer gets a button (DEC-090)
+
+- [x] `TerminalButton` in the status line, drawing `>_`; action from `selector(for: "terminal")`
+- [x] `Theme.drawPrompt` — two strokes and a rule, not a glyph typed into a title
+- [x] state by shape: the raised surface open, the bare mark shut
+- [x] `windowSnapshot` draws, displays and **commits** before it photographs
+- [x] 1823 -> **1828 checks**, 53 -> **54 selftest arms**
+
+### Step 90 — the button was right and the picture was three turns old
+
+`keyboard.png` showed the drawer's button **raised with the drawer shut**. The state was right, the
+arm that asked said `closed=true`, the invalidation was right — and `CGWindowListCreateImage` asks
+the *window server* what it has, which is whatever was last committed to it. Nothing here had ever
+forced that commit before taking a picture. Fourth instance of the class, after CodeMirror's
+occluded re-measure: **a picture of a pass that has not run is a picture of something that was never
+on screen.**
+
+**Two repairs were written before the right one, and both were measured and removed.** A
+`wantsUpdateLayer` override on the button (plausible: `NSButton` answers `true`, so an invalidation
+can be satisfied by `updateLayer()` and leave the drawn contents cached) and a `displayIfNeeded()` in
+`setTerminalVisible`'s hidden branch. Each was taken away again and the pixel sampled: neither
+changed anything. *Measure the control before believing the check* — applied to a repair.
+
+The arm renders the button in **both** states now and requires the two pictures to differ. No
+assertion about state could have caught this; that one can.
+
+
 ### Still open
 
 - [ ] minimum-run absorption of unchanged gaps shorter than a token (phantom retention). `alpha` →

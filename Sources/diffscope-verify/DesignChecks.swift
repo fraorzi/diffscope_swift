@@ -188,6 +188,27 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
                    && pill.contains("Theme.minimumHitTarget"))
         report("negative control: a borderless button left as a plain NSButton is caught",
                "let b = NSButton(title: \"+\", target: nil, action: nil)".contains("NSButton(title: \"+\""))
+
+        // DEC-090: **the terminal drawer has a control of its own.** It was the only pane in the
+        // window a reader could not reach with a pointer — the two lists have chevrons, the diff has
+        // the lens — so the drawer existed only for somebody who already knew ⌃`.
+        report("the terminal drawer has a pointer route, not only a keystroke (DEC-090)",
+               shell.contains("TerminalButton(title: \"\", target: self, action: #selector(toggleTerminal))"))
+        // DEC-071's rule, and the reason this is a button rather than a capability: its words are
+        // the keyboard map's, so a button and a menu item cannot describe one command two ways.
+        report("and its words are the keyboard map's rather than its own",
+               shell.contains("KeyboardMap.binding(id: \"terminal\")")
+                   && shell.contains("terminalButton.toolTip"))
+        // Drawn, not typed. `⌄` typed as a character read as a `>` and sat wherever the font put it
+        // (DEC-085 item 6); `>_` typed as two characters would do the same thing twice.
+        report("and its mark is drawn rather than typed into a title",
+               pill.contains("Theme.drawPrompt(in: bounds")
+                   && !shell.contains("TerminalButton(title: \">_\""))
+        // State by shape as well as by ink: open, it wears the raised surface the chosen pill wears.
+        report("and it says which state it is in by shape, not by colour alone",
+               pill.contains("if isOn {") && pill.contains("Theme.controlThumb.setFill()"))
+        report("negative control: a `>_` typed into the title would be caught",
+               "TerminalButton(title: \">_\", …)".contains("TerminalButton(title: \">_\""))
     }
 
     print("\n=== the switches are made of glass, or of nothing pretending to be (DEC-077) ===")

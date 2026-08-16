@@ -179,6 +179,7 @@ enum Theme {
     }
 
     /// `--ds-space-*`.
+    static let space1: CGFloat = 2
     static let space2: CGFloat = 4
     static let space3: CGFloat = 6
     static let space4: CGFloat = 8
@@ -261,6 +262,43 @@ enum Theme {
     static let chevronArmWidth: CGFloat = 3.5
     static let chevronArmHeight: CGFloat = 3.5
     static let chevronStroke: CGFloat = 1.5
+
+    /// **`>_`, drawn** (DEC-090) — the terminal's own mark, on the button that opens the drawer.
+    ///
+    /// Two strokes and a rule, for the reason DEC-085 item 6 recorded about the switches' chevron:
+    /// a glyph typed as a character carries its own side bearings and its own baseline, so it sits
+    /// wherever the font puts it and drifts the moment the font changes. This is the same
+    /// construction `drawChevron` uses, turned a quarter turn, with the prompt's underscore beside
+    /// it — one function, so the button and anything that draws this mark later cannot end up with
+    /// two different prompts.
+    static func drawPrompt(in box: NSRect, colour: NSColor? = nil) {
+        (colour ?? inkQuiet).setStroke()
+        let arm = chevronArmWidth
+        // The pair sits as a unit: the chevron's point and the rule's end share a right edge, and
+        // the whole is centred in the box rather than each half being centred separately.
+        let width = arm * 2 + space1 + promptRuleWidth
+        let left = box.midX - width / 2
+        let baseline = box.midY - arm - chevronStroke
+
+        let chevron = NSBezierPath()
+        chevron.move(to: NSPoint(x: left, y: box.midY + arm))
+        chevron.line(to: NSPoint(x: left + arm * 2, y: box.midY))
+        chevron.line(to: NSPoint(x: left, y: box.midY - arm))
+        chevron.lineWidth = chevronStroke
+        chevron.lineCapStyle = .round
+        chevron.lineJoinStyle = .round
+        chevron.stroke()
+
+        let rule = NSBezierPath()
+        rule.move(to: NSPoint(x: left + arm * 2 + space1, y: baseline))
+        rule.line(to: NSPoint(x: left + width, y: baseline))
+        rule.lineWidth = chevronStroke
+        rule.lineCapStyle = .round
+        rule.stroke()
+    }
+    /// The underscore's length. Longer than the chevron is wide, because a prompt's cursor is a
+    /// character cell and the chevron is a punctuation mark.
+    static let promptRuleWidth: CGFloat = 8
 
     /// The vertical room above and below the search field's line (DEC-088). The field was its
     /// font's line height and nothing else — `intrinsicContentSize` reports 14 — so the caret sat

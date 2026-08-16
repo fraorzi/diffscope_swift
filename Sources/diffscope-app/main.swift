@@ -193,6 +193,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var terminalHeightConstraint: NSLayoutConstraint!
     var terminalMinimumConstraint: NSLayoutConstraint!
     var terminalMenuItem: NSMenuItem?
+    /// The drawer's own control (DEC-090). Held because the selftest asserts it is drawn where the
+    /// pane it opens is, and that it says which way it will go.
+    var terminalButton: TerminalButton!
     var terminalRawMenuItem: NSMenuItem?
     var terminalVisible = false
     var lastCommandRefresh = Date.distantPast
@@ -771,6 +774,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         terminalHeightConstraint.constant = visible ? Theme.terminalPaneHeight : 0
         terminalMinimumConstraint.isActive = visible
         terminalMenuItem?.state = visible ? .on : .off
+        updateTerminalButton()
         terminalSplit.adjustSubviews()
         guard visible else {
             // Hiding has to move the divider too. A hidden pane keeps whatever share of the height
@@ -2431,7 +2435,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let centred = !hasRoom || abs(modes.midX - bar.midX) < 1
         // And the bar must not have made the window wider than it asked to be.
         let didNotGrow = bar.width <= (window.screen?.frame.width ?? bar.width)
-        let drawn = [modes, watch, layout, wrap].allSatisfy { bar.contains($0) && $0.width > 1 }
+        let drawer = terminalButton.convert(terminalButton.bounds, to: nil)
+        let drawn = [modes, watch, layout, wrap, drawer].allSatisfy { bar.contains($0) && $0.width > 1 }
         // Nothing overlaps the modes: a message arriving on the left must not push a control the
         // reader is aiming at, and a stack view is exactly what would have.
         let clear = watch.maxX <= modes.minX && layout.minX >= modes.maxX
@@ -2472,6 +2477,59 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 + "legend=\"\(legendView?.stringValue ?? "nil")\" needs \(Int(legendNeeds))pt "
                 + "has \(Int(legendHas))pt drawn=\(drawn) clear=\(clear)\n").utf8))
         guard ok else { exit(69) }
+        terminalButtonSelftest()
+    }
+
+    /// DEC-090: **the drawer can be opened with a pointer**, and the control says which way it will
+    /// go.
+    ///
+    /// The action is compared against the one the *keyboard map* resolves rather than against a
+    /// selector written here — that is DEC-071's rule, and a button wired to its own copy of a
+    /// command is the drift this project has now paid for three times.
+    ///
+    /// **The state is exercised without starting a shell.** `toggleTerminal` would spawn the
+    /// reader's `$SHELL`, and G3 runs this from `/` on a stranger's machine; what has to be true is
+    /// that the button follows the drawer, which `setTerminalVisible` settles on its own.
+    private func terminalButtonSelftest() {
+        let bar = statusBar.convert(statusBar.bounds, to: nil)
+        let button = terminalButton.convert(terminalButton.bounds, to: nil)
+        let bound = terminalButton.action == selector(for: "terminal")
+        let big = button.width >= Theme.minimumHitTarget && button.height >= Theme.minimumHitTarget
+
+        // **What it draws, not only what it holds.** The state was always right; the picture was
+        // not — `keyboard.png` had this button raised with the drawer shut, because the window
+        // server had not been given the new frame. So the two states are *rendered* and compared,
+        // which is the assertion a stale pixel cannot pass.
+        func drawn() -> Data {
+            guard let rep = terminalButton.bitmapImageRepForCachingDisplay(in: terminalButton.bounds)
+            else { return Data() }
+            terminalButton.cacheDisplay(in: terminalButton.bounds, to: rep)
+            return rep.representation(using: .png, properties: [:]) ?? Data()
+        }
+
+        let wasVisible = terminalVisible
+        setTerminalVisible(true, startingShell: false)
+        let opened = terminalButton.isOn && (terminalButton.toolTip ?? "").hasPrefix("Hide")
+        let raised = drawn()
+        setTerminalVisible(false, startingShell: false)
+        let closed = !terminalButton.isOn && (terminalButton.toolTip ?? "").hasPrefix("Show")
+        let bare = drawn()
+        let looksDifferent = !raised.isEmpty && raised != bare
+        // The shortcut is in the tooltip, from the map — the one place a keystroke may still be
+        // composed for the reader (DEC-077's replacement rule).
+        let named = (terminalButton.toolTip ?? "").contains(KeyboardMap.binding(id: "terminal")?.shortcut ?? "∅")
+        setTerminalVisible(wasVisible, startingShell: false)
+
+        let ok = bar.contains(button) && button.width > 1 && bound && big && opened && closed
+            && named && looksDifferent
+        FileHandle.standardError.write(Data(
+            ("SELFTEST terminal-button=\(ok ? "OK" : "MISMATCH") "
+                + "button=[\(Int(button.minX)),\(Int(button.minY)) "
+                + "\(Int(button.width))×\(Int(button.height))] inBar=\(bar.contains(button)) "
+                + "bound=\(bound) big=\(big) opened=\(opened) closed=\(closed) named=\(named) "
+                + "drawnApart=\(looksDifferent) (\(raised.count) vs \(bare.count) bytes) "
+                + "tip=\"\(terminalButton.toolTip ?? "nil")\"\n").utf8))
+        guard ok else { exit(73) }
         sourcesButtonSelftest()
     }
 
@@ -3258,6 +3316,19 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             + " diffPane=\(box(webView.superview?.frame ?? .zero))"
             + " diffWeb=\(box(webView.frame))"
 
+        // **Draw, then commit, then photograph** (DEC-090). `CGWindowListCreateImage` asks the
+        // *window server* what it has, and what it has is whatever was last committed to it — so a
+        // control that changed state in this turn is still wearing its old picture. The drawer's
+        // button was raised in `keyboard.png` with the drawer shut: the state was right, the arm
+        // that asked was right, and the pixel was several turns old. Found by sampling the pixel;
+        // it is invisible to every assertion this project makes about state.
+        //
+        // The AppKit twin of `window.diffscopeSettle()`, and for the same reason — a picture of a
+        // pass that has not run is a picture of something that was never on screen.
+        view.displayIfNeeded()
+        window.displayIfNeeded()
+        CATransaction.flush()
+
         if let composited = CGWindowListCreateImage(
             .null, .optionIncludingWindow, CGWindowID(window.windowNumber),
             [.boundsIgnoreFraming, .bestResolution]
@@ -3603,6 +3674,18 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         return button
     }
 
+    /// The drawer's button, told what the drawer is doing (DEC-090). Its words come from
+    /// `KeyboardMap`, so a button and a menu item cannot describe the same command differently —
+    /// the drift M8-P found in the tester packet, and DEC-071's rule about pointer routes.
+    private func updateTerminalButton() {
+        guard let terminalButton else { return }
+        terminalButton.isOn = terminalVisible
+        let binding = KeyboardMap.binding(id: "terminal")
+        let title = binding.map { terminalVisible ? "Hide the \($0.title.lowercased())"
+            : "Show the \($0.title.lowercased())" } ?? "Terminal"
+        terminalButton.toolTip = [title, binding?.shortcut].compactMap { $0 }.joined(separator: "  ")
+    }
+
     private func updateCollapseButtons() {
         repoCollapseButton?.title = reposCollapsed ? "»" : "«"
         fileCollapseButton?.title = filesCollapsed ? "»" : "«"
@@ -3672,9 +3755,22 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         wrapButton.state = wrapEnabled ? .on : .off
         wrapButton.toolTip = KeyboardMap.binding(id: "wrap")?.shortcut
 
+        // DEC-090: the drawer opens with a pointer as well as with ⌃`. It is the only pane in the
+        // window with no control of its own — the two lists have chevrons, the diff has the lens —
+        // and a reader who does not know the keystroke has no way to find out that it exists.
+        //
+        // In the status line because that is the edge the drawer comes out of: a control belongs
+        // beside the thing it moves, which is the same reasoning that put the scope row above the
+        // lists rather than inside a pane on the far side of them.
+        terminalButton = TerminalButton(title: "", target: self, action: #selector(toggleTerminal))
+        terminalButton.isBordered = false
+        terminalButton.setButtonType(.momentaryChange)
+        terminalButton.enforceMinimumTarget()
+        updateTerminalButton()
+
         // The key legend has gone with the hints (DEC-077). The menu bar is where the map lives; a
         // status line that recites it is three lines of text a reader stops seeing after a day.
-        let right = NSStackView(views: [layoutControl, wrapButton])
+        let right = NSStackView(views: [terminalButton, layoutControl, wrapButton])
         right.orientation = .horizontal
         right.alignment = .centerY
         right.spacing = Theme.space6

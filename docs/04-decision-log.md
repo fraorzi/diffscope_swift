@@ -3852,3 +3852,38 @@ A **two-line prompt keeps only its last line** inline; the head goes to the grid
 ### Reopen if
 
 A prompt in daily use is refused often enough to notice — the tell is the row falling back to a bare field with the prompt above it — in which case the refusal rule is what needs work, not the withholding.
+
+---
+
+## DEC-090 — The terminal drawer gets a control of its own, and the window server has to be told before a picture is taken
+
+- **Date:** 2026-08-16 · **Topic:** DEC-071's rule applied to the one pane that had no pointer route · **Status:** Accepted
+- **Prompted by:** the owner, with a picture of a `>_` — *"chcę żeby dało się otworzyć terminal tą ikonką a nie tylko skrótem"*
+
+### Context
+
+Every other region of the window can be reached with a pointer: the two lists have collapse chevrons, the diff has the lens, the scope row has its pills. **The terminal drawer had ⌃` and nothing else** — so it existed only for a reader who already knew the keystroke, and DEC-016 calls a function reachable only one way a defect in whichever direction it points.
+
+### Decision
+
+`TerminalButton` in the **status line**, drawing `>_`.
+
+- **In the status line because that is the edge the drawer comes out of.** A control belongs beside the thing it moves — the same reasoning that put the scope row above the lists rather than inside a pane on the far side of them.
+- **A route, not a capability** (DEC-071). Its action is the selector the keyboard map resolves for `terminal`, and its words are `KeyboardMap`'s — a button and a menu item that describe one command two ways is drift this project has now paid for three times.
+- **The mark is drawn, not typed.** DEC-085 item 6 recorded what happens to a glyph typed into a title: `⌄` is a *modifier letter*, it carries its own side bearings and baseline, so it read as a `>` and sat wherever the font put it. `Theme.drawPrompt` is the same two-stroke construction `drawChevron` uses, turned a quarter turn, with the prompt's rule beside it.
+- **The state is a shape as well as an ink.** Open, it wears the raised surface the chosen pill wears; closed, it is the bare mark. A toggle that changes only its colour is one a reader has to remember rather than read.
+
+### And the thing that was actually found
+
+**`keyboard.png` showed the button raised with the drawer shut.** The state was right — the arm that asked said `closed=true` — the invalidation was right, and the pixel was several turns old. `CGWindowListCreateImage` asks the **window server** what it has, and what it has is whatever was last committed to it; nothing in this project had ever forced that commit before photographing.
+
+`windowSnapshot` now draws, displays and calls `CATransaction.flush()` before it captures. This is the AppKit twin of `window.diffscopeSettle()` and it is the **fourth** instance of the same class of defect here: a picture of a pass that has not run is a picture of something that was never on screen.
+
+**Two speculative fixes were written first and both were measured and removed** — a `wantsUpdateLayer` override on the button, and a `displayIfNeeded()` in `setTerminalVisible`'s hidden branch. Each was plausible, each was tested by taking it away again, and neither changed a pixel. *Measure the control before believing the check*, applied to a repair rather than to a check.
+
+The arm now renders the button in **both** states and requires the two pictures to differ. A stale pixel cannot pass that, and no assertion about state ever could.
+
+### Consequences
+
+- `Theme.space1` joins the mirrored spacing scale; `Theme.drawPrompt` and `Theme.promptRuleWidth` are the mark.
+- Every snapshot in the suite is now taken after a commit, so the whole gallery is a turn newer than it was.

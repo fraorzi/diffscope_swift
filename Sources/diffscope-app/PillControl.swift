@@ -846,6 +846,36 @@ final class ChevronButton: HandButton {
     override var isFlipped: Bool { false }
 }
 
+/// The button that opens the terminal drawer (DEC-090).
+///
+/// A pointer route to a function the keyboard map already has — DEC-071's rule, and the reason this
+/// is a *button* rather than a new capability: the tooltip is composed from `KeyboardMap`, so it
+/// cannot offer something ⌃` does not.
+///
+/// **It says which state it is in, by shape as well as by ink.** Open, it wears the raised surface
+/// the chosen pill wears; closed, it is the bare mark. A toggle that changes only its colour is one
+/// a reader has to remember rather than read — DEC-035's rule, applied to a control.
+final class TerminalButton: HandButton {
+    var isOn = false { didSet { needsDisplay = true } }
+
+
+    override func draw(_ dirtyRect: NSRect) {
+        if isOn {
+            let box = bounds.insetBy(dx: Theme.pillInset, dy: Theme.pillInset)
+            let radius = min(Theme.pillRadius, box.height / 2)
+            let shape = NSBezierPath(roundedRect: box, xRadius: radius, yRadius: radius)
+            Theme.controlThumb.setFill()
+            shape.fill()
+            Theme.controlBorder.setStroke()
+            shape.lineWidth = Theme.buttonRimWidth
+            shape.stroke()
+        }
+        Theme.drawPrompt(in: bounds, colour: isOn ? Theme.ink : Theme.inkQuiet)
+    }
+
+    override var isFlipped: Bool { false }
+}
+
 /// The search field's cell, and the whole of DEC-088 item 1.
 ///
 /// **The overlap is in the editing path, not the drawing path**, and that is the whole finding.
