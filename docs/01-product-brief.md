@@ -5,14 +5,24 @@
 
 ---
 
-## Positioning line
+## Positioning lines
 
-> **"In a world of AI we don't need another text editor, we need a better code reviewer."**
+> **"In a world of AI we don't need another text editor, we need a better code review."**
 
 The product owner's line, 2026-08-15. Kept here because it is the shortest true statement of why this
 application exists: the volume of code a person is asked to *read* rather than *write* is what
-changed, and the interface that has not caught up is the diff. It is a positioning line for a future
-promotional site, not interface copy — nothing in the application says it.
+changed, and the interface that has not caught up is the diff.
+
+Three more, 2026-08-16, the same claim at different lengths:
+
+> **"We don't need another AI code editor. We need a better way to review code."**
+>
+> **"AI changed how we write code. It's time to change how we review it."**
+>
+> **"Code is written faster than ever. Review should catch up."**
+
+All four are positioning lines for a future promotional site, **not interface copy** — nothing in the
+application says any of them.
 
 ---
 
