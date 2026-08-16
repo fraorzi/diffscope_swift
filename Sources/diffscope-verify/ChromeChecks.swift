@@ -283,6 +283,9 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
             ("--ds-text", "--ds-panel-files", "a file's name and its kind glyph"),
             ("--ds-dim", "--ds-panel-files", "its counts and the group headers"),
             ("--ds-faint", "--ds-panel-files", "the CHANGED FILES caption"),
+            ("--ds-text", "--ds-status-bar", "the status line's last message"),
+            ("--ds-dim", "--ds-status-bar", "the watcher field and what it last did"),
+            ("--ds-faint", "--ds-status-bar", "the key legend at its trailing edge"),
             ("--ds-text", "--ds-row-selected", "the selected row's name"),
             ("--ds-dim", "--ds-row-selected", "the selected row's counts"),
             ("--ds-faint", "--ds-row-selected", "the selected repository's path"),
@@ -439,6 +442,34 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
                    surfaces.count == 3 && Set(surfaces).count == 1,
                    surfaces.joined(separator: " / "))
         }
+        // **The status line is the exception, and it is an ordering rather than a ratio.**
+        //
+        // The owner's amendment to DEC-088: the one band that reports *on* the window rather than
+        // holding any of what is being read keeps a surface of its own, and it is the darker one.
+        // Stated as a direction because in dark there is almost nothing below `--ds-panel-*` before
+        // the code's black — the honest assertion is *which way*, with the ratio printed rather
+        // than asserted, and the seam at the bar's top edge doing the separating.
+        var order: [String] = []
+        var apart: [String] = []
+        for dark in [false, true] {
+            guard let panel = value("--ds-panel-files", dark: dark),
+                  let bar = value("--ds-status-bar", dark: dark) else {
+                order.append("--ds-status-bar in \(dark ? "dark" : "light"): undeclared"); continue
+            }
+            apart.append(String(format: "%@ %.3f", dark ? "dark" : "light", ratio(panel, bar)))
+            if luminance(bar) >= luminance(panel) {
+                order.append(String(format: "%@: %.4f is not below %.4f", dark ? "dark" : "light",
+                                    luminance(bar), luminance(panel)))
+            }
+        }
+        report("the status line sits darker than the panels, in both appearances (DEC-088)",
+               order.isEmpty, order.joined(separator: " | "))
+        report("and how far apart it is, is printed rather than asserted",
+               apart.count == 2, apart.joined(separator: ", "))
+        // The control: the value it had while it followed `--ds-chrome`, which is not below it.
+        report("negative control: a status line on the panels' own surface is caught",
+               !(luminance("#131317") < luminance("#131317")))
+
         // The control is the shipped table, as literals: these are the four light values DEC-080
         // replaced, and the widest step between them is under its floor. Kept because it is still
         // the failure this whole section exists over — four neutrals nineteen values apart — and

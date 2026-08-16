@@ -2601,7 +2601,19 @@ that counts.
 - [x] `SlimScroller` + `OverlayScrollView`: an overlay scroller whatever the system preference says,
       a narrower knob, and no slot behind it
 - [x] `--ds-pane-header-height`, and a check that does the arithmetic on both sides
-- [x] 1793 → **1799 checks**, 50 → **51 selftest arms**
+- [x] `--ds-status-bar` — the owner's same-day amendment: that one band stays darker than the panels
+- [x] 1793 → **1802 checks**, 50 → **51 selftest arms**
+
+### Step 88 — the status line is the one band that reports on the window
+
+Item 2 collapsed `--ds-chrome` into the panels, and the status line was drawn from `--ds-chrome`.
+The owner asked for it back, and the line the exception is drawn along is worth keeping: every
+other band **holds** part of what is being read; the status line **reports on** it.
+
+The check is an **ordering, not a ratio**, and that is measurement rather than taste — below
+`--ds-panel-*` in dark there is almost nothing left before the code's black. 1.26:1 in light,
+**1.08:1 in dark**, printed rather than asserted, with the hairline at the bar's top edge doing the
+separating.
 
 ### Step 88 — the field was right in every picture and wrong the moment anyone typed
 

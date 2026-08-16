@@ -3633,7 +3633,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         right.alignment = .centerY
         right.spacing = Theme.space6
 
-        let bar = ChromeBar(surface: Theme.chrome, edge: .top)
+        let bar = ChromeBar(surface: Theme.statusBar, edge: .top)
         for view in [left, modeControl!, right] {
             bar.addSubview(view)
             view.translatesAutoresizingMaskIntoConstraints = false

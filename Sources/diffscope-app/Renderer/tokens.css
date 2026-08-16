@@ -189,6 +189,13 @@
   --ds-chrome: #f2f2f6;
   --ds-panel-repos: #f2f2f6;
   --ds-panel-files: #f2f2f6;
+  /* The status line keeps a surface of its own, and it is the **darker** one in both appearances
+   * (DEC-088, the owner's amendment). It is the one band that is not part of the reading — it
+   * reports on the window rather than holding any of it — so it is the one that is allowed to sit
+   * apart. Dark has almost no room below the panels before it reaches the code's black, so the
+   * assertion behind it is an **ordering** rather than a ratio: darker than the panels in both
+   * appearances, with every ink on it still held to 4.5:1. */
+  --ds-status-bar: #d9d9e1;
   --ds-empty-bg: #eeeef2;
   --ds-row-selected: #d5d5de;
   --ds-row-ring: #bcbcc8;
@@ -287,6 +294,7 @@
     --ds-chrome: #131317;
     --ds-panel-repos: #131317;
     --ds-panel-files: #131317;
+    --ds-status-bar: #08080a;
     --ds-empty-bg: #0a0a0c;
     --ds-row-selected: #2f2f38;
     --ds-row-ring: #484852;

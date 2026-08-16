@@ -3788,6 +3788,16 @@ Six reports, and five of them are the same complaint from different angles: **th
 
 6. **The three pane headers are one height.** Two of them are `ChromeBar`s of `Theme.paneHeaderHeight`; the third is a `<div>` in a webview and was `space3 + text + space3` = 27, so the seam under `src/components/…` sat five points above the seam under `CHANGED FILES`. One line across the window, laid out twice. `--ds-pane-header-height` is the number, and the check does the arithmetic on both sides rather than matching a name — a token whose two sides hold different values is precisely the drift this catches, and the literal 27 is its control.
 
+### Amendment, same day — the status line keeps a surface of its own
+
+Item 2 collapsed `--ds-chrome` into the panels' value, and `--ds-chrome` was also the status line's. The owner read the result and asked for that one band back: *"status bar zostaw ciemniejszy niż panele."*
+
+It is the right exception and it is worth stating why. Every other band in the window **holds** part of what is being read — the scope row holds the control that changes the file list, the pane headers hold the lists' own captions. The status line **reports on** the window: what the watcher is doing, how old the reading is, which file of how many. A band that is about the window rather than part of it is the one band that may sit apart from it.
+
+`--ds-status-bar` is `#d9d9e1` light and `#08080a` dark. **The check is an ordering, not a ratio**, and that is a measurement rather than a preference: below `--ds-panel-*` in dark there is almost nothing left before the code's black, so the honest assertion is *which way* — darker than the panels, in both appearances — with the ratio printed rather than asserted. Measured, it is **1.26:1 in light and 1.08:1 in dark**. The hairline at the bar's top edge is what separates it; the surface reinforces the seam rather than replacing it.
+
+The three ink pairs the status line draws are added to the contrast list, which is the list's own rule: adding a label means adding its pair.
+
 ### Consequences
 
 - DEC-080's ladder check becomes an equality check; its measurement of the *original* four values is kept as a control, because that failure is still what the section exists over.

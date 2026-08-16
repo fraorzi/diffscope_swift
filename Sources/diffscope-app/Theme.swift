@@ -69,6 +69,13 @@ enum Theme {
     static let chrome = dynamic(dark: hex(0x131317), light: hex(0xf2f2f6))
     static let panelRepositories = chrome
     static let panelFiles = chrome
+    /// `--ds-status-bar`, and the one band the collapse above does **not** take with it (DEC-088,
+    /// the owner's amendment). The status line reports on the window rather than holding any part
+    /// of what is being read, so it is the one surface allowed to sit apart — **darker** than the
+    /// panels in both appearances. In dark that is a hair's breadth, because below `--ds-panel-*`
+    /// there is only the code's black; the seam at its top edge is what does the separating and the
+    /// surface reinforces it. The check asserts the ordering and prints the ratio.
+    static let statusBar = dynamic(dark: hex(0x08080a), light: hex(0xd9d9e1))
     /// `--ds-empty-bg`
     static let emptyStateSurface = dynamic(dark: hex(0x0a0a0c), light: hex(0xeeeef2))
     /// `--ds-row-selected` and `--ds-row-ring`. Two halves of one signal: the ring is the shape
