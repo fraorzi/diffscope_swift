@@ -79,6 +79,11 @@ function createTab(id) {
     fontSize: parseInt(declared("--ds-term-text-size"), 10) || 12,
     scrollback: SCROLLBACK,
     cursorBlink: false,
+    // **One caret on screen** (DEC-089). At a prompt the field below holds focus, so xterm draws its
+    // *inactive* cursor — a hollow block sitting where the prompt used to be, which is half of what
+    // the owner reported as two places to type. The grid is output only; a cursor on it is a claim
+    // about where typing goes, and typing goes to the field.
+    cursorInactiveStyle: "none",
     convertEol: false,
     theme: {
       background: colour("--ds-term-bg"),
@@ -191,6 +196,7 @@ armFrameCounter();
 
 const row = document.getElementById("input-row");
 const field = document.getElementById("line");
+const promptSpan = document.getElementById("prompt");
 const modeChip = document.getElementById("mode");
 const cwdChip = document.getElementById("cwd");
 
@@ -213,6 +219,39 @@ window.diffscopeTerminalSetMode = (mode, label) => {
   } else {
     field.focus();
   }
+};
+
+/// The shell's own prompt, drawn beside the caret instead of in the grid (DEC-089).
+///
+/// The segments arrive already parsed — `PromptCapture` in Swift does the SGR, so the rules are
+/// checked headlessly rather than looked at. This builds spans and nothing else. Colours arrive as
+/// **token names** for the sixteen ANSI ones, which is how the inline prompt and the grid stay one
+/// palette; 256-colour and truecolor arrive as literals, because those are the shell's output.
+window.diffscopeTerminalSetPrompt = (payload) => {
+  const segments = (payload && payload.segments) || [];
+  promptSpan.replaceChildren();
+  for (const segment of segments) {
+    const span = document.createElement("span");
+    span.textContent = segment.text;
+    if (segment.fg) span.style.color = segment.fg.startsWith("--") ? `var(${segment.fg})` : segment.fg;
+    if (segment.bg) {
+      span.style.background = segment.bg.startsWith("--") ? `var(${segment.bg})` : segment.bg;
+    }
+    if (segment.bold) span.style.fontWeight = "var(--ds-weight-emphasis)";
+    if (segment.dim) span.style.opacity = "0.7";
+    if (segment.italic) span.style.fontStyle = "italic";
+    if (segment.underline) span.style.textDecoration = "underline";
+    // Inverse is the shell asking for the two colours swapped, and swapping is the whole of it: a
+    // segment that carried neither falls back to the surface and the ink the row already has.
+    if (segment.inverse) {
+      const fg = span.style.color || "var(--ds-term-fg)";
+      const bg = span.style.background || "var(--ds-term-bg)";
+      span.style.color = bg;
+      span.style.background = fg;
+    }
+    promptSpan.appendChild(span);
+  }
+  return segments.length;
 };
 
 window.diffscopeTerminalSetDirectory = (info) => {
@@ -330,6 +369,14 @@ const probeBody = (framesSinceLastProbe) => ({
   modeLabel: modeChip.textContent,
   inputVisible: row.dataset.hidden !== "true",
   inputFocused: document.activeElement === field,
+  // DEC-089. `promptText` is what the reader sees beside the caret; `promptSegments` is how many
+  // runs of ink it took, which is what says the colours survived the crossing.
+  promptText: promptSpan.textContent,
+  promptSegments: promptSpan.children.length,
+  promptColours: [...promptSpan.children].map((span) => span.style.color).filter(Boolean),
+  // Asked of the option rather than of a screenshot: `cacheDisplay` cannot photograph a WKWebView,
+  // so *how many carets are on screen* has to be a question about the emulator's configuration.
+  gridCursorHidden: current()?.term.options.cursorInactiveStyle === "none",
   line: field.value,
   interceptedKeys,
   cwd: cwdChip.textContent,

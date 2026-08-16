@@ -116,12 +116,13 @@ Added after this contract was first written, and missing from it until M8-P — 
 | `#tabs`, `ds-term-tab` | One tab per shell (DEC-067), saying which shell it is and **where that shell says it is** | **Yes.** The active tab is marked by weight and an edge; a tab whose shell has diverged from the selected repository carries the same dotted underline `#cwd` does — one meaning, one shape |
 | `ds-term-grid` | One xterm instance per tab, all present, one visible | **Yes** — hidden by `visibility`, never removed: a background shell is still running and its scrollback is still its own |
 | `#grid` | The xterm.js screen — everything the shell prints | **Yes.** Output that cannot be read is output that was not shown |
-| `#input-row` | The command line at a prompt (DEC-055) | No, as layout |
+| `#input-row` | The command line at a prompt (DEC-055) | **Yes, as one surface with the grid** ([DEC-089](04-decision-log.md)). It had a border, a surface of its own and its own padding, and the owner read the result exactly as it was built: two places to type, with a caret in each. It carries `--ds-term-bg`, the grid's own left inset and no seam, so what the reader sees is the scrollback continuing. A design may restyle it and may not put it back in a box of its own |
+| `#prompt` | The shell's own prompt — its **last line** — withheld from the grid and drawn beside the caret ([DEC-089](04-decision-log.md)) | **Yes.** It is what makes the row a command line rather than a field: without it the caret sits under a prompt instead of after it. The spans are `PromptCapture`'s, so the sixteen ANSI colours arrive as `--ds-term-*` names and the inline prompt cannot drift to a second palette. A prompt that positions the cursor is **refused** and goes to the grid instead — that fallback is a state, not a failure |
 | `#mode` | Which mode the keyboard is in: prompt, program, or forced raw | **Yes.** The reader has to know where their keystrokes are going |
 | `#mode[data-raw="true"]` | Raw forced by ⌥⌘R — **dashed border and heavier weight, not a colour** | **Yes**, and the shape is the point (DEC-035) |
 | `#cwd` | Where the shell says it is (OSC 7) | **Yes** |
 | `#cwd[data-diverged="true"]` | The shell is **not** in the selected repository — dotted underline | **Yes.** This is the terminal's own version of the honesty rule: the pane must never imply the shell is where the diff is |
-| `#line` | The real text field the macOS motions come from (T0) | **Yes** — hidden by `visibility` when there is no prompt, never removed, so the row keeps its explanation |
+| `#line` | The real text field the macOS motions come from (T0) | **Yes** — hidden by `visibility` when there is no prompt, never removed, so the row keeps its explanation. `#prompt` is hidden with it: a prompt beside a field nobody can type in is the second place to type all over again |
 | `--ds-term-black` … `--ds-term-bright-white` | The sixteen colours a program addresses by index | **Yes**, as a set: a palette collapsed toward the background makes some programs unreadable |
 | `--ds-term-fg`, `--ds-term-bg`, `--ds-term-cursor`, `--ds-term-selection` | The four values xterm.js reads outside the palette | **Yes**, and **as a set**: any one left undeclared is a colour the emulator invents |
 
@@ -240,7 +241,7 @@ The snapshots written are `structural`, `expanded`, `disclosure`, `moved`, `navi
 
 `terminal-tabs` is the fourth (DEC-067): two shells in one drawer, the strip above them, and the thing no picture can check asserted beside it — that the second tab's output never turns up in the first one's scrollback, which is exactly what one grid replaying a buffer would produce.
 
-The terminal writes three more — `terminal` (a command's output in the grid), `terminal-input` (the input line at a prompt, with the mode chip) and `terminal-follow` (the pane after following a selection into a directory whose name contains a quote and a space). Look at all three: the terminal is the surface where a design most easily makes program output unreadable.
+The terminal writes four more — `terminal` (a command's output in the grid), `terminal-prompt` (the shell's own coloured prompt drawn beside the caret, which is the picture [DEC-089](04-decision-log.md) exists for), `terminal-input` (the row in a raw mode, where the chips are the whole of it) and `terminal-follow` (the pane after following a selection into a directory whose name contains a quote and a space). Look at all four: the terminal is the surface where a design most easily makes program output unreadable.
 
 **One photographs the rendered comparison** — `rendered` (DEC-063), two PNGs that differ in exactly four pixels, so the count in the sentence can be wrong in a way no picture would show. Look at the checkerboard first: its grid is deliberately coarser than every change texture, because a reader who takes an alpha change for a diff mark has been told the wrong thing in the wrong language.
 

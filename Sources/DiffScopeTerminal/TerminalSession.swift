@@ -43,12 +43,31 @@ public final class TerminalSession {
     /// asking what the shell is called.
     public private(set) var hasSeenPromptMark = false
 
+    /// The prompt, as spans, when it is being drawn **inline** rather than in the grid (DEC-089);
+    /// `nil` when there is none — no marks, a prompt this refused, or one already released.
+    public var onPrompt: (([PromptSegment]?) -> Void)?
+    /// The last prompt handed to the page, so a tab that comes back into view can be told again
+    /// without waiting for the shell to draw another one.
+    public private(set) var inlinePrompt: [PromptSegment]?
+
     private let integration: ShellIntegration
     private let process: PtyProcess
     private let scanner = TerminalScanner()
     private let lock = NSLock()
     private var pending: [UInt8] = []
     private var flushScheduled = false
+    /// The prompt marks seen in the slice currently being fed, with where they were. Touched only
+    /// on the PTY's read queue, between `feed` returning and the split below it.
+    private var marks: [(TerminalEvent, Range<Int>)] = []
+    /// Bytes of the prompt gathered so far, across reads. Non-nil means *between A and B*.
+    private var capturing: [UInt8]?
+    /// Whether the capture has already survived one flush. See `flush` for why it may not survive
+    /// two: a start mark with no end mark would otherwise swallow the grid.
+    private var captureIsStale = false
+    /// The prompt's last line, held back from the grid while the page draws it inline. **Released
+    /// before anything else is ever written to the grid, and before anything is sent to the PTY** —
+    /// which is what keeps xterm's model of the screen and zsh's model of the screen the same one.
+    private var withheld: [UInt8] = []
 
     /// A `read` per `evaluateJavaScript` makes `cat` of a large file thousands of round trips into
     /// the webview. One frame's worth of bytes at a time instead; measured in T1-A.
@@ -86,32 +105,157 @@ public final class TerminalSession {
         // `onReply` stays nil: xterm.js answers device queries itself, and a second answer from
         // here would reach the program as stray input.
         scanner.onEvent = { [weak self] event in self?.apply(event) }
+        // Only the two that bound a prompt. Every other event is about *what happened*; these two
+        // are also about *where*, because the bytes between them are the ones being split out.
+        scanner.onEventRange = { [weak self] event, range in
+            guard isPromptStart(event) || isPromptEnd(event) else { return }
+            self?.marks.append((event, range))
+        }
         process.onOutput = { [weak self] bytes in self?.receive(bytes) }
         process.onExit = { [weak self] in
             guard let self else { return }
+            // A shell that ends while its prompt is withheld would take that prompt with it.
+            self.releaseWithheldPrompt()
             DispatchQueue.main.async { self.onExit?() }
         }
     }
 
+    /// Splits one read into what the grid gets now and what the prompt row gets instead (DEC-089).
+    ///
+    /// The scanner sees **every** byte either way — the split is about forwarding, not about
+    /// reading, so `OSC 7` inside a prompt still reports a directory and the marks still move the
+    /// state machine. What changes is only where the prompt's own characters go.
     private func receive(_ bytes: [UInt8]) {
+        marks.removeAll(keepingCapacity: true)
         scanner.feed(bytes[...])
+
+        var index = 0
+        var decided: [PromptSegment]??  = nil   // outer nil: no decision this read
         lock.lock()
-        pending.append(contentsOf: bytes)
+        for (event, range) in marks {
+            let upper = min(max(range.upperBound, index), bytes.count)
+            let lower = min(max(range.lowerBound, index), bytes.count)
+            if isPromptStart(event) {
+                appendLocked(bytes[index..<upper])
+                capturing = []
+                captureIsStale = false
+                index = upper
+            } else if isPromptEnd(event), capturing != nil {
+                capturing?.append(contentsOf: bytes[index..<lower])
+                let decision = PromptCapture.decide(capturing ?? [])
+                capturing = nil
+                captureIsStale = false
+                appendLocked(decision.released)
+                if decision.inline == nil {
+                    // Refused: the prompt goes to the grid where it always went, and the row falls
+                    // back to the layout it had before this entry.
+                    appendLocked(bytes[lower..<upper])
+                } else {
+                    // The `133;B` sequence rides with the withheld tail rather than going ahead of
+                    // it. It is zero-width, so nothing depends on it — but *released in order* is
+                    // an invariant worth having no exceptions to.
+                    withheld = decision.withheld + Array(bytes[lower..<upper])
+                }
+                decided = .some(decision.inline)
+                index = upper
+            }
+        }
+        if let capturing {
+            // The read ended mid-prompt; the rest of it is prompt, and the next read continues.
+            self.capturing = capturing + bytes[index...]
+        } else {
+            appendLocked(bytes[index...])
+        }
         let schedule = !flushScheduled
         flushScheduled = true
         lock.unlock()
+
+        if let decided { announce(decided) }
         guard schedule else { return }
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.flushInterval) { [weak self] in
             self?.flush()
         }
     }
 
+    /// Everything that reaches the grid goes through here, so **the withheld prompt cannot be
+    /// overtaken**. A background job printing, a `SIGWINCH` redraw, the shell's echo of a submitted
+    /// line — each of them releases the prompt first and takes the inline one off the screen.
+    /// **An empty slice is not a write.** The split calls this with whatever is left after the last
+    /// mark, and after `OSC 133;B` at the very end of a read that is nothing at all — so the first
+    /// version released the prompt the instant it withheld it, and the arm saw the prompt in the row
+    /// *and* in the grid. A release means *something else needed the grid*, and nothing needed it.
+    private func appendLocked<Bytes: Collection>(_ slice: Bytes) where Bytes.Element == UInt8 {
+        guard !slice.isEmpty else { return }
+        var released = false
+        if !withheld.isEmpty {
+            pending.append(contentsOf: withheld)
+            withheld.removeAll(keepingCapacity: false)
+            released = true
+        }
+        pending.append(contentsOf: slice)
+        if released { DispatchQueue.main.async { self.announce(nil) } }
+    }
+
+    private func announce(_ segments: [PromptSegment]?) {
+        DispatchQueue.main.async {
+            self.inlinePrompt = segments
+            self.onPrompt?(segments)
+        }
+    }
+
+    /// Hands the withheld prompt back to the grid. Called before anything is written to the PTY, so
+    /// the shell's echo lands after the prompt exactly where the shell believes the cursor is.
+    public func releaseWithheldPrompt() {
+        lock.lock()
+        let had = !withheld.isEmpty
+        if had {
+            pending.append(contentsOf: withheld)
+            withheld.removeAll(keepingCapacity: false)
+        }
+        let schedule = had && !flushScheduled
+        if schedule { flushScheduled = true }
+        lock.unlock()
+        guard had else { return }
+        announce(nil)
+        if schedule {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.flushInterval) { [weak self] in
+                self?.flush()
+            }
+        }
+    }
+
     private func flush() {
         lock.lock()
+        // **A capture that outlives two flushes is a prompt that never ended**, and it must not take
+        // the grid with it. `OSC 133;A` without a matching `;B` is not hypothetical: the integration
+        // appends `;B` to `PROMPT`, so any shell whose `PROMPT` is replaced after the rc file runs —
+        // or any hand-written `printf` of a start mark — emits one and never the other. Without this
+        // the session would capture every byte the shell ever printed and the grid would go blank
+        // with nothing reporting a fault. Found by the check suite's own `printf ';A'; cat` shell.
+        //
+        // One grace round rather than none, because a prompt legitimately arrives in two reads: the
+        // mark comes from `precmd` and the prompt from zsh's own print. Released **in order**, like
+        // every other path out of the capture.
+        var regrab = false
+        if let held = capturing {
+            if captureIsStale {
+                pending.append(contentsOf: held)
+                capturing = nil
+                captureIsStale = false
+            } else {
+                captureIsStale = true
+                regrab = true
+            }
+        }
         let bytes = pending
         pending.removeAll(keepingCapacity: true)
-        flushScheduled = false
+        flushScheduled = regrab
         lock.unlock()
+        if regrab {
+            DispatchQueue.main.asyncAfter(deadline: .now() + Self.flushInterval) { [weak self] in
+                self?.flush()
+            }
+        }
         guard !bytes.isEmpty else { return }
         onOutput?(bytes)
     }
@@ -247,8 +391,18 @@ public final class TerminalSession {
 
     /// The user's keystrokes, and nothing else. T2 splits this into a local input line and raw
     /// passthrough; until then every key goes straight through.
-    public func send(_ bytes: [UInt8]) { process.write(bytes) }
-    public func send(_ text: String) { process.write(text) }
+    /// **Every** write to the PTY releases the withheld prompt first (DEC-089). One place, because
+    /// the alternatives are four — submit, hand-over, raw passthrough and `follow`'s `cd` — and a
+    /// fifth would be added one day without anyone remembering this rule.
+    public func send(_ bytes: [UInt8]) {
+        releaseWithheldPrompt()
+        process.write(bytes)
+    }
+
+    public func send(_ text: String) {
+        releaseWithheldPrompt()
+        process.write(text)
+    }
 
     public func resize(columns: UInt16, rows: UInt16) { process.resize(columns: columns, rows: rows) }
 

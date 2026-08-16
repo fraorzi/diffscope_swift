@@ -34,12 +34,23 @@
   .xterm .xterm-viewport { overflow-y: auto; }
 
   /* The input line (T2). It is a real text field, which is where the macOS word and line motions
-     come from — measured in T0 before any of this was built. */
-  #input-row { display: flex; align-items: baseline; gap: var(--ds-space-3);
-               padding: var(--ds-space-2) var(--ds-space-3);
-               border-top: var(--ds-hairline-width) solid var(--ds-border);
-               background: var(--ds-term-input-surface); }
-  #mode { flex: none; padding: var(--ds-space-1) var(--ds-space-3);
+     come from — measured in T0 before any of this was built.
+
+     **It is the grid's last line now** (DEC-089). It had a border, a surface of its own and its own
+     padding, so at a prompt the reader saw the shell's prompt in the grid and a separate box under
+     it — two places to type, with a caret in each. The row carries the terminal's own surface, the
+     grid's own left inset and no seam, so the prompt drawn in `#prompt` continues the scrollback
+     rather than sitting in a second control. */
+  #input-row { display: flex; align-items: baseline; gap: 0;
+               padding: 0 var(--ds-space-2) var(--ds-space-2);
+               background: var(--ds-term-bg); }
+  /* The shell's own prompt, withheld from the grid and drawn here instead. `pre`, because a prompt's
+     spacing is the shell's and collapsing it would move what it drew. */
+  #prompt { flex: none; white-space: pre;
+            font: var(--ds-term-text-size) var(--ds-font); color: var(--ds-term-fg); }
+  /* The two chips report *on* the line rather than being part of it, so they sit at the trailing
+     edge — in front of them the row is one continuous command line. */
+  #mode { flex: none; margin-left: var(--ds-space-4); padding: var(--ds-space-1) var(--ds-space-3);
           border: var(--ds-hairline-width) solid var(--ds-border-strong);
           border-radius: var(--ds-radius-chip);
           font: var(--ds-text-size-small) var(--ds-font);
@@ -55,7 +66,9 @@
   #cwd[data-diverged="true"] { color: var(--ds-term-fg);
                                text-decoration: underline dotted;
                                text-underline-offset: var(--ds-underline-offset); }
-  #line { flex: 1; min-width: 0; resize: none; overflow: hidden;
+  /* No padding of its own: the caret has to sit exactly one character after the prompt, and any
+     inset here is a gap the shell did not draw. */
+  #line { flex: 1; min-width: 0; resize: none; overflow: hidden; padding: 0;
           border: none; outline: none; background: transparent;
           font: var(--ds-term-text-size) var(--ds-font);
           color: var(--ds-term-fg); }
@@ -67,15 +80,19 @@
     *, *::before, *::after { transition: none !important; animation: none !important; }
   }
 
-  /* Hidden, never removed: a row that leaves the layout takes its own explanation with it. */
-  #input-row[data-hidden="true"] #line { visibility: hidden; }
+  /* Hidden, never removed: a row that leaves the layout takes its own explanation with it. In a raw
+     mode the prompt goes with the field — there is nothing inline to continue, and a prompt beside
+     a field nobody can type in is the second place to type all over again. */
+  #input-row[data-hidden="true"] #line,
+  #input-row[data-hidden="true"] #prompt { visibility: hidden; }
 </style>
 </head>
 <body>
 <div id="tabs"></div>
 <div id="grid"></div>
-<div id="input-row"><span id="mode"></span><span id="cwd" title=""></span><textarea id="line" rows="1"
-  spellcheck="false" autocapitalize="off" autocorrect="off" aria-label="Command line"></textarea></div>
+<div id="input-row"><span id="prompt"></span><textarea id="line" rows="1"
+  spellcheck="false" autocapitalize="off" autocorrect="off" aria-label="Command line"></textarea><span
+  id="mode"></span><span id="cwd" title=""></span></div>
 <script src="terminal.js"></script>
 </body>
 </html>

@@ -90,6 +90,7 @@ final class TerminalPane: NSObject, WKNavigationDelegate {
         publishTabs()
         configureInput()
         publishMode()
+        publishPrompt()
         publishDirectory()
         if !buffered.isEmpty {
             let pending = buffered
@@ -116,6 +117,32 @@ final class TerminalPane: NSObject, WKNavigationDelegate {
         let label = mode.label.replacingOccurrences(of: "\"", with: "")
         webView.evaluateJavaScript(
             "window.diffscopeTerminalSetMode && window.diffscopeTerminalSetMode(\"\(name)\", \"\(label)\")")
+    }
+
+    /// The prompt's last line, as spans, drawn beside the caret instead of in the grid (DEC-089).
+    ///
+    /// Read off the session rather than pushed from the callback, so the tab strip and this agree:
+    /// selecting a tab publishes **that** tab's prompt, and a tab whose shell drew a prompt while it
+    /// was off screen does not come back blank.
+    private func publishPrompt() {
+        let segments = session?.inlinePrompt
+        let payload: [String: Any] = segments.map { list -> [String: Any] in
+            ["segments": list.map { segment -> [String: Any] in
+                var entry: [String: Any] = ["text": segment.text]
+                if let colour = segment.foreground { entry["fg"] = colour }
+                if let colour = segment.background { entry["bg"] = colour }
+                for (name, on) in [("bold", segment.bold), ("dim", segment.dim),
+                                   ("italic", segment.italic), ("underline", segment.underline),
+                                   ("inverse", segment.inverse)] where on {
+                    entry[name] = true
+                }
+                return entry
+            }]
+        } ?? ["segments": []]
+        guard let data = try? JSONSerialization.data(withJSONObject: payload),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript(
+            "window.diffscopeTerminalSetPrompt && window.diffscopeTerminalSetPrompt(\(json))")
     }
 
     func toggleForcedRaw() {
@@ -192,6 +219,7 @@ final class TerminalPane: NSObject, WKNavigationDelegate {
         session.onOutput = { [weak self] bytes in self?.deliver(bytes, to: id) }
         session.onExit = { [weak self] in self?.closeTab(id) }
         session.onModeChange = { [weak self] _ in self?.publishMode() }
+        session.onPrompt = { [weak self] _ in self?.publishPrompt() }
         session.onDirectoryChange = { [weak self] _ in
             self?.publishDirectory()
             self?.publishTabs()
@@ -215,6 +243,7 @@ final class TerminalPane: NSObject, WKNavigationDelegate {
         activeTabID = id
         webView.evaluateJavaScript("window.diffscopeTerminalSelectTab(\"\(id)\")")
         publishMode()
+        publishPrompt()
         publishDirectory()
         publishTabs()
     }

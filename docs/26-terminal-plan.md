@@ -86,6 +86,7 @@ Two results change the work below rather than merely clearing it:
 | ~~**T1**~~ | **Done 2026-08-01.** `Sources/DiffScopeTerminal` (PTY, scanner, integration, session) and the grid in a second `WKWebView`; ⌥⌘T opens a pane under the diff. DEC-054, measured in `22-experiment-log.md` → T1-A |
 | ~~**T2**~~ | **Done 2026-08-01.** `InputRouter` decides where a keystroke goes, the field is a real `<textarea>`, Tab and ⌃R hand the line to the shell, ⌥⌘R forces raw. DEC-055, measured in `22-experiment-log.md` → T2-A |
 | ~~**T3**~~ | **Done 2026-08-01.** OSC 7 tells the pane where the shell is, the selection is followed under a three-term guard, and a finished command refreshes the repository sweep. DEC-056, measured in `22-experiment-log.md` → T3-A |
+| ~~**T2b**~~ | **Done 2026-08-16.** The prompt and the line become **one surface**: the prompt's last line is withheld from the grid and drawn beside the caret, and xterm's inactive cursor goes off. [DEC-089](04-decision-log.md), and the invariant it rests on is *nothing is removed from the grid's stream; a span of it is held back and released in order* |
 | ~~**T4**~~ | **Done 2026-08-01.** `25-tester-packet.md` rewritten for a stranger who is about to point this at their own repositories; ten further documents now distinguish the application acting on its own from the user typing in a shell; DEC-003 carries its amendment pointer; a check with a negative control holds the retired sentences out |
 
 ## 6. Verification

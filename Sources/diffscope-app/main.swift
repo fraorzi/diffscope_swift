@@ -1549,9 +1549,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// echo to prove the bytes arrived, and no dependence on whose `~/.zshrc` is installed.
     private func runInputLineSelftest() {
         terminal.stop()
+        // The fixture prints a **coloured prompt between the marks** since DEC-089, because the
+        // prompt is now half of what this arm is about: one line, the shell's own ink, one caret.
+        // `%%` is `printf`'s escape for the `%` a shell prompt ends in.
+        let prompt = "printf '\\033]133;A\\007\\033[36muser@host\\033[0m "
+            + "\\033[34m~/x\\033[0m %% \\033]133;B\\007'; cat"
         guard terminal.start(workingDirectory: NSHomeDirectory(),
                             command: "/bin/sh",
-                            arguments: ["-c", "printf '\\033]133;A\\007'; cat"]) else {
+                            arguments: ["-c", prompt]) else {
             FileHandle.standardError.write(Data("SELFTEST terminal-input=MISMATCH no shell\n".utf8))
             exit(30)
         }
@@ -1566,22 +1571,63 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             FileHandle.standardError.write(Data(line.utf8))
             guard ok else { exit(31) }
 
-            // A real keydown through the page's own handler, not a call into its internals: the
-            // interception, the routing round trip and the write to the PTY are all on the path.
-            let type = """
-            (() => { const f = document.getElementById('line'); f.focus(); f.value = 'typed-into-the-line';
-              f.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true, cancelable: true}));
-              return f.value; })()
-            """
-            self.terminal.webView.evaluateJavaScript(type) { cleared, _ in
-                self.pollTerminal(until: { $0.contains("typed-into-the-line") }, timeout: 6) { echoed, after in
-                    let emptied = (cleared as? String) == "" || after.contains("\"line\":\"\"")
-                    let ok = echoed && emptied
-                    let line = "SELFTEST terminal-submit=\(ok ? "OK" : "MISMATCH") the line reached the "
-                        + "shell and the field cleared\n"
-                    FileHandle.standardError.write(Data(line.utf8))
-                    guard ok else { exit(32) }
-                    self.runHandoverSelftest()
+            // **DEC-089's visible half**, and the assertion is a *disjunction of surfaces*: the
+            // prompt is in the row and it is **not** in the grid. Either half alone passes on the
+            // arrangement the owner reported — the prompt was in the grid and the field was under
+            // it, and both of those were true.
+            self.terminal.probe { inlineProbe in
+                let inRow = inlineProbe.contains("\"promptText\":\"user@host ~/x % \"")
+                let coloured = inlineProbe.contains("--ds-term-cyan")
+                    && inlineProbe.contains("--ds-term-blue")
+                // The grid's own buffer, which is where it used to be.
+                let notInGrid = !(inlineProbe.range(of: "\"text\":\"[^\"]*user@host",
+                                                    options: .regularExpression) != nil)
+                let oneCaret = inlineProbe.contains("\"gridCursorHidden\":true")
+                let ok = inRow && coloured && notInGrid && oneCaret
+                let line = "SELFTEST terminal-prompt=\(ok ? "OK" : "MISMATCH") the prompt is beside "
+                    + "the caret and not in the grid; inRow=\(inRow) coloured=\(coloured) "
+                    + "notInGrid=\(notInGrid) oneCaret=\(oneCaret)\n"
+                FileHandle.standardError.write(Data(line.utf8))
+                guard ok else { exit(71) }
+
+                // The one state this product has that a check cannot fully settle — *does it read
+                // as one line* — and the one the owner asked for. Photographed before anything is
+                // typed, which is when the two surfaces used to be most obviously two.
+                self.snapshotTerminal(named: "terminal-prompt") {
+                // A real keydown through the page's own handler, not a call into its internals: the
+                // interception, the routing round trip and the write to the PTY are all on the path.
+                let type = """
+                (() => { const f = document.getElementById('line'); f.focus(); f.value = 'typed-into-the-line';
+                  f.dispatchEvent(new KeyboardEvent('keydown', {key: 'Enter', bubbles: true, cancelable: true}));
+                  return f.value; })()
+                """
+                self.terminal.webView.evaluateJavaScript(type) { cleared, _ in
+                    self.pollTerminal(until: { $0.contains("typed-into-the-line") }, timeout: 6) { echoed, after in
+                        let emptied = (cleared as? String) == "" || after.contains("\"line\":\"\"")
+                        let ok = echoed && emptied
+                        let line = "SELFTEST terminal-submit=\(ok ? "OK" : "MISMATCH") the line reached the "
+                            + "shell and the field cleared\n"
+                        FileHandle.standardError.write(Data(line.utf8))
+                        guard ok else { exit(32) }
+
+                        // **And the released prompt landed in front of the echo.** This is the whole
+                        // reason the prompt is held rather than dropped: the scrollback after a
+                        // command has to read exactly as it does in any terminal.
+                        let grid = after.range(of: "\"text\":\"[^\"]*\"", options: .regularExpression)
+                            .map { String(after[$0]) } ?? ""
+                        let ordered = grid.range(of: "user@host").map { promptAt in
+                            grid.range(of: "typed-into-the-line").map { promptAt.lowerBound < $0.lowerBound }
+                        } ?? nil
+                        let cleared = after.contains("\"promptSegments\":0")
+                        let inOrder = (ordered ?? false) && cleared
+                        let released = "SELFTEST terminal-prompt-release=\(inOrder ? "OK" : "MISMATCH") "
+                            + "the withheld prompt reached the grid ahead of the echo; "
+                            + "ordered=\(String(describing: ordered)) rowCleared=\(cleared)\n"
+                        FileHandle.standardError.write(Data(released.utf8))
+                        guard inOrder else { exit(72) }
+                        self.runHandoverSelftest()
+                    }
+                }
                 }
             }
         }

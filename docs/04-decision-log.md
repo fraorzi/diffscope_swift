@@ -3807,3 +3807,48 @@ The three ink pairs the status line draws are added to the contrast list, which 
 ### Reopen if
 
 The owner reports the window reading flat — four regions and no seams is the failure DEC-080 was written against, and this entry is a bet that a hairline is enough separation where nineteen values were not.
+
+---
+
+## DEC-089 — The terminal becomes one input surface: the prompt is withheld from the grid and drawn beside the caret
+
+- **Date:** 2026-08-16 · **Topic:** T2's arrangement, reopened through DEC-055's own revisit trigger · **Status:** Accepted · **Amends DEC-055, removes `--ds-term-input-surface`**
+- **Prompted by:** the owner opening the terminal — *"czemu mam dwa miejsca na wpisanie komendy"*
+
+### Context
+
+DEC-054 made the grid **output only** and DEC-055 put the line in a real `<textarea>`, because a shell's line editor cannot be driven with ⌥←/→ and ⌘←/→ and that is the whole of OQ-055. Both decisions are right and together they produce the thing the owner reported: at a prompt zsh prints its prompt **into the grid** and the reader types into a field **under it**. Two surfaces, two cursors — xterm draws its inactive cursor where the prompt is, the field draws a caret below — and one act.
+
+DEC-055's revisit trigger names this exit exactly: *"or if Warp-style blocks are taken up, which would change what the input line is attached to."*
+
+### Decision
+
+**The prompt's last line is withheld from the grid and drawn in the input row, beside the caret.** The row loses its border and its own surface and becomes the grid's last line; xterm's inactive cursor is switched off, so there is one caret on screen.
+
+### The invariant this rests on, and why the alternatives do not
+
+> **Nothing is removed from the grid's byte stream. A span of it is held back and released in order.**
+
+The withheld bytes go to xterm **before anything else is ever written to it** and **before anything is sent to the PTY**. `appendLocked` and `send` are the only two doors, and both release first — one place each, because the alternatives are four (submit, hand-over, raw passthrough, `follow`'s `cd`) and a fifth would be added one day by somebody who had not read this.
+
+That is not fastidiousness. ZLE's redraw arithmetic is **relative to where it believes the cursor is**. A design that *drops* the prompt, or re-renders it into the grid itself, leaves xterm's model of the screen and zsh's model of the screen disagreeing by exactly one prompt width, and every subsequent redraw lands in the wrong column. Delaying the bytes cannot do that; dropping or reordering them must.
+
+### What may be drawn inline, and what is refused
+
+Allowed: plain text, `SGR`, and zero-width `OSC`. The last of those is not a nicety — **the integration emits `OSC 7` inside the prompt span**, so a rule of "SGR only" would have refused every prompt this product installs. That case is a negative control.
+
+Refused: any other `CSI`, and a bare `\r`. A prompt that positions the cursor or overprints is not a run of spans, and drawing it as one would move text the shell put somewhere specific. **A refusal releases the whole capture and reports no inline prompt** — the row falls back to what it was before this entry, which is a state a check can name and a snapshot can show.
+
+A **two-line prompt keeps only its last line** inline; the head goes to the grid where every other line of output lives. That is what makes `p10k` and `starship` work at all, and it costs one `lastIndex(of:)`.
+
+### Consequences
+
+- `TerminalScanner` reports the **byte range** of each mark (`onEventRange`). `TerminalEvent` is not widened: it is `Equatable` and the suite compares it by value in dozens of places.
+- **A start mark with no end mark cannot swallow the grid.** Found by this suite's own `printf ';A'; cat` fixture, and it is not a test artefact — the integration appends `;B` to `PROMPT`, so any shell whose `PROMPT` is replaced after the rc file runs emits one mark and never the other. A capture that outlives two flushes is given up and released in order.
+- **An empty slice is not a write.** The first version released the prompt the instant it withheld it, because the split calls `appendLocked` with whatever follows the last mark and after `OSC 133;B` at the end of a read that is nothing at all. The arm caught it: the prompt was in the row *and* in the grid.
+- The SGR parse lives in **Swift**, so the rules are checked headlessly rather than looked at. The sixteen ANSI colours cross as `--ds-term-*` **names**, so the inline prompt and the grid cannot end up with two reds; 256-colour and truecolor cross as literals, because those are the shell's output rather than the design's palette.
+- `--ds-term-input-surface` is removed. It existed to make the boundary between what the reader was typing and what the shell had said visible — and that boundary is precisely what was reported.
+
+### Reopen if
+
+A prompt in daily use is refused often enough to notice — the tell is the row falling back to a bare field with the prompt above it — in which case the refusal rule is what needs work, not the withholding.

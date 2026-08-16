@@ -93,6 +93,163 @@ func runTerminalChecks(_ reportRaw: (String, Bool, String) -> Void) {
                silentReplies == 0)
     }
 
+    print("\n=== terminal: the prompt becomes one line with the caret (DEC-089) ===")
+    do {
+        // **Where a sequence was**, which is the whole of what the splitting needs. Nothing else in
+        // this product has ever asked the scanner for an offset, so the arithmetic is checked
+        // directly rather than only through the session that uses it.
+        let scanner = TerminalScanner()
+        var ranges: [(String, Range<Int>)] = []
+        scanner.onEventRange = { event, range in
+            if isPromptStart(event) { ranges.append(("A", range)) }
+            if isPromptEnd(event) { ranges.append(("B", range)) }
+        }
+        let stream = Array("\u{1b}]133;A\u{7}hello\u{1b}]133;B\u{7}".utf8)
+        scanner.feed(stream[...])
+        report("the scanner says where each mark was, not only that it happened",
+               ranges.count == 2 && ranges[0].1 == 0..<8 && ranges[1].1 == 13..<21,
+               ranges.map { "\($0.0)=\($0.1)" }.joined(separator: " "))
+        report("and the bytes between them are the prompt",
+               String(decoding: stream[ranges[0].1.upperBound..<ranges[1].1.lowerBound],
+                      as: UTF8.self) == "hello")
+        // A mark split across two reads covers the second one from its first byte — a caller
+        // splitting the stream has to be told that, and the alternative is a negative offset.
+        let split = TerminalScanner()
+        var secondHalf: Range<Int>?
+        split.onEventRange = { event, range in if isPromptEnd(event) { secondHalf = range } }
+        split.feed(Array("\u{1b}]13".utf8)[...])
+        split.feed(Array("3;B\u{7}rest".utf8)[...])
+        report("a mark split across two reads reports the second read from its first byte",
+               secondHalf == 0..<4, secondHalf.map { "\($0)" } ?? "never fired")
+
+        // The rules, as a pure function. This is where they can be stated at all — the alternative
+        // is a screenshot of a shell, and a screenshot cannot say *why* a prompt was refused.
+        func inline(_ text: String) -> [PromptSegment]? {
+            PromptCapture.decide(Array(text.utf8)).inline
+        }
+        report("a plain prompt is one run of ink", inline("$ ")?.count == 1)
+        report("and its text survives the crossing", inline("$ ")?.first?.text == "$ ")
+
+        let coloured = inline("\u{1b}[36muser\u{1b}[0m@\u{1b}[34mhost\u{1b}[0m $ ")
+        report("SGR becomes segments rather than being stripped", coloured?.count == 4,
+               (coloured ?? []).map { "\($0.text)/\($0.foreground ?? "—")" }.joined(separator: " "))
+        report("and the sixteen ANSI colours arrive as the tokens the grid uses",
+               coloured?.first?.foreground == "--ds-term-cyan"
+                   && coloured?.dropFirst(2).first?.foreground == "--ds-term-blue")
+        report("bright, 256-colour and truecolor all resolve",
+               inline("\u{1b}[91ma")?.first?.foreground == "--ds-term-bright-red"
+                   && inline("\u{1b}[38;5;196ma")?.first?.foreground == "#ff0000"
+                   && inline("\u{1b}[38;2;18;52;86ma")?.first?.foreground == "#123456")
+        report("and the attributes a prompt actually uses",
+               inline("\u{1b}[1;4ma")?.first.map { $0.bold && $0.underline } == true)
+
+        // **The refusal, which is the honest half.** A prompt that positions the cursor is not a run
+        // of spans; drawing it as one would move text the shell put somewhere specific.
+        report("a prompt that moves the cursor is refused rather than half-drawn",
+               inline("\u{1b}[10Gright") == nil)
+        report("and so is one that returns the carriage to overprint",
+               inline("done\rredrawn") == nil)
+        // …and the zero-width sequences that must **not** be refused: the integration itself emits
+        // `OSC 7` inside the prompt span, so a rule of "SGR only" would refuse every prompt this
+        // product installs. This is the control that would have caught that.
+        report("negative control: an OSC inside the prompt is not a refusal — the integration emits one",
+               inline("\u{1b}]7;file:///tmp\u{7}$ ")?.count == 1)
+
+        // Only the last line can be inline: it is the line the caret continues. The head goes to the
+        // grid where every other line of output lives, which is what makes a two-line prompt work.
+        let twoLine = PromptCapture.decide(Array("first line\nsecond ❯ ".utf8))
+        report("a two-line prompt keeps only its last line beside the caret",
+               String(decoding: twoLine.released, as: UTF8.self) == "first line\n"
+                   && twoLine.inline?.first?.text == "second ❯ ")
+        // And a refusal releases **everything**, so the grid gets the prompt it always got.
+        let refused = PromptCapture.decide(Array("a\n\u{1b}[10Gb".utf8))
+        report("a refusal releases the whole capture, head and all",
+               refused.released.count == Array("a\n\u{1b}[10Gb".utf8).count
+                   && refused.withheld.isEmpty && refused.inline == nil)
+    }
+
+    print("\n=== terminal: the withheld prompt is released in order (DEC-089) ===")
+    do {
+        // **The invariant, against a real PTY.** Nothing is removed from the grid's stream; a span of
+        // it is held back and released *before* anything else is written and *before* anything is
+        // sent. That is what keeps xterm's model of the screen and the shell's model of it the same
+        // one — and it is a claim about ordering, which no screenshot can settle.
+        //
+        // The shell prints a coloured prompt between the marks, then something else a moment later,
+        // then echoes. Three questions, in the order they can go wrong.
+        guard let session = TerminalSession(
+            shellPath: "/bin/sh",
+            workingDirectory: NSHomeDirectory(),
+            arguments: ["-c", "printf '\\033]133;A\\007\\033[36mPS\\033[0m> \\033]133;B\\007';"
+                              + " sleep 0.4; printf 'interloper'; cat"],
+            environment: ["TERM": "xterm-256color", "HOME": NSHomeDirectory()]) else {
+            report("a session can be started", false)
+            return
+        }
+        var delivered: [UInt8] = []
+        session.onOutput = { delivered.append(contentsOf: $0) }
+        func text() -> String { String(decoding: delivered, as: UTF8.self) }
+        func waitUntil(_ condition: () -> Bool, timeout: TimeInterval = 5) -> Bool {
+            let deadline = Date().addingTimeInterval(timeout)
+            while !condition(), Date() < deadline {
+                RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.01))
+            }
+            return condition()
+        }
+
+        report("the prompt reaches the row as segments rather than the grid as bytes",
+               waitUntil { session.inlinePrompt != nil },
+               (session.inlinePrompt ?? []).map(\.text).joined())
+        report("and its colour came with it",
+               session.inlinePrompt?.first?.foreground == "--ds-term-cyan")
+        report("while it is inline, the grid has not been given it",
+               !text().contains("PS"), text().suffix(40).description)
+
+        // The interloper is the case the invariant exists for: something else needs the grid, so the
+        // prompt goes back to it **first**, and the inline one comes off the screen.
+        report("output arriving behind it releases it, in order",
+               waitUntil { text().contains("interloper") }
+                   && text().range(of: "PS").map { $0.lowerBound } != nil
+                   && text().range(of: "PS")!.lowerBound < text().range(of: "interloper")!.lowerBound,
+               text().suffix(40).description)
+        report("and the row is told there is no inline prompt any more",
+               waitUntil { session.inlinePrompt == nil })
+
+        session.stop()
+    }
+
+    print("\n=== terminal: a start mark with no end mark cannot swallow the grid (DEC-089) ===")
+    do {
+        // Found by this suite's own `printf ';A'; cat` shell, and it is not a test artefact: the
+        // integration appends `;B` to `PROMPT`, so any shell whose `PROMPT` is replaced *after* the
+        // rc file runs emits a start mark and never an end one. Without a bound the session would
+        // capture every byte the shell ever printed and the grid would go blank with nothing
+        // reporting a fault.
+        guard let session = TerminalSession(
+            shellPath: "/bin/sh",
+            workingDirectory: NSHomeDirectory(),
+            arguments: ["-c", "printf '\\033]133;A\\007unterminated'; cat"],
+            environment: ["TERM": "xterm-256color", "HOME": NSHomeDirectory()]) else {
+            report("a session can be started", false)
+            return
+        }
+        var delivered: [UInt8] = []
+        session.onOutput = { delivered.append(contentsOf: $0) }
+        func waitUntil(_ condition: () -> Bool, timeout: TimeInterval = 5) -> Bool {
+            let deadline = Date().addingTimeInterval(timeout)
+            while !condition(), Date() < deadline {
+                RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.01))
+            }
+            return condition()
+        }
+        report("a capture that never ends is given up and its bytes reach the grid",
+               waitUntil { String(decoding: delivered, as: UTF8.self).contains("unterminated") },
+               String(decoding: delivered.suffix(40), as: UTF8.self))
+        report("and nothing is drawn inline, because nothing was ever decided",
+               session.inlinePrompt == nil)
+        session.stop()
+    }
+
     print("\n=== terminal: where a keystroke goes (T2) ===")
     do {
         let router = InputRouter()

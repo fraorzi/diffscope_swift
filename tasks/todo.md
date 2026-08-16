@@ -2651,6 +2651,50 @@ crosses the whole window. The check reads `--ds-pane-header-height` from the tok
 *name* is what let two sides of one boundary hold different values in the first place.
 
 
+## Step 89 — the terminal becomes one input surface (DEC-089)
+
+- [x] DEC-089 written before the code, through DEC-055's own revisit trigger
+- [x] `TerminalScanner.onEventRange` — where a mark was, not only that it happened
+- [x] `PromptCapture` — last-line split, the refusal rule, SGR to segments
+- [x] `TerminalSession` withholds the prompt and releases it **in order**, at two doors only
+- [x] `#prompt` in the row; the row loses its border and its surface and becomes the grid's last line
+- [x] `cursorInactiveStyle: "none"` — one caret on screen
+- [x] `--ds-term-input-surface` removed: that boundary was the thing being reported
+- [x] 1802 -> **1823 checks**, 51 -> **53 selftest arms**, and a `terminal-prompt` snapshot
+
+### Step 89 — the ordering is the design, and everything else follows from it
+
+**Nothing is removed from the grid's stream; a span of it is held back and released in order.** ZLE's
+redraw arithmetic is relative to where it believes the cursor is, so a design that *drops* the prompt
+or re-renders it leaves xterm and zsh disagreeing by one prompt width and every later redraw lands in
+the wrong column. Delaying bytes cannot do that. The release therefore has exactly two doors —
+`appendLocked` and `send` — because the alternatives are four and a fifth would be added one day.
+
+### Step 89 — three defects, and two of them were found by controls rather than by looking
+
+**A start mark with no end mark swallowed the grid**, and the suite's own `printf ';A'; cat` fixture
+found it on the first run. It is not a test artefact: the integration appends `;B` to `PROMPT`, so any
+shell whose `PROMPT` is replaced after the rc file runs emits one mark and never the other. A capture
+that outlives two flushes is given up now — released in order, like every other path out.
+
+**An empty slice was being treated as a write.** The split calls `appendLocked` with whatever follows
+the last mark, and after `OSC 133;B` at the end of a read that is nothing at all — so the prompt was
+released the instant it was withheld. The arm said `inRow=true notInGrid=false`, which is the
+arrangement the owner reported, reproduced by the fix meant to remove it.
+
+**And the obvious repair renders the prompt twice.** Overriding `searchTextRect`'s equivalent here —
+`PromptCapture` moving the rectangle the cell asks for rather than the one it draws — is the same
+shape of mistake as DEC-088 item 1. The rule that came out of both: **when a control has a layout
+question and a drawing question, answer them in the same place or not at all.**
+
+### Step 89 — the control that mattered
+
+`OSC 7` is emitted **inside** the prompt span by this product's own integration. A refusal rule of
+"SGR only" would have refused every prompt DiffScope installs, on every machine, and the fallback is
+quiet by design — the row would simply have looked the way it looked before. The negative control
+asserting that an OSC is *not* a refusal is the only thing between that and shipping.
+
+
 ### Still open
 
 - [ ] minimum-run absorption of unchanged gaps shorter than a token (phantom retention). `alpha` →

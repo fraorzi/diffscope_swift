@@ -153,9 +153,11 @@
   --ds-term-cursor: #16161a;
   --ds-term-selection: rgba(0, 0, 0, .18);
   --ds-term-text-size: 12px;
-  /* The input line sits slightly off the grid's surface so the boundary between what the reader is
-     typing and what the shell has said is visible without a rule doing the work alone. */
-  --ds-term-input-surface: #f2f2f5;
+  /* `--ds-term-input-surface` lived here: the input line sat slightly off the grid's surface so the
+     boundary between what the reader was typing and what the shell had said was visible. **Removed
+     by DEC-089** — that boundary is exactly what the owner reported as two places to type. The row
+     carries `--ds-term-bg` now and the shell's own prompt is drawn in it, so there is one surface
+     and one caret. */
 
   --ds-term-black: #16161a;
   --ds-term-red: #c9002b;
@@ -271,7 +273,6 @@
     --ds-term-fg: #e9e9ee;
     --ds-term-cursor: #ffffff;
     --ds-term-selection: rgba(255, 255, 255, .22);
-    --ds-term-input-surface: #131316;
 
     --ds-term-black: #4d4d55;
     --ds-term-red: #ff6961;

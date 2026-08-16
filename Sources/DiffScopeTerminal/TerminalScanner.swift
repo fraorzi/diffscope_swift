@@ -42,21 +42,48 @@ public final class TerminalScanner {
     private var state: State = .ground
     private var stringKind: StringKind = .osc
     private var collected: [UInt8] = []
+    /// Where the sequence being read began, as an offset into the slice currently being fed.
+    private var sequenceStart: Int?
+    /// The range the event about to be emitted occupies. Set immediately before a `finish…` call so
+    /// the emitter does not have to be threaded through every branch.
+    private var sequenceRange: Range<Int> = 0..<0
 
     public var onEvent: ((TerminalEvent) -> Void)?
+    /// The same events, with **where they were** — the byte range of the whole escape sequence
+    /// within the slice just fed (DEC-089).
+    ///
+    /// `TerminalEvent` is deliberately not widened to carry this. It is `Equatable` and the check
+    /// suite compares it by value in dozens of places; a payload that differs per call site would
+    /// make every one of those comparisons about an offset. A caller that needs the offsets asks
+    /// for them, and `TerminalSession` is the only one that does.
+    ///
+    /// A sequence split across two reads reports `0` as its lower bound in the second — it covers
+    /// that slice from its first byte, which is what a caller splitting the stream needs to know.
+    public var onEventRange: ((TerminalEvent, Range<Int>) -> Void)?
     /// Only for a scanner with no emulator behind it. See the note above.
     public var onReply: ((String) -> Void)?
 
     public init() {}
 
     public func feed(_ bytes: ArraySlice<UInt8>) {
-        for byte in bytes { step(byte) }
+        // A sequence that began in an earlier read covers this one from its first byte.
+        if state != .ground { sequenceStart = 0 }
+        for (offset, byte) in bytes.enumerated() { step(byte, at: offset) }
     }
 
-    private func step(_ byte: UInt8) {
+    private func emit(_ event: TerminalEvent) {
+        onEvent?(event)
+        onEventRange?(event, sequenceRange)
+    }
+
+    private func step(_ byte: UInt8, at offset: Int) {
         switch state {
         case .ground:
-            if byte == 0x1B { state = .escape; collected.removeAll(keepingCapacity: true) }
+            if byte == 0x1B {
+                state = .escape
+                sequenceStart = offset
+                collected.removeAll(keepingCapacity: true)
+            }
         case .escape:
             switch byte {
             case UInt8(ascii: "["): state = .csi; collected.removeAll(keepingCapacity: true)
@@ -67,6 +94,7 @@ public final class TerminalScanner {
             }
         case .csi:
             if byte >= 0x40, byte <= 0x7E {
+                sequenceRange = (sequenceStart ?? 0)..<(offset + 1)
                 finishControlSequence(final: byte)
                 state = .ground
             } else {
@@ -75,6 +103,7 @@ public final class TerminalScanner {
             }
         case .string:
             if byte == 0x07 {
+                sequenceRange = (sequenceStart ?? 0)..<(offset + 1)
                 finishString()
                 state = .ground
             } else if byte == 0x1B {
@@ -85,6 +114,7 @@ public final class TerminalScanner {
             }
         case .stringEscape:
             if byte == UInt8(ascii: "\\") {
+                sequenceRange = (sequenceStart ?? 0)..<(offset + 1)
                 finishString()
                 state = .ground
             } else {
@@ -99,29 +129,29 @@ public final class TerminalScanner {
         let parameters = String(decoding: collected, as: UTF8.self)
         switch (parameters, Character(UnicodeScalar(final))) {
         case ("?1049", "h"), ("?1047", "h"), ("?47", "h"):
-            onEvent?(.alternateScreen(true))
+            emit(.alternateScreen(true))
         case ("?1049", "l"), ("?1047", "l"), ("?47", "l"):
-            onEvent?(.alternateScreen(false))
+            emit(.alternateScreen(false))
         case ("", "c"), ("0", "c"):
-            onEvent?(.query("DA1"))
+            emit(.query("DA1"))
             onReply?(deviceAttributes1)
         case (">", "c"), (">0", "c"):
-            onEvent?(.query("DA2"))
+            emit(.query("DA2"))
             onReply?(deviceAttributes2)
         case ("5", "n"):
-            onEvent?(.query("DSR-status"))
+            emit(.query("DSR-status"))
             onReply?("\u{1b}[0n")
         case ("6", "n"):
-            onEvent?(.query("DSR-cursor"))
+            emit(.query("DSR-cursor"))
             onReply?("\u{1b}[1;1R")
         case ("?6", "n"):
-            onEvent?(.query("DECXCPR"))
+            emit(.query("DECXCPR"))
             onReply?("\u{1b}[?1;1R")
         case ("?", "u"):
-            onEvent?(.query("kitty-keyboard"))
+            emit(.query("kitty-keyboard"))
             onReply?("\u{1b}[?0u")
         case (">0", "q"), (">", "q"):
-            onEvent?(.query("XTVERSION"))
+            emit(.query("XTVERSION"))
             onReply?("\u{1b}P>|diffscope\u{1b}\\")
         default:
             break
@@ -133,7 +163,7 @@ public final class TerminalScanner {
         switch stringKind {
         case .dcs:
             if text.hasPrefix("+q") {
-                onEvent?(.query("XTGETTCAP"))
+                emit(.query("XTGETTCAP"))
                 onReply?("\u{1b}P0+r\u{1b}\\")
             }
         case .osc:
@@ -146,18 +176,18 @@ public final class TerminalScanner {
                 let rest = String(body[range.upperBound...])
                 guard let slash = rest.firstIndex(of: "/") else { return }
                 let encoded = String(rest[slash...])
-                onEvent?(.workingDirectory(encoded.removingPercentEncoding ?? encoded))
+                emit(.workingDirectory(encoded.removingPercentEncoding ?? encoded))
                 return
             }
             guard text.hasPrefix("133;") else { return }
             let body = String(text.dropFirst(4))
             let fields = body.split(separator: ";", omittingEmptySubsequences: false)
             switch fields.first.map(String.init) {
-            case "A": onEvent?(.promptStart)
-            case "B": onEvent?(.promptEnd)
-            case "C": onEvent?(.commandStart)
-            case "D": onEvent?(.commandEnd(fields.count > 1 ? Int(fields[1]) : nil))
-            case "X": onEvent?(.note(fields.dropFirst().joined(separator: ";")))
+            case "A": emit(.promptStart)
+            case "B": emit(.promptEnd)
+            case "C": emit(.commandStart)
+            case "D": emit(.commandEnd(fields.count > 1 ? Int(fields[1]) : nil))
+            case "X": emit(.note(fields.dropFirst().joined(separator: ";")))
             default: break
             }
         }

@@ -8,6 +8,20 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
+**2026-08-16 — the terminal is one input surface. 1802 → 1823 checks, 51 → 53 selftest arms, and a new `terminal-prompt` snapshot.** [DEC-089](04-decision-log.md), and it comes through DEC-055's own revisit trigger. The owner opened the drawer and asked why there are **two places to type**: DEC-054 makes the grid output only and DEC-055 puts the line in a real `<textarea>` — both right, and together they put zsh's prompt in the grid with a field under it, a cursor in each. The prompt's **last line** is now withheld from the grid and drawn beside the caret, with its own colours; the row has lost its border and its surface; xterm's inactive cursor is off.
+
+**The invariant is the whole design: nothing is removed from the grid's stream, a span of it is held back and released in order.** ZLE's redraw arithmetic is relative to where it believes the cursor is, so *dropping* the prompt or re-rendering it ourselves would leave xterm and zsh disagreeing by one prompt width and every later redraw would land in the wrong column. Delaying bytes cannot do that. The release has exactly two doors — `appendLocked` and `send` — because the alternatives are four and a fifth would be added one day by somebody who had not read this.
+
+**Three findings, and the last one is a rule worth carrying.**
+
+**A start mark with no end mark swallowed the grid**, and this suite's own `printf ';A'; cat` fixture found it on the first run. Not a test artefact: the integration appends `;B` to `PROMPT`, so any shell whose `PROMPT` is replaced after the rc file runs emits one mark and never the other, and the grid would have gone blank with nothing reporting a fault. A capture that outlives two flushes is given up now.
+
+**An empty slice was being treated as a write.** The split hands `appendLocked` whatever follows the last mark, and after `OSC 133;B` at the end of a read that is nothing at all — so the prompt was released the instant it was withheld, and the arm reported `inRow=true notInGrid=false`: the exact arrangement being removed, reproduced by the fix meant to remove it.
+
+**`OSC 7` is emitted *inside* the prompt span by this product's own integration**, so a refusal rule of "SGR only" would have refused every prompt DiffScope installs, on every machine — and the fallback is quiet by design, so nothing would have said so. The negative control asserting that an OSC is *not* a refusal is the only thing between that and shipping. **Measure the control before believing the check**, third instance.
+
+---
+
 **2026-08-16 — the owner's fifth session: six reports, all six built, and one of them reverses a decision from eleven days ago. 1793 → 1799 checks, 50 → 51 selftest arms.** Everything is [DEC-088](04-decision-log.md). `tasks/todo.md` step 88.
 
 **The chrome is one surface now, with one exception the owner asked for the same day.** `--ds-chrome`, `--ds-panel-repos` and `--ds-panel-files` hold the same value, and the only step left is the code against the chrome around it. **`--ds-status-bar` is separate and darker** — that band reports *on* the window rather than holding any part of what is being read, which is the line the exception is drawn along. Its check is an **ordering rather than a ratio**, and that is a measurement: below the panels in dark there is almost nothing before the code's black, so it asserts *darker in both appearances* and prints how far (1.26:1 light, 1.08:1 dark). **This reverses [DEC-080](04-decision-log.md)**, which pulled four neutrals apart into a ladder for the same complaint — *I cannot see where one region ends and the next begins* — and the owner's answer to it is the other one: make them the same and let the seams separate them. The ladder check became an equality check; DEC-080's measurement of the original four values is kept as its control, because that failure is still what the section exists over. **If the window now reads flat, that is the bet this entry made.**
