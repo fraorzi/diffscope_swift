@@ -128,6 +128,7 @@ Only documents that exist are authoritative. Planned documents are listed below 
 | `26-coverage-audit.md` | **Exists** | Where each named test is proven, and what could fail it |
 | `27-design-adoption.md` | **Exists** | Where the adopted design lives, what its review settled, and the order the interface work goes in |
 | `28-interface-plan.md` | **Exists** | What is left to build in the interface after the owner's second session, with an acceptance test for each item (DEC-077) |
+| `29-git-operations-plan.md` | **Exists** | **Proposal, undecided.** What version two would be if DEC-003 is reopened: staging, committing and the whole of lazygit's list, with GitHub Desktop studied as the visual reference (OQ-056) |
 | `research/losslessness-invariant.md` | Exists | Corpus measurements behind DEC-021 |
 | `research/domain-existing-tools.md` | Exists | Phase 2 — known failure modes of existing tools |
 | `research/stack-desktop-and-rendering.md` | Exists | Phase 3 — stacks and rendering |
