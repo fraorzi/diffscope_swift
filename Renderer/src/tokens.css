@@ -44,6 +44,12 @@
   --ds-radius-chip: 10px;
   --ds-radius-badge: 6px;
   --ds-hairline-width: 1px;
+  /* The height of a pane header, seam included (DEC-088). The two lists' headers are AppKit bars
+     of `Theme.paneHeaderHeight`, and the diff pane's file header is a `<div>` — two layouts for
+     one line across the window, which is exactly how the seam under `src/components/…` ended up
+     five points above the seam under `CHANGED FILES`. The number is declared once, here, and the
+     check requires `Theme.swift` to carry the same one. */
+  --ds-pane-header-height: 32px;
 
   /* ---- Surfaces and ink — light ----------------------------------------- */
   --ds-bg: #eeeef2;
@@ -174,8 +180,14 @@
    * AppKit draws these surfaces and cannot read this file. They are declared here so the design
    * stays one table in one place, and the check requires each of them to be named in
    * `Theme.swift`; a name that appears in neither is the failure this block exists to catch. */
-  --ds-chrome: #d9d9e1;
-  --ds-panel-repos: #e6e6ed;
+  /* **One surface, not four** (DEC-088, reversing DEC-080). The ladder was built because the four
+   * regions were nineteen values apart and nobody could see where one ended and the next began;
+   * the owner's answer to that is the other one — make them the *same* surface and let the seams
+   * do the separating. So the repository list, the changed-file list and the scope row above them
+   * all carry `--ds-panel-files`, and the one step that survives is the one that was always the
+   * point: the code against the chrome around it. */
+  --ds-chrome: #f2f2f6;
+  --ds-panel-repos: #f2f2f6;
   --ds-panel-files: #f2f2f6;
   --ds-empty-bg: #eeeef2;
   --ds-row-selected: #d5d5de;
@@ -272,8 +284,8 @@
     --ds-term-bright-white: #ffffff;
 
     /* @chrome */
-    --ds-chrome: #26262d;
-    --ds-panel-repos: #1e1e25;
+    --ds-chrome: #131317;
+    --ds-panel-repos: #131317;
     --ds-panel-files: #131317;
     --ds-empty-bg: #0a0a0c;
     --ds-row-selected: #2f2f38;

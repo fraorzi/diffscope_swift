@@ -769,34 +769,18 @@ function cell(className, text) {
 
 /// The file header. Pushed rather than derived: the renderer is handed a model, and a model does
 /// not carry the path it came from — the shell is the side that knows which file the reader chose.
-/// The `SHOWING` row (the adopted design). The comparison is pushed by the shell — the sentence is
-/// composed in the Git layer so that it can be checked — and the layout and the sign-column legend
-/// are the page's own, because the page is what knows which of the two it is drawing.
+///
+/// The `SHOWING` row that stood under it is **gone** (DEC-088) and with it the height it kept
+/// changing: the shell pushed the comparison on its own schedule rather than inside a render, so
+/// the row could appear under an editor that had already measured itself and CodeMirror would keep
+/// the line heights it computed against the taller pane. The comparison is still stated — in the
+/// status line and in the title band, both of which are chrome and neither of which resizes the
+/// document. The value is kept so the shell's push has somewhere to land and so a check can read
+/// back what it was told.
 let comparison = "";
-
-function updateShowing() {
-  const row = document.getElementById("showing");
-  if (!row) return;
-  if (!comparison) { row.textContent = ""; return; }
-  // **What is being compared, and nothing else** (DEC-083). The legend that followed it —
-  // *"+ added, − removed in the sign column"* — explained a convention every reader of a diff
-  // already has, on every file they opened. The comparison stays because it is the fact DEC-058
-  // was paid for three times: it was stated only in the chrome, far from the pane being read.
-  const parts = ["SHOWING " + comparison, layout === "unified" ? "unified" : "side by side"];
-  const before = row.textContent;
-  row.textContent = parts.join(" · ");
-  // The shell pushes the comparison on its own schedule, **not** inside a render — so this row can
-  // appear under an editor that has already measured itself, and CodeMirror keeps the line heights
-  // it computed against the taller pane: the gutter drifts 33 px a row against the content's 30.
-  // Whoever changes the height is who has to say so.
-  if (before !== row.textContent) {
-    for (const view of [left, right, unified]) if (view) view.requestMeasure();
-  }
-}
 
 window.diffscopeSetComparison = function (text) {
   comparison = String(text || "");
-  updateShowing();
   return comparison;
 };
 
@@ -1060,9 +1044,6 @@ window.diffscopeShowRendered = function (json) {
 window.diffscopeSetLayout = function (name) {
   layout = name === "unified" ? "unified" : "split";
   if (lastModel) window.diffscopeRender(lastModel);
-  // Also when there is no model yet: the row names the layout, and switching with nothing open
-  // would otherwise leave it describing the layout the reader just left.
-  else updateShowing();
   return layout;
 };
 
@@ -1163,11 +1144,22 @@ window.diffscopeStyleAudit = function () {
     };
   }
   probe.remove();
-  const bar = getComputedStyle(document.getElementById("notices"));
+  // **The bar is asked while it holds a notice** (DEC-088). It collapses when it is empty, and the
+  // audit runs on a document that has nothing to declare — so reading it as it stands measured the
+  // `:empty` rule and called it a hidden notice bar. INV-4 is a promise about a notice that
+  // *exists*: put one in, ask, take it out. Which is the stronger question of the two, and the one
+  // this arm was always meant to be asking.
+  const notices = document.getElementById("notices");
+  const chip = document.createElement("span");
+  chip.className = "ds-chip";
+  chip.textContent = "audit";
+  notices.appendChild(chip);
+  const bar = getComputedStyle(notices);
   report["#notices"] = {
     hidden: bar.display === "none" || bar.visibility === "hidden" || parseFloat(bar.opacity) === 0,
     distinguishing: ["notice bar"],
   };
+  chip.remove();
   return report;
 };
 
@@ -1475,12 +1467,12 @@ window.diffscopeRender = function (json) {
   anchors = model.anchors || [];
   expanded = new Set();
   stopIndex = -1;
-  // **Before** the layout, not after. Both of these change the page's height — the row appears,
-  // the bar appears — and an editor populated first is an editor measured against a height that is
-  // about to change: CodeMirror kept the line heights it had computed and the gutter drifted out of
-  // step with the code, 33 px a row against the content's 30. Settle the geometry, then fill it.
+  // **Before** the layout, not after. The footer changes the page's height, and an editor
+  // populated first is an editor measured against a height that is about to change: CodeMirror
+  // kept the line heights it had computed and the gutter drifted out of step with the code, 33 px
+  // a row against the content's 30. Settle the geometry, then fill it. (The `SHOWING` row was the
+  // other height that moved here; DEC-088 removed it.)
   updateFooter(model);
-  updateShowing();
   applyLayout(model);
   restoreAnchor(model.restore);
   updateTrack();

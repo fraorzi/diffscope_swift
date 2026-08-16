@@ -3758,3 +3758,42 @@ Reopen if a corpus measurement shows the whole-line preference losing to the alt
 > **Numbering.** This entry was written as DEC-086 on a branch while DEC-086 was being
 > written on `main`. Both are wanted and both are kept; the branch's became **DEC-087** at
 > the merge. Two entries sharing a number is the one thing this log cannot carry.
+
+---
+
+## DEC-088 — The fifth session: the chrome becomes one surface, and four bands stop reporting nothing
+
+- **Date:** 2026-08-16 · **Topic:** The owner's fifth reading session · **Status:** Accepted · **Reverses DEC-080, amends DEC-083 and the design contract**
+- **Prompted by:** six items in one message, with a screenshot of the top of the diff pane
+
+### Context
+
+Six reports, and five of them are the same complaint from different angles: **the window spends height and ink saying things the reader did not ask about.** The sixth is a defect nobody could have seen in a screenshot.
+
+### The six
+
+1. **The magnifier sat on top of the search text**, and the fix is not where it looked. A resting `NSSearchField` has always drawn its glyph at x=2 and its text at x=26 — every picture of the field, and every reading of `searchTextRect(forBounds:)`, said it was correct. `select(withFrame:)` and `edit(withFrame:)` hand the field editor the cell's **whole frame** when the field is unbezeled, which this one is because DEC-085 put the design's rim around it instead of the system's bezel. So the moment the reader clicked in and typed, the string was laid out from x=0, on the glyph. **The defect is in the editing path and the drawing path was never wrong**, which is why the arm that proves it focuses the field and measures the *field editor* — the cell's own rectangles pass identically before and after.
+
+   The obvious repair is also wrong and was photographed being wrong: overriding `searchTextRect(forBounds:)` moves the rectangle the cell asks for without moving the one it draws, and the field then renders its string **twice**, a few points apart. What moves is the whole interior (`drawInterior`), so the glyph and the text keep their spacing, and the editor is put on the cell's own text rectangle shifted to match.
+
+   The vertical half — *4px paddingu wertykalnego* — belongs **around** the field, not inside it. The first version took `searchTextPadding` off the top and bottom of the editor, and on a field whose `intrinsicContentSize` is 14 points that left seven points for an eleven-point line. `RimHost` insets the field by the padding instead, so the control is taller and the line keeps every point it has.
+
+2. **The repository list, the changed-file list and the scope row are one surface**, which reverses DEC-080 eleven days after it. DEC-080 answered *I cannot see where one region ends and the next begins* by pulling four neutrals nineteen values apart into a ladder with a 1.10:1 floor. The owner's answer to the same complaint is the other one: make them the same surface and let the seams separate them. The check inverts with it — three values held **equal**, and one step, the code against the chrome around it. *Nearly the same* is what is rejected now, for DEC-080's own reason: three neutrals a hundredth apart read as a mistake.
+
+3. **`#showing` is removed** — `SHOWING HEAD ↔ working tree · unified`, a band on every file. DEC-083 kept it because DEC-058 had been paid three times for stating a fact only in the chrome, far from the pane being read. It is stated in the chrome **twice** — the status line and the title band — and the layout word names the thing the reader has just pressed ⌘E for. The sentence is still composed in the Git layer and still checked; what goes is the third copy. **The empty notice bar goes with it**: `#notices` kept its padding and its seam while holding nothing, which on a normal file is every file the reader opens, so it collapses when empty exactly as the row above it did.
+
+4. **`untracked` stops wearing `?`.** It was `?` because that is what `git status --porcelain` calls it, and beside a filename a question mark reads as a **missing icon** — the owner reported it as one twice. To the reader of a diff an untracked file and an added file are the same fact, so untracked now says `+` in the added hue. The kind survives everywhere it matters (the tooltip, the grouping, the engine); the one place it is *drawn* it says what it means. DEC-081's uniqueness check is restated rather than loosened: the kinds meant to be tellable apart each keep a glyph of their own, this one pair is named, and a second kind joining them is a separate control.
+
+5. **The lists' scrollbar is narrower, and drawn only while the reader scrolls.** The second half is not a size but a style: an overlay scroller fades in on a scroll, a legacy one is painted for as long as the list is longer than the pane, and which one you get is a **system preference** — `NSScrollView.scrollerStyle` is overwritten from `NSScroller.preferredScrollerStyle` whenever it changes. So the scroll view answers `.overlay` for itself, in the setter as well as the getter, and the scroller draws its own knob with **no slot behind it**. A track is the part that is visible when nothing is happening, so *quietened, never removed* has nothing to quieten here; this is the same exception `#track` earned in DEC-077.
+
+6. **The three pane headers are one height.** Two of them are `ChromeBar`s of `Theme.paneHeaderHeight`; the third is a `<div>` in a webview and was `space3 + text + space3` = 27, so the seam under `src/components/…` sat five points above the seam under `CHANGED FILES`. One line across the window, laid out twice. `--ds-pane-header-height` is the number, and the check does the arithmetic on both sides rather than matching a name — a token whose two sides hold different values is precisely the drift this catches, and the literal 27 is its control.
+
+### Consequences
+
+- DEC-080's ladder check becomes an equality check; its measurement of the *original* four values is kept as a control, because that failure is still what the section exists over.
+- The live style audit puts a chip into `#notices` before it measures it. It had been reading an empty bar and calling `:empty` a hidden notice bar — and asking the question with a notice present is the stronger form of INV-4 anyway.
+- `Theme.chrome`, `Theme.panelRepositories` and `Theme.panelFiles` are one value under three names. The names stay: the token table is the design's, and a design may pull them apart again.
+
+### Reopen if
+
+The owner reports the window reading flat — four regions and no seams is the failure DEC-080 was written against, and this entry is a bet that a hairline is enough separation where nineteen values were not.

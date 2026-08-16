@@ -79,11 +79,16 @@ public enum ChangeKind: String, Sendable, Equatable, CaseIterable {
     /// those bars distinguished by hue alone.
     public var glyph: String {
         switch self {
-        case .added: return "+"
         case .deleted: return "−"
         case .renamed: return "→"
         case .modified: return "✎"
-        case .untracked: return "?"
+        // **The same `+` as `added`** (DEC-088). This was `?`, which is what `git status
+        // --porcelain` calls it and which is not what a reader sees: a question mark beside a
+        // filename reads as a broken icon, and it was reported as one twice. The kind is still
+        // `untracked` everywhere it matters — the tooltip, the grouping, the engine — and the one
+        // place it is *drawn*, beside a path in a list, it says what it means to the reader: this
+        // file is new.
+        case .added, .untracked: return "+"
         case .typeChanged: return "⇄"
         case .unmerged: return "!"
         }

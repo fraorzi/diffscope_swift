@@ -8,6 +8,24 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
+**2026-08-16 — the owner's fifth session: six reports, all six built, and one of them reverses a decision from eleven days ago. 1793 → 1799 checks, 50 → 51 selftest arms.** Everything is [DEC-088](04-decision-log.md). `tasks/todo.md` step 88.
+
+**The chrome is one surface now.** `--ds-chrome`, `--ds-panel-repos` and `--ds-panel-files` hold the same value, and the only step left is the code against the chrome around it. **This reverses [DEC-080](04-decision-log.md)**, which pulled four neutrals apart into a ladder for the same complaint — *I cannot see where one region ends and the next begins* — and the owner's answer to it is the other one: make them the same and let the seams separate them. The ladder check became an equality check; DEC-080's measurement of the original four values is kept as its control, because that failure is still what the section exists over. **If the window now reads flat, that is the bet this entry made.**
+
+**Three bands stopped talking.** `SHOWING HEAD ↔ working tree · unified` is gone — the comparison is in the status line *and* the title band, so the pane's copy was the third; the empty notice bar collapses instead of keeping its padding and its seam on every normal file; and the file-path header is `--ds-pane-header-height`, the same 32 the two lists' headers are, so its seam is finally level with theirs rather than five points above.
+
+**Three findings, and the first is the one to read before touching an AppKit control.**
+
+**The search field was correct in every picture and wrong the moment anyone typed.** `searchButtonRect` is x=2 and `searchTextRect` is x=26, and the cell draws both exactly there — but `select(withFrame:)` and `edit(withFrame:)` hand the **field editor the cell's whole frame** when the field is unbezeled, which ours is because DEC-085 put the design's rim around it. So the reader's own string was laid out from x=0, on the glyph, and no static check and no snapshot of the resting field could ever have said so. **The arm focuses the field and measures the field editor.** Two more things came out of the probes: overriding `searchTextRect` moves the rectangle the cell *asks for* and not the one it *draws*, so the field renders its string twice; and the vertical padding has to go around the field, because the field's intrinsic height is 14 and insetting the editor left an eleven-point line seven points to live in.
+
+**Collapsing the empty notice bar broke the live style audit, and the break was the point.** The audit had been reading `#notices` **while it was empty** and reporting `:empty` as a hidden notice bar — which means it had never once asked its question of a bar with a notice in it. It inserts a chip before measuring now. INV-4 is a promise about a notice that exists.
+
+**`?` beside a filename reads as a missing icon, and it was reported as one twice.** It was `ChangeKind.untracked`, named after `git status --porcelain`. Untracked now says `+` in the added hue: to the reader of a diff a new file is a new file. DEC-081's uniqueness check is restated rather than loosened — the kinds meant to be tellable apart each keep their own glyph, this pair is named, and a *second* kind joining them is a separate control.
+
+**The scrollbar was a system preference, not a size.** *Show scroll bars: Always* paints a legacy scroller for as long as a list is longer than its pane, and `NSScrollView.scrollerStyle` is overwritten from `NSScroller.preferredScrollerStyle` whenever that preference changes — so the scroll view answers `.overlay` for itself, in the setter as well as the getter, and the scroller draws a narrower knob with **no slot behind it**.
+
+---
+
 **2026-08-14 — all ten items of [28-interface-plan.md](28-interface-plan.md) are built, the definition of done is audited, and there is a build for the tester. 1659 → 1748 checks.** Five decisions came out of the day: **DEC-078** (⌘E is reversible), **DEC-079** (the motion register moves into this repository), **DEC-080** (the four surfaces become a ladder), **DEC-081** (the file-kind glyphs get colour) and **DEC-082** (the editor template opens the line). Each was written before its code.
 
 **Packaged: `dist/DiffScope-ca86df4.zip`**, sha256 `f25d2d5bc34b9abda67b97d2514df67c3f8906509fb177ef484c01fc7df19632`, 2.1 MB over 49 files, stamped with the commit it was built from. Older zips dropped; `dist/` is git-ignored, so the checksum here is the record. **50 selftest arms** ran from a temporary directory outside the checkout, and the keyboard walk was not skipped. Give the tester the zip **and** `25-tester-packet.md`; the bundle is unsigned by decision and the packet carries the Gatekeeper step.

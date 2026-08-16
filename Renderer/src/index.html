@@ -15,8 +15,15 @@
   /* Which file this is, above everything it says about it. The path is what tells two files of
      the same name apart, so it is shown rather than hovered — the lesson DEC-058 paid for three
      times over. */
-  #file-header { display: flex; gap: var(--ds-space-2); align-items: baseline;
-                 padding: var(--ds-space-3) var(--ds-space-4);
+  /* **The seam is level with the other two** (DEC-088). This bar was `space3 + text + space3` = 27
+     px against the two lists' 32 pt headers, so the hairline under `src/components/…` sat five
+     points above the hairline under `CHANGED FILES` — three panes whose contents start together
+     and whose first seam does not. Sized to the shared token, border included, because the AppKit
+     bars draw their hairline *inside* their own height. */
+  #file-header { display: flex; gap: var(--ds-space-2); align-items: center;
+                 box-sizing: border-box; flex: none;
+                 height: var(--ds-pane-header-height);
+                 padding: 0 var(--ds-space-4);
                  border-bottom: var(--ds-hairline-width) solid var(--ds-border); }
   #file-path { color: var(--ds-dim); }
   #file-name { color: var(--ds-text); font-weight: var(--ds-weight-emphasis); }
@@ -27,18 +34,23 @@
              padding: var(--ds-space-3) var(--ds-space-4); flex-wrap: wrap;
              color: var(--ds-text);
              border-bottom: var(--ds-hairline-width) solid var(--ds-border); }
+  /* With nothing to say it says nothing (DEC-088), the rule the `SHOWING` row already had. A bar
+     that keeps its padding and its seam while holding no chip is a band of chrome that reports
+     *there is nothing to report* — which on a normal file is every file the reader opens. It is
+     laid out to nothing only while it is empty; INV-4 is a promise about a notice that exists. */
+  #notices:empty { display: none; }
   .ds-chip { padding: var(--ds-space-1) var(--ds-space-4);
              border-radius: var(--ds-radius-chip); font-size: var(--ds-text-size-small);
              border: var(--ds-hairline-width) solid var(--ds-border-strong); }
   .ds-chip-alert { border-style: dashed; font-weight: var(--ds-weight-emphasis); }
 
-  /* What is being compared, said in the pane where the reader is looking rather than only in the
-     chrome above it. The legend for the sign column belongs here too: `+` and `−` are the only
-     carrier of direction once there are no panes (DEC-059), so the pane says what they mean. */
-  #showing { padding: var(--ds-space-2) var(--ds-space-4); color: var(--ds-dim);
-             font-size: var(--ds-text-size-small);
-             border-bottom: var(--ds-hairline-width) solid var(--ds-border); }
-  #showing:empty { display: none; }
+  /* The `SHOWING` row lived here — `SHOWING HEAD ↔ working tree · unified`, a band of its own on
+     every file. **Removed entirely** (DEC-088), rule and element both, which is what the check
+     asserts: the selector may not survive its element. It was added because the comparison was stated only in
+     the chrome, far from the pane being read; the chrome states it in the status line *and* in the
+     title band, and a third copy is a third of an inch of the diff spent on a sentence that has
+     not changed since the reader chose the scope. The layout word it carried is the one the reader
+     just pressed ⌘E for. */
 
   #stage { display: flex; flex: 1; min-height: 0; }
   /* `#track` lived here: a range input under the panes, sharing one horizontal position between
@@ -365,7 +377,6 @@
 <body>
   <div id="file-header"><span id="file-path"></span><span id="file-name"></span></div>
   <div id="notices"></div>
-  <div id="showing"></div>
   <div id="stage">
     <div id="left"></div>
     <div id="right"></div>

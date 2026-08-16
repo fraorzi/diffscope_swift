@@ -367,77 +367,90 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // asserts what the entry actually promises — that no kind is left to colour alone.
         do {
             let coloured: [ChangeKind] = [.added, .modified, .deleted, .renamed]
-            let glyphs = ChangeKind.allCases.map(\.glyph)
-            report("every kind still has a glyph of its own, coloured or not",
+            // **`untracked` is deliberately not a fifth signal** (DEC-088). It wore `?`, and a `?`
+            // beside a filename does not read as *git is not tracking this yet* — the owner read it
+            // as a missing icon, twice. To the reader of a diff an untracked file and an added file
+            // are the same fact, so they now say the same thing, in the same colour.
+            //
+            // Which means glyph uniqueness is asserted over the kinds that are *meant* to be
+            // tellable apart, not over `allCases` — the old form would have failed here and the
+            // honest repair is to name the pair rather than to loosen the rule.
+            let distinct = ChangeKind.allCases.filter { $0 != .untracked }
+            let glyphs = distinct.map(\.glyph)
+            report("every kind meant to be tellable apart has a glyph of its own",
                    Set(glyphs).count == glyphs.count, glyphs.joined(separator: " "))
+            report("and untracked says exactly what added says, glyph and colour (DEC-088)",
+                   ChangeKind.untracked.glyph == ChangeKind.added.glyph,
+                   "\(ChangeKind.untracked.glyph) / \(ChangeKind.added.glyph)")
             report("and the four with a colour are four different glyphs",
                    Set(coloured.map(\.glyph)).count == 4,
                    coloured.map(\.glyph).joined(separator: " "))
             // The control: a palette that answered the question on its own would mean the glyph
             // could be dropped, which is exactly DEC-035's line and exactly what the adopted
             // design's spine bars did.
-            report("negative control: two kinds sharing a glyph would be caught",
+            report("negative control: two of those four sharing a glyph would be caught",
                    Set(["+", "+", "−"]).count != 3)
+            // And the one this pair could hide behind: `untracked` merged into `added` is a
+            // decision, `deleted` merged into `added` would be a defect, and the check above would
+            // not tell them apart if it read `allCases` minus whatever happens to collide.
+            report("negative control: a second kind quietly joining them is caught",
+                   ChangeKind.deleted.glyph != ChangeKind.added.glyph)
         }
 
-        // DEC-080: **the four surfaces are a ladder, and every step is at least 1.10:1.**
+        // DEC-088, **reversing DEC-080**: there is **one step**, and it is at least 1.10:1.
         //
-        // Every colour check in this project until now has been about *ink on a surface*; nothing
-        // asked whether two surfaces are distinguishable from each other. Measured, they were not:
-        // in light `#ececed`, `#f6f6f8`, `#fbfbfd` and `#ffffff` — nineteen values out of 255 — and
-        // in dark the ladder was not even monotone, the repository pane sitting *darker* than the
-        // file pane with the chrome above both lighter than either. The owner reported it as not
-        // being able to see where one region ends and the next begins.
+        // DEC-080 answered *I cannot see where one region ends and the next begins* by pulling the
+        // four neutrals apart into a ladder. The owner's answer to the same complaint is the other
+        // one — make the chrome a single surface and let the seams separate it — so the assertion
+        // becomes the opposite shape: the three chrome surfaces are **equal**, and only the code
+        // stands away from them. A ladder check left in place would have gone on demanding steps
+        // between three values that are now deliberately one.
         //
         // The floor is DEC-076's, for DEC-076's reason: two things that must read as different
         // should not be a hundredth apart.
-        let ladder: [(String, String, String)] = [
-            ("--ds-code", "--ds-panel-files", "the diff against the changed-file list"),
-            ("--ds-panel-files", "--ds-panel-repos", "the file list against the repository list"),
-            ("--ds-panel-repos", "--ds-chrome", "the repository list against the chrome band"),
-        ]
         var flat: [String] = []
         var steps: [String] = []
         for dark in [false, true] {
-            for rung in ladder {
-                guard let below = value(rung.0, dark: dark), let above = value(rung.1, dark: dark) else {
-                    flat.append("\(rung.0)/\(rung.1): undeclared"); continue
-                }
-                let step = ratio(below, above)
-                steps.append(String(format: "%@ %.3f", dark ? "dark" : "light", step))
-                if step < 1.10 {
-                    flat.append(String(format: "%@ in %@ is %.3f:1 (%@)", rung.0,
-                                       dark ? "dark" : "light", step, rung.2))
-                }
+            guard let code = value("--ds-code", dark: dark),
+                  let surround = value("--ds-panel-files", dark: dark) else {
+                flat.append("--ds-code/--ds-panel-files in \(dark ? "dark" : "light"): undeclared")
+                continue
+            }
+            let step = ratio(code, surround)
+            steps.append(String(format: "%@ %.3f", dark ? "dark" : "light", step))
+            if step < 1.10 {
+                flat.append(String(format: "the diff against the chrome around it in %@ is %.3f:1",
+                                   dark ? "dark" : "light", step))
             }
         }
-        report("the four surfaces are a ladder, every step at least 1.10:1 (DEC-080)",
+        report("the code stands away from the chrome around it, by at least 1.10:1 (DEC-088)",
                flat.isEmpty, flat.joined(separator: " | "))
         report("and the steps are printed rather than merely passed",
-               steps.count == 6, steps.joined(separator: ", "))
+               steps.count == 2, steps.joined(separator: ", "))
 
-        // The ladder must also run the same way in both appearances — the content is the extreme
-        // and the chrome is furthest from it. A monotone check catches the dark inversion this
-        // replaced, which every ratio above would have passed had the steps merely been large.
+        // The other half of DEC-088, and the half a contrast check cannot state: the three chrome
+        // surfaces are **the same value**. Written as an equality rather than as a small ratio,
+        // because *nearly the same* is precisely the window DEC-080 was written against — three
+        // neutrals a hundredth apart, which reads as a mistake rather than as a decision.
         for dark in [false, true] {
-            let rungs = ["--ds-code", "--ds-panel-files", "--ds-panel-repos", "--ds-chrome"]
-                .compactMap { value($0, dark: dark) }.map { luminance($0) }
-            let monotone = dark ? zip(rungs, rungs.dropFirst()).allSatisfy { $0 < $1 }
-                : zip(rungs, rungs.dropFirst()).allSatisfy { $0 > $1 }
-            report("the ladder runs one way in \(dark ? "dark" : "light"): the content is the extreme",
-                   rungs.count == 4 && monotone,
-                   rungs.map { String(format: "%.4f", $0) }.joined(separator: " → "))
+            let surfaces = ["--ds-panel-files", "--ds-panel-repos", "--ds-chrome"]
+                .compactMap { value($0, dark: dark) }
+            report("the two lists and the scope row are one surface in \(dark ? "dark" : "light")",
+                   surfaces.count == 3 && Set(surfaces).count == 1,
+                   surfaces.joined(separator: " / "))
         }
-        // The control is the shipped table, as literals: these are the four light values this entry
-        // replaced, and the widest step between them is under the floor.
+        // The control is the shipped table, as literals: these are the four light values DEC-080
+        // replaced, and the widest step between them is under its floor. Kept because it is still
+        // the failure this whole section exists over — four neutrals nineteen values apart — and
+        // DEC-088 is a different answer to it, not a retraction of the measurement.
         let wasLight = ["#ffffff", "#fbfbfd", "#f6f6f8", "#ececed"]
         let widest = zip(wasLight, wasLight.dropFirst()).map { ratio($0, $1) }.max() ?? 0
         report("negative control: the table this replaced is caught",
                widest < 1.10, String(format: "widest step %.3f:1", widest))
-        // And the dark inversion, which is a different failure: large enough steps, wrong order.
-        let wasDark = [0.0, luminance("#0e0e11"), luminance("#0b0b0d"), luminance("#161618")]
-        report("negative control: and so is a ladder that changes direction",
-               !zip(wasDark, wasDark.dropFirst()).allSatisfy { $0 < $1 })
+        // And DEC-080's own table, which this entry replaced in turn: three surfaces a step apart
+        // pass every ratio above and are exactly what the equality is written to reject.
+        report("negative control: and so is a chrome split into three surfaces",
+               Set(["#f2f2f6", "#e6e6ed", "#d9d9e1"]).count != 1)
 
         // Three controls, and the second is the one that matters: **the value this check was
         // written against, as a literal.** Reading it from the token file would have made the check

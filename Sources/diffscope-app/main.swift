@@ -433,7 +433,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // same and searches the whole worktree instead of the changed set. The scope is on screen
         // in the placeholder, because a count over the changed set and a count over the worktree
         // are different answers and a reader who does not know which they asked cannot read it.
-        searchField = NSSearchField()
+        // DEC-088 item 1: the cell is ours, because an unbezeled `NSSearchFieldCell` lays the text
+        // out on top of its own magnifier. `SearchFieldCell` states the two rectangles instead.
+        searchField = SearchField()
         searchField.font = Theme.font(Theme.textSizeSmall)
         searchField.placeholderString = "Find in changed files"
         searchField.target = self
@@ -447,7 +449,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         searchField.isBezeled = false
         searchField.drawsBackground = false
         searchField.focusRingType = .none
-        searchFieldHost = RimHost.wrapping(searchField)
+        // The rim's vertical inset is the padding the missing bezel used to hold (DEC-088): the
+        // field was exactly its line height, so the caret sat on the metal.
+        searchFieldHost = RimHost.wrapping(searchField, verticalPadding: Theme.searchTextPadding)
 
         // The scope and what it compares have left this band for a row of their own, across the
         // window (DEC-072): changing the scope changes the *file list*, so the control belongs
@@ -712,8 +716,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // A non-zero starting frame matters: NSSplitView distributes space by *preserving the
         // proportions of the frames it already has*, so panes that begin at zero width stay at
         // zero width no matter how wide the split becomes.
-        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: Theme.repositoryPaneWidth, height: Theme.windowHeight))
+        // DEC-088: an overlay scroller whatever the system preference says, and a knob of our own.
+        // *Show scroll bars: Always* is a setting about the system's scrollers, and in a 320 pt
+        // pane of paths it is a stripe down the side of every row for as long as the list is
+        // longer than the pane. This one is drawn while the reader scrolls and not otherwise.
+        let scroll = OverlayScrollView(frame: NSRect(x: 0, y: 0, width: Theme.repositoryPaneWidth, height: Theme.windowHeight))
         scroll.documentView = view
+        scroll.verticalScroller = SlimScroller()
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = false
         scroll.autohidesScrollers = true
@@ -2157,6 +2166,63 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 + "base=[\(Int(block.minX)),\(Int(block.minY)) \(Int(block.width))×\(Int(block.height))] "
                 + "\"\(baseBlock.toolTip ?? "")\"\n").utf8))
         guard ok else { exit(65) }
+        searchFieldSelftest()
+    }
+
+    /// DEC-088 item 1: **the reader's own text does not land on the magnifier.**
+    ///
+    /// The arm exists in this shape because the defect did. A resting `NSSearchField` has always
+    /// drawn its text at x=26 with the glyph at x=2, so every picture of the field and every
+    /// reading of `searchTextRect` said it was fine — and it was, until somebody clicked in.
+    /// `select`/`edit` hand the field editor the cell's **whole frame** when the field is
+    /// unbezeled, so the string was drawn from x=0. What has to be measured is therefore the
+    /// **field editor**, with the field focused and holding text; the cell's own rectangles would
+    /// have passed before the fix and after it.
+    ///
+    /// And the glyph is measured where it is *drawn*: `SearchFieldCell` moves the whole interior a
+    /// `space3` off the rim, so the un-shifted `searchButtonRect` is not where the reader sees it.
+    private func searchFieldSelftest() {
+        let bounds = searchField.bounds
+        let cell = searchField.cell as? NSSearchFieldCell
+        var glyph = cell?.searchButtonRect(forBounds: bounds) ?? .zero
+        glyph.origin.x += Theme.space3
+        // **The ink, not the button.** `searchButtonRect` is a hit target several points wider than
+        // the magnifier drawn inside it, and the stock cell already lets its text rect begin inside
+        // that target — so a comparison against the target's trailing edge fails on a field that is
+        // perfectly legible. The image is what the reader sees overlap, so the image is what is
+        // measured: centred in the target, at its own size.
+        let ink = cell?.searchButtonCell?.image?.size.width ?? glyph.width
+        let inkTrailing = glyph.midX + ink / 2
+
+        searchField.stringValue = "selftest"
+        window.makeFirstResponder(searchField)
+        // The **editor's own container**, not the text view's bounds. `select(withFrame:)` positions
+        // the clip view AppKit wraps the field editor in; the text view inside it is as tall as its
+        // clip and reports the field's whole height whatever the frame it was given.
+        var host = window.fieldEditor(false, for: searchField) as NSView?
+        while let view = host, view.superview !== searchField, view.superview != nil {
+            host = view.superview
+        }
+        let text = host.map { $0.frame } ?? .zero
+
+        let clear = text.minX >= inkTrailing
+        // The other half of the item, and it is a fact about the **rim**, not about the editor: a
+        // field 14 pt tall wants all 14 for its line, and the room the owner asked for is around it.
+        // Measured as the gap the host holds above and below, which is what a reader sees.
+        let padded = searchFieldHost.frame.height - bounds.height >= 2 * Theme.searchTextPadding - 1
+        let ok = clear && padded && bounds.width > 1 && text.height > 0
+
+        FileHandle.standardError.write(Data(
+            ("SELFTEST search-field=\(ok ? "OK" : "MISMATCH") "
+                + "field=\(Int(bounds.width))×\(Int(bounds.height)) "
+                + "host=\(Int(searchFieldHost.frame.width))×\(Int(searchFieldHost.frame.height)) "
+                + "glyph=[\(Int(glyph.minX))→\(Int(glyph.maxX))] ink→\(Int(inkTrailing)) "
+                + "editor=[\(Int(text.minX))→\(Int(text.maxX)) h=\(Int(text.height))] "
+                + "clear=\(clear) padded=\(padded)\n").utf8))
+
+        searchField.stringValue = ""
+        window.makeFirstResponder(nil)
+        guard ok else { exit(70) }
         glassSelftest()
     }
 

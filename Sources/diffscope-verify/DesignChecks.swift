@@ -706,6 +706,47 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // surfaces use them.
         report("the token names are mirrored, not invented separately",
                theme.contains("--ds-font") && theme.contains("--ds-space") && theme.contains("--ds-text"))
+
+        // DEC-088: **the three pane headers are one height**, and two of them are AppKit while the
+        // third is a `<div>`. Mirroring a *name* is not enough here — a token whose two sides hold
+        // different numbers is exactly the drift this check exists over, and it is what put the
+        // seam under the file's path five points above the seam under `CHANGED FILES`.
+        //
+        // Both sides are read and compared as numbers. `Theme.paneHeaderHeight` is arithmetic
+        // (`pillHeight + 2 * space2`), so the arithmetic is done here rather than a literal being
+        // matched — a literal would have to be edited in a third place to stay true.
+        let tokens = (try? String(contentsOf: root.appendingPathComponent("Renderer/src/tokens.css"),
+                                  encoding: .utf8)) ?? ""
+        let page = (try? String(contentsOf: root.appendingPathComponent("Renderer/src/index.html"),
+                                encoding: .utf8)) ?? ""
+        func number(_ pattern: String, in text: String) -> Double? {
+            guard let range = text.range(of: pattern, options: .regularExpression) else { return nil }
+            return String(text[range]).ranges(of: "[0-9.]+").last.flatMap(Double.init)
+        }
+        let declared = number("--ds-pane-header-height:\\s*[0-9.]+px", in: tokens)
+        let pill = number("static let pillHeight: CGFloat = [0-9.]+", in: theme)
+        let space = number("static let space2: CGFloat = [0-9.]+", in: theme)
+        let composed = pill.flatMap { p in space.map { p + 2 * $0 } }
+        report("the pane header's height is one number on both sides of the boundary (DEC-088)",
+               declared != nil && declared == composed,
+               "css \(declared.map { "\($0)" } ?? "undeclared") / theme \(composed.map { "\($0)" } ?? "underived")")
+        // And the header that was laid out separately actually uses it: a token nobody references
+        // is a value a designer would change to no effect, which is rule 1 of the token file.
+        report("and the diff pane's file header is sized from it rather than from its padding",
+               page.range(of: "#file-header\\s*\\{[^}]*var\\(--ds-pane-header-height\\)",
+                          options: .regularExpression) != nil)
+        // The control, as a literal: 27 px is what `space3 + text + space3` came to, and it is what
+        // a check reading only the token *name* would have gone on passing.
+        report("negative control: the height this replaced is not the header's height",
+               declared != 27)
+
+        // DEC-088 again: `#showing` is **gone**, not merely emptied. A row that collapses when it
+        // has nothing to say is the shape `#notices` takes; this one always had something to say,
+        // and what it said was already in the status line and the title band.
+        report("the SHOWING row is not in the page at all",
+               !page.contains("id=\"showing\"") && !page.contains("#showing"))
+        report("and the comparison is still stated, in the chrome",
+               main.contains("pushComparison(comparisonLabel.stringValue)"))
     }
 }
 

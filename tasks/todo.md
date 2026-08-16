@@ -2589,6 +2589,56 @@ imports corpus both walk the *parent directory* for real `.tsx` files, and a wor
 `.claude/worktrees/`. Re-run from the checkout before merging — that is where 1776 becomes the number
 that counts.
 
+## Step 88 — the owner's fifth session: six reports (DEC-088)
+
+- [x] DEC-088 written before the code, and it **reverses DEC-080** eleven days after it
+- [x] the search field's cell: the interior moves a `space3` right, and the **field editor** is put
+      on the cell's own text rectangle instead of on the whole frame
+- [x] `RimHost.wrapping(_:padding:verticalPadding:)` — the vertical room goes around the field
+- [x] `--ds-chrome` = `--ds-panel-repos` = `--ds-panel-files`; the ladder check becomes an equality
+- [x] `#showing` removed, element and rule both; `#notices` collapses when empty
+- [x] `ChangeKind.untracked` wears `+` in the added hue
+- [x] `SlimScroller` + `OverlayScrollView`: an overlay scroller whatever the system preference says,
+      a narrower knob, and no slot behind it
+- [x] `--ds-pane-header-height`, and a check that does the arithmetic on both sides
+- [x] 1793 → **1799 checks**, 50 → **51 selftest arms**
+
+### Step 88 — the field was right in every picture and wrong the moment anyone typed
+
+The magnifier overlapped the text, and three things about it are worth keeping.
+
+**The resting field had never been wrong.** `searchButtonRect` is x=2, `searchTextRect` is x=26, and
+both draw exactly there. `select(withFrame:)` and `edit(withFrame:)` are handed the cell's **whole
+frame** when the field is unbezeled — which it is, because DEC-085 put the design's rim around it —
+so the string was laid out from x=0 as soon as the reader clicked in. Every static check and every
+snapshot of that field says it is fine. **The arm therefore focuses the field and measures the field
+editor**; the cell's own rectangles pass identically before and after the fix.
+
+**The obvious repair renders the text twice.** Overriding `searchTextRect(forBounds:)` moves the
+rectangle the cell asks for and not the one it draws — photographed, two `Widget`s a few points
+apart. Four probe builds outside the project settled this before a line of it went into the app.
+
+**And the vertical padding had to go around the field, not inside it.** The first version inset the
+editor by `searchTextPadding` top and bottom; the field's `intrinsicContentSize` is **14**, so an
+eleven-point line got seven points to live in. The arm measures the gap the *rim* holds, which is
+what a reader sees.
+
+### Step 88 — an empty bar is a bar reporting that there is nothing to report
+
+`#notices` kept its padding and its seam on every normal file, which is every file the reader opens.
+Collapsing it broke the live style audit, and the break was the useful part: the audit had been
+reading an **empty** bar and calling `:empty` a hidden notice bar. It puts a chip in before it
+measures now — INV-4 is a promise about a notice that exists, and that is the stronger question.
+
+### Step 88 — three headers, one line, two layouts
+
+`REPOSITORIES` and `CHANGED FILES` are `ChromeBar`s of `Theme.paneHeaderHeight`; the file path above
+the diff is a `<div>` that was `space3 + text + space3` = 27. Five points of drift on a line that
+crosses the whole window. The check reads `--ds-pane-header-height` from the token file, recomputes
+`pillHeight + 2 * space2` from `Theme.swift`, and compares the **numbers** — a check on the token's
+*name* is what let two sides of one boundary hold different values in the first place.
+
+
 ### Still open
 
 - [ ] minimum-run absorption of unchanged gaps shorter than a token (phantom retention). `alpha` →

@@ -805,7 +805,11 @@ final class RimHost: NSView {
 
     /// Wraps a control in the rim and pins it inside, inset by the rim's own width so the metal is
     /// never drawn under the thing it frames.
-    static func wrapping(_ control: NSView, padding: CGFloat = Theme.space3) -> RimHost {
+    ///
+    /// The vertical inset is separate from the horizontal one since DEC-088: a text field wants
+    /// room above and below its line, and `rimWidth` alone put the caret against the metal.
+    static func wrapping(_ control: NSView, padding: CGFloat = Theme.space3,
+                         verticalPadding: CGFloat = Theme.rimWidth) -> RimHost {
         let host = RimHost()
         host.translatesAutoresizingMaskIntoConstraints = false
         control.translatesAutoresizingMaskIntoConstraints = false
@@ -813,8 +817,8 @@ final class RimHost: NSView {
         NSLayoutConstraint.activate([
             control.leadingAnchor.constraint(equalTo: host.leadingAnchor, constant: padding),
             control.trailingAnchor.constraint(equalTo: host.trailingAnchor, constant: -padding),
-            control.topAnchor.constraint(equalTo: host.topAnchor, constant: Theme.rimWidth),
-            control.bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: -Theme.rimWidth),
+            control.topAnchor.constraint(equalTo: host.topAnchor, constant: verticalPadding),
+            control.bottomAnchor.constraint(equalTo: host.bottomAnchor, constant: -verticalPadding),
         ])
         return host
     }
@@ -840,4 +844,112 @@ final class ChevronButton: HandButton {
     }
 
     override var isFlipped: Bool { false }
+}
+
+/// The search field's cell, and the whole of DEC-088 item 1.
+///
+/// **The overlap is in the editing path, not the drawing path**, and that is the whole finding.
+/// `NSSearchFieldCell` lays its magnifier out at x=2 and its text at x=26 and draws them exactly
+/// there — a resting field has never been wrong. But `select`/`edit` hand the field editor the
+/// **cell's whole frame**, un-inset, when the field is unbezeled — which this one is, because
+/// DEC-085 put the design's rim around it instead of the system's bezel. So the moment the reader
+/// clicked in and typed, their text was drawn from x=0, on top of the glyph. Photographed side by
+/// side with a resting field and a stock one before anything was changed.
+///
+/// Which rules out the obvious repair: overriding `searchTextRect(forBounds:)` moves the layout
+/// the cell asks for **without** moving the one it draws, and the field then renders its string
+/// twice, a few points apart. The two overrides here are the two that were actually wrong, plus
+/// one deliberate shift:
+///   * `drawInterior` moves the whole interior — glyph and text together — a `space3` right, which
+///     is the owner's *"tekst dać w prawo"*; the pair keeps its own spacing;
+///   * `select` and `edit` put the editor on the cell's own text rectangle, shifted to match.
+///
+/// The vertical half of the owner's report is answered by `RimHost`, which insets the field by
+/// `searchTextPadding` instead of by the rim's own width — see `editorArea`.
+final class SearchFieldCell: NSSearchFieldCell {
+    /// The interior, moved off the rim. Applied to the drawing and the editing alike — a cell that
+    /// answers one rectangle to the one and another to the other is how text ends up in two places.
+    private func shifted(_ rect: NSRect) -> NSRect {
+        NSRect(x: rect.minX + Theme.space3, y: rect.minY,
+               width: max(0, rect.width - Theme.space3), height: rect.height)
+    }
+
+    /// The editor's own box: the cell's own text rectangle, shifted to match what is drawn.
+    ///
+    /// **Nothing is inset vertically here**, and that is deliberate. The obvious version took
+    /// `searchTextPadding` off the top and bottom — which on this field, whose intrinsic height is
+    /// 14, left the editor seven points tall and clipped the line it was supposed to be giving room
+    /// to. The padding belongs *around* the field, where `RimHost` puts it; inside the field the
+    /// text wants the whole height it has.
+    private func editorArea(_ frame: NSRect) -> NSRect {
+        shifted(super.searchTextRect(forBounds: frame))
+    }
+
+    override func drawInterior(withFrame frame: NSRect, in view: NSView) {
+        super.drawInterior(withFrame: shifted(frame), in: view)
+    }
+
+    override func select(withFrame frame: NSRect, in view: NSView, editor: NSText,
+                         delegate: Any?, start: Int, length: Int) {
+        super.select(withFrame: editorArea(frame), in: view, editor: editor,
+                     delegate: delegate, start: start, length: length)
+    }
+
+    override func edit(withFrame frame: NSRect, in view: NSView, editor: NSText,
+                       delegate: Any?, event: NSEvent?) {
+        super.edit(withFrame: editorArea(frame), in: view, editor: editor,
+                   delegate: delegate, event: event)
+    }
+}
+
+/// The field that uses it. `cellClass` rather than assigning `cell`, because replacing a control's
+/// cell after construction drops everything the initialiser configured on the old one.
+final class SearchField: NSSearchField {
+    override class var cellClass: AnyClass? {
+        get { SearchFieldCell.self }
+        set { _ = newValue }
+    }
+}
+
+/// The lists' scrollbar (DEC-088): narrower than AppKit's, and **drawn only while scrolling**.
+///
+/// Two separate things the owner asked for, and only one of them is a size. The other is a style:
+/// an overlay scroller fades in on a scroll and back out, a legacy one is painted for as long as
+/// the list is longer than the pane — and *which* of the two you get is a **system preference**,
+/// not a property of the view. `NSScrollView.scrollerStyle` is overwritten from
+/// `NSScroller.preferredScrollerStyle` whenever that preference changes, so a scroller that must
+/// behave one way answers for itself.
+///
+/// The slot goes with it. A track drawn behind the knob is the part that is visible when nothing is
+/// happening, so *quietened* is not enough here: there is nothing to quieten.
+final class SlimScroller: NSScroller {
+    override class var isCompatibleWithOverlayScrollers: Bool { true }
+
+    override class func scrollerWidth(for controlSize: NSControl.ControlSize,
+                                      scrollerStyle: NSScroller.Style) -> CGFloat {
+        Theme.scrollerWidth
+    }
+
+    override func drawKnobSlot(in slotRect: NSRect, highlight flag: Bool) {}
+
+    override func drawKnob() {
+        let slot = rect(for: .knob)
+        let width = Theme.scrollerKnobWidth
+        let box = NSRect(x: slot.midX - width / 2, y: slot.minY + Theme.scrollerKnobInset,
+                         width: width, height: max(width, slot.height - 2 * Theme.scrollerKnobInset))
+        Theme.scrollerKnob.setFill()
+        NSBezierPath(roundedRect: box, xRadius: width / 2, yRadius: width / 2).fill()
+    }
+}
+
+/// A scroll view whose scrollers are overlay ones whatever the system preference says, wearing
+/// `SlimScroller`. The style is forced in the setter as well as the getter: AppKit writes the
+/// preferred style back on every `NSPreferredScrollerStyleDidChangeNotification`, and a getter
+/// alone leaves the *layout* — the width the view reserves for a legacy scroller — following the
+/// preference while the drawing follows this.
+final class OverlayScrollView: NSScrollView {
+    override var scrollerStyle: NSScroller.Style {
+        get { .overlay }
+        set { _ = newValue }
+    }
 }

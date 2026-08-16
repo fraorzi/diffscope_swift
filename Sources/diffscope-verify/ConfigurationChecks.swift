@@ -560,8 +560,11 @@ func runSearchChecks(_ reportRaw: (String, Bool, String) -> Void) {
     let shell = (try? String(contentsOf: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
                                  .appendingPathComponent("Sources/diffscope-app/main.swift"),
                              encoding: .utf8)) ?? ""
+    // `SearchField` since DEC-088 — an `NSSearchField` subclass whose only job is to install a cell
+    // that lays the text out beside the magnifier rather than under it. Still a field in the
+    // window, which is the whole of what this asserts.
     report("search is a field in the window rather than a modal",
-           shell.contains("searchField = NSSearchField()") && !shell.contains("prompt.messageText = \"Find"))
+           shell.contains("searchField = SearchField()") && !shell.contains("prompt.messageText = \"Find"))
     report("and the field says which scope it will answer for",
            shell.contains("searchField.placeholderString = \"Find in \\(scope.title)\""))
     report("an empty query is the way back to the file list, not an empty result",

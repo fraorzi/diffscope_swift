@@ -61,12 +61,14 @@ enum Theme {
     /// the edge of the webview leaves two thirds of the window looking like a different
     /// application.
     ///
-    /// `--ds-chrome`
-    static let chrome = dynamic(dark: hex(0x26262d), light: hex(0xd9d9e1))
-    /// `--ds-panel-repos`
-    static let panelRepositories = dynamic(dark: hex(0x1e1e25), light: hex(0xe6e6ed))
-    /// `--ds-panel-files`
-    static let panelFiles = dynamic(dark: hex(0x131317), light: hex(0xf2f2f6))
+    /// `--ds-chrome`, `--ds-panel-repos`, `--ds-panel-files` — **one value** (DEC-088, reversing
+    /// DEC-080). The three names stay because the token table is the design's and a design may pull
+    /// them apart again; what they no longer do is put three neutrals a hundredth apart in one
+    /// window. The step that survives is the one that was always the point — the code against the
+    /// chrome around it — and the seams do the rest.
+    static let chrome = dynamic(dark: hex(0x131317), light: hex(0xf2f2f6))
+    static let panelRepositories = chrome
+    static let panelFiles = chrome
     /// `--ds-empty-bg`
     static let emptyStateSurface = dynamic(dark: hex(0x0a0a0c), light: hex(0xeeeef2))
     /// `--ds-row-selected` and `--ds-row-ring`. Two halves of one signal: the ring is the shape
@@ -159,11 +161,13 @@ enum Theme {
     /// lesson DEC-076 paid for with the tertiary ink.
     static func kind(_ kind: ChangeKind) -> NSColor {
         switch kind {
-        case .added: return dynamic(dark: hex(0x5cd67d), light: hex(0x16602a))
+        // `untracked` rides with `added` (DEC-088): it wears the same `+`, and a `+` in the added
+        // hue beside one in the ordinary ink would have been two marks for one fact.
+        case .added, .untracked: return dynamic(dark: hex(0x5cd67d), light: hex(0x16602a))
         case .modified: return dynamic(dark: hex(0xe8bd45), light: hex(0x7a5300))
         case .deleted: return dynamic(dark: hex(0xff8b84), light: hex(0x9e1420))
         case .renamed: return dynamic(dark: hex(0x7fb8ff), light: hex(0x1a4f9c))
-        case .untracked, .typeChanged, .unmerged: return ink
+        case .typeChanged, .unmerged: return ink
         }
     }
 
@@ -196,6 +200,12 @@ enum Theme {
     /// started 18 pt below the two lists' and the window read as three things laid out apart — which
     /// they were. Sized to the control rather than to the word: still well under the 44 pt title
     /// bar, so it does not read as a second one.
+    ///
+    /// `--ds-pane-header-height`, and it is a token because the **third** header is a `<div>` in a
+    /// webview (DEC-088). Two of the three are `ChromeBar`s of this height; the third was
+    /// `space3 + text + space3` = 27, so the seam under the file's path sat five points above the
+    /// seam under `CHANGED FILES` — one line across the window, laid out twice. A check requires
+    /// the two numbers to agree.
     static let paneHeaderHeight: CGFloat = pillHeight + 2 * space2
 
     /// The segmented pills (the adopted design): a trough, one raised segment in it, and a dashed
@@ -244,6 +254,23 @@ enum Theme {
     static let chevronArmWidth: CGFloat = 3.5
     static let chevronArmHeight: CGFloat = 3.5
     static let chevronStroke: CGFloat = 1.5
+
+    /// The vertical room above and below the search field's line (DEC-088). The field was its
+    /// font's line height and nothing else — `intrinsicContentSize` reports 14 — so the caret sat
+    /// on the metal. Used twice: as the rim's vertical inset, so the control is taller, and inside
+    /// `SearchFieldCell` so the field editor gets the room rather than only the box around it.
+    static let searchTextPadding: CGFloat = 4
+
+    /// The lists' scrollbar (DEC-088). AppKit's overlay scroller is 15 pt wide with a 7 pt knob;
+    /// in a 320 pt pane of paths that is a stripe down the side of every row it overlays. The knob
+    /// is drawn here instead — narrower, inset from the edge, and with **no slot behind it**, so
+    /// nothing is drawn at all until the reader scrolls.
+    static let scrollerWidth: CGFloat = 9
+    static let scrollerKnobWidth: CGFloat = 4
+    static let scrollerKnobInset: CGFloat = 2
+    /// The knob, in both appearances. It is drawn over whichever list it belongs to and over the
+    /// code where a row runs under it, so it is an alpha rather than a value from the table.
+    static let scrollerKnob = dynamic(dark: .white, light: .black).withAlphaComponent(0.34)
 
     /// The width of the box the chevron is centred in (DEC-077).
     /// A control showing one of several with nothing to say so reads as a label.
