@@ -214,18 +214,40 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // **The owner asked for the real thing or nothing.** No blur, no vibrancy, no gradient
         // standing in for a material the system does not have — on any of the three surfaces the
         // chrome draws.
-        let appSources = ["PillControl.swift", "Theme.swift", "main.swift", "TerminalPane.swift",
-                          "ImageComparison.swift"]
+        // **The rule names the surface, not the class** (DEC-086 narrowing DEC-083). What this
+        // forbids is vibrancy standing in for `NSGlassEffectView` **on a control** — a drawn
+        // approximation of a material the system does not have, which is what the owner asked not
+        // to get. A *window band* is a different thing: `NSVisualEffectView` is the platform's API
+        // for one and has been since long before glass existed, and the system's blur cannot be an
+        // imitation of the system's blur.
+        //
+        // So the file that draws the controls may not reach for it, and the file that builds the
+        // window may — once, for the title band, and the check says which line.
+        let controlSources = ["PillControl.swift", "Theme.swift", "TerminalPane.swift",
+                              "ImageComparison.swift"]
         var imitations: [String] = []
-        for name in appSources {
+        for name in controlSources {
             let text = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/\(name)"),
                                     encoding: .utf8)) ?? ""
             for word in ["NSVisualEffectView", "CIGaussianBlur", "blendingMode"]
             where text.contains(word) { imitations.append("\(name): \(word)") }
         }
-        report("nothing imitates the material where the system has none",
+        report("no control reaches for vibrancy to stand in for a material",
                imitations.isEmpty, imitations.joined(separator: ", "))
-        report("negative control: an imitation would be caught",
+        // And the one permitted use is the one it was permitted for: a band, with the system's own
+        // material, behind a transparent titlebar.
+        let windowSource = (try? String(
+            contentsOf: root.appendingPathComponent("Sources/diffscope-app/main.swift"),
+            encoding: .utf8)) ?? ""
+        let bandUses = windowSource.ranges(of: "NSVisualEffectView\\(\\)").count
+        report("the window's title band is the system's material, and it is the only one",
+               bandUses == 1 && windowSource.contains("vibrancy.material = .headerView")
+                   && windowSource.contains("vibrancy.blendingMode = .behindWindow")
+                   && windowSource.contains("window.titlebarAppearsTransparent = true"),
+               "\(bandUses) vibrancy views in the shell")
+        report("and the window lets what is behind it through",
+               windowSource.contains("window.isOpaque = false"))
+        report("negative control: vibrancy on a control would be caught",
                "let v = NSVisualEffectView()".contains("NSVisualEffectView"))
         // And the control for the gate: a use that is not behind `#available` is what would crash
         // the fallback system rather than merely look wrong there.

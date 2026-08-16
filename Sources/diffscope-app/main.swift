@@ -114,6 +114,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var searchFieldHost: NSView!
     /// The title bar's row, held so its centre can be matched to the traffic lights (DEC-086).
     var titleRowStack: NSStackView!
+    /// The system material behind the title band (DEC-086).
+    var titleVibrancy: NSView!
     /// Which scope the next submission searches. ⇧⌘F sets it and the placeholder says so — the
     /// alternative is a field that answers a different question depending on how it was opened.
     var searchScope: SearchScope = .changedFiles
@@ -264,6 +266,11 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // nothing else; the row underneath them says which repository is open and where it is,
         // which is the first question a reader has and was previously only in a list row.
         window.titlebarAppearsTransparent = true
+        // DEC-086: the band blurs what is *behind the window*, so the window must let it through.
+        // Every other surface in the chrome paints its own opaque colour, so only this band and the
+        // titlebar above it are see-through.
+        window.isOpaque = false
+        window.backgroundColor = .clear
         window.titleVisibility = .hidden
         window.center()
 
@@ -3291,7 +3298,30 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                         bottom: 0, right: Theme.space6)
         titleRowStack = stack
 
-        let bar = ChromeBar(surface: Theme.chrome, edge: .bottom)
+        // DEC-086: **the desktop shows through this band.** `NSVisualEffectView` with the system's
+        // `.headerView` material and `.behindWindow` blending — the platform's API for a window
+        // band, in use long before glass existed.
+        //
+        // DEC-083 banned this class from the chrome under *nothing imitates the material where the
+        // system has none*. That rule was right where it was aimed — vibrancy standing in for
+        // `NSGlassEffectView` **on a control**, on a system that does not have it — and too wide as
+        // worded: a window band is not a control, and the system's blur is not an imitation of the
+        // system's blur. The check names the surface now rather than the class.
+        let vibrancy = NSVisualEffectView()
+        vibrancy.material = .headerView
+        vibrancy.blendingMode = .behindWindow
+        vibrancy.state = .followsWindowActiveState
+        vibrancy.translatesAutoresizingMaskIntoConstraints = false
+        titleVibrancy = vibrancy
+
+        let bar = ChromeBar(surface: nil, edge: .bottom)
+        bar.addSubview(vibrancy)
+        NSLayoutConstraint.activate([
+            vibrancy.topAnchor.constraint(equalTo: bar.topAnchor),
+            vibrancy.bottomAnchor.constraint(equalTo: bar.bottomAnchor),
+            vibrancy.leadingAnchor.constraint(equalTo: bar.leadingAnchor),
+            vibrancy.trailingAnchor.constraint(equalTo: bar.trailingAnchor),
+        ])
         bar.addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([

@@ -347,10 +347,12 @@ final class SelectedRowView: NSTableRowView {
 final class ChromeBar: NSView {
     enum Edge { case top, bottom }
 
-    private let surface: NSColor
+    private let surface: NSColor?
     private let edge: Edge
 
-    init(surface: NSColor, edge: Edge) {
+    /// DEC-086: **a bar can be see-through.** The title band is the system's own vibrancy now, so
+    /// the surface behind it must not be painted — `nil` means *draw the seam and nothing else*.
+    init(surface: NSColor?, edge: Edge) {
         self.surface = surface
         self.edge = edge
         super.init(frame: .zero)
@@ -360,8 +362,8 @@ final class ChromeBar: NSView {
     @available(*, unavailable) required init?(coder: NSCoder) { nil }
 
     override func draw(_ dirtyRect: NSRect) {
-        surface.setFill()
-        bounds.fill()
+        surface?.setFill()
+        if surface != nil { bounds.fill() }
         Theme.hairline.setStroke()
         let line = NSBezierPath()
         let y = edge == .top ? bounds.maxY - 0.5 : bounds.minY + 0.5

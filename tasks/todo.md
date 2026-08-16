@@ -2543,3 +2543,22 @@ for glass *on a control* — and too wide as written, because a window band is n
 system's blur is not an imitation of the system's blur. Recorded as unmet rather than half-built.
 
 1776 → 1779 checks.
+
+## Step 87 — `28-…` §7 item 5: the title band is the system's material (DEC-086)
+
+- [x] `NSVisualEffectView`, `.headerView`, `.behindWindow`, behind a transparent titlebar
+- [x] `window.isOpaque = false` so what is behind the window comes through
+- [x] `ChromeBar` accepts a `nil` surface — *draw the seam and nothing else*
+- [x] DEC-083's ban **narrowed rather than dropped**, and re-expressed as a rule about surfaces
+
+### Step 87 — my own check was the obstacle, and the wording was the fault
+
+*Nothing imitates the material where the system has none* banned `NSVisualEffectView` anywhere in
+the chrome. The rule is right where it was aimed — **vibrancy standing in for glass on a control**,
+on a system that does not have glass, which is the thing the owner asked not to get. It was too wide
+as written: a window band is not a control, and **the system's blur cannot be an imitation of the
+system's blur**.
+
+The check names the surface now. No control file may reach for it; the window file may, **once**,
+and the check asserts the count, the material, the blending mode and the transparent titlebar — so
+the exemption is a named line rather than an open door.
