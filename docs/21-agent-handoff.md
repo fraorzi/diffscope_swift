@@ -8,6 +8,14 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
+**2026-08-16 — version one is finished as a direction: the next thing this application does is write. [DEC-092](04-decision-log.md), and the whole shape of it is [29-git-operations-plan.md](29-git-operations-plan.md).** The owner compared the product against lazygit's ten features and asked for all of them, plus staging, unstaging and committing as a GUI, with **GitHub Desktop as the visual reference**. That reopens DEC-003 — which is the one decision `§6` below says must never be reopened quietly — so it was reopened loudly, with the inventory, the interface mapping, the proof machinery and the milestone order written before any code.
+
+**Read `29-…` §2.2 before designing any of it.** GitHub Desktop's good idea is that there is no visible index: a checkbox per file means *include in this commit*, and you click a line in the diff to take it out. Its bad idea is the same one — the index does not stop existing because a UI hides it, and WebStorm or our own drawer can write to it at any moment. **The owner chose the hybrid**: the checkbox is a real index write, and DEC-008's four scope pills stay on screen so the index remains visible. Three more answers came with it — the network is in scope but last and never automatic, conflicts are handed to the editor, and a per-repository read-only lock was offered and declined.
+
+**R-8 does not die, it splits, and the half that is new is the interesting one.** `allProvenReadOnly` keeps its byte-identical proof; a second registry holds the writes; and **R-8b asserts that a staging operation moved the index by exactly the selected byte ranges and nothing else** — `INV-6`. That check is only possible because version one built the partition and proved it, which is precisely the sequencing DEC-003 wrote down in July. **Nothing is built yet.** M11 is the write foundation plus unstage, stage-file and discard; M12 is hunk and line staging with the commit box, and M12 is where the product arrives.
+
+---
+
 **2026-08-16 — every icon in the chrome is a path now. 1828 → 1832 checks.** [DEC-091](04-decision-log.md). DEC-085 item 6 had already written the mechanism down — a mark set in a font carries that font's stroke weight, its optical centre and its side bearings, none of which belongs to the control — and then drew **one** chevron and stopped. Three characters were left: `«` and `»` on the collapse buttons (**guillemets**, quotation marks used as arrows), the `+` in the rimmed disc (the proportional face at 12 pt semibold), and DEC-090's own `>_`, which was drawn from a **square** — `chevronArmWidth` for the span *and* the drop, which is the shape of the `>` character.
 
 **The checkable part is the proportion: a chevron's arms are about twice as long as they are far apart.** 4 × 8. The negative control is the square it replaced, and it earns its place — a check on the width alone, or the height alone, would have passed the shape being removed.
@@ -425,7 +433,7 @@ Comparison is on **bytes**. **Normalisation is never applied anywhere**, includi
 Each has a recorded rationale. Reopen explicitly against its revisit trigger, or not at all.
 
 1. **Normalisation** — never, anywhere. Not reopenable; disqualified by measurement.
-2. **Read-only for the application itself** — no writes, no fetch, no exceptions, `--no-optional-locks` everywhere. Amended once, deliberately: DEC-053 admits a terminal the *user* drives. The application still writes nothing on its own, and the one command it composes is `cd` under DEC-056's guard. Do not let these two collapse into each other in any document.
+2. **Read-only for the application itself** — no writes, no fetch, no exceptions, `--no-optional-locks` everywhere. Amended twice, deliberately, and both amendments are in force: DEC-053 admits a terminal the *user* drives, and **[DEC-092](04-decision-log.md) makes version two write** — staging, committing and the rest, on explicit action, never automatically. Until M11 ships, the sentence above is still true of everything the application does on its own; after it, the true sentence is *it writes only what you asked for, and it shows you the command it ran*. Do not let the application's own operations and the user's typed ones collapse into each other in any document, and do not let a version-two feature be built before its decision entry.
 3. **Byte partition as primitive** — the invariants depend on it structurally.
 4. **Matcher output as mapping, not script.**
 5. **Formatting-only is a label, never a filter.**

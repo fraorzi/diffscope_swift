@@ -19,7 +19,7 @@ Questions are grouped by area. Identifiers are stable; resolved questions are st
 | **OQ-032** caching | Specified in `16-…` §6, never decided. What blocks it is that nothing has been slow enough to need it |
 | **OQ-041** tree versus flat list | DEC-033's grouping is a middle position, not an answer. Left open on purpose |
 | **OQ-034** distribution · **OQ-035** sandboxing | Shipping questions. A tester build is not a distribution |
-| **OQ-056** Git write operations | Version two, and it reopens DEC-003 explicitly or not at all |
+| ~~**OQ-056** Git write operations~~ | **Answered 2026-08-16 by [DEC-092](04-decision-log.md)** — reopened explicitly, as this entry required. Version two writes; the plan is [29-git-operations-plan.md](29-git-operations-plan.md) and its sequencing is this entry's own |
 | **OQ-001** the product name | Packaging has already adopted the placeholder |
 | **OQ-015** worktrees and submodules | Deferred; neither exists in the population |
 

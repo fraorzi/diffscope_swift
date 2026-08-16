@@ -3926,3 +3926,56 @@ Not everything shaped like a glyph is an icon.
 
 - `Theme.drawChevronArm`, `drawDoubleChevron` and `drawPlus` join `drawChevron` and `drawPrompt`; `promptChevronWidth`, `promptChevronHeight`, `doubleChevronScale` and `plusArmLength` are the proportions.
 - `RimButton` no longer draws a title at all, so the font and tint it was given are gone with it.
+
+---
+
+## DEC-092 — Version two: the application writes
+
+- **Date:** 2026-08-16
+- **Topic:** Whether DiffScope acquires Git write operations as product features. **Reopens [DEC-003](#dec-003--write-operations-in-version-one) explicitly, per the rule in `21-agent-handoff.md` §6, and resolves OQ-056.** Amends DEC-011 and fires DEC-061's revisit trigger.
+- **Status:** Accepted — direction and shape. Each milestone still gets its own entry before its code.
+
+### Context
+
+The product owner compared the application against lazygit's feature list and asked for **all of it**, plus staging, unstaging and committing as a GUI — "proste zarządzanie co stageować co usunąć ze stage jaki commit czy wiadomość czy pusty" — with **GitHub Desktop named as the visual reference**.
+
+DEC-003 made version one strictly read-only and said why: a defect could not damage a repository while the diff engine was unproven. It also wrote the sequencing for exactly this moment — *"Staging is positioned as a natural version-two capability. It requires a correct and trusted hunk model, which is precisely what version one establishes."* That model exists now: the byte partition, INV-1 reconstruction, INV-2 containment, the independent canonical diff, and 1832 checks over them.
+
+The full study — GitHub Desktop's anatomy, what it hides and what that costs, the operation inventory with plumbing and risk classes, the interface mapping, the proof machinery and the milestone order — is [29-git-operations-plan.md](29-git-operations-plan.md). This entry records only what was decided.
+
+### Options considered
+
+1. **Leave it.** The terminal drawer already runs `git commit`; the sideways grant is real (DEC-053).
+2. **Staging and commit only.** The GitHub Desktop half, no history rewriting, no network.
+3. **The union of both products.** GitHub Desktop's staging surface and lazygit's power, sequenced.
+
+### Product owner's input
+
+Option 3, and four sub-decisions answered the same day:
+
+- **Staging model: the hybrid.** A checkbox per file that means *include in this commit*, implemented as a **real index write**, with the four scope pills (DEC-008) staying on screen so the index is visible rather than hidden. GitHub Desktop hides the index; anything else on the machine can write to it, and a hidden index then misreports a state it did not author.
+- **Network last.** Fetch, pull and push are in scope, at M16, never automatic.
+- **Conflicts are handed to the editor**, as GitHub Desktop does: list them, take ours/theirs, abort, block the merge — do not build a three-way merge surface yet.
+- **No read-only mode.** A per-repository *review only* lock was offered and declined; the application writes where the user tells it to, and there is one fewer concept in the interface.
+
+### Final decision
+
+**Version two writes.** DEC-003 governs version one and stays as written; from M11 the application performs Git operations that modify repository state, on explicit user action, and never on any automatic path.
+
+**R-8 splits rather than weakens.** `allProvenReadOnly` keeps its proof unchanged and keeps `--no-optional-locks`. A second registry holds every write, each declaring a risk class, through a separate runner that can never open an editor and can never block on a prompt. A Git invocation from neither registry still fails the suite.
+
+**R-8b is the new proof, and it is the one this product can make that no other client can: it wrote exactly what it showed.** A staging operation builds its patch from the partition, and the check asserts the index moved by **exactly the selected byte ranges and nothing else**. Stated over bytes as **INV-6**.
+
+### Consequences
+
+- **DEC-011 is amended at M16**, not before: never *automatically* fetches survives; user-initiated fetch, pull and push become available. Force push is `--force-with-lease` behind a typed branch name.
+- **DEC-061's revisit trigger fires at M14.** A graph and a filter in History make it the second interface DEC-008 refused; it needs its own entry, not a commit.
+- **⌘⏎ is claimed twice.** DEC-065 gives it to *open in editor*; the commit box takes it while it has focus, which is GitHub Desktop's own rule.
+- **Index-lock contention with WebStorm stops being avoidable** and becomes a reported state rather than an error string. The pinned pair (DEC-049) is now mutated from inside as well as outside.
+- **The true sentence about writing changes again.** The retired-phrase check in `DesignChecks` — written when DEC-053 falsified eleven documents — must hold the new one: *it writes only what you asked for, and it shows you the command it ran*, with a command record in the interface backing the second half.
+- **Every class-B and class-C operation records a restore point before it runs.** That is lazygit's ⌃Z with a mechanism under it; `reflog` is the backstop and is surfaced as the safety net.
+- Discarded untracked files go to the **Trash**, never `rm`.
+
+### Revisit trigger
+
+Reopen if M11 or M12 cannot make R-8b hold on the fixture corpus — a staging surface that cannot prove which bytes it wrote is worse than no staging surface, and the terminal drawer remains the honest fallback.

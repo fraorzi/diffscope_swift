@@ -1,10 +1,10 @@
 # 29 — Git operations plan (version two)
 
-**Status:** Proposal, 2026-08-16. **Nothing here is decided.** This document exists so that the
-decision it asks for — reopening [DEC-003](04-decision-log.md) — is taken with the whole shape of
-the work visible, rather than one feature at a time. It answers [OQ-056](05-open-questions.md),
-which has been open since 2026-07-31 and which says this must be reopened *explicitly or not at
-all*.
+**Status:** **Accepted the day it was written — [DEC-092](04-decision-log.md).** Authoritative for
+what version two is. It exists so that reopening [DEC-003](04-decision-log.md) was done with the
+whole shape of the work visible rather than one feature at a time, and it answers
+[OQ-056](05-open-questions.md), open since 2026-07-31, which required exactly that: reopened
+*explicitly or not at all*. Each milestone in §6 still gets its own decision entry before its code.
 
 Requested by the product owner, 2026-08-16: **the whole of lazygit's feature list, plus staging,
 unstaging and committing as a GUI, with GitHub Desktop as the visual reference.**
@@ -284,21 +284,21 @@ drawer; staging a line by hand is not.
 
 ---
 
-## 7. What only the owner can answer
+## 7. The five questions, answered
 
-- **OQ-A — the staging model.** Hybrid (recommended, §4): checkboxes *and* the visible index.
-  Alternative: GitHub Desktop's model exactly, index hidden, scopes reduced to two.
-- **OQ-B — is the network in scope at all?** Fetch, pull and push reverse DEC-011. Recommendation:
-  yes, but last (M16), and never automatic — DEC-011's actual reasoning was staleness and silence,
-  both of which survive a user-initiated button.
-- **OQ-C — rewriting pushed history.** Force-push-with-lease behind a typed confirmation, or refuse
-  history rewriting on any branch with an upstream? Recommendation: allow, with the lease and the
-  typed branch name.
-- **OQ-D — conflicts.** Hand off to the editor as GitHub Desktop does (cheap, honest, M13), or
-  build a three-way merge surface (a milestone of its own)? Recommendation: hand off first.
-- **OQ-E — does read-only survive as a mode?** A per-repository *review only* lock would keep
-  DEC-003's guarantee available for repositories the owner does not want touched. Cheap to build
-  now, impossible to retrofit credibly later.
+Asked and answered by the product owner on the day this was written. All five are in
+[DEC-092](04-decision-log.md).
+
+- **OQ-A — the staging model. → The hybrid.** The checkbox means *include in this commit* and is a
+  **real index write**; the four scope pills stay, so the index is visible rather than hidden.
+- **OQ-B — the network. → In scope, last (M16), never automatic.** Force push is
+  `--force-with-lease` behind a typed branch name.
+- **OQ-C — rewriting pushed history. → Allowed**, under OQ-B's lease and confirmation.
+- **OQ-D — conflicts. → Handed to the editor**, as GitHub Desktop does. List, take ours/theirs,
+  abort, block the merge; no three-way merge surface in this plan.
+- **OQ-E — does read-only survive as a mode? → No.** A per-repository *review only* lock was
+  offered and declined: the application writes where it is told to, and the interface carries one
+  concept fewer.
 
 ---
 
