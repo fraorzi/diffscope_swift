@@ -3887,3 +3887,42 @@ The arm now renders the button in **both** states and requires the two pictures 
 
 - `Theme.space1` joins the mirrored spacing scale; `Theme.drawPrompt` and `Theme.promptRuleWidth` are the mark.
 - Every snapshot in the suite is now taken after a commit, so the whole gallery is a turn newer than it was.
+
+---
+
+## DEC-091 — Every icon in the chrome is a path, and a chevron is taller than it is wide
+
+- **Date:** 2026-08-16 · **Topic:** the marks on the chrome's controls · **Status:** Accepted · **Extends DEC-085 item 6 to the rest of them**
+- **Prompted by:** the owner on DEC-090's button — *"nie używaj `>` w tej ikonce, użyj poprawnego chevron bo to jest za szerokie… widać że nie jest profesjonalna ikonka"*
+
+### Context
+
+DEC-085 item 6 already recorded the mechanism, on one control: `Sources ⌄` typed the chevron into its own title, and `⌄` is a **modifier letter** — it carries its own side bearings and its own baseline, so it read as a `>` and sat wherever the font put it. That entry drew *that* chevron and stopped there.
+
+Three character marks were left, and each is the same defect:
+
+- **`«` and `»` on the collapse buttons.** These are **guillemets** — quotation marks in French and Polish typography — used as arrows, set in the text face at the text weight with the spacing a quotation mark needs. They never matched the chevron on the switches beside them because they are not one.
+- **`+` inside the rimmed disc.** Set in the *proportional* face at 12 pt semibold, so it wore that font's stroke weight and optical centre inside a disc this project draws itself.
+- **`>_` on DEC-090's own button**, which was drawn — and drawn wrong. It used `chevronArmWidth` for the span *and* the drop, so the mark was **7 × 7**: a square, which is the shape of the `>` character and not the shape of a chevron.
+
+### Decision
+
+**A control's picture is a path; its title is only its name.** `MarkButton` draws a closure over its bounds and `RimButton` draws one over its disc. Titles stay — VoiceOver reads them, the arms name controls by them, and the collapse mark reads its own title back to decide which way to point.
+
+**A chevron's arms are about twice as long as they are far apart**: `promptChevronWidth` 4, `promptChevronHeight` 8. That ratio is the whole difference between a chevron and a `>`, and it is checked, with the square one as the control — a check on *either* number alone would have passed the shape being replaced.
+
+One construction, `drawChevronArm`, so the single chevron on `>_` and the pair on the collapse buttons cannot drift apart the way a string in one place and a path in another always do.
+
+### What stays a character, and why
+
+Not everything shaped like a glyph is an icon.
+
+- **The file-kind marks `+ − → ✎ ⇄ !` and the unified sign column.** DEC-035 requires a *character* that carries the kind with every colour removed, and these are **content** in a list of paths, set in the same monospaced face the paths are. Drawing them would make them chrome.
+- **`▍` in the collapsed spine** — a bar chart, a data mark, in the same cell as the kind it belongs to.
+- **`···` in a truncated group header** — an ellipsis. Typography, not an icon.
+- **`●` / `○` in the watcher sentence.** A bullet **inside a sentence** composed in `ChromeLabels` — `● Watching · refreshed just now` reads as prose with a leading marker, and filled-against-hollow is the shape carrier DEC-035 asks of it. Reopen if the owner reads it as an indicator rather than as punctuation.
+
+### Consequences
+
+- `Theme.drawChevronArm`, `drawDoubleChevron` and `drawPlus` join `drawChevron` and `drawPrompt`; `promptChevronWidth`, `promptChevronHeight`, `doubleChevronScale` and `plusArmLength` are the proportions.
+- `RimButton` no longer draws a title at all, so the font and tint it was given are gone with it.

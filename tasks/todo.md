@@ -2722,6 +2722,36 @@ The arm renders the button in **both** states now and requires the two pictures 
 assertion about state could have caught this; that one can.
 
 
+## Step 91 — every icon in the chrome becomes a path (DEC-091)
+
+- [x] `MarkButton` — the picture is a closure, the title is only the name
+- [x] `RimButton.mark` — the `+` is two strokes, not a proportional font's plus sign
+- [x] `«` `»` → `Theme.drawDoubleChevron`; they were **guillemets** used as arrows
+- [x] `>_`'s chevron re-proportioned 4 × 8 — it was 7 × 7, which is the shape of a `>`
+- [x] one construction (`drawChevronArm`) for every chevron in the window
+- [x] 1828 -> **1832 checks**
+
+### Step 91 — DEC-085 drew one chevron and left three characters behind
+
+The mechanism was already written down: a mark set in a font carries that font's stroke weight, its
+optical centre and its side bearings, and none of the three belongs to the control. What DEC-085
+did not do was **sweep for the rest**, so `«`, `»` and `+` sat beside a drawn chevron for six days,
+and DEC-090's own `>_` was drawn from a square.
+
+The proportion is the checkable part: **a chevron's arms are about twice as long as they are far
+apart**. The control is the square this replaced — and it is a control worth having, because a check
+on the width alone, or on the height alone, would have passed the shape being removed.
+
+### Step 91 — what stays a character
+
+Not everything shaped like a glyph is an icon, and the sweep had to stop somewhere defensible. The
+file-kind marks and the sign column are **content** — DEC-035 asks for a character that survives
+greyscale, and they are set in the same face as the paths beside them. `▍` is a bar chart. `···` is
+an ellipsis. `●` / `○` is a bullet **inside a sentence** `ChromeLabels` composes, where filled
+against hollow is the shape carrier. Each is named in DEC-091 with its reason, so the next sweep
+does not have to re-derive them.
+
+
 ### Still open
 
 - [ ] minimum-run absorption of unchanged gaps shorter than a token (phantom retention). `alpha` →

@@ -3628,8 +3628,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // DEC-084: the design draws this as a rimmed disc rather than as a character.
         let button = RimButton(title: "+", target: self, action: #selector(showAddSourceMenu(_:)))
         button.isBordered = false
-        button.font = Theme.font(Theme.textSize, weight: .semibold)
-        button.contentTintColor = Theme.inkQuiet
+        // DEC-091: two strokes, not a character. The title stays — it is what VoiceOver reads and
+        // what the arms name this control by — and it stops being the picture.
+        button.mark = { Theme.drawPlus(in: $0) }
         button.translatesAutoresizingMaskIntoConstraints = false
         button.setButtonType(.momentaryChange)
         button.toolTip = KeyboardMap.bindings(in: .sources)
@@ -3663,10 +3664,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// says what it will do rather than what state it is in — which is the one thing a reader cannot
     /// work out from a collapsed rail.
     private func buildCollapseButton(action: Selector, collapsed: Bool) -> NSButton {
-        let button = HandButton(title: collapsed ? "»" : "«", target: self, action: action)
+        // DEC-091: it was `«` and `»` — *guillemets*, which are quotation marks being used as
+        // arrows. Set in the text font at the text weight with a quotation mark's spacing, they
+        // never matched the chevron on the switches beside them. Two drawn chevrons now, from the
+        // one construction every chevron in the chrome comes out of.
+        let button = MarkButton(title: collapsed ? "»" : "«", target: self, action: action)
         button.isBordered = false
-        button.font = Theme.font(Theme.textSizeSmall, weight: .semibold)
-        button.contentTintColor = Theme.inkFaint
+        button.mark = { [weak button] box in
+            Theme.drawDoubleChevron(in: box, pointing: button?.title == "»")
+        }
         button.setButtonType(.momentaryChange)
         // The chevron at 11 pt was the smallest target in the window, and **collapsed it is the
         // only one in a 44 pt rail** — the state in which a reader most needs it.
@@ -3687,8 +3693,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     }
 
     private func updateCollapseButtons() {
+        // The title is still the state — VoiceOver reads it, the arms name the control by it, and
+        // the mark reads it back to decide which way to point (DEC-091).
         repoCollapseButton?.title = reposCollapsed ? "»" : "«"
         fileCollapseButton?.title = filesCollapsed ? "»" : "«"
+        repoCollapseButton?.needsDisplay = true
+        fileCollapseButton?.needsDisplay = true
         repoCollapseButton?.toolTip = reposCollapsed ? "Show the repository list" : "Fold the repository list"
         fileCollapseButton?.toolTip = filesCollapsed ? "Show the file list" : "Fold the file list"
     }

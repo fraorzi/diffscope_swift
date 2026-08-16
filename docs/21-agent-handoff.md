@@ -8,6 +8,14 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
+**2026-08-16 — every icon in the chrome is a path now. 1828 → 1832 checks.** [DEC-091](04-decision-log.md). DEC-085 item 6 had already written the mechanism down — a mark set in a font carries that font's stroke weight, its optical centre and its side bearings, none of which belongs to the control — and then drew **one** chevron and stopped. Three characters were left: `«` and `»` on the collapse buttons (**guillemets**, quotation marks used as arrows), the `+` in the rimmed disc (the proportional face at 12 pt semibold), and DEC-090's own `>_`, which was drawn from a **square** — `chevronArmWidth` for the span *and* the drop, which is the shape of the `>` character.
+
+**The checkable part is the proportion: a chevron's arms are about twice as long as they are far apart.** 4 × 8. The negative control is the square it replaced, and it earns its place — a check on the width alone, or the height alone, would have passed the shape being removed.
+
+**What stays a character is named with its reason**, so the next sweep does not re-derive it: the file-kind marks and the sign column are *content* (DEC-035 asks for a character that survives greyscale, set in the same face as the paths); `▍` is a bar chart; `···` is an ellipsis; `●`/`○` is a bullet inside a sentence `ChromeLabels` composes, where filled-against-hollow is the shape carrier.
+
+---
+
 **2026-08-16 — the terminal drawer has a button, and every snapshot in the suite is a turn newer than it was. 1823 → 1828 checks, 53 → 54 arms.** [DEC-090](04-decision-log.md). The drawer was the only region of the window with no pointer route — the lists have chevrons, the diff has the lens — so it existed only for a reader who already knew ⌃`. `>_` sits in the status line, at the edge the drawer comes out of, drawn rather than typed (DEC-085 item 6's lesson), raised while the drawer is open.
 
 **The finding is not the button.** `keyboard.png` showed that button **raised with the drawer shut**: the state was right, the arm that asked said `closed=true`, the invalidation was right, and the pixel was several turns old. `CGWindowListCreateImage` asks the *window server* what it has, and what it has is whatever was last **committed** — nothing in this project had ever forced that commit before photographing. `windowSnapshot` draws, displays and calls `CATransaction.flush()` now. Fourth instance of the class, after CodeMirror's occluded re-measure: **a picture of a pass that has not run is a picture of something that was never on screen**, and it is invisible to every assertion about state.

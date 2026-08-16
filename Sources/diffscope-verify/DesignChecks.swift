@@ -137,6 +137,8 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
                                 encoding: .utf8)) ?? ""
         let shell = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/main.swift"),
                                  encoding: .utf8)) ?? ""
+        let theme = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/Theme.swift"),
+                                 encoding: .utf8)) ?? ""
 
         // Every selector with a click handler behind it. Hand-maintained and named, the way the
         // contrast pair list is: a cross product would be a check about CSS, and this is a check
@@ -209,6 +211,41 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
                pill.contains("if isOn {") && pill.contains("Theme.controlThumb.setFill()"))
         report("negative control: a `>_` typed into the title would be caught",
                "TerminalButton(title: \">_\", …)".contains("TerminalButton(title: \">_\""))
+
+        // DEC-091: **no control in the chrome draws its picture from a character.** The owner's
+        // words were *widać że nie jest profesjonalna ikonka*, and the reason is mechanical: a mark
+        // set in a font carries that font's stroke weight, its optical centre and its side
+        // bearings, and none of the three belongs to the control. `«` and `»` are the clearest
+        // case — they are **guillemets**, quotation marks in French and Polish typography, and they
+        // were being used as arrows beside a chevron this project draws itself.
+        //
+        // The titles stay. They are what VoiceOver reads and what the arms name a control by; what
+        // they stop being is the picture.
+        report("every control's mark is a path, and the title is only its name (DEC-091)",
+               pill.contains("class MarkButton: HandButton")
+                   && pill.contains("override func draw(_ dirtyRect: NSRect) { mark?(bounds) }")
+                   && pill.contains("mark?(disc)"))
+        report("and the three that were characters are drawn from one construction",
+               shell.contains("Theme.drawPlus(in: $0)")
+                   && shell.contains("Theme.drawDoubleChevron(in: box")
+                   && pill.contains("Theme.drawPrompt(in: bounds")
+                   && theme.contains("static func drawChevronArm"))
+        // **A chevron is taller than it is wide.** The first `>_` used one arm length for the span
+        // *and* the drop, so it was square — which is the shape of the `>` character and exactly
+        // what was reported as too wide.
+        let chevronWidth = number("static let promptChevronWidth: CGFloat = [0-9.]+", in: theme)
+        let chevronHeight = number("static let promptChevronHeight: CGFloat = [0-9.]+", in: theme)
+        let proportioned = zip([chevronWidth], [chevronHeight])
+            .allSatisfy { width, height in
+                guard let width, let height else { return false }
+                return height >= width * 1.5
+            }
+        report("a chevron is taller than it is wide, which is what makes it one (DEC-091)",
+               chevronWidth != nil && chevronHeight != nil && proportioned,
+               "\(chevronWidth.map { "\($0)" } ?? "—") × \(chevronHeight.map { "\($0)" } ?? "—")")
+        // The control is the shape this replaced, as literals: `chevronArmWidth` was used for both,
+        // so the mark spanned 7 × 7 and a check on *either* number alone would have passed it.
+        report("negative control: the square one this replaced is caught", !(7.0 >= 7.0 * 1.5))
     }
 
     print("\n=== the switches are made of glass, or of nothing pretending to be (DEC-077) ===")
@@ -740,10 +777,6 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
                                   encoding: .utf8)) ?? ""
         let page = (try? String(contentsOf: root.appendingPathComponent("Renderer/src/index.html"),
                                 encoding: .utf8)) ?? ""
-        func number(_ pattern: String, in text: String) -> Double? {
-            guard let range = text.range(of: pattern, options: .regularExpression) else { return nil }
-            return String(text[range]).ranges(of: "[0-9.]+").last.flatMap(Double.init)
-        }
         let declared = number("--ds-pane-header-height:\\s*[0-9.]+px", in: tokens)
         let pill = number("static let pillHeight: CGFloat = [0-9.]+", in: theme)
         let space = number("static let space2: CGFloat = [0-9.]+", in: theme)
@@ -769,6 +802,14 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("and the comparison is still stated, in the chrome",
                main.contains("pushComparison(comparisonLabel.stringValue)"))
     }
+}
+
+/// The last number in the first match of a pattern. Used to compare a value declared in `Theme.swift`
+/// against one declared in `tokens.css` — a check on a token's *name* is what let two sides of one
+/// boundary hold different values in the first place.
+private func number(_ pattern: String, in text: String) -> Double? {
+    guard let range = text.range(of: pattern, options: .regularExpression) else { return nil }
+    return String(text[range]).ranges(of: "[0-9.]+").last.flatMap(Double.init)
 }
 
 private extension String {

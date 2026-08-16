@@ -579,17 +579,15 @@ final class RimButton: HandButton {
         Theme.rimGradient?.draw(in: disc, angle: 90)
         NSGraphicsContext.restoreGraphicsState()
 
-        // The glyph last, and drawn rather than left to `NSButton`: the title would be laid out
-        // against the whole frame, and this control's subject is the disc inside it.
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: Theme.prose(Theme.textSize, weight: .semibold),
-            .foregroundColor: Theme.ink,
-        ]
-        let glyph = title as NSString
-        let size = glyph.size(withAttributes: attributes)
-        glyph.draw(at: NSPoint(x: disc.midX - size.width / 2, y: disc.midY - size.height / 2),
-                   withAttributes: attributes)
+        // The mark last, and a **path** since DEC-091: the `+` was set in the proportional face at
+        // 12 pt semibold, so it wore that font's stroke weight and optical centre inside a disc
+        // this project draws itself. The title stays for VoiceOver and for the arms.
+        mark?(disc)
     }
+
+    /// Given the **disc**, not the button's bounds: this control's subject is the circle inside it,
+    /// which is why the title was never laid out against the frame either.
+    var mark: ((NSRect) -> Void)? { didSet { needsDisplay = true } }
 
     /// What the disc is made of, for the arm: a picture of a gradient cannot say whether its two
     /// ends differ, and two ends that do not differ are a flat ring with extra steps.
@@ -842,6 +840,21 @@ final class ChevronButton: HandButton {
         Theme.drawChevron(in: NSRect(x: bounds.maxX - Theme.pillChevronWidth, y: 0,
                                      width: Theme.pillChevronWidth, height: bounds.height))
     }
+
+    override var isFlipped: Bool { false }
+}
+
+/// A borderless button whose glyph is a **path** rather than a character (DEC-091).
+///
+/// The title stays: it is what VoiceOver reads and what the arms name the control by. What it stops
+/// being is the picture — a mark set in a font carries that font's stroke weight, its optical
+/// centre and its side bearings, and none of those is the control's. Every character glyph left in
+/// the chrome went the same way `⌄` went in DEC-085 item 6.
+class MarkButton: HandButton {
+    /// Given the button's bounds; draws whatever the control's mark is.
+    var mark: ((NSRect) -> Void)? { didSet { needsDisplay = true } }
+
+    override func draw(_ dirtyRect: NSRect) { mark?(bounds) }
 
     override var isFlipped: Bool { false }
 }

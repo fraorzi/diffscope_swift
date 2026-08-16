@@ -263,42 +263,93 @@ enum Theme {
     static let chevronArmHeight: CGFloat = 3.5
     static let chevronStroke: CGFloat = 1.5
 
+    /// **A chevron is taller than it is wide** (DEC-091). One right-pointing chevron, on the axis
+    /// its `pointing` says, drawn from the proportions below rather than from a font.
+    ///
+    /// The first `>_` used `chevronArmWidth` for both the span and the drop, so it was 7 × 7 — a
+    /// square, which is the shape of the `>` character and not the shape of a chevron. The owner
+    /// read it as exactly that: *too wide*. A chevron's arms are about twice as long as they are
+    /// far apart, which is what makes it read as a direction rather than as punctuation.
+    static func drawChevronArm(at point: NSPoint, pointing right: Bool, scale: CGFloat = 1) {
+        let path = NSBezierPath()
+        let width = promptChevronWidth * scale
+        let height = promptChevronHeight * scale
+        let tip = right ? point.x + width / 2 : point.x - width / 2
+        let back = right ? point.x - width / 2 : point.x + width / 2
+        path.move(to: NSPoint(x: back, y: point.y + height / 2))
+        path.line(to: NSPoint(x: tip, y: point.y))
+        path.line(to: NSPoint(x: back, y: point.y - height / 2))
+        path.lineWidth = chevronStroke
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        path.stroke()
+    }
+
     /// **`>_`, drawn** (DEC-090) — the terminal's own mark, on the button that opens the drawer.
     ///
-    /// Two strokes and a rule, for the reason DEC-085 item 6 recorded about the switches' chevron:
-    /// a glyph typed as a character carries its own side bearings and its own baseline, so it sits
-    /// wherever the font puts it and drifts the moment the font changes. This is the same
-    /// construction `drawChevron` uses, turned a quarter turn, with the prompt's underscore beside
-    /// it — one function, so the button and anything that draws this mark later cannot end up with
-    /// two different prompts.
+    /// A chevron and a rule, for the reason DEC-085 item 6 recorded about the switches' chevron: a
+    /// glyph typed as a character carries its own side bearings and its own baseline, so it sits
+    /// wherever the font puts it and drifts the moment the font changes.
     static func drawPrompt(in box: NSRect, colour: NSColor? = nil) {
         (colour ?? inkQuiet).setStroke()
-        let arm = chevronArmWidth
-        // The pair sits as a unit: the chevron's point and the rule's end share a right edge, and
-        // the whole is centred in the box rather than each half being centred separately.
-        let width = arm * 2 + space1 + promptRuleWidth
+        // The pair sits as a unit: the whole is centred in the box rather than each half being
+        // centred separately.
+        let width = promptChevronWidth + space2 + promptRuleWidth
         let left = box.midX - width / 2
-        let baseline = box.midY - arm - chevronStroke
-
-        let chevron = NSBezierPath()
-        chevron.move(to: NSPoint(x: left, y: box.midY + arm))
-        chevron.line(to: NSPoint(x: left + arm * 2, y: box.midY))
-        chevron.line(to: NSPoint(x: left, y: box.midY - arm))
-        chevron.lineWidth = chevronStroke
-        chevron.lineCapStyle = .round
-        chevron.lineJoinStyle = .round
-        chevron.stroke()
+        drawChevronArm(at: NSPoint(x: left + promptChevronWidth / 2, y: box.midY + space1 / 2),
+                       pointing: true)
 
         let rule = NSBezierPath()
-        rule.move(to: NSPoint(x: left + arm * 2 + space1, y: baseline))
+        let baseline = box.midY - promptChevronHeight / 2 + space1 / 2
+        rule.move(to: NSPoint(x: left + promptChevronWidth + space2, y: baseline))
         rule.line(to: NSPoint(x: left + width, y: baseline))
         rule.lineWidth = chevronStroke
         rule.lineCapStyle = .round
         rule.stroke()
     }
+
+    /// **The collapse control's mark** (DEC-091). Two chevrons, the direction the pane will move.
+    ///
+    /// It was `«` and `»` — *guillemets*, which are quotation marks in French and Polish typography
+    /// and were being used as arrows. They are set in the text font, at the text weight, with the
+    /// spacing a quotation mark needs, which is why they never matched the chevron beside them.
+    static func drawDoubleChevron(in box: NSRect, pointing right: Bool, colour: NSColor? = nil) {
+        (colour ?? inkFaint).setStroke()
+        let gap = promptChevronWidth * 0.7
+        for offset in [-gap / 2, gap / 2] {
+            drawChevronArm(at: NSPoint(x: box.midX + offset, y: box.midY), pointing: right,
+                           scale: doubleChevronScale)
+        }
+    }
+
+    /// **The `+` inside the rimmed disc** (DEC-091). Two strokes of the same weight every other mark
+    /// in the chrome is drawn at — the character was set in the *proportional* face at 12 pt
+    /// semibold, so it carried that font's stroke weight and its optical centre, neither of which
+    /// is the disc's.
+    static func drawPlus(in box: NSRect, colour: NSColor? = nil) {
+        (colour ?? ink).setStroke()
+        let arm = plusArmLength / 2
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: box.midX - arm, y: box.midY))
+        path.line(to: NSPoint(x: box.midX + arm, y: box.midY))
+        path.move(to: NSPoint(x: box.midX, y: box.midY - arm))
+        path.line(to: NSPoint(x: box.midX, y: box.midY + arm))
+        path.lineWidth = chevronStroke
+        path.lineCapStyle = .round
+        path.stroke()
+    }
+
+    /// The chevron's span and its drop, and the rule beside it in `>_`. Roughly 1:2, which is what
+    /// separates a chevron from a `>`.
+    static let promptChevronWidth: CGFloat = 4
+    static let promptChevronHeight: CGFloat = 8
     /// The underscore's length. Longer than the chevron is wide, because a prompt's cursor is a
-    /// character cell and the chevron is a punctuation mark.
-    static let promptRuleWidth: CGFloat = 8
+    /// character cell and the chevron is a punctuation-sized mark.
+    static let promptRuleWidth: CGFloat = 7
+    /// A collapse chevron is two of them side by side, so each is smaller than the single one on
+    /// the terminal's button — otherwise the pair is wider than the header it sits in.
+    static let doubleChevronScale: CGFloat = 0.75
+    static let plusArmLength: CGFloat = 9
 
     /// The vertical room above and below the search field's line (DEC-088). The field was its
     /// font's line height and nothing else — `intrinsicContentSize` reports 14 — so the caret sat
