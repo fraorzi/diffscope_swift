@@ -191,6 +191,21 @@ final class TerminalPane: NSObject, WKNavigationDelegate {
 
     var isForcedRaw: Bool { session?.isForcedRaw ?? false }
 
+    /// Puts text in the input line **without submitting it** (DEC-092's custom commands).
+    ///
+    /// Typed rather than run: the reader reads it, edits it, and presses Return — or does not. A
+    /// custom command that executed itself would be a second path into the repository, which is
+    /// the thing the closed registry exists to prevent.
+    /// **No trailing newline**, which is the whole of it: the bytes reach the shell's own line
+    /// editor, zsh echoes them where it echoes everything the reader types, and the command sits
+    /// there until somebody presses Return.
+    @discardableResult
+    func type(_ text: String) -> Bool {
+        guard let session else { return false }
+        session.send(text)
+        return true
+    }
+
     /// `command`/`arguments` exist for the selftest, which must run the same path on a stranger's
     /// machine where `$SHELL` and `~/.zshrc` are somebody else's. The application itself passes
     /// neither and gets the user's own shell.

@@ -723,6 +723,11 @@ final class ChipView: NSView {
 final class FilePane: NSView {
     var header: NSView?
     var list: NSView?
+    /// The commit box (DEC-092), pinned under the list the way GitHub Desktop pins it under its
+    /// Changes tab. Optional, because the pane exists before version two's controls are built and
+    /// because a collapsed pane has no room for it.
+    var footer: NSView?
+    var footerHeight: CGFloat = 0
 
     override func layout() {
         super.layout()
@@ -744,8 +749,10 @@ final class FilePane: NSView {
         guard let header, let list else { return }
         header.frame = NSRect(x: 0, y: bounds.height - Theme.paneHeaderHeight,
                               width: bounds.width, height: Theme.paneHeaderHeight)
-        list.frame = NSRect(x: 0, y: 0, width: bounds.width,
-                            height: max(0, bounds.height - Theme.paneHeaderHeight))
+        let footerSpace = footer?.isHidden == false ? footerHeight : 0
+        footer?.frame = NSRect(x: 0, y: 0, width: bounds.width, height: footerSpace)
+        list.frame = NSRect(x: 0, y: footerSpace, width: bounds.width,
+                            height: max(0, bounds.height - Theme.paneHeaderHeight - footerSpace))
     }
 }
 

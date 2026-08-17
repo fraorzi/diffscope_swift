@@ -288,13 +288,26 @@ func runGitChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // the system's temporary path — never into a repository the reader chose.
         let shell = (try? String(contentsOf: appDirectory.appendingPathComponent("main.swift"),
                                  encoding: .utf8)) ?? ""
-        let arm = shell.range(of: "(?s)private func emptyScopeSelftest\\(\\).*?\\n    \\}",
+        // DEC-092 gave the exemption a **runtime** guard as well as a name. Two arms now need a
+        // fixture repository — the empty-scope state and the staging arm — so the spawner moved
+        // into one function that refuses any directory outside `NSTemporaryDirectory()`. The old
+        // form of this check read the arm's own text, which is what a comment-shaped promise looks
+        // like; this reads the refusal.
+        let arm = shell.range(of: "(?s)private func fixtureGit\\(.*?\\n    \\}",
                               options: [.regularExpression])
             .map { String(shell[$0]) } ?? ""
+        report("and it refuses to run anywhere but under NSTemporaryDirectory()",
+               arm.contains("guard directory.path.hasPrefix(NSTemporaryDirectory())"), arm.isEmpty ? "not found" : "")
+        // `diffscope-clean-` was the old anchor: the empty-scope arm's own directory name, read
+        // out of the arm the spawner used to live in. With two arms sharing one spawner the
+        // directory is the caller's, so what is asserted here is the property that matters — the
+        // spawner takes a directory and every caller's is built under the temporary path.
+        let callers = shell.components(separatedBy: "fixtureGit(").dropFirst().count
         report("and it is the selftest's fixture, under NSTemporaryDirectory()",
                arm.contains("/usr/bin/git") && arm.contains("NSTemporaryDirectory()")
-                   && arm.contains("diffscope-clean-"),
-               arm.isEmpty ? "the arm was not found at all" : "\(arm.count) bytes")
+                   && callers >= 2
+                   && shell.contains("diffscope-clean-") && shell.contains("diffscope-staging-"),
+               arm.isEmpty ? "the arm was not found at all" : "\(callers) callers, \(arm.count) bytes")
         report("negative control: a second spawner would be caught",
                ["main.swift:2836", "Elsewhere.swift:12"].count != 1)
     }
@@ -383,7 +396,13 @@ func runHistoryComparisonChecks(_ reportRaw: (String, Bool, String) -> Void) {
            shell.ranges(of: "state.historyPair = nil").count >= 2)
     // The page can post messages now, and repository content is drawn in that page (an SVG). What
     // arrives is validated as input rather than acted on as instruction (DEC-028).
+    // DEC-092 gave the page a second message, and it is one that **writes**: a line number that
+    // becomes a patch against the index. So the assertion is now about both — the sha is still
+    // checked to be a sha, and the line is checked to be a line, before either is acted on.
     report("a message from the page is checked before it is acted on",
            shell.contains("sha.allSatisfy({ $0.isHexDigit })")
-               && shell.contains("body[\"action\"] as? String == \"pickCommit\""))
+               && shell.contains("case \"pickCommit\":"))
+    report("and the one that writes checks its number the same way",
+           shell.contains("case \"stageLine\":")
+               && shell.contains("raw != 0, abs(raw) < 5_000_000"))
 }

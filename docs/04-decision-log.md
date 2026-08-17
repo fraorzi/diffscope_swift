@@ -4367,3 +4367,41 @@ of the reasoning that picked DEC-094's floor, and for the opposite reason.
 
 Reopen if a corpus shows hunks merging across content a reviewer needed to read as two changes. The
 floor is the dial, and the measurement to redo is M11-G.
+
+---
+
+## DEC-098 — M11 and M12: the write path, and the proof that replaces R-8
+
+- **Date:** 2026-08-17
+- **Topic:** How version two's first two milestones are built. Implements [DEC-092](#dec-092--version-two-the-application-writes); nothing here reopens it.
+- **Status:** Accepted — built, checked and shipped in this state.
+
+### What was built
+
+**M11, the write foundation.** `GitWriteOperation` is a second closed registry with a declared risk class per operation; `GitWriter` is a separate runner that does *not* pass `--no-optional-locks`, handles `index.lock` contention explicitly, can never open an editor (`GIT_EDITOR`, `GIT_SEQUENCE_EDITOR`) and can never block on a prompt. `RestorePoint` records HEAD, the index as a tree object, and — where the working tree is at risk — a stash, **before** the operation rather than after. Unstage, stage, discard, and the command record.
+
+**M12, staging and the commit.** `StagingPatch.swift` computes a line walk of the two sides, emits a unified patch for a selection, and — along a path the patch has no hand in — computes the bytes that selection should produce. The commit box is under the file list with GitHub Desktop's two fields and one wide button; the checkbox beside each path is a **real index write**; the hunk under the caret stages from the keyboard.
+
+**Also built, ahead of their milestones, because they cost little once the registry existed:** branches, stashes, conflicts with the state banner, tags, worktrees, reflog, bisect, revert, cherry-pick, reset, the remote (fetch, pull, push, force-with-lease), history rewriting (reword, squash, fixup, drop, move, amend-old) and custom commands.
+
+### The three findings
+
+**A hidden `NSView` keeps its constraints.** The banner was given `isHidden` and a 26 pt height, and a repository with nothing in progress drew a 26 pt gap over the status line. Same shape as DEC-088's empty notice bar, one band down; the height is a held constraint now.
+
+**A button's title became a floor under the pane.** `Commit to some-long-branch` and `Amend the last commit` are strings the reader's repository decides the length of, and pinned to both edges at the default resistance they set the file pane's minimum width — measured at 292 pt against a divider dragged to 260, which is a divider that refuses to move because of a button's title. Every control in the box holds `.defaultLow` horizontal resistance now, and `dragSelftest` is what caught it.
+
+**`fixup! <sha>` is not what `--autosquash` matches.** *Amend an old commit* wrote its own message and the fixup commit stayed on the branch, visible in the check as `fixup! a75edbc… | three | two | one`. git composes the subject autosquash recognises — `fixup! <the target's own subject>` — and `commit --fixup=<sha>` is the way to get it. The oldest commit needed `rebase --root` beside it: without that, the one commit in a repository that could not be amended was the first one.
+
+### Consequences
+
+- **R-8 split rather than weakened.** The read registry keeps its byte-identical proof; the write registry keeps the closure property and adds **INV-6** — a staging operation moves the index by exactly the selected byte ranges and nothing else, asserted against bytes computed without the patch.
+- The application's single raw `git` spawn — the selftest fixture — is now **one function with a runtime guard** that refuses any directory outside `NSTemporaryDirectory()`. It was a comment in a check before, and a comment is not a refusal.
+- `12-…` §9b is the keyboard coverage table for functions that write, and four operations are deliberately unbound with their reason.
+
+### The renderer's half, built after the rest
+
+The two items this entry first recorded as *not built* — the graph column and clicking a line to stage it — needed `Renderer/node_modules`, which was not installed. It installed, and both landed:
+
+- **History draws its topology.** `GraphCommit.laneColumn` composes the lane marks in the Git layer — `●`, `│`, and `─` where a merge reaches for its second parent — and the page draws them in a fixed-width column, so the lines join up between rows. git's own `--graph` output is still never parsed: it is a presentation, and the lanes come from `%P`.
+- **A commit can be picked at last.** The shell has had a `pickCommit` handler since M9 and **the page never sent the message** — so DEC-061's two-commit comparison, and every verb in the Repository menu that acts on a commit, had no way to be given one. Found by writing the verbs, not by a check.
+- **The sign column stages its line.** `+` and `−` are already the mark that says which side a line is on, so they carry the action rather than a second column of checkboxes saying the same thing. The message is validated like the sha beside it: a line number that becomes a patch against the index is input, not instruction.

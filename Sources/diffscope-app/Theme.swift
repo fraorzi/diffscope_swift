@@ -351,6 +351,64 @@ enum Theme {
     static let doubleChevronScale: CGFloat = 0.75
     static let plusArmLength: CGFloat = 9
 
+    // ---- version two: the inclusion mark, the commit box, the banner (DEC-092) ----------------
+
+    /// The box a reader ticks to put a file in the next commit. Drawn rather than typed, for
+    /// DEC-091's reason — and drawn rather than an `NSButton` checkbox, because this one has three
+    /// states and AppKit's mixed state is a dash in the system's own weight.
+    static let checkBoxSize: CGFloat = 13
+    static let checkBoxRadius: CGFloat = 3
+    /// The tick's two arms, as a fraction of the box. The short arm is about half the long one,
+    /// which is what makes a tick read as a tick rather than as a `v`.
+    static let checkShortArm: CGFloat = 0.28
+    static let checkLongArm: CGFloat = 0.55
+    static let checkStroke: CGFloat = 1.7
+
+    /// Filled when every changed line of the file is staged, dashed when some of it is.
+    static func drawCheck(in box: NSRect, state: InclusionState, colour: NSColor? = nil) {
+        let side = min(checkBoxSize, min(box.width, box.height))
+        let frame = NSRect(x: box.midX - side / 2, y: box.midY - side / 2, width: side, height: side)
+        let shape = NSBezierPath(roundedRect: frame, xRadius: checkBoxRadius, yRadius: checkBoxRadius)
+        (state == .none ? buttonFill : controlThumb).setFill()
+        shape.fill()
+        (colour ?? borderStrong).setStroke()
+        shape.lineWidth = buttonRimWidth
+        shape.stroke()
+        guard state != .none else { return }
+
+        let mark = NSBezierPath()
+        mark.lineWidth = checkStroke
+        mark.lineCapStyle = .round
+        mark.lineJoinStyle = .round
+        if state == .partial {
+            // A dash, not a smaller tick: *some of this file* is a different fact from *this file*,
+            // and a mark that differs only in size is one a reader has to compare against a
+            // neighbour to read.
+            mark.move(to: NSPoint(x: frame.minX + side * 0.26, y: frame.midY))
+            mark.line(to: NSPoint(x: frame.maxX - side * 0.26, y: frame.midY))
+        } else {
+            mark.move(to: NSPoint(x: frame.minX + side * 0.24, y: frame.midY))
+            mark.line(to: NSPoint(x: frame.minX + side * (0.24 + checkShortArm),
+                                  y: frame.midY - side * checkShortArm))
+            mark.line(to: NSPoint(x: frame.minX + side * (0.24 + checkShortArm + checkLongArm),
+                                  y: frame.midY + side * (checkLongArm - checkShortArm)))
+        }
+        (colour ?? ink).setStroke()
+        mark.stroke()
+    }
+
+    /// The commit box's own height, and the banner's. Both are bands like every other band in this
+    /// window, sized from the same spacing scale.
+    static let commitBoxHeight: CGFloat = 132
+    static let commitSummaryHeight: CGFloat = 22
+    static let commitDescriptionHeight: CGFloat = 44
+    static let bannerHeight: CGFloat = 26
+
+    /// The banner's surface. Distinct from every other band on purpose: a repository in the middle
+    /// of a rebase is not a normal state, and the one thing this bar must not do is look normal.
+    static let bannerSurface = dynamic(dark: hex(0x3a2a12), light: hex(0xfaeecd))
+    static let bannerInk = dynamic(dark: hex(0xf5d9a0), light: hex(0x5a3d05))
+
     /// The vertical room above and below the search field's line (DEC-088). The field was its
     /// font's line height and nothing else — `intrinsicContentSize` reports 14 — so the caret sat
     /// on the metal. Used twice: as the rim's vertical inset, so the control is taller, and inside

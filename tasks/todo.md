@@ -2752,6 +2752,45 @@ against hollow is the shape carrier. Each is named in DEC-091 with its reason, s
 does not have to re-derive them.
 
 
+## Step 92 — version two writes: M11, M12, and most of what came after (DEC-092, DEC-098)
+
+**1832 → 1912 checks; a new selftest arm (`staging`) that stages a file and commits it through the
+controls a reader would use.** Four commits: the write path and INV-6; the window's half; hunks and
+history rewriting; conflicts, the reflog and custom commands.
+
+- **The registry split.** `GitWriteOperation` + `GitWriter`, risk classes, `index.lock` handled
+  rather than hoped over, no editor and no prompt reachable from any invocation.
+- **`StagingPatch.swift`.** A line walk, a unified patch for a selection, and — along a path the
+  patch has no hand in — the bytes that selection should produce. That second path is what makes
+  **INV-6** an assertion rather than a comparison of a thing with itself.
+- **The window.** The three-state box beside every path, the commit box under the list, the branch
+  and sync controls in the status line, the banner with its verbs, and the panel that shows every
+  command this application ran.
+- **Ahead of their milestones:** branches, stashes, conflicts, tags, worktrees, reflog, bisect,
+  revert, cherry-pick, reset, the remote, rewriting (reword/squash/fixup/drop/move/amend-old) and
+  custom commands typed into the drawer.
+
+**Three findings.** A hidden `NSView` keeps its constraints — 26 pt of nothing over the status line.
+A button's title became the file pane's minimum width, and `dragSelftest` caught it rather than
+anything looking at the button. `fixup! <sha>` is not the subject `--autosquash` matches, so *amend
+an old commit* left its fixup on the branch until `commit --fixup=<sha>` replaced it — with
+`rebase --root` beside it, because otherwise the oldest commit is the one that cannot be amended.
+
+**Not built:** the graph column in History and click-to-select lines in the diff. Both need a
+renderer bundle rebuild, and the install landed in the same session: History draws its lanes,
+a click on a commit picks it — the shell had that handler since M9 and the page had never sent the
+message — and a click on a sign stages or unstages that line.
+
+
+### Still open
+
+- [ ] minimum-run absorption of unchanged gaps shorter than a token (phantom retention). `alpha` →
+      `gamma` still shreds into two hunks around a coincidental `a`.
+- [ ] the old pane's silence on a reflow — 20 of 31 removed lines carry no mark, and no alignment
+      fixes it. Needs substitutions presented on both sides.
+- [ ] insertions separated by a single unchanged line cannot shift: the search is bounded by the
+      neighbouring match lengths. `PageComponents.tsx` and `BannerWithImage.tsx` are what is left.
+
 ## Step — the alignment reads below the line as well as on it (DEC-093, M11-C)
 
 - [x] `shiftToLineBoundaries` → `shiftToReadableBoundaries` in `CanonicalDiff.swift`: two lexical

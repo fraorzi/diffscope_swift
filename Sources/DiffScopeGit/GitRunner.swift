@@ -107,6 +107,71 @@ public struct GitOperation: Sendable, Equatable {
                              "--format=%H\u{1f}%an\u{1f}%cI\u{1f}%s\u{1f}%D"])
     }
 
+    // ---- what version two needs to *read* before it writes (DEC-092) -------------------------
+    //
+    // Every one of these is a read, and every one of them enters this registry rather than being
+    // issued beside it, for the reason the lenses did: R-8 runs over the list, so an operation that
+    // is not here cannot run at all.
+
+    /// The commit a restore point remembers.
+    public static func revParse(_ rev: String) -> GitOperation {
+        GitOperation("rev-parse", ["rev-parse", rev])
+    }
+
+    /// Local branches with everything the branch control draws: name, upstream, ahead/behind, and
+    /// which one is checked out. `--format` rather than the human output, for the reason
+    /// `--porcelain` is used elsewhere.
+    public static func branchList() -> GitOperation {
+        GitOperation("branch-list", ["branch", "--list", "--format=%(refname:short)\u{1f}%(upstream:short)\u{1f}%(upstream:track)\u{1f}%(HEAD)\u{1f}%(objectname)"])
+    }
+
+    public static func branchListRemote() -> GitOperation {
+        GitOperation("branch-list-remote", ["branch", "--remotes", "--format=%(refname:short)\u{1f}%(objectname)"])
+    }
+
+    public static func tagList() -> GitOperation {
+        GitOperation("tag-list", ["tag", "--list", "--format=%(refname:short)\u{1f}%(objectname)"])
+    }
+
+    public static func stashList() -> GitOperation {
+        GitOperation("stash-list", ["stash", "list", "--format=%gd\u{1f}%s\u{1f}%cI"])
+    }
+
+    public static func stashShow(_ ref: String) -> GitOperation {
+        GitOperation("stash-show", ["stash", "show", "--name-status", ref])
+    }
+
+    /// Unmerged paths, with their stage numbers. The conflict list is built from this rather than
+    /// from `status`'s two-letter codes, because the stages say *which* sides exist.
+    public static func lsFilesUnmerged() -> GitOperation {
+        GitOperation("ls-files-unmerged", ["ls-files", "-u", "-z"])
+    }
+
+    public static func reflog(limit: Int) -> GitOperation {
+        GitOperation("reflog", ["reflog", "-n", String(limit), "--format=%h\u{1f}%gd\u{1f}%gs\u{1f}%cI"])
+    }
+
+    /// The commit list with its topology. `--parents` is what the lane assignment is computed from;
+    /// `--graph`'s own drawing is not parsed, because it is a presentation.
+    public static func logGraph(limit: Int, all: Bool) -> GitOperation {
+        GitOperation("log-graph", ["log", "-n", String(limit)]
+            + (all ? ["--all"] : [])
+            + ["--parents", "--format=%H\u{1f}%P\u{1f}%an\u{1f}%cI\u{1f}%s\u{1f}%D"])
+    }
+
+    public static func worktreeList() -> GitOperation {
+        GitOperation("worktree-list", ["worktree", "list", "--porcelain"])
+    }
+
+    public static func revListRange(_ range: String, limit: Int) -> GitOperation {
+        GitOperation("rev-list", ["rev-list", "-n", String(limit), range])
+    }
+
+    /// The message of a commit, for amend — the field starts filled with what is being replaced.
+    public static func commitMessage(_ rev: String) -> GitOperation {
+        GitOperation("commit-message", ["log", "-1", "--format=%B", rev])
+    }
+
     public static let allProvenReadOnly: [GitOperation] = [
         .statusPorcelain(),
         .statusPorcelainUall(),
@@ -126,6 +191,19 @@ public struct GitOperation: Sendable, Equatable {
         .remotes(),
         .blame(path: "a.txt"),
         .log(limit: 1),
+        .revParse("HEAD"),
+        .branchList(),
+        .branchListRemote(),
+        .tagList(),
+        .stashList(),
+        .stashShow("stash@{0}"),
+        .lsFilesUnmerged(),
+        .reflog(limit: 1),
+        .logGraph(limit: 1, all: false),
+        .logGraph(limit: 1, all: true),
+        .worktreeList(),
+        .revListRange("HEAD..HEAD", limit: 1),
+        .commitMessage("HEAD"),
     ]
 
     /// Arguments that would let repository content decide what runs, or let a caller inject

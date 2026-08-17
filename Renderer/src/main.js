@@ -494,11 +494,37 @@ class HunkWidget extends WidgetType {
 }
 
 class SignMarker extends GutterMarker {
-  constructor(sign) { super(); this.sign = sign; }
+  constructor(sign, oldLine, newLine) {
+    super();
+    this.sign = sign;
+    this.oldLine = oldLine;
+    this.newLine = newLine;
+  }
+  eq(other) {
+    return other.sign === this.sign && other.oldLine === this.oldLine
+      && other.newLine === this.newLine;
+  }
   toDOM() {
     const el = document.createElement("span");
     el.className = "ds-sign";
     el.textContent = this.sign === " " ? " " : this.sign;
+    // DEC-092: the sign column is where a line goes into the next commit, or comes out of
+    // it. It is the mark that already says which side a line is on, so it is the mark that
+    // carries the action — a column of checkboxes beside it would say the same thing twice.
+    if (this.sign !== " ") {
+      el.dataset.stageable = "true";
+      el.title = "Stage or unstage this line";
+      el.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        // An addition is addressed by its new-side line, a removal by its old-side one
+        // encoded negatively — the shell's own convention, so one message serves both.
+        const line = this.sign === "+" ? this.newLine
+          : (this.oldLine == null ? null : -this.oldLine);
+        if (line == null || Number.isNaN(line)) return;
+        window.webkit?.messageHandlers?.diffscope?.postMessage({ action: "stageLine", line });
+      });
+    }
     return el;
   }
 }
@@ -540,7 +566,10 @@ function makeUnifiedPane(parent) {
         gutter({ class: "ds-gutter-new",
                  lineMarker: (view, line) => new NumberMarker(unifiedMeta(view, line).new) }),
         gutter({ class: "ds-gutter-sign",
-                 lineMarker: (view, line) => new SignMarker(unifiedMeta(view, line).sign) }),
+                 lineMarker: (view, line) => {
+                   const meta = unifiedMeta(view, line);
+                   return new SignMarker(meta.sign, meta.old, meta.new);
+                 } }),
         field,
       ],
     }),
@@ -781,7 +810,18 @@ window.diffscopeShowLens = function (json) {
                   cell("ds-lens-line", String(row.line)),
                   cell("ds-lens-text", row.text));
     } else {
-      line.append(cell("ds-lens-sha", row.sha.slice(0, 7)),
+      // The topology, drawn from lanes the Git layer computed (DEC-092/DEC-093). `--graph`'s own
+      // drawing is a presentation and is never parsed; what arrives here is one string per row,
+      // built from `%P`, and the column is fixed-width so the lines join up between rows.
+      // Picking a commit is what DEC-061's comparison is made of, and what every verb in
+      // the Repository menu that acts on a commit needs. The shell has had the handler
+      // since M9 and the page never sent the message, so History could not say *this one*.
+      if ((payload.picked || []).includes(row.sha)) line.className += " ds-lens-picked";
+      line.addEventListener("click", () => {
+        window.webkit?.messageHandlers?.diffscope?.postMessage({ action: "pickCommit", sha: row.sha });
+      });
+      line.append(cell("ds-lens-graph", row.graph || ""),
+                  cell("ds-lens-sha", row.sha.slice(0, 7)),
                   cell("ds-lens-who", row.who),
                   cell("ds-lens-when", ageOf(row.when)),
                   cell("ds-lens-subject", row.subject),

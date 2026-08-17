@@ -303,6 +303,7 @@ runRefreshChecks { name, ok, detail in report(name, ok, detail) }
 runBudgetChecks { name, ok, detail in report(name, ok, detail) }
 runFixtureChecks { name, ok, detail in report(name, ok, detail) }
 runGitChecks { name, ok, detail in report(name, ok, detail) }
+runWriteChecks { name, ok, detail in report(name, ok, detail) }
 runConfigurationChecks { name, ok, detail in report(name, ok, detail) }
 runSearchChecks { name, ok, detail in report(name, ok, detail) }
 runLensChecks { name, ok, detail in report(name, ok, detail) }

@@ -39,9 +39,16 @@ func runKeyboardChecks(_ reportRaw: (String, Bool, String) -> Void) {
     // The one binding without a keystroke is deliberate — Remove Source destroys configuration and
     // is not something to hand a single key — so it is asserted rather than left looking like an
     // oversight for the next reader to "fix".
+    // DEC-092 added three more, and for the same reason rather than by exception: discard, reset
+    // and force-push can each lose work that no object database holds, and a single keystroke is
+    // how that happens by mistyping. The list lives in the map beside the bindings.
     let unbounded = KeyboardMap.bindings.filter { $0.key.isEmpty }.map(\.id)
-    report("only Remove Source is deliberately without a keystroke", unbounded == ["sources.remove"],
-           unbounded.joined(separator: ", "))
+    report("only the operations that can lose work are deliberately without a keystroke",
+           unbounded == KeyboardMap.deliberatelyUnbound, unbounded.joined(separator: ", "))
+    report("and each of those is a write that destroys something",
+           KeyboardMap.deliberatelyUnbound.allSatisfy { id in
+               id == "sources.remove" || ["git.discard", "git.reset", "git.forcePush"].contains(id)
+           })
 
     report("the control view for a region is bound",
            KeyboardMap.bindings.contains { $0.satisfies == .rawForCurrentRegion && $0.shortcut == "⌘R" },

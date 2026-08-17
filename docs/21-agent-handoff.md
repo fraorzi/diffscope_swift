@@ -8,6 +8,20 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
+**2026-08-17 — it writes. M11 and M12 are built, and most of M13–M17 came with them. 1832 → 1912 checks, and a new selftest arm that stages a file and commits it through the controls a reader would use.** [DEC-098](04-decision-log.md).
+
+**What a reader can now do in the window**: tick a file to stage it (a real index write, with the three-state box GitHub Desktop draws), stage the hunk under the caret (⌥⌘G), write a summary and a description and commit (⇧⌘⏎, or ⌘⏎ inside the box), amend, undo the last commit, commit empty on purpose, discard to the Trash, switch and create and rename and delete branches, merge, stash and pop, resolve a conflict by taking a side, tag, open a worktree, bisect from the banner, revert, cherry-pick, reset, reword/squash/fixup/drop/move a commit, amend an old commit, fetch, pull, push, force-push with a lease behind a typed branch name, run a custom command in the drawer — and read **what DiffScope ran**, argv and exit code, in a panel of its own.
+
+**The proof is the part to read.** INV-6 says a staging operation moved the index by *exactly* the selected byte ranges: the selection becomes bytes along one path and a patch along another, git applies the patch, and the two are compared. It holds for a line, a hunk, a whole file, a file with no trailing newline, a CRLF file and a brand-new untracked file. R-8 did not die — it split, and the write registry keeps the closure property that has held since M2.
+
+**Three findings**, all in [DEC-098](04-decision-log.md): a hidden `NSView` keeps its constraints (a 26 pt gap over the status line for every repository with nothing in progress); a button's title became the file pane's minimum width, caught by `dragSelftest` rather than by anything looking at the button; and `fixup! <sha>` is not the subject `--autosquash` matches, so *amend an old commit* left its fixup sitting on the branch.
+
+**The renderer's half landed after the rest**: History draws its lanes, a click on a commit picks it — the shell has had that handler since M9 and **the page had never sent the message**, so DEC-061's comparison and every commit verb had nothing to act on — and a click on a `+` or `−` in the sign column stages or unstages that line.
+
+**What is left of the plan** is in [29-git-operations-plan.md](29-git-operations-plan.md) §6: submodules (deferred by OQ-014/OQ-015), pull requests and checks (out of scope — they need the GitHub API and an account model), and a three-way merge surface (OQ-D chose the editor hand-off instead).
+
+---
+
 **2026-08-17 — the diff reads the way the change was written. 1832 → 1892 checks, five decisions ([DEC-093](04-decision-log.md) … [DEC-097](04-decision-log.md)) and five measurements (M11-C … M11-G).** The owner reviewed their own work in a Next.js repository and reported five things, all of one shape: *the diff shows as changed what I did not touch.* An apostrophe. A signature line. A whole `.module.css` file, boxed. Nine lines of new JSX with unchanged single letters punched through them. Every one reproduced on the first attempt, and the diagnosis was one sentence with four consequences — **byte-minimality is the wrong objective for a picture and the right one for a validator**, which `06-domain-research.md` §3.6 had recorded and nothing had yet acted on.
 
 **The separation is the architecture, and it is what kept every invariant intact.** `D` moved where the move preserves the matched total (DEC-093's lexical ranks, DEC-097's consumable short match) — checkable against the 600-pair LCS reference, which is why those were safe to take rather than checks to weaken. Everything else is monotone widening (DEC-094's absorption), which INV-2 survives by construction. **No invariant was reopened.** Anyone reaching for `CanonicalDiff.swift` to fix confetti should read DEC-094's second section first: those islands are matched bytes, and dropping them fails the LCS check on the first run.
