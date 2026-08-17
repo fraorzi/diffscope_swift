@@ -3235,19 +3235,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     private func stagingSelftest() {
         let repository = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("diffscope-staging-\(UUID().uuidString)")
-        func git(_ arguments: [String]) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-            process.arguments = ["-C", repository.path] + arguments
-            var environment = ProcessInfo.processInfo.environment
-            environment["GIT_AUTHOR_NAME"] = "DiffScope Fixture"
-            environment["GIT_AUTHOR_EMAIL"] = "fixture@diffscope.local"
-            environment["GIT_COMMITTER_NAME"] = "DiffScope Fixture"
-            environment["GIT_COMMITTER_EMAIL"] = "fixture@diffscope.local"
-            process.environment = environment
-            process.standardOutput = Pipe(); process.standardError = Pipe()
-            try? process.run(); process.waitUntilExit()
-        }
+        func git(_ arguments: [String]) { fixtureGit(arguments, in: repository) }
         try? FileManager.default.createDirectory(at: repository, withIntermediateDirectories: true)
         try? "one\ntwo\nthree\n".write(to: repository.appendingPathComponent("a.txt"),
                                        atomically: true, encoding: .utf8)
@@ -3277,8 +3265,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // The collapse arm runs before this one and leaves the file pane folded; a folded pane
         // draws the spine (DEC-060), which has room for a kind glyph and nothing else. The arm
         // that needs the boxes has to put the pane back rather than photograph the absence.
-        if filesCollapsed { toggleFilesPane() }
-        if reposCollapsed { toggleRepositoriesPane() }
+        let folded = (repositories: reposCollapsed, files: filesCollapsed)
+        if folded.files { toggleFilesPane() }
+        if folded.repositories { toggleRepositoriesPane() }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
             let before = boxes()
@@ -3329,19 +3318,39 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// DEC-073's second half, in the window. No scope of the 63-file fixture tree is empty — it has
     /// 63 local changes, 56 unstaged and 4 staged — so the state is reached the only honest way: a
     /// repository with a commit in it and nothing changed since.
+    /// **The one place this application spawns git for itself**, and the exemption R-8's static
+    /// half names (DEC-088 item 2). Two selftest arms need a repository with a history in it —
+    /// the empty-scope state and DEC-092's staging arm — and neither can be reached any other
+    /// honest way.
+    ///
+    /// The guard is the point: it refuses any directory that is not under `NSTemporaryDirectory()`,
+    /// so the exemption cannot grow into a path that touches a repository the reader chose. It was
+    /// a comment in a check before, and a comment is not a refusal.
+    private func fixtureGit(_ arguments: [String], in directory: URL) {
+        guard directory.path.hasPrefix(NSTemporaryDirectory()) else {
+            FileHandle.standardError.write(Data(
+                "SELFTEST fixture-git=REFUSED \(directory.path) is not under NSTemporaryDirectory()\n".utf8))
+            return
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = ["-C", directory.path] + arguments
+        var environment = ProcessInfo.processInfo.environment
+        environment["GIT_AUTHOR_NAME"] = "DiffScope Fixture"
+        environment["GIT_AUTHOR_EMAIL"] = "fixture@diffscope.local"
+        environment["GIT_COMMITTER_NAME"] = "DiffScope Fixture"
+        environment["GIT_COMMITTER_EMAIL"] = "fixture@diffscope.local"
+        process.environment = environment
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try? process.run()
+        process.waitUntilExit()
+    }
+
     private func emptyScopeSelftest() {
         let clean = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("diffscope-clean-\(getpid())")
-        func git(_ arguments: [String]) {
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-            process.arguments = arguments
-            process.currentDirectoryURL = clean
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
-            try? process.run()
-            process.waitUntilExit()
-        }
+        func git(_ arguments: [String]) { fixtureGit(arguments, in: clean) }
         try? FileManager.default.createDirectory(at: clean, withIntermediateDirectories: true)
         try? "committed\n".write(to: clean.appendingPathComponent("file.txt"),
                                  atomically: true, encoding: .utf8)
@@ -4623,6 +4632,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         case "git.worktrees": return #selector(showWorktreeMenu(_:))
         case "git.tags": return #selector(showTagMenu(_:))
         case "git.bisect": return #selector(startBisect)
+        case "git.stageHunk": return #selector(stageHunkUnderCursor)
+        case "git.unstageHunk": return #selector(unstageHunkUnderCursor)
+        case "git.rewrite": return #selector(rewriteHistory(_:))
         case "git.revert": return #selector(revertPickedCommit)
         case "git.cherryPick": return #selector(cherryPickCommit)
         case "git.reset": return #selector(resetToPickedCommit)

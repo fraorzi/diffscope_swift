@@ -91,6 +91,12 @@ public struct GitWriteOperation: Sendable, Equatable {
         return GitWriteOperation(amend ? "commit-amend" : "commit", arguments, amend ? .recoverable : .additive)
     }
 
+    /// The commit lazygit's *amend an old commit* is built on: git composes the `fixup!` subject
+    /// that `rebase --autosquash` recognises, which a hand-written message does not.
+    public static func commitFixup(_ sha: String) -> GitWriteOperation {
+        GitWriteOperation("commit-fixup", ["commit", "--fixup", sha], .additive)
+    }
+
     public static func resetSoft(_ rev: String) -> GitWriteOperation {
         GitWriteOperation("reset-soft", ["reset", "--soft", rev], .recoverable)
     }
@@ -174,6 +180,17 @@ public struct GitWriteOperation: Sendable, Equatable {
         if autosquash { arguments.append("--autosquash") }
         arguments.append(ref)
         return GitWriteOperation(interactive ? "rebase-interactive" : "rebase", arguments, .destructive)
+    }
+
+    /// The form for a range that reaches the **first commit of the repository**, which has no
+    /// parent to rebase onto. `--root` is the only way to rewrite it, and without this the oldest
+    /// commit is the one commit in a repository that cannot be amended.
+    public static func rebaseRoot(interactive: Bool, autosquash: Bool) -> GitWriteOperation {
+        var arguments = ["rebase"]
+        if interactive { arguments.append("-i") }
+        if autosquash { arguments.append("--autosquash") }
+        arguments.append("--root")
+        return GitWriteOperation("rebase-root", arguments, .destructive)
     }
 
     public static func rebaseContinue(_ verb: String) -> GitWriteOperation {
@@ -269,6 +286,7 @@ public struct GitWriteOperation: Sendable, Equatable {
         .applyToWorktree(reverse: true),
         .commit(messageFile: "/tmp/m", amend: false, allowEmpty: false),
         .commit(messageFile: "/tmp/m", amend: true, allowEmpty: false),
+        .commitFixup("HEAD"),
         .resetSoft("HEAD"),
         .resetMixed("HEAD"),
         .resetHard("HEAD"),
@@ -289,6 +307,7 @@ public struct GitWriteOperation: Sendable, Equatable {
         .mergeAbort(),
         .rebase(onto: "main", interactive: false, autosquash: false),
         .rebase(onto: "main", interactive: true, autosquash: true),
+        .rebaseRoot(interactive: true, autosquash: true),
         .rebaseContinue("continue"),
         .rebaseContinue("skip"),
         .rebaseContinue("abort"),
@@ -428,17 +447,39 @@ public final class GitWriter: @unchecked Sendable {
     /// longer than this is another program's, not a race with ourselves.
     public static let lockRetryDelay: TimeInterval = 0.15
 
+    /// An interactive rebase needs its todo list, and git asks for it by **running an editor**.
+    /// `GIT_SEQUENCE_EDITOR` is set to `cp <our file>` for exactly one invocation — git appends the
+    /// todo's path, so the command becomes `cp <ours> <git's>` and the list is replaced without a
+    /// script, a terminal or an editor anywhere in it.
+    ///
+    /// Scoped to the call rather than to the runner: a leaked sequence editor would silently
+    /// rewrite the todo of every later rebase.
     @discardableResult
     public func run(_ operation: GitWriteOperation, in repository: URL,
-                    standardInput: Data? = nil) throws -> GitInvocationResult {
+                    standardInput: Data? = nil,
+                    sequenceTodo: URL) throws -> GitInvocationResult {
+        try run(operation, in: repository, standardInput: standardInput,
+                environment: ["GIT_SEQUENCE_EDITOR": "/bin/cp \(shellQuoted(sequenceTodo.path))"])
+    }
+
+    private func shellQuoted(_ path: String) -> String {
+        "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    @discardableResult
+    public func run(_ operation: GitWriteOperation, in repository: URL,
+                    standardInput: Data? = nil,
+                    environment overrides: [String: String] = [:]) throws -> GitInvocationResult {
         GitWriter.lock.lock()
         GitWriter.executed.insert(operation.label)
         GitWriter.lock.unlock()
 
-        var result = try invoke(operation, in: repository, standardInput: standardInput)
+        var result = try invoke(operation, in: repository, standardInput: standardInput,
+                                overrides: overrides)
         if !result.succeeded, isIndexLock(result.standardError) {
             Thread.sleep(forTimeInterval: GitWriter.lockRetryDelay)
-            result = try invoke(operation, in: repository, standardInput: standardInput)
+            result = try invoke(operation, in: repository, standardInput: standardInput,
+                                overrides: overrides)
         }
 
         let entry = CommandRecordEntry(date: Date(), repository: repository.path,
@@ -471,7 +512,7 @@ public final class GitWriter: @unchecked Sendable {
     }
 
     private func invoke(_ operation: GitWriteOperation, in repository: URL,
-                        standardInput: Data?) throws -> GitInvocationResult {
+                        standardInput: Data?, overrides: [String: String]) throws -> GitInvocationResult {
         let process = Process()
         process.executableURL = executableURL
         process.arguments = ["-C", repository.path] + operation.arguments
@@ -485,6 +526,7 @@ public final class GitWriter: @unchecked Sendable {
         environment["GIT_EDITOR"] = "true"
         environment["GIT_SEQUENCE_EDITOR"] = "true"
         environment["GIT_PAGER"] = "cat"
+        for (key, value) in overrides { environment[key] = value }
         process.environment = environment
 
         let outPipe = Pipe()

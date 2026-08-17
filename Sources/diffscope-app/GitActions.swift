@@ -153,6 +153,45 @@ extension Controller {
         }
     }
 
+    /// **Stage the hunk the reader is standing in** — M12's own operation, reached from the
+    /// keyboard rather than from a click, because the change stops are already where the reader
+    /// navigates and asking the page for the caret's line needs nothing new drawn.
+    @objc func stageHunkUnderCursor() { stageHunk(unstage: false) }
+    @objc func unstageHunkUnderCursor() { stageHunk(unstage: true) }
+
+    func stageHunk(unstage: Bool) {
+        guard let repository = state.selectedRepository, let file = state.selectedFile else {
+            statusLabel.stringValue = "no file selected"
+            return
+        }
+        webView.evaluateJavaScript("window.diffscopeCurrentLine()") { [weak self] value, _ in
+            guard let self else { return }
+            let line = (value as? Int) ?? (value as? NSNumber)?.intValue ?? 1
+            let scope: ComparisonScope = unstage ? .stagedVsHead : .unstagedVsIndex
+            guard let pair = try? self.scopes.pinnedPair(for: file, scope: scope,
+                                                         in: repository.url) else { return }
+            let old = splitLines(pair.oldBytes)
+            let new = splitLines(pair.newBytes)
+            guard case let .exact(walk) = stagingWalk(old: old, new: new) else {
+                self.statusLabel.stringValue =
+                    "this file is too far apart for hunk staging — stage the whole file"
+                return
+            }
+            let selection = hunkSelection(walk: walk, aroundNewLine: line)
+            guard !selection.isEmpty,
+                  let patch = stagingPatch(path: file.path, old: old, new: new,
+                                           walk: walk, selection: selection) else {
+                self.statusLabel.stringValue = "nothing to \(unstage ? "unstage" : "stage") here"
+                return
+            }
+            self.perform(unstage ? "unstage hunk" : "stage hunk") {
+                try self.actions.apply(patch: patchData(patch), to: .index, reverse: unstage,
+                                       intentToAdd: file.kind == .untracked ? file.path : nil,
+                                       in: repository.url)
+            }
+        }
+    }
+
     /// Staging a **selection of lines** — the operation this product can prove and other clients
     /// cannot (INV-6). Called from the renderer with the lines the reader picked.
     func stageSelection(_ lines: [Int], from file: ChangedFile, unstage: Bool) {
@@ -509,6 +548,68 @@ extension Controller {
         guard confirm("Reset to \(String(sha.prefix(7)))?", detail: kind.consequence,
                       verb: "Reset \(kind.rawValue)") else { return }
         perform("reset") { try self.actions.reset(to: sha, kind: kind, in: repository.url) }
+    }
+
+    /// Rewriting the branch around the commit History has picked: lazygit's verbs and GitHub
+    /// Desktop's two gestures, offered as words because a drag is not a keyboard route (DEC-016).
+    @objc func rewriteHistory(_ sender: Any?) {
+        guard let repository = state.selectedRepository, let sha = pickedCommit() else {
+            statusLabel.stringValue = "pick a commit in History first"
+            return
+        }
+        let menu = NSMenu(title: "Rewrite")
+        for verb in WriteActions.RewriteVerb.allCases {
+            let title: String
+            switch verb {
+            case .reword: title = "Reword…"
+            case .squash: title = "Squash into the commit before it"
+            case .fixup: title = "Fold into the commit before it, drop the message"
+            case .drop: title = "Drop this commit"
+            case .moveUp: title = "Move earlier"
+            case .moveDown: title = "Move later"
+            }
+            let item = menu.addItem(withTitle: title, action: #selector(rewriteVerb(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = verb.rawValue
+            item.toolTip = verb.consequence
+        }
+        menu.addItem(.separator())
+        let amend = menu.addItem(withTitle: "Amend this commit with what is staged",
+                                 action: #selector(amendOldCommit), keyEquivalent: "")
+        amend.target = self
+        present(menu, from: (sender as? NSView) ?? branchButton, repository: repository)
+    }
+
+    @objc func rewriteVerb(_ sender: NSMenuItem) {
+        guard let repository = state.selectedRepository, let sha = pickedCommit(),
+              let raw = sender.representedObject as? String,
+              let verb = WriteActions.RewriteVerb(rawValue: raw) else { return }
+        var message: String?
+        if verb == .reword {
+            let existing = gitState.commitMessage(of: sha, in: repository.url)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let typed = ask("Reword \(String(sha.prefix(7)))",
+                                  detail: "The commit keeps its changes. Its current message is “\(existing.prefix(60))”.",
+                                  placeholder: existing) else { return }
+            message = typed
+        }
+        // Every verb here rewrites commits that already exist, so every one of them is class C —
+        // and the sheet says which of the six is about to happen rather than *are you sure*.
+        guard confirm("\(sender.title.replacingOccurrences(of: "…", with: "")) — \(String(sha.prefix(7)))?",
+                      detail: verb.consequence
+                          + " Every commit after it gets a new identity, and a branch already pushed will need a force push.",
+                      verb: "Rewrite") else { return }
+        perform("rewrite") {
+            _ = try self.actions.rewrite(sha, as: verb, newMessage: message, in: repository.url)
+        }
+    }
+
+    @objc func amendOldCommit() {
+        guard let repository = state.selectedRepository, let sha = pickedCommit() else { return }
+        guard confirm("Amend \(String(sha.prefix(7))) with what is staged?",
+                      detail: "The staged changes are folded into that commit. Every commit after it gets a new identity.",
+                      verb: "Amend") else { return }
+        perform("amend old commit") { _ = try self.actions.amendOldCommit(sha, in: repository.url) }
     }
 
     // ---- the banner's verbs ----------------------------------------------------------------------

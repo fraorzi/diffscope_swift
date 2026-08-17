@@ -243,6 +243,146 @@ public struct WriteActions: Sendable {
         writer.attempt(.merge(ref, squash: squash), in: repository)
     }
 
+    // ---- rewriting history -----------------------------------------------------------------------
+
+    /// What a commit is to become in a rewritten history. lazygit's verbs, and GitHub Desktop's two
+    /// gestures, are the same five words underneath.
+    public enum RewriteVerb: String, Sendable, Equatable, CaseIterable {
+        case reword, squash, fixup, drop, moveUp, moveDown
+
+        public var consequence: String {
+            switch self {
+            case .reword: return "The commit keeps its changes and gets a new message."
+            case .squash: return "The commit is folded into the one before it, and you write one message for both."
+            case .fixup: return "The commit is folded into the one before it, and its message is dropped."
+            case .drop: return "The commit and everything in it are removed from the branch."
+            case .moveUp: return "The commit changes places with the one before it."
+            case .moveDown: return "The commit changes places with the one after it."
+            }
+        }
+    }
+
+    /// Rewrites the branch so that `sha` is treated the given way.
+    ///
+    /// The todo list is **generated here** and handed to git through `GIT_SEQUENCE_EDITOR`, so
+    /// nothing opens an editor and nothing is typed into a terminal. A restore point is taken
+    /// first, because every verb here is class C: the commits that come out have different
+    /// identities from the ones that went in, and the only way back is the reflog or this point.
+    @discardableResult
+    public func rewrite(_ sha: String, as verb: RewriteVerb, newMessage: String? = nil,
+                        in repository: URL) throws -> RestorePoint {
+        let point = capture("rewrite", in: repository)
+        let listing = try runner.run(.logGraph(limit: 400, all: false), in: repository)
+        let commits = String(decoding: listing.standardOutput, as: UTF8.self)
+            .split(separator: "\n").compactMap { line -> (sha: String, subject: String)? in
+                let parts = line.components(separatedBy: "\u{1f}")
+                guard parts.count >= 5 else { return nil }
+                return (parts[0], parts[4])
+            }
+        guard let position = commits.firstIndex(where: { $0.sha.hasPrefix(sha) }) else {
+            throw GitWriteFailure.failed(exitCode: 1, message: "that commit is not on this branch")
+        }
+        // How deep the todo has to reach, and it is not the same for every verb — this was wrong
+        // in the first version and three checks said so in three different ways.
+        //
+        // `squash`, `fixup` and *move earlier* all act on the commit **and the one before it**, so
+        // the older one has to be in the list: a todo whose first line is `squash` is one git
+        // refuses, because there is nothing above it to squash into. `reword`, `drop` and *move
+        // later* need only the commit itself — everything newer is already in the range.
+        let deepest: Int
+        switch verb {
+        case .squash, .fixup, .moveUp: deepest = position + 1
+        case .reword, .drop, .moveDown: deepest = position
+        }
+        guard deepest + 1 < commits.count else {
+            throw GitWriteFailure.failed(exitCode: 1,
+                                         message: "the first commit of a branch cannot be rewritten this way")
+        }
+        let onto = commits[deepest + 1].sha
+
+        // git's todo is oldest first; the log is newest first.
+        var todo: [(verb: String, sha: String, subject: String)] = commits[0...deepest]
+            .reversed().map { ("pick", $0.sha, $0.subject) }
+        guard let index = todo.firstIndex(where: { $0.sha.hasPrefix(sha) }) else {
+            throw GitWriteFailure.failed(exitCode: 1, message: "that commit is not in the range")
+        }
+        switch verb {
+        case .reword: todo[index].verb = "reword"
+        case .squash:
+            guard index > 0 else {
+                throw GitWriteFailure.failed(exitCode: 1, message: "there is nothing before it to squash into")
+            }
+            todo[index].verb = "squash"
+        case .fixup:
+            guard index > 0 else {
+                throw GitWriteFailure.failed(exitCode: 1, message: "there is nothing before it to fold into")
+            }
+            todo[index].verb = "fixup"
+        case .drop: todo[index].verb = "drop"
+        case .moveUp:
+            guard index > 0 else {
+                throw GitWriteFailure.failed(exitCode: 1, message: "it is already the oldest in this range")
+            }
+            todo.swapAt(index, index - 1)
+        case .moveDown:
+            guard index + 1 < todo.count else {
+                throw GitWriteFailure.failed(exitCode: 1, message: "it is already the newest commit")
+            }
+            todo.swapAt(index, index + 1)
+        }
+
+        let text = todo.map { "\($0.verb) \($0.sha) \($0.subject)" }.joined(separator: "\n") + "\n"
+        let file = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("diffscope-todo-\(UUID().uuidString).txt")
+        try Data(text.utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+
+        // `reword` would open an editor for the message; the message is supplied instead, through
+        // the same mechanism a commit message travels by.
+        var overrides: [String: String] = [:]
+        if verb == .reword, let newMessage {
+            let messageFile = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("diffscope-reword-\(UUID().uuidString).txt")
+            try Data((newMessage + "\n").utf8).write(to: messageFile)
+            overrides["GIT_EDITOR"] = "/bin/cp '\(messageFile.path)'"
+        }
+        if verb == .squash {
+            // A squash asks for the combined message. Keeping git's own default — both messages,
+            // one after the other — is the honest starting point, and the reader can amend it.
+            overrides["GIT_EDITOR"] = "true"
+        }
+        overrides["GIT_SEQUENCE_EDITOR"] = "/bin/cp '\(file.path)'"
+        try writer.run(.rebase(onto: onto, interactive: true, autosquash: false),
+                       in: repository, environment: overrides)
+        return point
+    }
+
+    /// lazygit's *amend an old commit*: the staged changes become a `fixup` on the named commit and
+    /// the branch is rebased with `--autosquash`, which is the mechanism that feature is built on
+    /// everywhere it exists.
+    @discardableResult
+    public func amendOldCommit(_ sha: String, in repository: URL) throws -> RestorePoint {
+        let point = capture("amend-old", in: repository)
+        // `commit --fixup=<sha>` rather than a message file saying `fixup! <sha>`: git composes the
+        // subject autosquash matches, which is `fixup! <the target's own subject>`. Writing the sha
+        // into the message by hand produced a commit autosquash walked straight past, and left it
+        // sitting on the branch as `fixup! a75edbc…` — measured, in the check below.
+        try writer.run(.commitFixup(sha), in: repository)
+        // The oldest commit has no parent, and `<sha>~1` is not a revision there. `--root` is the
+        // form that reaches it — without this, the one commit in a repository that could not be
+        // amended was the first one.
+        let quiet = ["GIT_SEQUENCE_EDITOR": "true", "GIT_EDITOR": "true"]
+        let parent = try? runner.run(.revParse("\(sha)~1"), in: repository)
+        if parent?.succeeded == true {
+            try writer.run(.rebase(onto: "\(sha)~1", interactive: true, autosquash: true),
+                           in: repository, environment: quiet)
+        } else {
+            try writer.run(.rebaseRoot(interactive: true, autosquash: true),
+                           in: repository, environment: quiet)
+        }
+        return point
+    }
+
     public func continueOperation(_ operation: RepositoryOperation, verb: String,
                                   in repository: URL) -> Result<GitInvocationResult, GitWriteFailure> {
         switch operation {

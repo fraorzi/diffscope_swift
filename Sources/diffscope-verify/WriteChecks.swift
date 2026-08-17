@@ -261,6 +261,110 @@ func runWriteChecks(_ reportRaw: (String, Bool, String) -> Void) {
         } else { report("the untracked walk is exact", false) }
     }
 
+    print("\n=== INV-6 for a hunk: the block under the caret, and nothing either side of it ===")
+    do {
+        let repo = makeRepository("hunks", in: scratch)
+        write("a\nb\nc\nd\ne\nf\ng\nh\ni\nj\nk\nl\n", to: "h.txt", in: repo)
+        shell(["add", "-A"], in: repo); shell(["commit", "-qm", "c1"], in: repo)
+        // Two blocks, far enough apart to be two hunks rather than one.
+        write("a\nB\nc\nd\ne\nf\ng\nh\ni\nJ\nk\nl\n", to: "h.txt", in: repo)
+
+        let old = splitLines(indexBytes("h.txt", in: repo))
+        let new = splitLines([UInt8](read("h.txt", in: repo).utf8))
+        guard case let .exact(walk) = stagingWalk(old: old, new: new) else {
+            report("the walk is exact", false); return
+        }
+        // The caret is on the second block — new-side line 10, `J`.
+        let selection = hunkSelection(walk: walk, aroundNewLine: 10)
+        report("one hunk is selected, not both", selection.count == 2, String(selection.count))
+        let expected = applySelection(old: old, new: new, walk: walk, selection: selection)
+        report("and the expected bytes keep the first block unstaged",
+               String(decoding: expected, as: UTF8.self) == "a\nb\nc\nd\ne\nf\ng\nh\ni\nJ\nk\nl\n",
+               String(decoding: expected, as: UTF8.self).debugDescription)
+        if let patch = stagingPatch(path: "h.txt", old: old, new: new, walk: walk, selection: selection) {
+            do {
+                try actions.apply(patch: patchData(patch), to: .index, reverse: false, in: repo)
+                report("git agrees, byte for byte", indexBytes("h.txt", in: repo) == expected)
+            } catch { report("the hunk patch applies", false, String(describing: error)) }
+        } else { report("the hunk selection produces a patch", false) }
+
+        // The caret in the first block selects the *other* hunk — the control that a check on one
+        // position alone would pass while `hunkSelection` returned everything.
+        let first = hunkSelection(walk: walk, aroundNewLine: 2)
+        report("control: the caret in the other block selects the other hunk",
+               !first.isEmpty && first.intersection(selection).isEmpty,
+               "\(first.sorted()) vs \(selection.sorted())")
+    }
+
+    print("\n=== W-11: rewriting history — reword, squash, fixup, drop and the two moves ===")
+    do {
+        func history(_ repository: URL) -> [String] {
+            ((try? runner.run(.log(limit: 20), in: repository))?.trimmedOutput ?? "")
+                .split(separator: "\n").map { String($0.components(separatedBy: "\u{1f}")[3]) }
+        }
+        func build(_ name: String) -> URL {
+            let repo = makeRepository(name, in: scratch)
+            for subject in ["one", "two", "three"] {
+                write("\(subject)\n", to: "\(subject).txt", in: repo)
+                shell(["add", "-A"], in: repo)
+                shell(["commit", "-qm", subject], in: repo)
+            }
+            return repo
+        }
+
+        let reword = build("reword")
+        _ = try? actions.rewrite(history(reword).isEmpty ? "HEAD" : (state.headSha(in: reword) ?? "HEAD"),
+                                 as: .reword, newMessage: "three, reworded", in: reword)
+        report("reword replaces the message and keeps the count",
+               history(reword).first == "three, reworded" && history(reword).count == 3,
+               history(reword).joined(separator: " | "))
+
+        let squash = build("squash")
+        _ = try? actions.rewrite(state.headSha(in: squash) ?? "HEAD", as: .squash, in: squash)
+        report("squash folds the commit into the one before it", history(squash).count == 2,
+               history(squash).joined(separator: " | "))
+        report("and keeps both files", ((try? runner.run(.lsFiles(), in: squash))?.trimmedOutput ?? "")
+            .contains("three.txt"))
+
+        let drop = build("drop")
+        _ = try? actions.rewrite(state.headSha(in: drop) ?? "HEAD", as: .drop, in: drop)
+        report("drop removes the commit and its file", history(drop) == ["two", "one"],
+               history(drop).joined(separator: " | "))
+
+        let moved = build("move")
+        _ = try? actions.rewrite(state.headSha(in: moved) ?? "HEAD", as: .moveUp, in: moved)
+        report("moving a commit earlier changes the order and nothing else",
+               history(moved) == ["two", "three", "one"], history(moved).joined(separator: " | "))
+
+        // Amending an old commit: lazygit's headline feature, and it is `fixup` plus `--autosquash`
+        // underneath everywhere it exists.
+        let amend = build("amend-old")
+        let target = ((try? runner.run(.logGraph(limit: 5, all: false), in: amend))?.trimmedOutput ?? "")
+            .split(separator: "\n").map { $0.components(separatedBy: "\u{1f}")[0] }
+        write("changed by the amend\n", to: "one.txt", in: amend)
+        shell(["add", "-A"], in: amend)
+        if target.count >= 3 {
+            _ = try? actions.amendOldCommit(target[2], in: amend)
+            report("amending an old commit leaves the count alone", history(amend).count == 3,
+                   history(amend).joined(separator: " | "))
+            let atCommit = (try? runner.run(.catFileBlob(rev: target.count >= 3 ? "HEAD~2" : "HEAD",
+                                                         path: "one.txt"), in: amend))?.trimmedOutput
+            report("and the change is in the commit that was amended, not on the tip",
+                   atCommit == "changed by the amend", atCommit ?? "-")
+        }
+
+        // A restore point is taken before every rewrite, and it is the only way back from one.
+        let restored = build("rewrite-restore")
+        let before = state.headSha(in: restored)
+        let point = try? actions.rewrite(state.headSha(in: restored) ?? "HEAD", as: .drop, in: restored)
+        report("the rewrite recorded where the branch was", point?.head == before,
+               "\(point?.head ?? "-") vs \(before ?? "-")")
+        if let point { try? actions.restore(point, in: restored) }
+        report("and restoring puts the dropped commit back",
+               state.headSha(in: restored) == before && history(restored).count == 3,
+               history(restored).joined(separator: " | "))
+    }
+
     print("\n=== W-4: whole-file staging, unstaging, and discarding ===")
     do {
         let repo = makeRepository("whole", in: scratch)

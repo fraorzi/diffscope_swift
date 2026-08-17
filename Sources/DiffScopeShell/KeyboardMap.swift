@@ -290,8 +290,19 @@ public enum KeyboardMap {
         .init(id: "git.bisect", title: "Bisect…", key: "y", modifiers: [.shift, .command],
               menu: .repository),
 
+        // The hunk under the caret, staged from the keyboard. The change stops are already where
+        // the reader navigates, so *this one* needs no new thing drawn to point at.
+        .init(id: "git.stageHunk", title: "Stage This Hunk", key: "g", modifiers: [.option, .command],
+              menu: .repository, satisfies: .stageAndUnstage),
+        .init(id: "git.unstageHunk", title: "Unstage This Hunk", key: "g",
+              modifiers: [.shift, .option, .command], menu: .repository, satisfies: .stageAndUnstage),
+
         .init(id: "git.revert", title: "Revert Commit", key: "v", modifiers: [.option, .command],
               menu: .repository, satisfies: .actOnCommit),
+        // Reword, squash, fixup, drop and the two moves — lazygit's verbs, as words rather than as
+        // a drag, because a gesture is not a keyboard route (DEC-016).
+        .init(id: "git.rewrite", title: "Rewrite History Around This Commit…", key: "e",
+              modifiers: [.option, .command], menu: .repository, satisfies: .actOnCommit),
         .init(id: "git.cherryPick", title: "Cherry-pick Commit", key: "y",
               modifiers: [.option, .command], menu: .repository, satisfies: .actOnCommit),
         // Reset can discard a working tree, so it is the third deliberately unbound row.

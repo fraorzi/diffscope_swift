@@ -177,6 +177,59 @@ private func alignMiddle(_ old: [LineKey], _ new: [LineKey],
     return steps
 }
 
+/// The changes of one hunk: the run of changed steps the given **new-side line** falls in or
+/// nearest to, with the context between them.
+///
+/// This is what *stage this hunk* means, and it is computed from the walk rather than from a patch
+/// so that the same selection can be turned into bytes by `applySelection` — which is what makes a
+/// hunk staged from the keyboard as checkable as a line staged by clicking.
+public func hunkSelection(walk: [WalkStep], aroundNewLine line: Int) -> Set<Int> {
+    let changes = walk.indices.filter { walk[$0].isChange }
+    guard !changes.isEmpty else { return [] }
+
+    // Runs of changes separated by at least one context step. A hunk is what a reader sees as one
+    // block, which is exactly that.
+    var runs: [[Int]] = []
+    for position in changes {
+        if let last = runs.last?.last, walk[(last + 1)..<position].allSatisfy({ !$0.isChange }),
+           position - last <= 1 {
+            runs[runs.count - 1].append(position)
+        } else if let last = runs.last?.last, position - last == 1 {
+            runs[runs.count - 1].append(position)
+        } else {
+            runs.append([position])
+        }
+    }
+
+    /// The new-side line each step sits at, so *the cursor is here* can be answered.
+    func newLine(of position: Int) -> Int {
+        switch walk[position] {
+        case let .context(_, new): return new
+        case let .addition(new): return new
+        case let .removal:
+            // A removal has no new-side line of its own; it belongs to the line it was removed
+            // before, which is the next new-side line in the walk.
+            for later in (position + 1)..<walk.count {
+                if case let .context(_, new) = walk[later] { return new }
+                if case let .addition(new) = walk[later] { return new }
+            }
+            return Int.max
+        }
+    }
+
+    let target = line - 1
+    var best = runs[0]
+    var bestDistance = Int.max
+    for run in runs {
+        let first = newLine(of: run[0])
+        let last = newLine(of: run[run.count - 1])
+        let distance = target < first ? first - target : (target > last ? target - last : 0)
+        if distance < bestDistance { bestDistance = distance; best = run }
+        if distance == 0 { break }
+    }
+    return Set(best)
+}
+
 /// The bytes that result from taking **only** the selected steps.
 ///
 /// Computed from the walk and the two files directly, with no patch anywhere in it. This is the
