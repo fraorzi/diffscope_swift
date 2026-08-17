@@ -115,13 +115,12 @@ public func structuralDiff(
     external: [Degradation] = []
 ) -> StructuralResult {
     func fallbackResult(_ degradation: Degradation) -> StructuralResult {
-        let label: SegmentLabel = oldBytes == newBytes ? .unchanged : .fallback
+        // One route for every whole-file fallback, so the F-rows cannot drift apart from Raw mode
+        // (DEC-095). `trivialModel` localises the change wherever the byte diff can be computed and
+        // paints the whole file only where it cannot.
         return StructuralResult(
-            model: DiffModel(
-                oldBytes: oldBytes, newBytes: newBytes,
-                oldPartition: wholeFilePartition(length: oldBytes.count, label: label),
-                newPartition: wholeFilePartition(length: newBytes.count, label: label)
-            ),
+            model: trivialModel(oldBytes: oldBytes, newBytes: newBytes,
+                                absorption: AbsorptionSettings(islandBytes: settings.absorbIslandBytes)),
             stats: StructuralStats(anchors: 0, ambiguities: 0,
                                    unchangedBytesOld: 0, unchangedBytesNew: 0,
                                    usedFallback: true, degradation: degradation)

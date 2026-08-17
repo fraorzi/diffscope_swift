@@ -159,6 +159,17 @@ Elevated from the original sketch: 51% of the real corpus contains non-ASCII, an
 | `empty-file` | Empty → content and reverse. |
 | `no-trailing-newline` | Classic off-by-one source. |
 
+### 4.8 Languages with no grammar — P1
+
+There is one parser (TSX), so every other extension takes the fallback path. Since DEC-095 that path
+computes a real diff, and these two cases are what hold it to that: the treatment has to be about
+*having no parser* rather than about CSS.
+
+| Case | Exercises |
+|---|---|
+| `css-property-change` | One declaration changed in a stylesheet. Must mark the line, not the file. |
+| `json-value-change` | The same, in a second extension, so the rule is not read off one grammar. |
+
 ### 4.7 File-level operations — P1
 
 | Case | Exercises |

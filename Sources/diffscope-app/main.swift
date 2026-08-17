@@ -5409,7 +5409,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
         guard mode.usesStructure else {
             return rawOutcome(notices: outside.map { [$0.notice] } ?? [],
-                              summary: outside.map { "raw — \($0.reason)" } ?? "raw",
+                              summary: outside.map { "plain text — \($0.reason)" } ?? "plain text",
                               parser: ParserStateReport.of(structuralRequested: false,
                                                            structuralUsed: false,
                                                            degradation: outside))
@@ -5422,7 +5422,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 ?? .parseFailure(reason: "structural analysis unavailable")
             return ModelOutcome(model: result.model, validation: validate(result.model),
                                 notices: [degradation.notice],
-                                summary: "raw — \(degradation.reason)",
+                                summary: "plain text — \(degradation.reason)",
                                 pathTaken: "raw", parser: result.stats.parserState)
         }
 
@@ -5431,7 +5431,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             let discarded = Degradation.invariantViolation(reason: validation.summary)
             return rawOutcome(
                 notices: [discarded.notice],
-                summary: "raw — structural result discarded",
+                summary: "plain text — structural result discarded",
                 // The file parsed. What failed was the check afterwards, and saying "not parsed"
                 // here would make the indicator report the wrong stage of the pipeline — the whole
                 // reason §5.2 lists parser state separately from fallback marking.

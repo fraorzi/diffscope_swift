@@ -508,4 +508,53 @@ func runRenderedComparisonChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("and sets an observable marker, so a boundary failure is visible rather than argued",
                hostile.contains("__diffscopeHostile"))
     }
+
+    print("\n=== DEC-095: an unsupported language still gets a localised diff ===")
+    do {
+        guard let parser = TSXParser() else { report("parser for the F7 checks", false); return }
+        let old = [UInt8](".title {\n  color: red;\n  font-size: 12px;\n}\n\n.body {\n  margin: 0;\n}\n".utf8)
+        let new = [UInt8](".title {\n  color: blue;\n  font-size: 12px;\n}\n\n.body {\n  margin: 0;\n}\n".utf8)
+        let result = structuralDiff(oldPath: "styles.module.css", oldBytes: old,
+                                    newPath: "styles.module.css", newBytes: new, parser: parser)
+
+        report("a file with no grammar still falls back", result.stats.usedFallback,
+               result.stats.fallbackReason ?? "did not fall back")
+        report("and says why", result.stats.degradation?.reason == "unsupported language",
+               result.stats.degradation?.reason ?? "none")
+        // Eight lines painted on each side was the old answer, and it was the shape of
+        // `wholeFilePartition` rather than anything F7 requires.
+        report("but it marks the line that changed, not the file holding it",
+               changedLines(bytes: new, partition: result.model.newPartition) == [2],
+               "\(changedLines(bytes: new, partition: result.model.newPartition))")
+        report("on the old side too",
+               changedLines(bytes: old, partition: result.model.oldPartition) == [2],
+               "\(changedLines(bytes: old, partition: result.model.oldPartition))")
+        report("INV-4: every presented segment is still marked as a fallback",
+               result.model.newPartition.segments.filter(\.isPresented)
+                   .allSatisfy { $0.label == .fallback }
+                   && result.model.newPartition.segments.contains(where: \.isPresented))
+        report("and the bytes that did not change are labelled unchanged",
+               result.model.newPartition.segments.contains { $0.label == .unchanged })
+        report("the invariants hold on the localised partition", validate(result.model).passed,
+               validate(result.model).summary)
+        report("the notice still says the file is shown as plain text",
+               (result.stats.degradation?.notice ?? "").contains("plain text"),
+               result.stats.degradation?.notice ?? "none")
+
+        // The negative control, and the branch that keeps the whole file honest: where the byte
+        // diff cannot be computed, the whole file is still the answer, because nothing smaller is
+        // known. 120 KB of random bytes is the same input `runBudgetChecks` uses.
+        var seed: UInt64 = 0x9E37
+        func noise(_ count: Int) -> [UInt8] {
+            (0..<count).map { _ in
+                seed = seed &* 6364136223846793005 &+ 1442695040888963407
+                return UInt8((seed >> 33) % 251)
+            }
+        }
+        let pathological = trivialModel(oldBytes: noise(120_000), newBytes: noise(120_000))
+        report("negative control: a diff that cannot be computed still gives the whole file",
+               pathological.newPartition.segments.count == 1
+                   && pathological.newPartition.segments.first?.label == .fallback,
+               "\(pathological.newPartition.segments.count) segments")
+    }
 }

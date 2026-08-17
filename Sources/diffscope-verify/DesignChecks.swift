@@ -513,9 +513,9 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
     do {
         // The classes that carry a difference. Hiding any of these turns a correct model into a
         // false picture, which is the one regression CSS alone can cause.
-        let carriers = ["ds-changed", "ds-fallback", "ds-moved", "ds-formatting", "ds-behaviour",
-                        "ds-uncertain", "ds-invisible", "ds-fold", "ds-fold-formatting",
-                        "ds-badge", "ds-gutter-changed", "ds-chip"]
+        let carriers = ["ds-changed", "ds-fallback", "ds-parse-error", "ds-moved", "ds-formatting",
+                        "ds-behaviour", "ds-uncertain", "ds-invisible", "ds-fold",
+                        "ds-fold-formatting", "ds-badge", "ds-gutter-changed", "ds-chip"]
         var offenders: [String] = []
         for name in carriers {
             // The rule body for this class, if the stylesheet declares one.
@@ -550,8 +550,8 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
                                "background-color: var(--ds-tint",
                                "outline", "border", "font-weight", "background: var(--ds-fill"]
         var colourOnly: [String] = []
-        for name in ["ds-changed", "ds-fallback", "ds-moved", "ds-formatting", "ds-behaviour",
-                     "ds-uncertain", "ds-invisible", "ds-gutter-changed"] {
+        for name in ["ds-changed", "ds-fallback", "ds-parse-error", "ds-moved", "ds-formatting",
+                     "ds-behaviour", "ds-uncertain", "ds-invisible", "ds-gutter-changed"] {
             // **Grouped selectors, not just bare ones.** Four of these marks share one rule now, so
             // a pattern anchored on `.name {` reported *no rule at all* for every one of them — a
             // check that fails closed, which is the right direction, but for the wrong reason and
@@ -698,8 +698,8 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // shell that has wandered out of the selected repository — and a file-wide ban would have
         // to be worked around rather than kept.
         var underlined: [String] = []
-        for name in ["ds-changed", "ds-fallback", "ds-moved", "ds-formatting", "ds-behaviour",
-                     "ds-uncertain", "ds-invisible"] {
+        for name in ["ds-changed", "ds-fallback", "ds-parse-error", "ds-moved", "ds-formatting",
+                     "ds-behaviour", "ds-uncertain", "ds-invisible"] {
             guard let range = html.range(of: "\\.\(name)\\s*\\{[^}]*\\}", options: .regularExpression)
             else { continue }
             if String(html[range]).contains("text-decoration") { underlined.append(name) }

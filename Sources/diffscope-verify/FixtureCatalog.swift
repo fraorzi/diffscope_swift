@@ -103,6 +103,11 @@ enum FixtureCatalog {
         FixtureCase(name: "binary-file", group: "4.6 degenerate", priority: .p0, evidence: .corpus),
         FixtureCase(name: "image-file", group: "4.6 degenerate", priority: .p0, evidence: .corpus),
         FixtureCase(name: "no-trailing-newline", group: "4.6 degenerate", priority: .p0, evidence: .corpus),
+
+        // §4.8 — languages with no grammar. Two extensions, because DEC-095's treatment has to be
+        // shown to be about *having no parser* rather than about CSS.
+        FixtureCase(name: "css-property-change", group: "4.8 unparsed", priority: .p1, evidence: .corpus),
+        FixtureCase(name: "json-value-change", group: "4.8 unparsed", priority: .p1, evidence: .corpus),
         FixtureCase(name: "empty-file", group: "4.6 degenerate", priority: .p0,
                     evidence: .corpusUnder("empty-to-content")),
         FixtureCase(

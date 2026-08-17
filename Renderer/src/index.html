@@ -210,10 +210,16 @@
        gone is drawing four indistinguishable things four different ways. */
     background-color: var(--ds-tint-seg);
   }
+  /* A fallback is a mark like any other and carries the tint above. What it does *not* carry is the
+     box: since DEC-095 an unsupported language gets a localised diff whose every segment is a
+     fallback, and boxing each of them draws a `.css` file full of hairlines. */
+  .ds-fallback {
+    background-color: var(--ds-tint-seg);
+  }
   /* INV-4, in the one case the notice cannot reach: a **partial** parse, where the result stands
      and named regions inside it were never read as code. The sentence says how many; this says
      which. Solid, against `ds-moved`'s dashed and `ds-invisible`'s dotted. */
-  .ds-fallback {
+  .ds-parse-error {
     outline: var(--ds-hairline-width) solid var(--ds-mark);
     outline-offset: calc(-1 * var(--ds-hairline-width));
   }

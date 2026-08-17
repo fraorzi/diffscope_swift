@@ -2895,3 +2895,42 @@ a presentation pass has had to be told about moves after the fact — M6-D's `li
 
 Both are DEC-093's deferred option (c) — relax the bound that stops a shift consuming a neighbouring
 match — and neither is reachable from presentation.
+
+---
+
+## M11-E — What the whole-file fallback was costing
+
+**2026-08-17.** DEC-095. Three modified files with no grammar, taken from the sibling repositories on
+the owner's machine, against `git diff -U0`.
+
+| file | lines painted before | lines marked now | git says |
+|---|---|---|---|
+| `orzi-kurs/app/globals.css` | 589 | **10** | 10 |
+| `polska-bezgotowkowa/package.json` | 89 | **1** | 1 |
+| `remington/…/filepond.css` | 131 | **6** | 5 |
+| **total** | **809** | **17** | 16 |
+
+Two of the three are exact. `filepond.css` reports one line more than git, which is a boundary landing
+one line down rather than a change being invented; it is the same residue the `.tsx` corpus carries.
+
+### The cost, and the budget that bounds it
+
+Wiring the byte diff into the fallback path put a full Myers on a path whose whole premise is that
+something about the file was too expensive or too unknown to analyse. `runBudgetChecks` caught it
+immediately: the dense-JSX gate case went from the parse baseline to **0.98 s**. The fallback path now
+has its own budget at a tenth of the default, and the case is back at the baseline. Every file small
+enough to be read on a screen still gets its localised diff; the ones that do not still get the whole
+file, which is the honest answer when nothing smaller is known.
+
+### A pre-existing defect this measurement found, and did not fix
+
+`--emit-structural`'s printer stars only the **first** line of a whole-file fallback, where the
+contract's `changedLines` correctly reports every line. Confirmed by holding the two against each
+other on an 81 KB `.mjml` pair: `--emit-model` reports 1160 changed lines and the printer stars 1.
+It predates DEC-093 — the same file behaves identically on the commit before it — and it is confined
+to the diagnostic tool; the gutter the application draws comes from the contract and is right.
+
+It matters here only for what it excludes: `Scripts/devtools/measure-alignment.sh` counts stars, so
+it under-reports any file that takes the whole-file path. **The M11-B/C/D corpus contains none** —
+every file in it is `.tsx` or `.ts` and takes the structural path — so those numbers stand. The table
+above deliberately uses three files that do not hit that path either.

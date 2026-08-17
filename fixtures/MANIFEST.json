@@ -59,6 +59,18 @@
       "sha256" : "90b7266ff1881a2182eaefef21ca83201538bc0da55ca33a1fb645800fd21557"
     }
   },
+  "css-property-change" : {
+    "after" : {
+      "bytes" : 69,
+      "ext" : "css",
+      "sha256" : "a6809cddeae7bce9edaf2b4f5983ed5c7c49d4e239b6f074b58c2c4cef03b01a"
+    },
+    "before" : {
+      "bytes" : 68,
+      "ext" : "css",
+      "sha256" : "de77451c9d1b31d9f245d149af5adc89949c10b8d3f19589b3ddc0d32cff472a"
+    }
+  },
   "duplicated-nodes" : {
     "after" : {
       "bytes" : 59,
@@ -213,6 +225,18 @@
       "bytes" : 19,
       "ext" : "ts",
       "sha256" : "7a6645c756b55155c3a3ba67e88b591373f0c131c7c53228f1c1885a7863e0d8"
+    }
+  },
+  "json-value-change" : {
+    "after" : {
+      "bytes" : 67,
+      "ext" : "json",
+      "sha256" : "f11acb542c1f16df9d6bd4acee320fa2baad649156f88dee55ae62147a639b72"
+    },
+    "before" : {
+      "bytes" : 67,
+      "ext" : "json",
+      "sha256" : "28904ebf5085724cc76338a7cbf080d865f9679f4dede3446252868bdf1a256e"
     }
   },
   "jsx-text-punctuation" : {

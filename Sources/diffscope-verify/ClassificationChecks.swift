@@ -125,8 +125,17 @@ func runClassificationChecks(_ reportRaw: (String, Bool, String) -> Void) {
                cssRender.notices.contains { $0.hasPrefix("raw for this file") },
                cssRender.notices.joined(separator: " | "))
         if case let .text(old, _) = cssRender.payload {
-            report("and its segments are labelled fallback, not unchanged",
-                   old.segments.allSatisfy { $0.label == "fallback" }, "\(old.segments.count) segments")
+            // INV-4 is a promise about what is *presented*, not about how much of the file is. Since
+            // DEC-095 an unsupported language gets a localised diff, so the unchanged bytes around
+            // the change are labelled unchanged — the check that they were all fallback was reading
+            // the shape of `wholeFilePartition`, not the invariant.
+            let presented = old.segments.filter { $0.label != "unchanged" }
+            report("and every presented segment is labelled fallback",
+                   !presented.isEmpty && presented.allSatisfy { $0.label == "fallback" },
+                   old.segments.map(\.label).joined(separator: " "))
+            report("while the bytes that did not change are not painted with them",
+                   old.segments.contains { $0.label == "unchanged" },
+                   "\(old.segments.count) segments")
         }
     }
 

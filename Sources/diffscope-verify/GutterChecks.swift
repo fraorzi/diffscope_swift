@@ -19,12 +19,16 @@ func runGutterChecks(_ reportRaw: (String, Bool, String) -> Void) {
 
     print("\n=== the gutter marks the lines that changed (12-… §5.1) ===")
     do {
-        // Raw marks the whole file as one fallback segment, so every line carries a difference.
-        // That is correct and worth stating: Raw claims no structure, and the gutter must not
-        // imply one.
+        // This check used to assert `[1, 2, 3]` — every line of the file — and argued for it: Raw
+        // claims no structure, so the gutter must not imply one. The argument was sound and the
+        // premise was not. Raw claims no *structure*; comparison never depended on parsing
+        // (DEC-021), so marking the two untouched lines was the shape of `wholeFilePartition`
+        // rather than a consequence of claiming nothing. The old value is kept as the control.
         let whole = lines("a\nb\nc\n", "a\nB\nc\n")
-        report("a raw model marks every line of a changed file",
-               whole.new == [1, 2, 3], String(describing: whole.new))
+        report("a raw model marks the line that changed and not the file holding it",
+               whole.new == [2], String(describing: whole.new))
+        report("negative control: it is not marking every line and calling it precision",
+               whole.new != [1, 2, 3], String(describing: whole.new))
 
         let unchanged = lines("a\nb\n", "a\nb\n")
         report("an unchanged file marks nothing",

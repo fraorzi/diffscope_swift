@@ -68,7 +68,8 @@ Classes marked **load-bearing** carry a difference. They may be restyled and may
 | Class | Means | Load-bearing |
 |---|---|---|
 | `ds-changed` | Ordinary edited content | **Yes** |
-| `ds-fallback` | This region is raw, not structural (INV-4) | **Yes** |
+| `ds-fallback` | This region is shown as plain text, not structural (INV-4). Since [DEC-095](04-decision-log.md) it marks the *change*, not the file holding it, so it carries the tint and not the box | **Yes** |
+| `ds-parse-error` | A region the parser could not read, inside a file the rest of which it could (F1). The one case the notice cannot point at, so it keeps the solid hairline `ds-fallback` used to carry | **Yes** |
 | `ds-moved` | Byte-identical content that appears elsewhere on the other side (DEC-038) | **Yes** |
 | `ds-formatting` | A change classified formatting-only — quietened, never hidden (DEC-017) | **Yes** |
 | `ds-behaviour` | Reordering: possibly behaviour-affecting, and the tool will not claim otherwise | **Yes** |

@@ -141,6 +141,11 @@ function markItems(state, segments) {
     if (currentMode !== "expanded" && GROUP_CLASS[seg.group]) classes.push(GROUP_CLASS[seg.group]);
     if (seg.uncertain) classes.push("ds-uncertain");
     if (seg.disclosure) classes.push("ds-invisible");
+    // The hairline box belongs to a **region** the parser could not read, which is the one case
+    // INV-4's notice cannot point at. `parse-error` is set in exactly one place — `markUnparsed` —
+    // and since DEC-095 a fallback is no longer the whole file, so `ds-fallback` would draw the box
+    // around every change in a `.css` file rather than around a hole in a `.tsx` one.
+    if (seg.classification === "parse-error") classes.push("ds-parse-error");
     const attributes = {};
     if (seg.classification) attributes["data-classification"] = seg.classification;
     if (seg.disclosure) attributes["data-disclosure"] = seg.disclosure;
@@ -1114,9 +1119,9 @@ window.diffscopeAnchorState = function () {
 // carries at least one non-colour signal — texture, decoration, outline or edge (DEC-035, because
 // colour alone fails in greyscale, in a screenshot and for a colour-blind reader).
 window.diffscopeStyleAudit = function () {
-  const marks = ["ds-changed", "ds-fallback", "ds-moved", "ds-formatting", "ds-behaviour",
-                 "ds-uncertain", "ds-invisible", "ds-fold", "ds-fold-formatting", "ds-badge",
-                 "ds-gutter-changed", "ds-chip"];
+  const marks = ["ds-changed", "ds-fallback", "ds-parse-error", "ds-moved", "ds-formatting",
+                 "ds-behaviour", "ds-uncertain", "ds-invisible", "ds-fold", "ds-fold-formatting",
+                 "ds-badge", "ds-gutter-changed", "ds-chip"];
   const probe = document.createElement("span");
   document.body.appendChild(probe);
   const report = {};

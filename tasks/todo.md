@@ -2786,10 +2786,31 @@ line changes no line's status. Segments over the corpus: 185 → 182.
 
 182 segments → 159, for 0.7% more presented bytes. `false` unmoved at 23, which is rule 4 holding.
 
+## Step — a language with no grammar gets a real diff (DEC-095, M11-E)
+
+- [x] `fallbackPartitions` in `TrivialPartition.swift` — segments from `canonicalDiff`, labelled
+      `.fallback` so INV-4 holds, then absorption, grapheme snapping and coalescing. No
+      `snapPresentation`: it is the only one that needs a tree.
+- [x] `fallbackResult` and `trivialModel` both go through it, so Raw mode and the F-rows cannot drift
+- [x] `fallbackDiffWorkBudget` at a tenth of the default — `runBudgetChecks` caught the dense-JSX
+      gate case going from the parse baseline to 0.98 s, and this puts it back
+- [x] the hairline moves from `ds-fallback` to `ds-parse-error`, which only `markUnparsed` sets;
+      `ds-fallback` keeps the tint, and `24-design-contract.md` gains the row
+- [x] the status line says `plain text — …`; `pathTaken` keeps `raw`, which is the contract's word
+- [x] nine F7 checks in `DegradationChecks.swift` with the budget-exceeded negative control, and
+      `css-property-change` / `json-value-change` fixtures in a new §4.8
+
+809 lines painted becomes 17, against git's 16.
+
 ### Still open
-- [ ] the whole-file fallback: a `.css` file with one word changed marks every line, and
-      `.ds-fallback`'s hairline then boxes the entire body. The rule was written for `markUnparsed`'s
-      partial regions and its own comment says so.
+- [ ] **`--emit-structural`'s printer stars only the first line of a whole-file fallback**, where the
+      contract's `changedLines` correctly reports every one. Held against each other on an 81 KB
+      `.mjml` pair: `--emit-model` says 1160 lines, the printer stars 1. Predates DEC-093 — the same
+      file behaves identically on the commit before it — and it is confined to the diagnostic tool.
+      But `Scripts/devtools/measure-alignment.sh` counts stars, so it under-reports any file taking
+      that path. The M11 corpus contains none, so those numbers stand.
+- [ ] `canonicalDiff` is computed three times per model — `trivialModel`, `validate`, `changeStops`.
+      It was twice before DEC-095. A threading opportunity, not a blocker.
 - [ ] the unified view prints byte-identical lines twice wherever a mark leaks onto one; the peel
       belongs in the engine, because `unifiedBlocks` is the one part of that layout deciding *what is
       shown* that the renderer works out for itself.

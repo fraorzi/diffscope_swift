@@ -4180,3 +4180,72 @@ absorption from the shipped one.
 
 Reopen if a case appears where absorption merges two changes a reviewer needed to see as separate —
 DEC-047's own trigger, restated for this pass.
+
+---
+
+## DEC-095 — A language with no grammar gets a real diff, and the hairline marks a region rather than a file
+
+- **Date:** 2026-08-17 · **Topic:** What the fallback path shows · **Status:** Accepted
+- **Prompted by:** the owner's fifth diff session — a new `.module.css` file drawn with a near-opaque box around its entire body, and `raw` appended to its name in the status line
+
+### Context
+
+`SyntaxPartition.swift` gates structural analysis on eight extensions. Everything else — `.css`,
+`.json`, `.md`, `.yml`, `.py`, `.sh` — reports F7 `unsupportedLanguage`, and `fallbackResult` answered
+that with `wholeFilePartition`: **one segment covering the file, confidence 0.** Measured on the
+owner's own machine, a 589-line `globals.css` with a ten-line change marked all 589.
+
+The renderer then drew `.ds-fallback`'s solid hairline around the whole body. The rule's own comment
+says what it was written for — *"a **partial** parse, where the result stands and named regions
+inside it were never read as code"* — which is `markUnparsed`, not this.
+
+### The premise that was wrong
+
+F7 is a statement about **structure**. Comparison never depended on parsing — that is DEC-021, and it
+is why the byte diff is the thing the structural path is *validated against*. Painting every line was
+never required by any decision; it was the shape of `wholeFilePartition`, inherited from a time when
+the fallback path had nothing else to offer. It has had the byte diff all along.
+
+### Decision
+
+`fallbackPartitions` builds the two partitions from `canonicalDiff`, labels every presented range
+`.fallback`, and runs the passes that need no parse: DEC-094's absorption, grapheme snapping,
+coalescing. DEC-093's shift is already inside `canonicalDiff`, so the alignment arrives on line and
+token boundaries. `snapPresentation` is skipped, because it is the one that needs a tree.
+
+- **INV-4 is unchanged.** Every presented range is still marked as produced without structural
+  analysis, and `fallbackNotice` still says the file is shown as plain text. What changes is that the
+  bytes that did not change are labelled `.unchanged` instead of being painted with the rest.
+- **Raw mode takes the same route, in the same function.** DEC-013 makes Raw a *path* and not a worse
+  answer, and two implementations of "what a file looks like when nothing parsed" would drift.
+- **Where the diff cannot be computed, the whole file is still the answer**, because nothing smaller
+  is known. That branch is kept and tested.
+- **The fallback path gets its own work budget**, a tenth of the default. A file arrives here
+  *because* something about it was too expensive or too unknown to analyse, so spending the full
+  budget re-deriving that is the wrong trade — measured, the dense-JSX gate case went from 0.98 s to
+  the parse baseline and back again.
+- **The hairline moves to `ds-parse-error`**, which `markUnparsed` sets and nothing else does.
+  `ds-fallback` keeps the tint, so it is still a mark and still survives greyscale; what it loses is
+  a box it would now draw around every change in a stylesheet.
+- **The status line says `plain text — …` rather than `raw — …`.** `pathTaken` keeps `raw`: that is
+  the contract's word. The reader's word collided with the Raw *mode* in the pill, which means
+  something else entirely.
+
+### Consequences
+
+- Over three real files: **809 lines painted becomes 17, against git's 16** (M11-E).
+- **`GutterChecks`' "a raw model marks every line of a changed file" is inverted**, and the old value
+  is kept as a printed control. Its comment argued the case — *Raw claims no structure, and the
+  gutter must not imply one* — and the argument was sound while the premise was not. The old value
+  is now the negative control: *it is not marking every line and calling it precision.*
+- `ClassificationChecks`' "its segments are labelled fallback, not unchanged" becomes "every
+  *presented* segment is labelled fallback", which is what INV-4 says.
+- `canonicalDiff` is now computed on the fallback path as well as in `validate` and `changeStops`.
+  That is three times per model where it was twice. Recorded in `tasks/todo.md` as a threading
+  opportunity, not a blocker.
+
+### Revisit trigger
+
+Reopen if a file class appears where the byte diff on the fallback path is both affordable and
+misleading — the case this entry assumes does not exist, because comparison does not depend on
+parsing.
