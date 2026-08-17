@@ -16,7 +16,9 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 **Three findings**, all in [DEC-093](04-decision-log.md): a hidden `NSView` keeps its constraints (a 26 pt gap over the status line for every repository with nothing in progress); a button's title became the file pane's minimum width, caught by `dragSelftest` rather than by anything looking at the button; and `fixup! <sha>` is not the subject `--autosquash` matches, so *amend an old commit* left its fixup sitting on the branch.
 
-**Two things are not built, and neither is blocked by a decision**: the graph column in the History lens and click-to-select lines in the diff. Both need a renderer bundle rebuild, and `Renderer/node_modules` is not installed on this machine. The graph's lanes are computed and checked; the line-staging code is built and proven by INV-6, and ⌥⌘G reaches it from the keyboard.
+**The renderer's half landed after the rest**: History draws its lanes, a click on a commit picks it — the shell has had that handler since M9 and **the page had never sent the message**, so DEC-061's comparison and every commit verb had nothing to act on — and a click on a `+` or `−` in the sign column stages or unstages that line.
+
+**What is left of the plan** is in [29-git-operations-plan.md](29-git-operations-plan.md) §6: submodules (deferred by OQ-014/OQ-015), pull requests and checks (out of scope — they need the GitHub API and an account model), and a three-way merge surface (OQ-D chose the editor hand-off instead).
 
 ---
 

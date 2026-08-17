@@ -269,6 +269,8 @@ section is that it splits rather than weakens.**
 Each is a shippable state, each ends with `swift build` and `swift run diffscope-verify` green, and
 each gets its own decision entry before its code.
 
+**Status, 2026-08-17 ([DEC-093](04-decision-log.md)): M11 through M17 are built**, in four commits and one session, with 1832 → 1913 checks and a selftest arm that stages a file and commits it through the controls. What is deliberately absent is named under the table: submodules, pull requests and checks, and a three-way merge surface.
+
 | # | Milestone | Contents | Gate |
 |---|---|---|---|
 | **M11** | **The write foundation** | Second registry, write runner, restore points, confirmation classes, post-write refresh, command record. **Unstage, stage whole file, discard file.** | R-8 split; R-8b for whole-file staging; a lock-contention case that reports rather than throws |
@@ -281,6 +283,12 @@ each gets its own decision entry before its code.
 
 **M11 and M12 are the product.** Everything from M13 down is reachable today by typing in the
 drawer; staging a line by hand is not.
+
+**What is not built, and why** (2026-08-17):
+
+- **Submodules** — deferred by OQ-014/OQ-015, and nothing in the owner's repository population has one.
+- **Pull requests, checks and notifications** — out of scope in §3 T5: they need the GitHub API and an account model, which is a different product surface from a Git client.
+- **A three-way merge surface** — OQ-D chose the editor hand-off, and that is what M13 built.
 
 ---
 

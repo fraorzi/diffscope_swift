@@ -4010,6 +4010,10 @@ Reopen if M11 or M12 cannot make R-8b hold on the fixture corpus — a staging s
 - The application's single raw `git` spawn — the selftest fixture — is now **one function with a runtime guard** that refuses any directory outside `NSTemporaryDirectory()`. It was a comment in a check before, and a comment is not a refusal.
 - `12-…` §9b is the keyboard coverage table for functions that write, and four operations are deliberately unbound with their reason.
 
-### What is not built
+### The renderer's half, built after the rest
 
-The **graph column in the History lens**: the lanes are computed and checked in `RepositoryStateReader.graph`, and drawing them needs a renderer bundle rebuild, which needs `Renderer/node_modules` — not present on this machine. **Line-level selection by clicking in the diff** needs the same rebuild; the Swift half is built and proven, and the keyboard route (`⌥⌘G`) reaches the same code. Both are M14/M12 items and neither is blocked by anything but that install.
+The two items this entry first recorded as *not built* — the graph column and clicking a line to stage it — needed `Renderer/node_modules`, which was not installed. It installed, and both landed:
+
+- **History draws its topology.** `GraphCommit.laneColumn` composes the lane marks in the Git layer — `●`, `│`, and `─` where a merge reaches for its second parent — and the page draws them in a fixed-width column, so the lines join up between rows. git's own `--graph` output is still never parsed: it is a presentation, and the lanes come from `%P`.
+- **A commit can be picked at last.** The shell has had a `pickCommit` handler since M9 and **the page never sent the message** — so DEC-061's two-commit comparison, and every verb in the Repository menu that acts on a commit, had no way to be given one. Found by writing the verbs, not by a check.
+- **The sign column stages its line.** `+` and `−` are already the mark that says which side a line is on, so they carry the action rather than a second column of checkboxes saying the same thing. The message is validated like the sha beside it: a line number that becomes a patch against the index is input, not instruction.
