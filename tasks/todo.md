@@ -2816,6 +2816,20 @@ line changes no line's status. Segments over the corpus: 185 → 182.
 first. The 36 duplicated lines that remain are lines that are byte-identical *and carry a mark*, and
 the peel must refuse those — the answer is the alignment, below.
 
+## Step — a shift may consume a short match (DEC-097, M11-G)
+
+- [x] the walk may reach `current.length` / `previous.length` when the match is ≤ 8 bytes, and only
+      a rank-1 landing may take it; consumed matches are dropped rather than kept at zero width
+- [x] DEC-087's "a match shrinking to nothing is a different edit script" is the half that was
+      wrong — it is the same script, partitioned into hunks differently, and the matched total is
+      invariant either way. Asserted over 300 random pairs against `applyShift: false`.
+- [x] five checks in `AlignmentChecks.swift`, including the negative control that a match longer
+      than the floor is left alone
+
+`}: ImageTextProps) {` carries no mark now. false 23 → 22, presented bytes 5581 → 5570, lines printed
+twice 36 → 32, segments 159 → 160 — the first entry in the series where the mark count moved the
+wrong way, and the trade is stated in DEC-097 rather than hidden.
+
 ### Still open
 - [ ] **`--emit-structural`'s printer stars only the first line of a whole-file fallback**, where the
       contract's `changedLines` correctly reports every one. Held against each other on an 81 KB
@@ -2828,19 +2842,17 @@ the peel must refuse those — the answer is the alignment, below.
 - [ ] the unified view prints byte-identical lines twice wherever a mark leaks onto one; the peel
       belongs in the engine, because `unifiedBlocks` is the one part of that layout deciding *what is
       shown* that the renderer works out for itself.
-- [ ] the old pane's silence on a reflow — 20 of 31 removed lines carry no mark, and no alignment
-      fixes it. Needs substitutions presented on both sides.
-- [ ] insertions separated by a single unchanged line cannot shift: the search is bounded by the
-      neighbouring match lengths. `PageComponents.tsx` and `BannerWithImage.tsx` are what is left.
-      **DEC-093's deferred option (c)** — relax "no neighbouring match may be consumed" — is the
-      candidate answer, and it merges hunks, so it moves `changeStops`, and navigation, folds,
-      collapses and the unified blocks all key off stops. Its own entry, with its own measurement.
-
-      **This is now the single largest open item, and three separate findings point at it.**
-      `⟦~s⟧⟦rc⟧` over an unchanged `src` (M11-D). `titleSize?: '2.5xl' | '2xl' | 'xl'` keeping five
-      marks (M11-D). And all 36 lines the unified view still prints twice (M11-F) — each of them
-      byte-identical and carrying a mark, which no presentation pass may remove. Absorption and the
-      peel have both been taken as far as monotone widening goes; what is left is the alignment.
+- [ ] **the reflow case, now the single largest open item, with four findings pointing at it.** When
+      a block is reflowed the old bytes are a subsequence of the new, and a minimal alignment
+      legitimately puts every changed byte on one side. That is: the old pane silent on 20 of 31
+      removed lines (M11-B); `⟦~s⟧⟦rc⟧` over an unchanged `src` and `titleSize` keeping five marks
+      (M11-D); 32 lines still printed twice in the unified view (M11-F); and the sites DEC-097's
+      floor cannot reach at any setting (M11-G). **No boundary rule reaches any of it** — absorption
+      and the peel are as far as monotone widening goes, and the alignment is already minimal. The
+      answer is a presentation that shows a substitution on *both* sides, which is not an alignment
+      change at all.
+- [x] ~~insertions separated by a short match cannot shift~~ — **DEC-097**. What it did not reach
+      is below, and it is all one thing.
 - [ ] `-uall` for the file list **and** the count, `-z` parsing, the `AM` glyph
 - [ ] the empty comparison when a row is a directory (INV-4)
 - [ ] a clause in DEC-083 for `ds-formatting`, `ds-behaviour`, `ds-uncertain`

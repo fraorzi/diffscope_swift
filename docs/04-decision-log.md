@@ -4302,3 +4302,68 @@ is a difference the layout would have stopped showing.
 
 Reopen if option (c) lands and the peel is then unreachable rather than rare — at that point it is
 the allowance, and it should go the same way.
+
+---
+
+## DEC-097 — A shift may consume a short match, and merge the two hunks either side of it
+
+- **Date:** 2026-08-17 · **Topic:** The bound DEC-093 deferred · **Status:** Accepted · **Amends DEC-087, DEC-093**
+- **Prompted by:** three findings pointing at one cause — M11-B's remaining files, M11-D's `⟦~s⟧⟦rc⟧`, and M11-F's 36 lines printed twice
+
+### Context
+
+DEC-093 listed this as option (c) and deferred it. Everything since has pointed back at it. The shift
+walk is bounded by `current.length` and `previous.length`, so **a four-byte match between two
+insertions bounds it to nothing** — which is precisely the owner's fourth case: a parameter added to
+a signature and a block added to the body, with `}: ImageTextProps) {` between them. Neither
+insertion could move, so the alignment anchored on that line's `{` and an untouched line read as
+edited, and then printed twice in the unified view.
+
+### Why it is legal, which is the part DEC-093 had already established
+
+A shift moves the boundary between the hunk and **each** of its neighbouring matches by the same
+amount: `previous` grows by the shift and `current` shrinks by it. At `shift == current.length`,
+`current` shrinks to nothing and `previous` has grown by exactly as much — **the total matched length
+is invariant**, which is the property INV-2's minimality rests on and the one the 600-pair LCS check
+asserts. What changes is the number of hunks, not the size of the edit script.
+
+DEC-087's sentence — *"a match shrinking to nothing merges two hunks into one, which is a different
+edit script rather than the same one written down better"* — is the half of this that was wrong. It
+is the same edit script. It is a different *partition* of that script into hunks, and a hunk is a
+presentation unit rather than a fact about the edit.
+
+### Decision
+
+A neighbouring match may be consumed when it is **no longer than `matchConsumeFloor` (8 bytes)** and
+the resulting position is **rank 1** — a whole number of lines on both sides. Anything else keeps
+DEC-087's bound. Consumed matches are dropped from the list rather than kept at zero width.
+
+Rank 1 only, because merging two hunks is the one thing this pass does that a reader can see as a
+*different* answer rather than a better-placed one. A token boundary does not earn it.
+
+**Eight, because that is where the curve saturates.** M11-G finds 8, 16, 24, 48 and 96 identical on
+the corpus. Consuming is the one direction in this pass that relocates presented bytes rather than
+renaming a boundary, so the smallest value buying the whole effect is the one to take — the opposite
+of the reasoning that picked DEC-094's floor, and for the opposite reason.
+
+### Consequences
+
+- `}: ImageTextProps) {` **carries no mark at all now**, and the insertion either side of it reads as
+  two clean line-aligned blocks. That was one of the five cases the owner reported.
+- Over the corpus: false lines 23 → **22**, presented bytes 5581 → **5570**, lines printed twice in
+  the unified view 36 → **32**. Segments 159 → 160: merging two hunks into one occasionally splits a
+  run elsewhere, and one extra mark for four fewer duplicated lines is the trade.
+- **It does not reach `⟦~s⟧⟦rc⟧` over an unchanged `src`, nor `return (`.** Both sit inside a
+  reflowed JSX element where the surrounding matches are far longer than any floor worth setting, and
+  raising the floor to 96 changes neither. What is left there is the reflow case the log has carried
+  since M11-B: the old bytes are a subsequence of the new, and a minimal alignment legitimately puts
+  every changed byte on one side. The answer is a presentation that shows a substitution on **both**
+  sides, which is a different entry and a larger one.
+- `changeStops` moves, so navigation, folds, formatting collapses and the unified blocks all move
+  with it. Each has its own checks and all of them pass; the one that would have caught a mistake
+  here is DEC-096's containment property, which is why that entry came first.
+
+### Revisit trigger
+
+Reopen if a corpus shows hunks merging across content a reviewer needed to read as two changes. The
+floor is the dial, and the measurement to redo is M11-G.

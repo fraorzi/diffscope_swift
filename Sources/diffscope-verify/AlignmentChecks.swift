@@ -243,4 +243,61 @@ func runAlignmentChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("the shift never cuts more multi-byte characters than Myers already did", scalarSafe)
         report("and the shift leaves the total matched length exactly where it was", matchedEqual)
     }
+
+    print("\n=== DEC-097: a short match may be consumed, a long one may not ===")
+    do {
+        // The owner's fourth case. A parameter added to a signature and a block added to the body,
+        // with `}: P) {` between them: the match holding that line is too short for either
+        // insertion to shift within, so the alignment used to anchor on its `{` and the untouched
+        // line read as edited.
+        let old = "function f({\n  a = 1,\n}: P) {\n  return 1;\n}\n"
+        let new = "function f({\n  a = 1,\n  b = 2,\n}: P) {\n  const q = 0;\n\n  return 1;\n}\n"
+        let result = hunks(old, new)
+        report("an insertion either side of a short match covers whole lines",
+               wholeLines(result, old, new), result.map(\.description).joined(separator: " "))
+        report("and the line between them carries no hunk at all",
+               result.allSatisfy { hunk in
+                   let text = String(decoding: [UInt8](new.utf8)[hunk.newStart..<hunk.newEnd],
+                                     as: UTF8.self)
+                   return !text.contains("}: P) {")
+               },
+               result.map { String(decoding: [UInt8](new.utf8)[$0.newStart..<$0.newEnd], as: UTF8.self) }
+                   .joined(separator: " | "))
+
+        // The bound has to bind, or it is not a bound. A long match between two changes stays a
+        // match: consuming it would relocate presented bytes across content nobody touched.
+        let spacer = String(repeating: "  keep = 1;\n", count: 8)
+        let oldLong = "let a = 1;\n" + spacer + "let b = 2;\n"
+        let newLong = "let A = 1;\n" + spacer + "let B = 2;\n"
+        let long = hunks(oldLong, newLong)
+        report("negative control: a match longer than the floor is not consumed",
+               long.count == 2, long.map(\.description).joined(separator: " "))
+        report("and none of the untouched lines between them is inside a hunk",
+               long.allSatisfy { hunk in
+                   !String(decoding: [UInt8](newLong.utf8)[hunk.newStart..<hunk.newEnd], as: UTF8.self)
+                       .contains("keep")
+               })
+
+        // The legality argument, asserted rather than reasoned: consuming moves the boundary between
+        // the hunk and *each* of its neighbours by the same amount, so the matched total cannot move.
+        var generator = SystemRandomNumberGenerator()
+        var preserved = true
+        for _ in 0..<300 {
+            let alphabet = Array("ab \n;{}xy")
+            func sample() -> [UInt8] {
+                [UInt8](String((0..<Int.random(in: 1...90, using: &generator)).map { _ in
+                    alphabet.randomElement(using: &generator)!
+                }).utf8)
+            }
+            let a = sample(), b = sample()
+            let shifted = canonicalMatches(old: a, new: b).matches
+            let plain = canonicalMatches(old: a, new: b, applyShift: false).matches
+            if shifted.reduce(0, { $0 + $1.length }) != plain.reduce(0, { $0 + $1.length }) {
+                preserved = false
+            }
+            if shifted.contains(where: { $0.length <= 0 }) { preserved = false }
+        }
+        report("consuming a match leaves the total matched length where it was, and drops the match",
+               preserved)
+    }
 }

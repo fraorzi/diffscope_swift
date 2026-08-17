@@ -83,6 +83,20 @@ func lexicalClass(_ byte: UInt8) -> UInt8 {
     }
 }
 
+/// The longest match a shift may consume entirely, in bytes (DEC-097, measured in M11-G).
+///
+/// Consuming a match merges the two hunks either side of it, which is how an insertion whose
+/// neighbours are a short match apart becomes reachable at all: the walk is bounded by
+/// `current.length` and `previous.length`, and a four-byte match between two insertions bounds it to
+/// nothing. Bounded in turn, because with no bound a file of small scattered edits could collapse
+/// into one hunk covering it.
+///
+/// **Eight, because that is where the curve saturates and not because larger is safer.** M11-G finds
+/// 8, 16, 24, 48 and 96 identical on the corpus, and consuming is the one direction in this pass
+/// that relocates presented bytes rather than merely renaming a boundary — so the smallest value
+/// that buys the whole effect is the one to take.
+public let matchConsumeFloor = 8
+
 /// How well one position reads as a place for a change to begin or end. Lower is better, and the
 /// numbers are the ranks of DEC-088's total order; `nil` means the position is not a boundary at all.
 private let rankLine = 1
@@ -188,25 +202,37 @@ func shiftToReadableBoundaries(
         // whole-line positions, so moving from one to another cost nothing.
         if let found = score(0) { bestAtRank[found] = 0 }
 
-        // Neither neighbouring match may be consumed: a match shrinking to nothing merges two hunks
-        // into one, which is a different edit script rather than the same one written down better.
+        // A short neighbouring match **may** be consumed, and a long one may not (DEC-097). The
+        // total matched length is invariant either way — the boundary between the hunk and each of
+        // its neighbours moves by the same amount — so what changes is the number of hunks, not the
+        // size of the edit script. Consuming is therefore allowed only where it lands on a whole
+        // line and only for a match under `matchConsumeFloor`; the walk itself may reach further,
+        // because a candidate that is refused still has to be looked at to be refused.
+        let consumable = current.length <= matchConsumeFloor
+        let downLimit = consumable ? current.length : current.length - 1
         var shift = 0
-        while shift + 1 < current.length,
+        while shift < downLimit,
               stepHolds(old, oldStart + shift, oldEnd + shift, down: true),
               stepHolds(new, newStart + shift, newEnd + shift, down: true) {
             shift += 1
             // Overwriting keeps the largest shift at each rank: the position furthest down the file.
-            if let found = score(shift) { bestAtRank[found] = shift }
+            guard let found = score(shift) else { continue }
+            if shift == current.length, found != rankLine { continue }
+            bestAtRank[found] = shift
         }
         // The furthest position down the file wins, so the upward search keeps only what the
         // downward one did not reach, and stops as soon as it finds the best rank there is.
         if bestAtRank[rankLine] == nil {
             shift = 0
-            while -shift + 1 < previous.length,
+            let upLimit = previous.length <= matchConsumeFloor ? previous.length : previous.length - 1
+            while -shift < upLimit,
                   stepHolds(old, oldStart + shift, oldEnd + shift, down: false),
                   stepHolds(new, newStart + shift, newEnd + shift, down: false) {
                 shift -= 1
-                if let found = score(shift), bestAtRank[found] == nil { bestAtRank[found] = shift }
+                if let found = score(shift), bestAtRank[found] == nil,
+                   -shift != previous.length || found == rankLine {
+                    bestAtRank[found] = shift
+                }
                 if bestAtRank[rankLine] != nil { break }
             }
         }
@@ -221,7 +247,10 @@ func shiftToReadableBoundaries(
                                    newStart: current.newStart + chosen,
                                    length: current.length - chosen)
     }
-    return blocks
+    // A consumed match is gone, not present-and-empty. Leaving it in the list would make the tiling
+    // property — every match is a real match, in order — read a zero-width block as a defect, and it
+    // would be right to.
+    return blocks.filter { $0.length > 0 }
 }
 
 public func canonicalDiff(

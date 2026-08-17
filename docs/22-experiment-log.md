@@ -2969,3 +2969,51 @@ The move into the engine, and with it the property that move made checkable: **e
 a block on both sides, over all 51 fixtures on both paths.** That check failed on its first run —
 `moved-function`, a stop covering a newline and nothing else, dropped out of every block by a peel
 rule that excluded terminators. In `main.js` there was no way to have asked.
+
+---
+
+## M11-G — What consuming a short match is worth
+
+**2026-08-17.** DEC-097. Eleven modified files of `5bonsai__website__nextjs`, with the shift and
+absorption at their shipped settings and `matchConsumeFloor` the only thing moving.
+
+| floor | segments | presented bytes | **false** | missed | printed twice |
+|---|---|---|---|---|---|
+| 0 (the DEC-093 bound) | 159 | 5581 | 23 | 20 | 36 |
+| **8** | 160 | **5570** | **22** | 20 | **32** |
+| 16 | 160 | 5570 | 22 | 20 | 32 |
+| 24 | 160 | 5570 | 22 | 20 | 32 |
+| 48 | 160 | 5570 | 22 | 20 | 32 |
+| 96 | 160 | 5570 | 22 | 20 | 32 |
+
+**Flat from 8 up**, which is the reason 8 is what shipped. Every site this reaches has a match of
+eight bytes or fewer between two changes; nothing above that fires on this corpus, so a larger floor
+would be an unmeasured licence rather than a measured one.
+
+### The case it was written for
+
+```
+  before                                     after
+* 37 | ⟦  hasDivider = false,                * 37 | ⟦  hasDivider = false,
+* 38 | ⟧}: ImageTextProps) ⟦{                  38 | ⟧}: ImageTextProps) {
+* 39 |   const compactImageDimensions =      * 39 | ⟦  const compactImageDimensions =
+```
+
+The match holding `}: ImageTextProps) {` is short enough that neither insertion could shift within
+it, so the alignment anchored on its `{`. It now carries no mark, and the two insertions read as
+what they are.
+
+### What it does not reach, and why raising the floor will not help
+
+`⟦~s⟧⟦rc⟧={img.src}` and `⟦~return ⟧(` both sit inside a reflowed JSX element whose surrounding
+matches run to hundreds of bytes. A floor of 96 changes neither. This is M11-B's reflow finding
+restated for the third time: when a block is reflowed the old bytes are a subsequence of the new, and
+a minimal alignment legitimately puts every changed byte on one side. **No boundary rule reaches it**
+— the answer is a presentation that shows a substitution on both sides, and that is not an alignment
+change at all.
+
+### The trade, stated plainly
+
+Segments go **up** by one, 159 → 160. Merging two hunks into one occasionally re-splits a run
+elsewhere. Four fewer duplicated lines and eleven fewer presented bytes for one more mark is the
+trade, and it is the first entry in this series where the mark count moved the wrong way.
