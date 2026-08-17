@@ -128,6 +128,14 @@
      and a second meaning for them is a meaning nobody can read (DEC-061). */
   .ds-lens-uncommitted { border-left: var(--ds-gutter-edge-width) solid var(--ds-mark);
                          padding-left: calc(var(--ds-space-4) - var(--ds-gutter-edge-width)); }
+  .ds-lens-graph { color: var(--ds-faint); white-space: pre; letter-spacing: 0; }
+  /* The picked commit, marked by weight and a leading rule as well as by surface — DEC-035's rule
+     applies to a selection as much as to a diff mark. The rule's width is the gutter edge's token,
+     because a pixel size declared here would be a value no designer could change. */
+  .ds-lens-picked { background: var(--ds-row-selected); font-weight: 600;
+                    box-shadow: inset var(--ds-gutter-edge-width) 0 0 0 var(--ds-text); }
+  .ds-lens-row { cursor: pointer; }
+  .ds-sign[data-stageable="true"] { cursor: pointer; }
   .ds-lens-sha { color: var(--ds-faint); }
   .ds-lens-who { color: var(--ds-dim); width: 14ch; overflow: hidden; }
   .ds-lens-when { color: var(--ds-faint); width: 12ch; }

@@ -55,6 +55,28 @@ public struct GraphCommit: Sendable, Equatable {
     public var lanes: [String] = []
 }
 
+extension GraphCommit {
+    /// The row's lane column, as the characters a reader of any terminal Git tool already knows:
+    /// `●` where this commit sits, `│` for a branch passing through, `─` where a lane is waiting to
+    /// the left of it. Composed here rather than in the page for the reason every other sentence in
+    /// this product is: a string the interface assembles cannot be checked.
+    ///
+    /// Fixed width per lane, so the vertical lines join up between rows.
+    public var laneColumn: String {
+        var marks: [String] = []
+        for (index, holder) in lanes.enumerated() {
+            if index == lane { marks.append("●") }
+            else if holder.isEmpty { marks.append(" ") }
+            else { marks.append("│") }
+        }
+        if marks.isEmpty { marks = ["●"] }
+        // A merge reaches to the right for its second parent, and saying so is the whole reason a
+        // graph is worth drawing at all.
+        if parents.count > 1 { marks.append("─") }
+        return marks.joined()
+    }
+}
+
 public struct ReflogEntry: Sendable, Equatable {
     public let sha: String
     public let selector: String

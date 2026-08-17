@@ -5078,9 +5078,16 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let commits = parseLog(String(decoding: result.standardOutput, as: UTF8.self))
         state.lens = .history
         updateLensMenu()
+        // DEC-092/DEC-093: the topology, in a column of its own. `--graph`'s own drawing is a
+        // presentation and is not parsed — the lanes are computed from `%P` in the Git layer, and
+        // this is a lookup by sha so a commit the log has and the graph does not simply has no
+        // lane rather than shifting every row under it.
+        let lanes = Dictionary(uniqueKeysWithValues: gitState.graph(in: repository.url, limit: 200)
+            .map { ($0.sha, $0.laneColumn) })
         let rows = commits.map { commit in
             ["sha": commit.sha, "who": commit.author, "when": commit.committed,
-             "subject": commit.subject, "refs": commit.refs] as [String: String]
+             "subject": commit.subject, "refs": commit.refs,
+             "graph": lanes[commit.sha] ?? ""] as [String: String]
         }
         let picked = state.pickedCommits
         let selection = state.historyPair.map {
@@ -5143,11 +5150,25 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// DEC-028's rule, one surface further out.
     func userContentController(_ controller: WKUserContentController,
                                didReceive message: WKScriptMessage) {
-        guard let body = message.body as? [String: Any],
-              body["action"] as? String == "pickCommit",
-              let sha = body["sha"] as? String,
-              sha.count >= 7, sha.allSatisfy({ $0.isHexDigit }) else { return }
-        pickCommit(sha)
+        guard let body = message.body as? [String: Any] else { return }
+        switch body["action"] as? String {
+        case "pickCommit":
+            guard let sha = body["sha"] as? String,
+                  sha.count >= 7, sha.allSatisfy({ $0.isHexDigit }) else { return }
+            pickCommit(sha)
+        // DEC-092: a line of the diff, put into the next commit or taken out of it. The number is
+        // checked the way the sha above is — a message from the page is data, and this one becomes
+        // a write.
+        case "stageLine":
+            let raw = (body["line"] as? Int) ?? (body["line"] as? NSNumber)?.intValue
+            guard let raw, raw != 0, abs(raw) < 5_000_000, let file = state.selectedFile else { return }
+            // Positive is a new-side line, negative an old-side one; `stageSelection` takes the
+            // zero-based form of each, with removals encoded negatively.
+            let selection = raw > 0 ? [raw - 1] : [raw]
+            stageSelection(selection, from: file, unstage: state.scope == .stagedVsHead)
+        default:
+            return
+        }
     }
 
     /// One commit is *since this*; a second is *between these*; a third starts again. The order is

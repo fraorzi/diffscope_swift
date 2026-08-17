@@ -97,6 +97,7 @@ Classes marked **load-bearing** carry a difference. They may be restyled and may
 | `#stage`, `#left`, `#right` | The two-pane layout, reached by ⌥⌘→ | No, as layout |
 | `#lens` | The Blame and History lenses (DEC-061) | No, as layout |
 | `ds-lens-row` | One line of blame, or one commit | **Yes.** A row that is not drawn is a line whose author, or a commit, the reader was told existed |
+| `ds-lens-graph` | The commit's lane column in History: `●` where it sits, `│` for a branch passing through it, `─` where a merge reaches for its second parent ([DEC-092](04-decision-log.md)) | **Yes, and the width is the rule.** The lanes are computed in the Git layer from `%P` — git's own `--graph` drawing is a presentation and is never parsed — and the column is fixed-width so the vertical lines join up between rows. A graph whose lines do not meet is a graph that reports a topology the repository does not have |
 | `ds-lens-uncommitted` | Work that is not committed yet — **marked by an edge, never tinted** | **Yes**, and the shape is the point: tint and texture belong to the change language, and a second meaning for them is a meaning nobody can read |
 | `ds-lens-sha`, `ds-lens-who`, `ds-lens-when`, `ds-lens-line`, `ds-lens-text` | The columns of a blame row | **Yes** — each is one of the questions the lens exists to answer |
 | `ds-lens-subject`, `ds-lens-refs` | The columns a commit adds | **Yes** |

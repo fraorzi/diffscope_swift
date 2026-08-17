@@ -396,7 +396,13 @@ func runHistoryComparisonChecks(_ reportRaw: (String, Bool, String) -> Void) {
            shell.ranges(of: "state.historyPair = nil").count >= 2)
     // The page can post messages now, and repository content is drawn in that page (an SVG). What
     // arrives is validated as input rather than acted on as instruction (DEC-028).
+    // DEC-092 gave the page a second message, and it is one that **writes**: a line number that
+    // becomes a patch against the index. So the assertion is now about both — the sha is still
+    // checked to be a sha, and the line is checked to be a line, before either is acted on.
     report("a message from the page is checked before it is acted on",
            shell.contains("sha.allSatisfy({ $0.isHexDigit })")
-               && shell.contains("body[\"action\"] as? String == \"pickCommit\""))
+               && shell.contains("case \"pickCommit\":"))
+    report("and the one that writes checks its number the same way",
+           shell.contains("case \"stageLine\":")
+               && shell.contains("raw != 0, abs(raw) < 5_000_000"))
 }
