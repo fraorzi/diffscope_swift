@@ -2769,11 +2769,24 @@ The stray apostrophe is gone: `'base' | '⟦compact' | ⟧⟦~'⟧wide'` is now 
 three marks to one. The line metric barely moves — 24 → 23 — because a boundary that travels inside a
 line changes no line's status. Segments over the corpus: 185 → 182.
 
-### Still open
+## Step — confetti is absorbed into the change around it (DEC-094, M11-D)
 
-- [ ] minimum-run absorption of unchanged gaps shorter than a token (phantom retention). `alpha` →
-      `gamma` still shreds into two hunks around a coincidental `a`. **This cannot be fixed in `D`** —
-      the islands are matched bytes and dropping them fails the 600-pair LCS check. Presentation.
+- [x] `Sources/DiffScopeEngine/AbsorbIslands.swift` — four conditions, the fourth of which is a
+      theorem: absorption never changes `changedLines`, at any floor
+- [x] floor **8** from the M11-D curve, which ends there; `absorbIslandBytes` on `MatcherSettings`
+      and a sixth argument to `--emit-structural`, so the pass can be turned off on its own
+- [x] wired first in the pipeline, before `snapPresentation` — otherwise the budget-0 control would
+      exercise a different absorption from the shipped one
+- [x] twenty-two checks in `AbsorptionChecks.swift`, including the monotonicity property over all 58
+      fixtures and 300 random partitions, and the identity control at floor 0
+- [x] **a `moved` flank is refused outright** — T-11 failed on 192 disagreements first, because the
+      two sides are absorbed independently and DEC-038 wants them byte-identical
+- [x] no per-run allowance: the relative rule already bounds the total strictly below the run's own
+      changed bytes, so a cap would be a knob that can never turn
+
+182 segments → 159, for 0.7% more presented bytes. `false` unmoved at 23, which is rule 4 holding.
+
+### Still open
 - [ ] the whole-file fallback: a `.css` file with one word changed marks every line, and
       `.ds-fallback`'s hairline then boxes the entire body. The rule was written for `markUnparsed`'s
       partial regions and its own comment says so.
@@ -2784,6 +2797,10 @@ line changes no line's status. Segments over the corpus: 185 → 182.
       fixes it. Needs substitutions presented on both sides.
 - [ ] insertions separated by a single unchanged line cannot shift: the search is bounded by the
       neighbouring match lengths. `PageComponents.tsx` and `BannerWithImage.tsx` are what is left.
+      **DEC-093's deferred option (c)** — relax "no neighbouring match may be consumed" — is the
+      candidate answer, and it is also what `⟦~s⟧⟦rc⟧` over an unchanged `src` needs. It merges
+      hunks, so it moves `changeStops`, and navigation, folds, collapses and the unified blocks all
+      key off stops. Its own entry, with its own measurement.
 - [ ] `-uall` for the file list **and** the count, `-z` parsing, the `AM` glyph
 - [ ] the empty comparison when a row is a directory (INV-4)
 - [ ] a clause in DEC-083 for `ds-formatting`, `ds-behaviour`, `ds-uncertain`

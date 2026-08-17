@@ -17,7 +17,9 @@ if CommandLine.arguments.count > 3, CommandLine.arguments[1] == "--emit-structur
                       displayPath: CommandLine.arguments.count > 4
                           ? CommandLine.arguments[4] : CommandLine.arguments[3],
                       snapBudget: CommandLine.arguments.count > 5
-                          ? Int(CommandLine.arguments[5]) : nil)
+                          ? Int(CommandLine.arguments[5]) : nil,
+                      islandFloor: CommandLine.arguments.count > 6
+                          ? Int(CommandLine.arguments[6]) : nil)
     exit(0)
 }
 
@@ -292,6 +294,7 @@ runClassificationChecks { name, ok, detail in report(name, ok, detail) }
 runBoundaryChecks { name, ok, detail in report(name, ok, detail) }
 runAlignmentChecks { name, ok, detail in report(name, ok, detail) }
 runCoalesceChecks { name, ok, detail in report(name, ok, detail) }
+runAbsorptionChecks { name, ok, detail in report(name, ok, detail) }
 runDisclosureChecks { name, ok, detail in report(name, ok, detail) }
 runMoveChecks { name, ok, detail in report(name, ok, detail) }
 runNavigationChecks { name, ok, detail in report(name, ok, detail) }

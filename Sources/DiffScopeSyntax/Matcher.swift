@@ -6,6 +6,7 @@ public struct MatcherSettings: Sendable {
     public var minimumDice: Double
     public var maximumCandidates: Int
     public var boundarySnapBudget: Int
+    public var absorbIslandBytes: Int
     public var moveContentFloor: Int
     /// Counted work, not elapsed time. A wall-clock deadline makes the *result* depend on machine
     /// load, and T-7 requires the same input to produce the same output — including the same
@@ -14,12 +15,14 @@ public struct MatcherSettings: Sendable {
 
     public init(minimumHeight: Int = 1, minimumDice: Double = 0.5, maximumCandidates: Int = 32,
                 boundarySnapBudget: Int = DiffScopeSyntax.boundarySnapBudget,
+                absorbIslandBytes: Int = DiffScopeEngine.absorbIslandBytes,
                 moveContentFloor: Int = DiffScopeSyntax.moveContentFloor,
                 matchWorkBudget: Int = DiffScopeSyntax.matchWorkBudget) {
         self.minimumHeight = minimumHeight
         self.minimumDice = minimumDice
         self.maximumCandidates = maximumCandidates
         self.boundarySnapBudget = boundarySnapBudget
+        self.absorbIslandBytes = absorbIslandBytes
         self.moveContentFloor = moveContentFloor
         self.matchWorkBudget = matchWorkBudget
     }

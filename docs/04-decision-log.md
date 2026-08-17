@@ -4079,3 +4079,104 @@ reported one. Scoring shift 0 is what makes rank 1 able to win at the place Myer
 
 Reopen if a corpus measurement shows "furthest down" losing for rank 2 specifically. That tie-break
 was derived for whole lines in DEC-087 and inherited here rather than re-measured.
+
+---
+
+## DEC-094 — Short unchanged islands inside a change are absorbed into it
+
+- **Date:** 2026-08-17 · **Topic:** Confetti — the unchanged single bytes byte-minimality leaves inside an insertion · **Status:** Accepted
+- **Prompted by:** the owner's fifth diff session — a nine-line JSX block inserted whole, drawn with six unchanged islands punched through it: the `r` of `number`, the `im` of `img`, a lone space
+
+### Context
+
+Myers minimises the edit script over bytes, and byte-minimality reuses whatever it finds. Inside a
+block that did not exist before, it will hold single characters as *matched* because matching them
+is shorter. With the boundary snap turned off, the corpus shows it plainly:
+
+```
+*   41 |     typeof img?.width⟧ ⟦changed|===⟧ ⟦changed|'numbe⟧r⟦changed|' &&
+*   42 |     typeof img.h⟧e⟦changed|igh⟧t⟦changed| === 'n⟧u⟦changed|mbe⟧r⟦changed|' &&
+```
+
+The reader is shown new code with holes in it and has to work out that none of the holes means
+anything. DEC-047's snap papers over some of this at 16 bytes and cannot reach the rest.
+
+### Why this cannot be fixed in `D`, which is the load-bearing fact
+
+Those islands are **matched bytes**. Dropping them lowers the total matched length below the LCS,
+and `matched length equals LCS on 600 random pairs` fails on the first run. Byte-minimality is the
+right objective for a validator and the wrong one for a picture — `06-domain-research.md` §3.6
+recorded both maintainer sources saying so — and the two are separated here rather than reconciled.
+
+Anyone reaching for `CanonicalDiff.swift` to fix confetti should read that paragraph first.
+
+### Why it needs no invariant reopened
+
+Relabelling `.unchanged` as presented only ever **grows** the presented set, and growth is monotone:
+a byte of `D`'s hunks that was contained stays contained. This is DEC-021's argument for grapheme
+snapping and DEC-047's for boundary snapping, applied a third time. INV-2 holds by construction.
+
+### Decision
+
+An unchanged segment is absorbed into the run around it when **all** of:
+
+1. it is flanked on both sides by presented segments — a trailing gap is where the change ended, not
+   an island inside it;
+2. it is no longer than `absorbIslandBytes` (**8**, from M11-D);
+3. it is no longer than the shorter of its two flanks — scale-free, and it is what saves a 6-byte gap
+   between two 3-byte edits, where the gap is real context between two real edits;
+4. **every line it touches already carries a presented byte from one of its flanks.**
+
+Rule 4 is load-bearing and it is a theorem rather than a heuristic: **absorption never changes
+`changedLines`.** The metric M11-B introduced — a line reported changed that was not — cannot move
+in the wrong direction at any floor, and M11-D confirms it empirically at every floor from 0 to 24.
+It is what lets an island span a newline, which the confetti case requires, without the pass ever
+being able to claim a line it was not already claiming.
+
+And the run must agree with itself: the two flanks must share a `label`, a `disclosure`, a `link`,
+and a side of `confidenceFloor`. `coalesceAdjacent` refuses to merge across exactly those, and this
+pass must not smuggle past it what that one turns away.
+
+**A `moved` flank is refused outright.** A move is the one label that is a claim about *both* sides —
+DEC-038 requires the two ranges to be byte-identical — and the two sides are absorbed independently,
+so widening one is not guaranteed to widen the other. T-11 found this by failing on 192
+disagreements. It is a refusal rather than a guard, because a rule that holds only when the two sides
+happen to agree is not a rule.
+
+**There is no per-run allowance, and there was going to be one.** The fear is a long alternation of
+small edits swallowing its context whole; the answer looked like a cap on absorbed bytes per run.
+Rule 3 already implies it: with flanks `f₁ … fₙ` and islands `iₖ ≤ min(fₖ, fₖ₊₁)`, the absorbed total
+is at most `f₁ + … + fₙ₋₁`, strictly less than the run's own changed bytes. A cap at or above that is
+a knob that can never turn, and this repository has three recorded defects that were exactly that.
+The bound is asserted as a property instead.
+
+### Pass order
+
+`absorbIslands` → `snapPresentation` → `snapToGraphemeBoundaries` → `markUnparsed` → `coalesceAdjacent`.
+
+Absorption goes **first**, for two reasons that are the same reason twice. An absorbed island removes
+two boundaries from the presented set, so the 16-byte snap has strictly less to rescue — DEC-087
+established that the order of these passes is load-bearing, and this is that fact from the other
+side. And were absorption to run *after* the snap, its input would be a function of
+`boundarySnapBudget`, so the budget-0 control the suite depends on would be exercising a different
+absorption from the shipped one.
+
+### Consequences
+
+- **Marks fall and bytes barely rise.** Over the corpus: 182 segments → **159**, for 5542 presented
+  bytes → **5581**. Twenty-three fewer marks for thirty-nine more bytes, 0.7%.
+- **`false` does not move at any floor**, which is rule 4 being a theorem rather than an argument.
+- The absorbed island inherits its flanks' classification when they agree and `nil` when they do not,
+  and the lower confidence — `coalesceAdjacent`'s rules, reused deliberately. Inheriting an agreed
+  classification is what stops M6-B's trap recurring, where splitting a classified change into a
+  classified core and unclassified flanks dropped M6-A's recall from 97.8% to 40.9%.
+- **It does not reach two things, and both are alignment rather than presentation.** A run split only
+  by the confidence floor has no island between its halves — `⟦~s⟧⟦rc⟧` over an unchanged `src` is two
+  *presented* segments, and no widening pass can unmark them. And `titleSize?: '2.5xl' | '2xl' | 'xl'`
+  keeps its five marks because rule 3 correctly refuses a 5-byte island between a 5-byte and a 1-byte
+  flank. Both are DEC-093's deferred option (c): relax "no neighbouring match may be consumed".
+
+### Revisit trigger
+
+Reopen if a case appears where absorption merges two changes a reviewer needed to see as separate —
+DEC-047's own trigger, restated for this pass.

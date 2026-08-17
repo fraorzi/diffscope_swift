@@ -2843,3 +2843,55 @@ every position it accepted was equally good; with a second rank in the order tha
   LCS. Presentation, not alignment — DEC-094.
 - `BannerWithImage.tsx` (8 false) and `PageComponents.tsx` (4) are still M11-B's remaining shape:
   adjacent single-line insertions whose surrounding matches are too short to shift within.
+
+---
+
+## M11-D — Where the island floor goes
+
+**2026-08-17.** DEC-094. Same corpus and instrument as M11-C:
+`Scripts/devtools/measure-alignment.sh ../5bonsai__website__nextjs 16 <floor>`, with the snap held at
+its shipped 16 so the floor is the only thing moving.
+
+| floor | segments | presented bytes | lines reported | **false** | missed |
+|---|---|---|---|---|---|
+| 0 (identity control) | 182 | 5542 | 147 | 23 | 20 |
+| 2 | 163 | 5557 | 147 | 23 | 20 |
+| 3 | 162 | 5560 | 147 | 23 | 20 |
+| 4 | 162 | 5560 | 147 | 23 | 20 |
+| 6 | 161 | 5565 | 147 | 23 | 20 |
+| **8** | **159** | **5581** | 147 | **23** | 20 |
+| 12 | 159 | 5581 | 147 | 23 | 20 |
+| 16 | 159 | 5581 | 147 | 23 | 20 |
+| 24 | 159 | 5581 | 147 | 23 | 20 |
+
+**Two things this table says, and the second is the more important one.**
+
+**The curve ends at 8.** Nineteen of the twenty-three marks go at floor 2, and the last four are in
+by 8; above it nothing further is reachable, because the relative rule — an island no longer than the
+shorter of its flanks — is what binds from there on, not the absolute floor. Choosing 8 buys
+everything available and the choice is stable: 12, 16 and 24 are the same result. **Cost: 39 bytes,
+0.7% more presented than the identity control, for 12.6% fewer marks.**
+
+**`false` is flat at 23 across the whole sweep, and that is the no-new-line rule being a theorem.**
+Absorption can only ever widen inside lines its own flanks already mark, so the metric that measures
+"the model says this line changed and git says it did not" cannot move whatever the floor is set to.
+A floor of 24 shows as much as a floor of 2 about safety, which is the point: there is no setting of
+this pass that trades wrong lines for tidiness.
+
+### The rule the corpus added
+
+T-11 failed on the first wired-in run with **192 disagreements**: absorption was widening `.moved`
+segments, and the two sides are absorbed independently, so DEC-038's byte-identical requirement
+stopped holding. A `moved` flank is now refused outright. It is the second time in this series that
+a presentation pass has had to be told about moves after the fact — M6-D's `link` was the first.
+
+### What the floor does not reach
+
+- `⟦~s⟧⟦rc⟧={img.src}` — two *presented* segments over an unchanged `src`, separated by nothing.
+  There is no island, so no widening pass applies. The alignment put it there.
+- `titleSize?: '⟦2.5xl⟧' | '⟦~2⟧⟦xl⟧⟦~' | 'xl⟧'` — the island between the first two fragments is
+  `' | '`, five bytes, against a one-byte flank. Rule 3 refuses it, correctly: at that scale the gap
+  is as big as the edits around it.
+
+Both are DEC-093's deferred option (c) — relax the bound that stops a shift consuming a neighbouring
+match — and neither is reachable from presentation.

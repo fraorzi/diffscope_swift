@@ -277,12 +277,21 @@ public func structuralDiff(
     let newErrors = parseErrorRegions(tree: newTree)
     let unparsedBytes = (oldErrors + newErrors).reduce(0) { $0 + ($1.end - $1.start) }
 
+    // Absorption first (DEC-094). An absorbed island removes two boundaries from the presented set,
+    // so the 16-byte snap has strictly less to rescue — DEC-087 established that the order of these
+    // passes is load-bearing, and this is the same fact from the other side. It also keeps the
+    // budget-0 control honest: were absorption to run after the snap, its input would be a function
+    // of `boundarySnapBudget`, and turning the snap off would exercise a different absorption from
+    // the shipped one.
+    let absorption = AbsorptionSettings(islandBytes: settings.absorbIslandBytes)
     let oldPartition = snapToGraphemeBoundaries(snapPresentation(
-        movedOld, boundaries: SyntaxBoundaries(tree: oldTree),
+        absorbIslands(movedOld, bytes: oldBytes, settings: absorption),
+        boundaries: SyntaxBoundaries(tree: oldTree),
         budget: settings.boundarySnapBudget, bytes: oldBytes
     ), bytes: oldBytes)
     let newPartition = snapToGraphemeBoundaries(snapPresentation(
-        movedNew, boundaries: SyntaxBoundaries(tree: newTree),
+        absorbIslands(movedNew, bytes: newBytes, settings: absorption),
+        boundaries: SyntaxBoundaries(tree: newTree),
         budget: settings.boundarySnapBudget, bytes: newBytes
     ), bytes: newBytes)
 

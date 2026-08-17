@@ -18,7 +18,7 @@ trap 'rm -rf "$work"' EXIT
 swift build --package-path "$here" >/dev/null
 verify="$here/.build/debug/diffscope-verify"
 
-total_false=0 total_missed=0 total_reported=0 total_segments=0
+total_false=0 total_missed=0 total_reported=0 total_segments=0 total_shown=0
 
 # Lines a side of `git diff -U0` touches, as bare line numbers.
 git_lines() { # <file> <+|->
@@ -51,11 +51,18 @@ while read -r file; do
   f=$(wc -l < "$work/false"); m=$(wc -l < "$work/missed")
   reported=$(model_lines NEW "$work/out" | wc -l)
   segments=$(grep -o '⟦' "$work/out" | wc -l)
-  printf '%-56s reported %4d  false %3d  missed %3d  segments %4d\n' \
-    "$file" "$reported" "$f" "$m" "$segments"
+  # Presented bytes: what lies between each `⟦label|` and its `⟧`, over both sides. The count a
+  # reader would make if they highlighted every mark on the screen.
+  shown=$(python3 -c '
+import re, sys
+text = open(sys.argv[1], encoding="utf-8").read()
+print(sum(len(m.group(1).encode()) for m in re.finditer(r"⟦[^|⟧]*\|(.*?)⟧", text, re.S)))' "$work/out")
+  printf '%-56s reported %4d  false %3d  missed %3d  segments %4d  shown %6d\n' \
+    "$file" "$reported" "$f" "$m" "$segments" "$shown"
   total_false=$((total_false + f)); total_missed=$((total_missed + m))
   total_reported=$((total_reported + reported)); total_segments=$((total_segments + segments))
+  total_shown=$((total_shown + shown))
 done < <(git -C "$corpus" diff --name-only)
 
-printf '\n%-56s reported %4d  false %3d  missed %3d  segments %4d\n' \
-  "TOTAL" "$total_reported" "$total_false" "$total_missed" "$total_segments"
+printf '\n%-56s reported %4d  false %3d  missed %3d  segments %4d  shown %6d\n' \
+  "TOTAL" "$total_reported" "$total_false" "$total_missed" "$total_segments" "$total_shown"
