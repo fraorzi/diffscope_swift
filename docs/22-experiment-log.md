@@ -3017,3 +3017,42 @@ change at all.
 Segments go **up** by one, 159 → 160. Merging two hunks into one occasionally re-splits a run
 elsewhere. Four fewer duplicated lines and eleven fewer presented bytes for one more mark is the
 trade, and it is the first entry in this series where the mark count moved the wrong way.
+
+---
+
+## M11-H — The whole of M11, measured end to end
+
+**2026-08-17.** DEC-093 … DEC-097 together, against `bb6d9ae` — the commit before any of them — on the
+eleven modified files of `5bonsai__website__nextjs`. Both sides measured with the same instrument in
+the same run, the baseline through a worktree at that commit.
+
+| | marks | wrong lines | missed | presented bytes |
+|---|---|---|---|---|
+| `bb6d9ae` (DEC-087 shipped, nothing since) | 185 | 24 | 20 | 5542 |
+| DEC-093 … DEC-097 | **160** | **22** | 20 | **5570** |
+
+**Presented bytes went up, by 28 — 0.5%.** That is the one number in this series that moved in the
+direction a reader might read as worse, and it is the price DEC-094 named before it was paid:
+absorption buys solid blocks by showing the unchanged bytes inside them. DEC-047 spent 4.4% for less.
+It is recorded here rather than left out because a table of five improvements and no cost is a table
+somebody stopped reading.
+
+**`missed` has not moved across the whole of M11** — 20 of 31 removed lines, unmarked on the old
+side, in every measurement from M11-B to here. Four entries have now confirmed it is not reachable by
+any boundary rule. It is the reflow case, and it needs a presentation that shows a substitution on
+both sides.
+
+### Where the marks went
+
+| | marks |
+|---|---|
+| M11-A, before coalescing | 443 |
+| M11-A, coalescing only | 175 |
+| M11-B, + the line-boundary shift and snap guard | 185 |
+| M11-C, + lexical ranks | 182 |
+| M11-D, + absorption at floor 8 | 159 |
+| M11-G, + a consumable short match | 160 |
+
+The rise at M11-B and again at M11-G are both real and both explained where they happened: the first
+is the snap guard trading marks for correct lines, the second is a merged hunk occasionally
+re-splitting a run elsewhere.
