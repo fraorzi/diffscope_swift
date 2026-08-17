@@ -8,6 +8,18 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
+**2026-08-17 — it writes. M11 and M12 are built, and most of M13–M17 came with them. 1832 → 1912 checks, and a new selftest arm that stages a file and commits it through the controls a reader would use.** [DEC-093](04-decision-log.md).
+
+**What a reader can now do in the window**: tick a file to stage it (a real index write, with the three-state box GitHub Desktop draws), stage the hunk under the caret (⌥⌘G), write a summary and a description and commit (⇧⌘⏎, or ⌘⏎ inside the box), amend, undo the last commit, commit empty on purpose, discard to the Trash, switch and create and rename and delete branches, merge, stash and pop, resolve a conflict by taking a side, tag, open a worktree, bisect from the banner, revert, cherry-pick, reset, reword/squash/fixup/drop/move a commit, amend an old commit, fetch, pull, push, force-push with a lease behind a typed branch name, run a custom command in the drawer — and read **what DiffScope ran**, argv and exit code, in a panel of its own.
+
+**The proof is the part to read.** INV-6 says a staging operation moved the index by *exactly* the selected byte ranges: the selection becomes bytes along one path and a patch along another, git applies the patch, and the two are compared. It holds for a line, a hunk, a whole file, a file with no trailing newline, a CRLF file and a brand-new untracked file. R-8 did not die — it split, and the write registry keeps the closure property that has held since M2.
+
+**Three findings**, all in [DEC-093](04-decision-log.md): a hidden `NSView` keeps its constraints (a 26 pt gap over the status line for every repository with nothing in progress); a button's title became the file pane's minimum width, caught by `dragSelftest` rather than by anything looking at the button; and `fixup! <sha>` is not the subject `--autosquash` matches, so *amend an old commit* left its fixup sitting on the branch.
+
+**Two things are not built, and neither is blocked by a decision**: the graph column in the History lens and click-to-select lines in the diff. Both need a renderer bundle rebuild, and `Renderer/node_modules` is not installed on this machine. The graph's lanes are computed and checked; the line-staging code is built and proven by INV-6, and ⌥⌘G reaches it from the keyboard.
+
+---
+
 **2026-08-16 — version one is finished as a direction: the next thing this application does is write. [DEC-092](04-decision-log.md), and the whole shape of it is [29-git-operations-plan.md](29-git-operations-plan.md).** The owner compared the product against lazygit's ten features and asked for all of them, plus staging, unstaging and committing as a GUI, with **GitHub Desktop as the visual reference**. That reopens DEC-003 — which is the one decision `§6` below says must never be reopened quietly — so it was reopened loudly, with the inventory, the interface mapping, the proof machinery and the milestone order written before any code.
 
 **Read `29-…` §2.2 before designing any of it.** GitHub Desktop's good idea is that there is no visible index: a checkbox per file means *include in this commit*, and you click a line in the diff to take it out. Its bad idea is the same one — the index does not stop existing because a UI hides it, and WebStorm or our own drawer can write to it at any moment. **The owner chose the hybrid**: the checkbox is a real index write, and DEC-008's four scope pills stay on screen so the index remains visible. Three more answers came with it — the network is in scope but last and never automatic, conflicts are handed to the editor, and a per-repository read-only lock was offered and declined.

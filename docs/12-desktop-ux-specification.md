@@ -219,6 +219,31 @@ The **coverage** above is binding: any function reachable only by pointer is a d
 
 **The functions the adopted design introduces arrive as they are built** — the collapses and search are bound; the two lenses and the image-comparison modes are not. A row is added **when the function comes to exist**, not when it is drawn: this column is a transcription of `KeyboardMap.bindings`, and a transcription that runs ahead of its source is the drift DEC-057 exists to prevent.
 
+## 9b. Keyboard — the functions that write ([DEC-092](04-decision-log.md))
+
+Version two adds operations that change a repository. DEC-016's rule is unchanged and now covers
+them: **a function reachable only by pointer is a defect**, and a checkbox beside a path is a
+pointer. Five rows, transcribed into `KeyboardFunction` exactly as §9's nine are, each failing the
+suite by name if nothing binds it.
+
+| Function | Bound to |
+|---|---|
+| Stage and unstage the selected file | ⌥⌘S / ⌥⌘U , the hunk under the caret on ⌥⌘G / ⇧⌥⌘G |
+| Commit what is staged | ⇧⌘⏎ , and ⌘⏎ while the commit box has focus |
+| Switch, create and manage branches | ⌥⌘B / ⌥⌘N |
+| Fetch, pull and push | ⌥⌘F / ⇧⌘P / ⌘P |
+| Act on a commit in History | ⌥⌘V revert · ⌥⌘Y cherry-pick · ⌥⌘E rewrite |
+
+**Four functions are deliberately without a keystroke**, and they are named rather than left
+looking like an oversight: *Discard Changes*, *Reset to Commit*, *Force Push* and *Remove Source*.
+Each can lose work that no object database holds, and a single key is how that happens by
+mistyping. `KeyboardMap.deliberatelyUnbound` is the list, and the check asserts it is exactly that
+list — a fifth entry appearing there fails the suite.
+
+**⌘⏎ is claimed twice, and the commit box wins it while it has focus.** That is GitHub Desktop's
+own rule and the only one that does not surprise a reader in the middle of typing a message; ⇧⌘⏎
+commits from anywhere, so the function is never out of reach of a reader standing somewhere else.
+
 ## 10. Editor integration
 
 Configurable command template with file and line placeholders, defaulting to WebStorm (DEC-015).
