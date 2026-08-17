@@ -574,6 +574,33 @@ func runWriteChecks(_ reportRaw: (String, Bool, String) -> Void) {
                worktrees.count == 1 && worktrees[0].isMain, String(worktrees.count))
     }
 
+    print("\n=== W-12: custom commands, and the placeholder with nothing behind it ===")
+    do {
+        let command = CustomCommand(name: "push", command: "git push -u origin {branch}  # {repo}")
+        report("the placeholders are filled from what is selected",
+               command.expanded(repository: "/tmp/r", branch: "feature", file: nil, sha: nil)
+                   == "git push -u origin feature  # /tmp/r")
+        // A token with nothing behind it stays a token. `git checkout ` is a command that does
+        // something surprising; `git checkout {branch}` is one the shell refuses, which is the
+        // outcome to prefer when the interface does not know what the reader meant.
+        report("a placeholder with nothing behind it is left standing, not blanked",
+               CustomCommand(name: "x", command: "git checkout {branch}")
+                   .expanded(repository: nil, branch: nil, file: nil, sha: nil)
+                   == "git checkout {branch}")
+        // Stored in the application's own configuration and never read out of a repository — the
+        // rule DEC-051 established for the read path, held for the write path as well.
+        let configuration = Configuration(customCommands: [command])
+        let encoded = try? JSONEncoder().encode(configuration)
+        let decoded = encoded.flatMap { try? JSONDecoder().decode(Configuration.self, from: $0) }
+        report("they survive a round trip through the configuration file",
+               decoded?.customCommands == [command])
+        // A configuration written before version two must still load: a missing key is an older
+        // file, not a corrupt one — the rule this file already held for the base overrides.
+        let older = Data("{\"sources\":[],\"baseOverrides\":{}}".utf8)
+        let loaded = try? JSONDecoder().decode(Configuration.self, from: older)
+        report("and an older configuration file still loads", loaded?.customCommands.isEmpty == true)
+    }
+
     print("\n=== W-10: closing — nothing wrote that was not in the registry ===")
     do {
         let registered = Set(GitWriteOperation.allProvenWriting.map(\.label))

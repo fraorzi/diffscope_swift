@@ -4642,6 +4642,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         case "git.pull": return #selector(pullRemote)
         case "git.push": return #selector(pushRemote)
         case "git.forcePush": return #selector(forcePush)
+        case "git.resolve": return #selector(resolveConflicts(_:))
+        case "git.reflog": return #selector(showReflog(_:))
+        case "git.commands": return #selector(showCustomCommands(_:))
         case "git.record": return #selector(showCommandRecord)
         default: return nil
         }

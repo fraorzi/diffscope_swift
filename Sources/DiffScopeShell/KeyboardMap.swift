@@ -319,6 +319,16 @@ public enum KeyboardMap {
         .init(id: "git.forcePush", title: "Force Push (with lease)…", key: "", modifiers: [],
               menu: .repository),
 
+        .init(id: "git.resolve", title: "Resolve Conflicts…", key: "c",
+              modifiers: [.shift, .option, .command], menu: .repository),
+        // The reflog is the net under every restore point, and it is offered as one — the way back
+        // from a rewrite whose restore point is gone.
+        .init(id: "git.reflog", title: "Reflog…", key: "z", modifiers: [.shift, .option, .command],
+              menu: .repository),
+        // lazygit's custom commands, typed into the drawer rather than run behind the reader's back.
+        .init(id: "git.commands", title: "Custom Commands…", key: "m", modifiers: [.option, .command],
+              menu: .repository),
+
         // The second half of the sentence that replaced *it never writes*: it shows you the
         // command it ran.
         .init(id: "git.record", title: "What DiffScope Ran…", key: "l", modifiers: [.option, .command],

@@ -706,6 +706,163 @@ extension Controller {
         return String(first)
     }
 
+    // ---- conflicts -------------------------------------------------------------------------------
+
+    /// The conflicted paths, with the two sides offered by name. DEC-092 hands the *resolving* to
+    /// the editor, as GitHub Desktop does — what this offers is the three moves that do not need
+    /// one: take our side, take theirs, or say it is resolved as it stands.
+    @objc func resolveConflicts(_ sender: Any?) {
+        guard let repository = state.selectedRepository else { return }
+        let conflicts = gitState.conflicts(in: repository.url)
+        guard !conflicts.isEmpty else {
+            statusLabel.stringValue = "nothing is conflicted"
+            return
+        }
+        let menu = NSMenu(title: "Conflicts")
+        for conflict in conflicts {
+            let item = menu.addItem(withTitle: conflict.path, action: nil, keyEquivalent: "")
+            let submenu = NSMenu()
+            for (title, side) in [("Take our side", "ours"), ("Take their side", "theirs"),
+                                  ("Mark resolved as it stands", "asis")] {
+                // A path added on both sides has no base and no *ours* to take in the sense the
+                // word implies; the option is dropped rather than offered and then refused.
+                if conflict.addedOnBothSides, side != "asis" { continue }
+                let action = submenu.addItem(withTitle: title, action: #selector(resolveConflict(_:)),
+                                             keyEquivalent: "")
+                action.target = self
+                action.representedObject = "\(side)\u{1f}\(conflict.path)"
+            }
+            let open = submenu.addItem(withTitle: "Open in the editor",
+                                       action: #selector(openConflictInEditor(_:)), keyEquivalent: "")
+            open.target = self
+            open.representedObject = conflict.path
+            item.submenu = submenu
+        }
+        present(menu, from: (sender as? NSView) ?? branchButton, repository: repository)
+    }
+
+    @objc func resolveConflict(_ sender: NSMenuItem) {
+        guard let repository = state.selectedRepository,
+              let encoded = sender.representedObject as? String else { return }
+        let parts = encoded.components(separatedBy: "\u{1f}")
+        guard parts.count == 2 else { return }
+        let side: WriteActions.ConflictSide = parts[0] == "ours" ? .ours
+            : (parts[0] == "theirs" ? .theirs : .asIs)
+        if side != .asIs {
+            guard confirm("Take the \(parts[0]) side of “\(parts[1])”?",
+                          detail: "The other side's version of this file is discarded. The commits on both sides are untouched.",
+                          verb: "Take \(parts[0])") else { return }
+        }
+        perform("resolve") { try self.actions.resolve(paths: [parts[1]], taking: side, in: repository.url) }
+    }
+
+    /// The same launcher DEC-082 built for ⌘⏎, pointed at the conflicted file: DEC-092 hands the
+    /// resolving to the editor, so the interface has to open one.
+    @objc func openConflictInEditor(_ sender: NSMenuItem) {
+        guard let repository = state.selectedRepository,
+              let path = sender.representedObject as? String else { return }
+        let template = state.configuration.editorTemplate ?? EditorCommand.defaultTemplate
+        guard let command = EditorCommand(template: template,
+                                          file: repository.url.appendingPathComponent(path).path,
+                                          line: 1) else {
+            statusLabel.stringValue = "the editor command could not be built"
+            return
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: command.executable)
+        process.arguments = command.arguments
+        do { try process.run() } catch { statusLabel.stringValue = "the editor did not open: \(error)" }
+    }
+
+    // ---- the reflog, which is the net under every restore point ------------------------------------
+
+    @objc func showReflog(_ sender: Any?) {
+        guard let repository = state.selectedRepository else { return }
+        let entries = gitState.reflog(in: repository.url, limit: 50)
+        let menu = NSMenu(title: "Reflog")
+        if entries.isEmpty {
+            menu.addItem(withTitle: "Nothing yet", action: nil, keyEquivalent: "").isEnabled = false
+        }
+        for entry in entries.prefix(40) {
+            let item = menu.addItem(withTitle: "\(entry.selector)  \(entry.action)",
+                                    action: #selector(resetToReflogEntry(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = entry.sha
+            item.toolTip = "\(entry.sha) · \(entry.date) — reset the branch here"
+        }
+        present(menu, from: (sender as? NSView) ?? branchButton, repository: repository)
+    }
+
+    @objc func resetToReflogEntry(_ sender: NSMenuItem) {
+        guard let repository = state.selectedRepository, let sha = sender.representedObject as? String else { return }
+        guard confirm("Move this branch back to \(sha)?",
+                      detail: WriteActions.ResetKind.mixed.consequence
+                          + " This is how a rewrite is undone when its restore point is gone.",
+                      verb: "Reset") else { return }
+        perform("reset") { try self.actions.reset(to: sha, kind: .mixed, in: repository.url) }
+    }
+
+    // ---- custom commands -------------------------------------------------------------------------
+
+    /// lazygit's custom commands, run **in the terminal drawer** so nothing this application does
+    /// to a repository happens where the reader cannot see it.
+    @objc func showCustomCommands(_ sender: Any?) {
+        guard let repository = state.selectedRepository else { return }
+        let menu = NSMenu(title: "Commands")
+        for command in state.configuration.customCommands {
+            let item = menu.addItem(withTitle: command.name, action: #selector(runCustomCommand(_:)),
+                                    keyEquivalent: "")
+            item.target = self
+            item.representedObject = command.name
+            item.toolTip = command.command
+        }
+        if !state.configuration.customCommands.isEmpty { menu.addItem(.separator()) }
+        let new = menu.addItem(withTitle: "New Command…", action: #selector(newCustomCommand),
+                               keyEquivalent: "")
+        new.target = self
+        if !state.configuration.customCommands.isEmpty {
+            let forget = menu.addItem(withTitle: "Forget a Command…", action: #selector(forgetCustomCommand),
+                                      keyEquivalent: "")
+            forget.target = self
+        }
+        present(menu, from: (sender as? NSView) ?? branchButton, repository: repository)
+    }
+
+    @objc func newCustomCommand() {
+        guard let name = ask("Name the command", detail: "It appears in this menu.",
+                             placeholder: "Push and open the PR"),
+              let body = ask("What should it run?",
+                             detail: "It runs in the terminal drawer, in the selected repository. {repo}, {branch}, {file} and {sha} are filled in from what is selected.",
+                             placeholder: "git push -u origin {branch}") else { return }
+        state.configuration.customCommands.append(CustomCommand(name: name, command: body))
+        if let problem = configStore.save(state.configuration) { statusLabel.stringValue = problem }
+        else { statusLabel.stringValue = "saved “\(name)”" }
+    }
+
+    @objc func forgetCustomCommand() {
+        guard let name = ask("Which command should be forgotten?", detail: "",
+                             placeholder: state.configuration.customCommands.first?.name ?? "") else { return }
+        state.configuration.customCommands.removeAll { $0.name == name }
+        configStore.save(state.configuration)
+        statusLabel.stringValue = "forgot “\(name)”"
+    }
+
+    @objc func runCustomCommand(_ sender: NSMenuItem) {
+        guard let repository = state.selectedRepository, let name = sender.representedObject as? String,
+              let command = state.configuration.customCommands.first(where: { $0.name == name }) else { return }
+        let text = command.expanded(repository: repository.url.path,
+                                    branch: state.branches.first { $0.isCurrent }?.name,
+                                    file: selectedFilePath(), sha: pickedCommit())
+        startTerminalIfNeeded()
+        if !terminalVisible { setTerminalVisible(true, startingShell: true) }
+        terminal.follow(directory: repository.url.path, force: true)
+        // Typed into the drawer rather than executed: the reader sees the command, sees its output,
+        // and can stop it. A custom command that ran invisibly would be the second execution path
+        // this product has spent two milestones not having.
+        terminal.type(text)
+        statusLabel.stringValue = "typed “\(name)” into the terminal"
+    }
+
     // ---- the record ------------------------------------------------------------------------------
 
     /// *It writes only what you asked for, and it shows you the command it ran* — the second half,

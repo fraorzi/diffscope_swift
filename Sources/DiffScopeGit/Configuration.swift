@@ -77,24 +77,65 @@ public struct Configuration: Sendable, Equatable, Codable {
     /// application and edited by the user, and nothing reads a repository into it.
     public var editorTemplate: String?
 
+    /// lazygit's custom commands (DEC-092). Stored here for the same reason the editor template is:
+    /// this file is written by the application and edited by the user, and **nothing reads a
+    /// repository into it** — a command a repository could define is a command a repository could
+    /// run, which is what DEC-051 removed from the read path.
+    public var customCommands: [CustomCommand]
+
     public init(sources: [ConfiguredSource] = [], baseOverrides: [String: String] = [:],
-                editorTemplate: String? = nil) {
+                editorTemplate: String? = nil, customCommands: [CustomCommand] = []) {
         self.sources = sources
         self.baseOverrides = baseOverrides
         self.editorTemplate = editorTemplate
+        self.customCommands = customCommands
     }
 
     public var isEmpty: Bool { sources.isEmpty }
 
     // Decoded explicitly so a configuration written before overrides existed still loads. A missing
     // key is an older file, not a corrupt one, and must not cost the user their roots.
-    private enum CodingKeys: String, CodingKey { case sources, baseOverrides, editorTemplate }
+    private enum CodingKeys: String, CodingKey {
+        case sources, baseOverrides, editorTemplate, customCommands
+    }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         sources = try container.decodeIfPresent([ConfiguredSource].self, forKey: .sources) ?? []
         baseOverrides = try container.decodeIfPresent([String: String].self, forKey: .baseOverrides) ?? [:]
         editorTemplate = try container.decodeIfPresent(String.self, forKey: .editorTemplate)
+        customCommands = try container.decodeIfPresent([CustomCommand].self, forKey: .customCommands) ?? []
+    }
+}
+
+/// A shell command the user bound to a name, with the placeholders lazygit's own custom commands
+/// use (DEC-092).
+///
+/// **It is run in the terminal drawer, never invisibly.** DEC-053's surface already exists, its
+/// output is already legible, and routing custom commands through it means there is no second
+/// execution path to audit — the one thing a feature like this must not add to a product whose
+/// read path refuses to execute anything a repository configures.
+public struct CustomCommand: Sendable, Equatable, Codable {
+    public let name: String
+    public let command: String
+
+    public init(name: String, command: String) {
+        self.name = name
+        self.command = command
+    }
+
+    /// `{repo}`, `{branch}`, `{file}`, `{sha}` — filled from what the window has selected. A
+    /// placeholder with nothing behind it is left as it is rather than replaced with an empty
+    /// string: `git checkout ` is a command that does something surprising, and `git checkout
+    /// {branch}` is one the shell will refuse.
+    public func expanded(repository: String?, branch: String?, file: String?, sha: String?) -> String {
+        var text = command
+        for (token, value) in [("{repo}", repository), ("{branch}", branch),
+                               ("{file}", file), ("{sha}", sha)] {
+            guard let value, !value.isEmpty else { continue }
+            text = text.replacingOccurrences(of: token, with: value)
+        }
+        return text
     }
 }
 
