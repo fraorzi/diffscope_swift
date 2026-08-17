@@ -64,6 +64,17 @@ final class AppState {
     var searchHits: [SearchHit] = []
     /// Which hit the reader is on, or `nil` when there are none.
     var searchIndex: Int?
+
+    // ---- version two (DEC-092) ---------------------------------------------------------------
+    //
+    // All four are **read back** after every write rather than mutated in place. The index is
+    // shared with WebStorm, the terminal drawer and every hook, so a state this window keeps for
+    // itself is one it can be wrong about — which is the objection DEC-092 §2.2 makes to hiding
+    // the index in the first place.
+    var staging: [String: FileStaging] = [:]
+    var branches: [BranchInfo] = []
+    var stashes: [StashEntry] = []
+    var operation: RepositoryOperation = .none
 }
 
 final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, NSSplitViewDelegate, WKNavigationDelegate, WKScriptMessageHandler {
@@ -76,6 +87,24 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// answer nobody is looking at yet (DEC-051).
     let filters = FilterCheck(runner: GitRunner())
     let configStore = ConfigurationStore()
+    /// Version two's two halves (DEC-092): the verbs that write, and the reads they need first.
+    /// Held here rather than constructed per call, so `GitWriter`'s command record is one record.
+    let actions = WriteActions()
+    let gitState = RepositoryStateReader()
+
+    /// The commit box under the file list, the banner over the status line, and the two controls
+    /// the status line gained. Held for the same reason every other control here is: the selftest
+    /// asks where they were drawn, not what they were asked for.
+    var commitBox: CommitBox!
+    var operationBanner: OperationBanner!
+    var syncButton: SyncButton!
+    var branchButton: ChevronButton!
+    /// The banner's height, held so a hidden banner takes **no** space. A hidden view still holds
+    /// its constraints, so `isHidden` alone would leave a 26 pt gap over the status line for the
+    /// whole time nothing is in progress — the empty-notice-bar finding of DEC-088, one band down.
+    var bannerHeightConstraint: NSLayoutConstraint!
+    /// The panel listing what this application ran. Built on first use.
+    var recordWindow: NSWindow?
 
     let parser = TSXParser()
     /// Renders run here, one at a time. See `render(file:previousAnchor:restoringStop:)`.
@@ -423,6 +452,23 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         filePane.addSubview(fileHeader)
         filePane.addSubview(middleScroll)
 
+        // The commit box, pinned under the list (DEC-092) exactly where GitHub Desktop pins it.
+        // Laid out by hand like its two siblings, for the reason `FilePane` records: a pane inside
+        // an `NSSplitView` cannot use Auto Layout against a width the engine no longer believes.
+        commitBox = CommitBox(frame: NSRect(x: 0, y: 0, width: Theme.filePaneWidth,
+                                            height: Theme.commitBoxHeight))
+        commitBox.translatesAutoresizingMaskIntoConstraints = true
+        commitBox.autoresizingMask = [.width, .maxYMargin]
+        commitBox.button.target = self
+        commitBox.button.action = #selector(commitStaged)
+        // Return in the summary field commits, which is what a one-line field in a box with a
+        // button under it means everywhere else in macOS.
+        commitBox.summary.target = self
+        commitBox.summary.action = #selector(commitStaged)
+        filePane.footer = commitBox
+        filePane.footerHeight = Theme.commitBoxHeight
+        filePane.addSubview(commitBox)
+
         // The lens control sits with the other two (DEC-061). The design draws it inside the pane
         // header; it lives here instead because a control in the webview cannot act — the page
         // receives calls, it does not make them — and a control that looks clickable and is not is
@@ -598,15 +644,27 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // Constraints rather than a stack view: the drawer has to take **everything** between the
         // two bars, and a stack asked to do that with a split view inside it gave the split its
         // frame height and left the rest of the window empty.
+        // The banner (DEC-092), between the panes and the status line: it is about the repository
+        // as a whole, and it must be the last thing under the reader's eye before the bar that
+        // reports on the window. Hidden until something is in progress — a band that is always
+        // there is a band nobody reads when it finally says something.
+        operationBanner = OperationBanner()
+        operationBanner.verbTarget = self
+        operationBanner.verbAction = #selector(bannerVerb(_:))
+        operationBanner.isHidden = true
+        bannerHeightConstraint = operationBanner.heightAnchor.constraint(equalToConstant: 0)
+
         let container = NSView()
         container.addSubview(titleBar)
         container.addSubview(scopeBar)
         container.addSubview(drawer)
+        container.addSubview(operationBanner)
         container.addSubview(statusBar)
         container.addSubview(emptyState)
         titleBar.translatesAutoresizingMaskIntoConstraints = false
         scopeBar.translatesAutoresizingMaskIntoConstraints = false
         statusBar.translatesAutoresizingMaskIntoConstraints = false
+        operationBanner.translatesAutoresizingMaskIntoConstraints = false
         drawer.translatesAutoresizingMaskIntoConstraints = false
         emptyState.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -620,8 +678,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             statusBar.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             statusBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             statusBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            operationBanner.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
+            operationBanner.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            operationBanner.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            // Zero-height while hidden, so the panes take the space back rather than sitting above
+            // an empty band — the same arrangement the notice bar was given in DEC-088.
+            bannerHeightConstraint,
             drawer.topAnchor.constraint(equalTo: scopeBar.bottomAnchor),
-            drawer.bottomAnchor.constraint(equalTo: statusBar.topAnchor),
+            drawer.bottomAnchor.constraint(equalTo: operationBanner.topAnchor),
             drawer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             drawer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             // The drawer has no height of its own — a split view takes the height it is given. So
@@ -846,7 +910,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// and commits-ahead-of-base beside every repository in the list. Those change the moment a
     /// commit lands and otherwise stay stale until the window is focused (DEC-006). That, and only
     /// that, is what a command's end mark is used for.
-    private func refreshAfterCommand() {
+    func refreshAfterCommand() {
         guard state.selectedRepository != nil else { return }
         let now = Date()
         guard now.timeIntervalSince(lastCommandRefresh) > RefreshDebounce.quietPeriod else { return }
@@ -3084,7 +3148,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// segments than it was given. Timing stays in the output as a record, where a human reading two
     /// runs can see what changed.
     private func measureScale(_ cases: [ScaleCase], index: Int) {
-        guard index < cases.count else { emptyScopeSelftest(); return }
+        guard index < cases.count else { stagingSelftest(); return }
         let subject = cases[index]
         let outcome = buildModel(path: "scale.ts", old: subject.old, new: subject.new,
                                  mode: .structural)
@@ -3157,6 +3221,104 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         webView.evaluateJavaScript("JSON.stringify(window.diffscopeTimings())") { value, _ in
             let text = (value as? String) ?? "null"
             then((try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] ?? [:])
+        }
+    }
+
+    /// Version two's arm (DEC-092): **the window stages a file and commits it, through the controls
+    /// a reader would use.**
+    ///
+    /// Not a check on `WriteActions` — `WriteChecks` owns that, and INV-6 is proven there. What
+    /// this asserts is the half a headless check cannot reach: that the box is drawn beside every
+    /// path, that clicking it moves the index, that the box then draws the *other* state, and that
+    /// the button under the list makes a commit out of what the box staged. Every one of those was
+    /// a place the window could agree with itself and disagree with git.
+    private func stagingSelftest() {
+        let repository = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("diffscope-staging-\(UUID().uuidString)")
+        func git(_ arguments: [String]) {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+            process.arguments = ["-C", repository.path] + arguments
+            var environment = ProcessInfo.processInfo.environment
+            environment["GIT_AUTHOR_NAME"] = "DiffScope Fixture"
+            environment["GIT_AUTHOR_EMAIL"] = "fixture@diffscope.local"
+            environment["GIT_COMMITTER_NAME"] = "DiffScope Fixture"
+            environment["GIT_COMMITTER_EMAIL"] = "fixture@diffscope.local"
+            process.environment = environment
+            process.standardOutput = Pipe(); process.standardError = Pipe()
+            try? process.run(); process.waitUntilExit()
+        }
+        try? FileManager.default.createDirectory(at: repository, withIntermediateDirectories: true)
+        try? "one\ntwo\nthree\n".write(to: repository.appendingPathComponent("a.txt"),
+                                       atomically: true, encoding: .utf8)
+        git(["init", "-q", "-b", "main", "."])
+        git(["config", "user.email", "fixture@diffscope.local"])
+        git(["config", "user.name", "DiffScope Fixture"])
+        git(["config", "commit.gpgsign", "false"])
+        git(["add", "."]); git(["commit", "-q", "-m", "first"])
+        try? "one\nTWO\nthree\n".write(to: repository.appendingPathComponent("a.txt"),
+                                       atomically: true, encoding: .utf8)
+
+        state.configuration = Configuration(sources: [ConfiguredSource(kind: .repository,
+                                                                       path: repository.path)])
+        state.selectedRepository = nil
+        scan(sources: state.configuration.sources)
+
+        func boxes() -> [CheckButton] {
+            func find(_ view: NSView) -> [CheckButton] {
+                if let box = view as? CheckButton { return [box] }
+                return view.subviews.flatMap(find)
+            }
+            return (0..<fileTable.numberOfRows).compactMap {
+                fileTable.view(atColumn: 0, row: $0, makeIfNecessary: true)
+            }.flatMap(find)
+        }
+
+        // The collapse arm runs before this one and leaves the file pane folded; a folded pane
+        // draws the spine (DEC-060), which has room for a kind glyph and nothing else. The arm
+        // that needs the boxes has to put the pane back rather than photograph the absence.
+        if filesCollapsed { toggleFilesPane() }
+        if reposCollapsed { toggleRepositoriesPane() }
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            let before = boxes()
+            let drawnEmpty = before.count == 1 && before[0].inclusion == .none
+                && before[0].frame.width > 1 && before[0].frame.height > 1
+            // The click a reader makes, through the action the control is wired to.
+            if let box = before.first { self.toggleInclusion(box) }
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                let staged = self.state.staging["a.txt"] == .all
+                let redrawn = boxes().first?.inclusion == .all
+                let branchNamed = self.commitBox.branchName == "main"
+                let counted = self.commitBox.status.stringValue.contains("1 staged")
+
+                self.commitBox.summary.stringValue = "Staged from the window"
+                self.commitStaged()
+
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
+                    let runner = GitRunner()
+                    let count = (try? runner.run(.revListCount("HEAD"), in: repository))?
+                        .trimmedOutput ?? "0"
+                    let message = self.gitState.commitMessage(of: "HEAD", in: repository)
+                    let recorded = GitWriter.commandRecord.contains { $0.arguments.first == "commit" }
+                    let cleared = self.commitBox.summaryText.isEmpty
+                    let ok = drawnEmpty && staged && redrawn && branchNamed && counted
+                        && count == "2" && message.contains("Staged from the window")
+                        && recorded && cleared
+                    FileHandle.standardError.write(Data(
+                        ("SELFTEST staging=\(ok ? "OK" : "MISMATCH") box-drawn=\(drawnEmpty) "
+                            + "staged=\(staged) box-redrawn=\(redrawn) branch=\(branchNamed) "
+                            + "counted=\(counted) commits=\(count) recorded=\(recorded) "
+                            + "cleared=\(cleared) boxes=\(before.count) rows=\(self.state.fileRows.count) "
+                            + "files=\(self.state.files.count) collapsed=\(self.filesCollapsed) "
+                            + "scope=\(self.state.scope.rawValue) repo="
+                            + "\(self.state.selectedRepository?.url.lastPathComponent ?? "none")\n").utf8))
+                    try? FileManager.default.removeItem(at: repository)
+                    guard ok else { exit(71) }
+                    self.emptyScopeSelftest()
+                }
+            }
         }
     }
 
@@ -3778,9 +3940,25 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         terminalButton.enforceMinimumTarget()
         updateTerminalButton()
 
+        // Version two's two controls (DEC-092), at the leading edge of the right-hand group: the
+        // branch this window is on, and the one sync button with its three states. Both are in the
+        // status line rather than a toolbar of their own, because this window's status line is
+        // already where facts about the *repository as a whole* are stated.
+        branchButton = ChevronButton(title: "", target: self, action: #selector(showBranchMenu(_:)))
+        branchButton.isBordered = false
+        branchButton.font = Theme.prose(Theme.textSizeSmall)
+        branchButton.identifier = NSUserInterfaceItemIdentifier("git.branchButton")
+        branchButton.toolTip = KeyboardMap.binding(id: "git.branches")?.shortcut
+        branchButton.enforceMinimumTarget()
+
+        syncButton = SyncButton(title: "Fetch origin", target: self, action: #selector(syncButtonPressed))
+        syncButton.bezelStyle = .rounded
+        syncButton.font = Theme.prose(Theme.textSizeSmall)
+        syncButton.identifier = NSUserInterfaceItemIdentifier("git.syncButton")
+
         // The key legend has gone with the hints (DEC-077). The menu bar is where the map lives; a
         // status line that recites it is three lines of text a reader stops seeing after a day.
-        let right = NSStackView(views: [terminalButton, layoutControl, wrapButton])
+        let right = NSStackView(views: [branchButton, syncButton, terminalButton, layoutControl, wrapButton])
         right.orientation = .horizontal
         right.alignment = .centerY
         right.spacing = Theme.space6
@@ -4049,7 +4227,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         return (rowBox.midY, lightBox.midY)
     }
 
-    private func rescan() {
+    func rescan() {
         var sources = state.configuration.sources
         if let hook = ProcessInfo.processInfo.environment["DIFFSCOPE_ROOT"],
            !sources.contains(where: { $0.path == hook }) {
@@ -4428,6 +4606,31 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         case "focus.files": return #selector(focusFiles)
         case "focus.diff": return #selector(focusDiff)
         case "openInEditor": return #selector(openInEditor)
+        // Version two (DEC-092). Every one of these writes, and every one of them goes through
+        // `WriteActions` — there is no second path into the repository from this window.
+        case "git.stage": return #selector(stageSelectedFile)
+        case "git.unstage": return #selector(unstageSelectedFile)
+        case "git.stageAll": return #selector(stageEverything)
+        case "git.unstageAll": return #selector(unstageEverything)
+        case "git.discard": return #selector(discardSelectedFile)
+        case "git.commit": return #selector(commitStaged)
+        case "git.focusSummary": return #selector(focusCommitSummary)
+        case "git.undoCommit": return #selector(undoLastCommit)
+        case "git.branches": return #selector(showBranchMenu(_:))
+        case "git.newBranch": return #selector(newBranch)
+        case "git.stash": return #selector(stashEverything)
+        case "git.stashes": return #selector(showStashMenu(_:))
+        case "git.worktrees": return #selector(showWorktreeMenu(_:))
+        case "git.tags": return #selector(showTagMenu(_:))
+        case "git.bisect": return #selector(startBisect)
+        case "git.revert": return #selector(revertPickedCommit)
+        case "git.cherryPick": return #selector(cherryPickCommit)
+        case "git.reset": return #selector(resetToPickedCommit)
+        case "git.fetch": return #selector(fetchRemote)
+        case "git.pull": return #selector(pullRemote)
+        case "git.push": return #selector(pushRemote)
+        case "git.forcePush": return #selector(forcePush)
+        case "git.record": return #selector(showCommandRecord)
         default: return nil
         }
     }
@@ -4624,6 +4827,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// DEC-015: a configurable template, never populated from repository content — the template
     /// is user configuration and a repository is untrusted input. Failure is shown, not swallowed.
     @objc private func openInEditor() {
+        // DEC-092: ⌘⏎ is claimed twice, and the commit box wins it while it has focus — which is
+        // GitHub Desktop's own rule and the only one that does not surprise a reader in the middle
+        // of typing a message. ⇧⌘⏎ commits from anywhere, so the function is never out of reach.
+        if commitBoxHasFocus() {
+            commitStaged()
+            return
+        }
         guard let repository = state.selectedRepository, let file = state.selectedFile else {
             statusLabel.stringValue = "open in editor: no file selected"
             return
@@ -5121,7 +5331,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         if let file = state.selectedFile { showDiff(for: file) }
     }
 
-    private func reloadFiles() {
+    func reloadFiles() {
         guard let repository = state.selectedRepository else { return }
         var baseRef: String?
         state.mergeBaseRev = nil
@@ -5175,6 +5385,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         })
         state.annotations = [:]
         updatePaneHeaders()
+        // DEC-092: the staging state is read before the rows are drawn, because the box in each
+        // row is drawn from it. Read rather than remembered — WebStorm, the drawer and every hook
+        // share this index.
+        state.staging = gitState.staging(in: repository.url)
         fileTable.reloadData()
         restoreFileSelection()
         annotateFiles(of: repository)
@@ -5480,7 +5694,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// note, and two counts — and a reader comparing two rows has to be able to find the same fact
     /// in the same place. The label built here is still the whole row's `toolTip`, so nothing the
     /// columns clip is lost.
-    private func label(_ size: CGFloat, _ weight: NSFont.Weight = .regular,
+    func label(_ size: CGFloat, _ weight: NSFont.Weight = .regular,
                        _ colour: NSColor = Theme.ink) -> NSTextField {
         let field = NSTextField(labelWithString: "")
         field.font = Theme.font(size, weight: weight)
@@ -5637,7 +5851,21 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             counts.setContentCompressionResistancePriority(.required, for: .horizontal)
             counts.alignment = .right
 
-            let stack = NSStackView(views: [glyph, name, spacerView(), note, counts])
+            // The inclusion box (DEC-092). Only where staging is a question the scope can answer:
+            // `vs base` compares two commits, and a box beside a file in it would be offering to
+            // stage something that is already committed.
+            let box = CheckButton(title: "", target: self, action: #selector(toggleInclusion(_:)))
+            box.isBordered = false
+            box.setButtonType(.momentaryChange)
+            box.inclusion = inclusion(of: file.path)
+            box.tag = row
+            box.toolTip = box.inclusion == .partial
+                ? "Part of this file is staged — click to stage the rest"
+                : (box.inclusion == .all ? "Staged — click to take it out of the commit"
+                                         : "Not staged — click to put it in the commit")
+            let staging: NSView = state.scope == .branchVsMergeBase ? spacerView() : box
+
+            let stack = NSStackView(views: [staging, glyph, name, spacerView(), note, counts])
             stack.orientation = .horizontal
             stack.alignment = .centerY
             stack.spacing = Theme.space2
@@ -5653,7 +5881,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
-    private func spacerView() -> NSView {
+    func spacerView() -> NSView {
         let spacer = NSView()
         spacer.translatesAutoresizingMaskIntoConstraints = false
         spacer.setContentHuggingPriority(.init(1), for: .horizontal)
@@ -5679,6 +5907,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             startWatching(repository)
             followTerminalIfPossible(repository)
             reloadFiles()
+            refreshGitState()
         } else {
             guard table.selectedRow >= 0, table.selectedRow < state.fileRows.count,
                   let file = state.fileRows[table.selectedRow].file else { return }

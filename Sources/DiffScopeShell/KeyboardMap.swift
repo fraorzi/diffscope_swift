@@ -26,6 +26,14 @@ public enum KeyboardFunction: String, CaseIterable, Sendable {
     case rawForCurrentRegion
     case openInEditor
     case moveFocus
+    // Version two's rows (DEC-092). `12-…` §9b is the table these transcribe, added with them —
+    // DEC-016's rule is unchanged and now covers operations that write: a function reachable only
+    // by pointer is still a defect, and staging by clicking a box would have been exactly that.
+    case stageAndUnstage
+    case commitChanges
+    case manageBranches
+    case syncWithRemote
+    case actOnCommit
 
     /// The row of `12-…` §9 this transcribes, quoted so a later reader can check the transcription
     /// against the specification rather than trusting the enum's name.
@@ -40,6 +48,11 @@ public enum KeyboardFunction: String, CaseIterable, Sendable {
         case .rawForCurrentRegion: return "Show raw for the current region"
         case .openInEditor: return "Open current file and line in the editor"
         case .moveFocus: return "Focus movement between sidebar, file list, and diff"
+        case .stageAndUnstage: return "Stage and unstage the selected file"
+        case .commitChanges: return "Commit what is staged"
+        case .manageBranches: return "Switch, create and manage branches"
+        case .syncWithRemote: return "Fetch, pull and push"
+        case .actOnCommit: return "Act on a commit in History"
         }
     }
 }
@@ -67,7 +80,7 @@ public struct KeyboardModifiers: OptionSet, Sendable, Hashable {
 /// Which menu a binding is drawn in. The menu bar is the keyboard map's visible form (DEC-016):
 /// bindings live there so they are discoverable, and so macOS routes them whatever holds focus.
 public enum KeyboardMenu: String, CaseIterable, Sendable {
-    case application, view, sources, navigate
+    case application, view, sources, navigate, repository
 
     public var title: String {
         switch self {
@@ -75,6 +88,9 @@ public enum KeyboardMenu: String, CaseIterable, Sendable {
         case .view: return "View"
         case .sources: return "Sources"
         case .navigate: return "Navigate"
+        // Version two's menu (DEC-092). Everything that writes is in one place, so *what can this
+        // application change* is a question a reader answers by opening one menu.
+        case .repository: return "Repository"
         }
     }
 }
@@ -232,7 +248,77 @@ public enum KeyboardMap {
         // repositories, which hold ⇧⌘O and ⇧⌘R (DEC-065).
         .init(id: "openInEditor", title: "Open in Editor", key: "⏎", modifiers: [.command],
               menu: .navigate, satisfies: .openInEditor),
+
+        // ---- version two (DEC-092) -----------------------------------------------------------
+        //
+        // Staging and unstaging are the pair OQ-056 sequenced first, and they are next to each
+        // other on the keyboard for the same reason they are next to each other in the menu.
+        .init(id: "git.stage", title: "Stage File", key: "s", modifiers: [.option, .command],
+              menu: .repository, satisfies: .stageAndUnstage),
+        .init(id: "git.unstage", title: "Unstage File", key: "u", modifiers: [.option, .command],
+              menu: .repository, satisfies: .stageAndUnstage),
+        .init(id: "git.stageAll", title: "Stage Everything", key: "s",
+              modifiers: [.shift, .option, .command], menu: .repository),
+        .init(id: "git.unstageAll", title: "Unstage Everything", key: "u",
+              modifiers: [.shift, .option, .command], menu: .repository),
+        // Discarding is the one operation in this menu that can lose work that is in no object
+        // database anywhere, and it is deliberately without a keystroke — the same reasoning
+        // `sources.remove` carries, and the check names both rather than making an exception.
+        .init(id: "git.discard", title: "Discard Changes…", key: "", modifiers: [], menu: .repository),
+
+        // `⌘⏎` belongs to *open in editor* (DEC-065) and keeps it. Inside the commit box it
+        // commits, which is GitHub Desktop's own rule; ⇧⌘⏎ commits from anywhere, so the function
+        // is reachable without the reader having to be standing in the right field.
+        .init(id: "git.commit", title: "Commit", key: "⏎", modifiers: [.shift, .command],
+              menu: .repository, satisfies: .commitChanges),
+        .init(id: "git.focusSummary", title: "Write a Commit Message", key: "c",
+              modifiers: [.option, .command], menu: .repository),
+        .init(id: "git.undoCommit", title: "Undo Last Commit", key: "z",
+              modifiers: [.option, .command], menu: .repository),
+
+        .init(id: "git.branches", title: "Branches…", key: "b", modifiers: [.option, .command],
+              menu: .repository, satisfies: .manageBranches),
+        .init(id: "git.newBranch", title: "New Branch…", key: "n", modifiers: [.option, .command],
+              menu: .repository, satisfies: .manageBranches),
+        .init(id: "git.stash", title: "Stash Everything", key: "s", modifiers: [.shift, .command],
+              menu: .repository),
+        .init(id: "git.stashes", title: "Stashes…", key: "x", modifiers: [.option, .command],
+              menu: .repository),
+        .init(id: "git.worktrees", title: "Worktrees…", key: "w", modifiers: [.shift, .command],
+              menu: .repository),
+        .init(id: "git.tags", title: "Tags…", key: "t", modifiers: [.shift, .command], menu: .repository),
+        .init(id: "git.bisect", title: "Bisect…", key: "y", modifiers: [.shift, .command],
+              menu: .repository),
+
+        .init(id: "git.revert", title: "Revert Commit", key: "v", modifiers: [.option, .command],
+              menu: .repository, satisfies: .actOnCommit),
+        .init(id: "git.cherryPick", title: "Cherry-pick Commit", key: "y",
+              modifiers: [.option, .command], menu: .repository, satisfies: .actOnCommit),
+        // Reset can discard a working tree, so it is the third deliberately unbound row.
+        .init(id: "git.reset", title: "Reset to Commit…", key: "", modifiers: [], menu: .repository),
+
+        .init(id: "git.fetch", title: "Fetch", key: "f", modifiers: [.option, .command],
+              menu: .repository, satisfies: .syncWithRemote),
+        .init(id: "git.push", title: "Push", key: "p", modifiers: [.command],
+              menu: .repository, satisfies: .syncWithRemote),
+        .init(id: "git.pull", title: "Pull", key: "p", modifiers: [.shift, .command],
+              menu: .repository, satisfies: .syncWithRemote),
+        // A force push can destroy work that was never on this machine. Fourth unbound row, and
+        // the sheet behind it asks for the branch name to be typed (DEC-092 §5).
+        .init(id: "git.forcePush", title: "Force Push (with lease)…", key: "", modifiers: [],
+              menu: .repository),
+
+        // The second half of the sentence that replaced *it never writes*: it shows you the
+        // command it ran.
+        .init(id: "git.record", title: "What DiffScope Ran…", key: "l", modifiers: [.option, .command],
+              menu: .repository),
     ]
+
+    /// The rows that are deliberately without a keystroke, each because handing it a single key
+    /// would be handing a reader a way to lose work by mistyping. Named here rather than in the
+    /// check, so the list and its reason travel together.
+    public static let deliberatelyUnbound = ["sources.remove", "git.discard", "git.reset",
+                                             "git.forcePush"]
 
     public static func bindings(in menu: KeyboardMenu) -> [KeyboardBinding] {
         bindings.filter { $0.menu == menu }

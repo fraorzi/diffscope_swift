@@ -6,6 +6,13 @@ import Foundation
 /// stash stack, the conflicted paths, the graph and the mid-operation state are reads like any
 /// other, and none of them may write to say what it says.
 
+/// How much of a file is in the index (DEC-092). Read from `git status`'s two letters rather than
+/// remembered by the interface: the index is shared with WebStorm, the terminal drawer and every
+/// hook, so a state this application keeps for itself is one it can be wrong about.
+public enum FileStaging: String, Sendable, Equatable {
+    case none, partial, all
+}
+
 public struct BranchInfo: Sendable, Equatable {
     public let name: String
     public let upstream: String?
@@ -118,6 +125,27 @@ public struct RepositoryStateReader: Sendable {
         guard let result = try? runner.run(operation, in: repository), result.succeeded else { return [] }
         return String(decoding: result.standardOutput, as: UTF8.self)
             .split(separator: "\n", omittingEmptySubsequences: true).map(String.init)
+    }
+
+    /// Path → how much of it is staged. `X` is the index's letter and `Y` the working tree's: a
+    /// file with both is staged **and** edited since, which is the dash GitHub Desktop draws.
+    public func staging(in repository: URL) -> [String: FileStaging] {
+        guard let result = try? runner.run(.statusPorcelainUall(), in: repository),
+              result.succeeded else { return [:] }
+        var states: [String: FileStaging] = [:]
+        for line in String(decoding: result.standardOutput, as: UTF8.self).split(separator: "\n") {
+            let characters = Array(line)
+            guard characters.count > 3 else { continue }
+            let index = characters[0], worktree = characters[1]
+            var path = String(characters[3...])
+            if let arrow = path.range(of: " -> ") { path = String(path[arrow.upperBound...]) }
+            path = path.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+            if index == "?" { states[path] = FileStaging.none; continue }
+            if index == " " { states[path] = .none }
+            else if worktree == " " { states[path] = .all }
+            else { states[path] = .partial }
+        }
+        return states
     }
 
     public func branches(in repository: URL) -> [BranchInfo] {
