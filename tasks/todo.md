@@ -2802,6 +2802,20 @@ line changes no line's status. Segments over the corpus: 185 → 182.
 
 809 lines painted becomes 17, against git's 16.
 
+## Step — the unified blocks move into the engine (DEC-096, M11-F)
+
+- [x] `Sources/DiffScopeEngine/Unified.swift`, `RenderModel.unifiedBlocks` in UTF-16, `main.js`
+      reads them instead of deriving them — the last part of that layout deciding *what is shown*
+      that the renderer worked out for itself
+- [x] the peel: byte-equal line pairs no stop covers come off the block as context
+- [x] `UnifiedChecks.swift` — the containment property **failed on its first run**, `moved-function`,
+      because the peel excluded line terminators and a stop covering only a newline fell out of every
+      block. In `main.js` there was no way to have asked.
+
+**The peel fires on one fixture of 51 and on none of the eleven real files.** DEC-093 got there
+first. The 36 duplicated lines that remain are lines that are byte-identical *and carry a mark*, and
+the peel must refuse those — the answer is the alignment, below.
+
 ### Still open
 - [ ] **`--emit-structural`'s printer stars only the first line of a whole-file fallback**, where the
       contract's `changedLines` correctly reports every one. Held against each other on an 81 KB
@@ -2819,9 +2833,14 @@ line changes no line's status. Segments over the corpus: 185 → 182.
 - [ ] insertions separated by a single unchanged line cannot shift: the search is bounded by the
       neighbouring match lengths. `PageComponents.tsx` and `BannerWithImage.tsx` are what is left.
       **DEC-093's deferred option (c)** — relax "no neighbouring match may be consumed" — is the
-      candidate answer, and it is also what `⟦~s⟧⟦rc⟧` over an unchanged `src` needs. It merges
-      hunks, so it moves `changeStops`, and navigation, folds, collapses and the unified blocks all
-      key off stops. Its own entry, with its own measurement.
+      candidate answer, and it merges hunks, so it moves `changeStops`, and navigation, folds,
+      collapses and the unified blocks all key off stops. Its own entry, with its own measurement.
+
+      **This is now the single largest open item, and three separate findings point at it.**
+      `⟦~s⟧⟦rc⟧` over an unchanged `src` (M11-D). `titleSize?: '2.5xl' | '2xl' | 'xl'` keeping five
+      marks (M11-D). And all 36 lines the unified view still prints twice (M11-F) — each of them
+      byte-identical and carrying a mark, which no presentation pass may remove. Absorption and the
+      peel have both been taken as far as monotone widening goes; what is left is the alignment.
 - [ ] `-uall` for the file list **and** the count, `-z` parsing, the `AM` glyph
 - [ ] the empty comparison when a row is a directory (INV-4)
 - [ ] a clause in DEC-083 for `ds-formatting`, `ds-behaviour`, `ds-uncertain`

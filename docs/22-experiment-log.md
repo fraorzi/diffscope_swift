@@ -2934,3 +2934,38 @@ It matters here only for what it excludes: `Scripts/devtools/measure-alignment.s
 it under-reports any file that takes the whole-file path. **The M11-B/C/D corpus contains none** —
 every file in it is `.tsx` or `.ts` and takes the structural path — so those numbers stand. The table
 above deliberately uses three files that do not hit that path either.
+
+---
+
+## M11-F — How much of the unified view is printed twice
+
+**2026-08-17.** DEC-096. Eleven modified files of `5bonsai__website__nextjs`. A line counts as
+duplicated when the same text is printed once with `−` and once with `+` inside one block.
+
+| | lines printed in blocks | printed twice |
+|---|---|---|
+| snap only, as the renderer did it | 196 | 36 |
+| \+ the peel | 196 | **36** |
+
+**The peel changes nothing here, and that is the finding.** Across the whole fixture corpus it fires
+on **one of 51** — `unicode-graphemes` — and on none of the eleven real files. DEC-093 got there
+first: once the alignment sits on line boundaries, a stop no longer grazes the line above it, and a
+grazed line is the only thing a peel can take.
+
+### Where the 36 lines actually come from
+
+They are lines that are byte-identical **and carry a mark**. `}: ImageTextProps) {` is printed twice
+because a stop covers its `{`; `  return (` because a stop covers `return `. The peel refuses both,
+and must: a rule that peeled a line carrying a mark would stop showing a difference the model claims.
+
+So the duplication the owner reported is not a defect of the projection. It is the alignment claiming
+a change on a line that has none — the same root as `⟦~s⟧⟦rc⟧` over an unchanged `src`, and the same
+answer: DEC-093's deferred option (c), relaxing the bound that stops a shift consuming a neighbouring
+match.
+
+### What the entry bought instead
+
+The move into the engine, and with it the property that move made checkable: **every stop lies inside
+a block on both sides, over all 51 fixtures on both paths.** That check failed on its first run —
+`moved-function`, a stop covering a newline and nothing else, dropped out of every block by a peel
+rule that excluded terminators. In `main.js` there was no way to have asked.

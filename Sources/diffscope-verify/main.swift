@@ -298,6 +298,7 @@ runAbsorptionChecks { name, ok, detail in report(name, ok, detail) }
 runDisclosureChecks { name, ok, detail in report(name, ok, detail) }
 runMoveChecks { name, ok, detail in report(name, ok, detail) }
 runNavigationChecks { name, ok, detail in report(name, ok, detail) }
+runUnifiedChecks { name, ok, detail in report(name, ok, detail) }
 runRefreshChecks { name, ok, detail in report(name, ok, detail) }
 runBudgetChecks { name, ok, detail in report(name, ok, detail) }
 runFixtureChecks { name, ok, detail in report(name, ok, detail) }

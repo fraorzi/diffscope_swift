@@ -4249,3 +4249,56 @@ token boundaries. `snapPresentation` is skipped, because it is the one that need
 Reopen if a file class appears where the byte diff on the fallback path is both affordable and
 misleading — the case this entry assumes does not exist, because comparison does not depend on
 parsing.
+
+---
+
+## DEC-096 — The unified blocks are computed in the engine, and byte-identical lines are peeled off them
+
+- **Date:** 2026-08-17 · **Topic:** Where the unified layout's blocks are decided · **Status:** Accepted
+- **Prompted by:** the owner's fifth diff session — `}: ImageTextProps) {` and `  return (` printed on both sides of a block whose actual change was the twelve lines between them
+
+### Context
+
+`unifiedBlocks` lived in `main.js`. Every other fact of that shape — `changedLines`, `stops`,
+`collapses`, `formattingCollapses`, `anchors` — is computed in the engine, for the reason M7-A gave
+and `main.js` still states three lines above the function: *a fact about the model belongs to the
+model, and one the renderer works out for itself cannot be checked without a webview.* This was the
+one part of the unified layout deciding **what is shown**, and it had never been checkable.
+
+### Decision
+
+`Sources/DiffScopeEngine/Unified.swift`. The snap-and-merge is ported unchanged, including the
+empty-range branch that makes `7` → `77` print as a changed line rather than an added one with
+nothing to compare against. `RenderModel` carries `unifiedBlocks` in UTF-16 units like everything
+else the renderer sees; `buildUnified` reads them.
+
+And the peel: a leading or trailing line pair comes off a block when the old and new lines are
+byte-equal **and** no stop covers any byte of either, terminator included.
+
+The terminator counting is the whole of the rule's correctness, and the first draft had it wrong. It
+excluded the terminator, following `changedLines`' convention that a segment ending exactly on a
+newline does not claim the line after it — true there, and the wrong question here. What a peel must
+preserve is not which line a stop *claims* but which bytes it *covers*. **The property check caught
+it**: on `moved-function` a stop covering a newline and nothing else fell out of every block, which
+is a difference the layout would have stopped showing.
+
+### Consequences, including the one that argues against this entry
+
+- **The peel fires on one fixture of 51, and on none of the eleven real files** (M11-F). DEC-093 got
+  there first: once the alignment lands on line boundaries, a stop stops grazing the line above it,
+  and there is nothing left to peel. This entry is worth having for the move into the engine and for
+  the property that move made checkable; it is **not** what fixed the owner's report, and saying
+  otherwise would be false.
+- **The duplication the owner saw is still there, 36 lines of it, and it is alignment rather than
+  layout.** `}: ImageTextProps) {` prints twice because a stop covers its `{`, and `  return (`
+  because a stop covers `return `. Both lines are byte-identical and both carry a claim that they are
+  not. The peel must refuse them — a rule that peeled a line carrying a mark would hide a difference
+  — so the answer is DEC-093's deferred option (c), not this.
+- Unlike DEC-094's rejected per-run allowance, this rule **can** turn, and does. That is the
+  distinction worth keeping: the allowance was provably unreachable given the rule beside it, and
+  this is reachable and currently rare.
+
+### Revisit trigger
+
+Reopen if option (c) lands and the peel is then unreachable rather than rare — at that point it is
+the allowance, and it should go the same way.

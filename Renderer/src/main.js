@@ -363,45 +363,11 @@ let unifiedRuns = { old: [], new: [] };
 /// been folded and interleaved — the two number columns say it per line, and this says it once.
 let unifiedHunks = [];
 
-function lineStartAt(text, index) { return text.lastIndexOf("\n", index - 1) + 1; }
-function lineEndAt(text, index) {
-  const at = text.indexOf("\n", index);
-  return at === -1 ? text.length : at + 1;
-}
-
-/// Change stops snapped out to whole lines and merged where they touch. A unified diff is a
-/// line-based form and a stop is not: a stop can start mid-line, and emitting half a line as a
-/// removal would print text the file does not contain.
-function unifiedBlocks(model, oldText, newText) {
-  const stops = (model.stops || []).slice()
-    .sort((a, b) => a.oldStart - b.oldStart || a.newStart - b.newStart);
-  // An empty range on one side is an insertion seen from that side. At a line boundary it takes
-  // nothing from this side and the line count simply grows; **inside** a line it changes that
-  // line, and the line has to appear as removed even though no byte of it was deleted. Getting
-  // this wrong is invisible in the model and obvious on screen: `7` → `77` showed an added line
-  // with nothing to compare it against.
-  function snap(text, start, end) {
-    if (end > start) return { start: lineStartAt(text, start), end: lineEndAt(text, end - 1) };
-    const at = lineStartAt(text, start);
-    return at === start ? { start, end: start } : { start: at, end: lineEndAt(text, start) };
-  }
-  const blocks = [];
-  for (const stop of stops) {
-    const oldRange = snap(oldText, stop.oldStart, stop.oldEnd);
-    const newRange = snap(newText, stop.newStart, stop.newEnd);
-    const block = {
-      oldStart: oldRange.start, oldEnd: oldRange.end,
-      newStart: newRange.start, newEnd: newRange.end,
-    };
-    const last = blocks[blocks.length - 1];
-    if (last && block.oldStart <= last.oldEnd && block.newStart <= last.newEnd) {
-      last.oldEnd = Math.max(last.oldEnd, block.oldEnd);
-      last.newEnd = Math.max(last.newEnd, block.newEnd);
-    } else {
-      blocks.push(block);
-    }
-  }
-  return blocks;
+/// The blocks the unified layout prints. Computed by the engine since DEC-096, because this is the
+/// one part of that layout deciding *what is shown*, and a fact derived here cannot be checked
+/// without a webview — the same rule `changedLines`, `stops` and `collapses` already follow.
+function unifiedBlocks(model) {
+  return model.unifiedBlocks || [];
 }
 
 /// What can be said about one merged block, **read off the segments inside it**.
@@ -472,7 +438,7 @@ function buildUnified(model) {
   const hunks = [];
   let oldCursor = 0;
   let newCursor = 0;
-  for (const block of unifiedBlocks(model, oldText, newText)) {
+  for (const block of unifiedBlocks(model)) {
     // Context is emitted from the old side only: between two stops the two sides are byte-equal,
     // which is what makes one column able to stand for both.
     emit("old", oldCursor, block.oldStart, " ");

@@ -80,6 +80,11 @@ public struct RenderModel: Codable, Sendable, Equatable {
     /// Jump targets and folds, both sides together, in UTF-16 units like everything the
     /// renderer sees (DEC-044). Computed here rather than in JavaScript so they are checkable.
     public let stops: [ChangeStop]
+    /// DEC-096: the blocks the unified layout prints, with byte-identical lines peeled off them.
+    /// Here rather than in the renderer for the reason `stops` and `collapses` are: this is the one
+    /// part of that layout deciding *what is shown*, and a fact the renderer derives on its own
+    /// cannot be checked without a webview.
+    public let unifiedBlocks: [UnifiedBlock]
     public let collapses: [CollapseRange]
     /// DEC-048: formatting-only runs offered as one group each. Empty in Expanded, whose whole
     /// job is to drop the quietening — the segment set is identical either way (INV-5).
@@ -141,24 +146,34 @@ public func buildRenderModel(
         let old = try renderSide(bytes: model.oldBytes, partition: model.oldPartition)
         let new = try renderSide(bytes: model.newBytes, partition: model.newPartition)
         let byteStops = changeStops(model)
+        let byteBlocks = unifiedBlocks(model, stops: byteStops)
         let byteCollapses = collapseRanges(model, stops: byteStops)
         // Expanded exists to stop quietening formatting changes, so it offers no formatting group.
         let byteFormatting = mode == "expanded" ? [] : formattingCollapses(model).ranges
         let byteAnchors = refreshAnchors(model)
         let oldMapper = Utf16OffsetMapper(bytes: model.oldBytes)
         let newMapper = Utf16OffsetMapper(bytes: model.newBytes)
-        let oldMap = try oldMapper.map(byteOffsets: byteStops.flatMap { [$0.oldStart, $0.oldEnd] }
-            + byteCollapses.flatMap { [$0.oldStart, $0.oldEnd] }
-            + byteFormatting.flatMap { [$0.oldStart, $0.oldEnd] }
-            + byteAnchors.map(\.oldStart))
-        let newMap = try newMapper.map(byteOffsets: byteStops.flatMap { [$0.newStart, $0.newEnd] }
-            + byteCollapses.flatMap { [$0.newStart, $0.newEnd] }
-            + byteFormatting.flatMap { [$0.newStart, $0.newEnd] }
-            + byteAnchors.map(\.newStart))
+        var oldOffsets: [Int] = byteStops.flatMap { [$0.oldStart, $0.oldEnd] }
+        oldOffsets += byteBlocks.flatMap { [$0.oldStart, $0.oldEnd] }
+        oldOffsets += byteCollapses.flatMap { [$0.oldStart, $0.oldEnd] }
+        oldOffsets += byteFormatting.flatMap { [$0.oldStart, $0.oldEnd] }
+        oldOffsets += byteAnchors.map(\.oldStart)
+        let oldMap = try oldMapper.map(byteOffsets: oldOffsets)
+        var newOffsets: [Int] = byteStops.flatMap { [$0.newStart, $0.newEnd] }
+        newOffsets += byteBlocks.flatMap { [$0.newStart, $0.newEnd] }
+        newOffsets += byteCollapses.flatMap { [$0.newStart, $0.newEnd] }
+        newOffsets += byteFormatting.flatMap { [$0.newStart, $0.newEnd] }
+        newOffsets += byteAnchors.map(\.newStart)
+        let newMap = try newMapper.map(byteOffsets: newOffsets)
         let stops = byteStops.compactMap { stop -> ChangeStop? in
             guard let a = oldMap[stop.oldStart], let b = oldMap[stop.oldEnd],
                   let c = newMap[stop.newStart], let d = newMap[stop.newEnd] else { return nil }
             return ChangeStop(oldStart: a, oldEnd: b, newStart: c, newEnd: d)
+        }
+        let blocks = byteBlocks.compactMap { block -> UnifiedBlock? in
+            guard let a = oldMap[block.oldStart], let b = oldMap[block.oldEnd],
+                  let c = newMap[block.newStart], let d = newMap[block.newEnd] else { return nil }
+            return UnifiedBlock(oldStart: a, oldEnd: b, newStart: c, newEnd: d)
         }
         let collapses = byteCollapses.compactMap { range -> CollapseRange? in
             guard let a = oldMap[range.oldStart], let b = oldMap[range.oldEnd],
@@ -183,7 +198,7 @@ public func buildRenderModel(
             payload: .text(old: old, new: new),
             coverageVerified: result.coverageChecked,
             notices: notices,
-            stops: stops, collapses: collapses,
+            stops: stops, unifiedBlocks: blocks, collapses: collapses,
             formattingCollapses: formatting,
             anchors: anchors,
             restore: resolveAnchor(previous: previousAnchor, candidates: anchors)
@@ -198,7 +213,7 @@ public func buildRenderModel(
                 error: error, oldBytes: model.oldBytes.count, newBytes: model.newBytes.count)),
             coverageVerified: result.coverageChecked,
             notices: notices,
-            stops: [], collapses: [],
+            stops: [], unifiedBlocks: [], collapses: [],
             formattingCollapses: [], anchors: [], restore: nil
         )
     }
