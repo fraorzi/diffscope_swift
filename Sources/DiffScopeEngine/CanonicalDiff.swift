@@ -45,10 +45,15 @@ final class WorkBudget {
     }
 }
 
+/// - Parameter applyShift: the boundary shift, on by default because production always wants it.
+///   The suite turns it off to hold the unshifted alignment next to the shifted one — without that
+///   control a check asserting where a hunk lands cannot tell a shift that fired from one that was
+///   never needed. Same precedent as `boundarySnapBudget: 0` (DEC-047).
 public func canonicalMatches(
     old: [UInt8],
     new: [UInt8],
-    workBudget: Int = defaultCanonicalDiffWorkBudget
+    workBudget: Int = defaultCanonicalDiffWorkBudget,
+    applyShift: Bool = true
 ) -> (matches: [MatchBlock], exceededBudget: Bool, workUsed: Int) {
     var matches: [MatchBlock] = []
     let half = (old.count + new.count + 1) / 2 + 1
@@ -58,22 +63,42 @@ public func canonicalMatches(
     old.withUnsafeBufferPointer { a in
         new.withUnsafeBufferPointer { b in
             divide(a, 0, a.count, b, 0, b.count, &forward, &backward, half, &matches, budget)
-            if !budget.exceeded {
-                matches = shiftToLineBoundaries(matches, old: a, new: b)
+            if applyShift, !budget.exceeded {
+                matches = shiftToReadableBoundaries(matches, old: a, new: b)
             }
         }
     }
     return (matches, budget.exceeded, budget.used)
 }
 
+/// The three classes a byte can belong to for boundary purposes. Bytes at or above `0x80` count as
+/// word bytes so that a boundary is never placed inside a multi-byte UTF-8 sequence; grapheme
+/// snapping is a later and separate pass, and this one should not hand it work to undo.
+@inline(__always)
+func lexicalClass(_ byte: UInt8) -> UInt8 {
+    switch byte {
+    case 0x20, 0x09, 0x0A, 0x0D: return 0
+    case 0x30...0x39, 0x41...0x5A, 0x61...0x7A, 0x5F, 0x24: return 1
+    default: return byte >= 0x80 ? 1 : 2
+    }
+}
+
+/// How well one position reads as a place for a change to begin or end. Lower is better, and the
+/// numbers are the ranks of DEC-088's total order; `nil` means the position is not a boundary at all.
+private let rankLine = 1
+private let rankSpaced = 2
+private let rankLexical = 3
+
 /// Moves each hunk along the file, while the alignment stays equally minimal, to the position where
-/// it covers a whole number of lines (DEC-087).
+/// it reads best: whole lines first, then whole tokens (DEC-087, extended by DEC-088).
 ///
 /// Myers does not select a unique alignment. Where several are equally short it picks arbitrarily,
 /// and the arbitrary one is usually the one that begins mid-line: an insertion before
 /// `import ButtonLink …` anchors after the shared word `import `, so an untouched line reads as
 /// removed-and-re-added, and an insertion before `  text: string;` anchors after the shared indent,
-/// so the highlight lands on the *next* line's whitespace.
+/// so the highlight lands on the *next* line's whitespace. Below the line it is the same fault:
+/// inserting `'compact' | ` into `'base' | 'wide'` anchors after the shared `'`, so the mark reads
+/// `compact' | ` and the apostrophe of `'wide'` — a byte nobody touched — is drawn as changed.
 ///
 /// **This is not the sliding DEC-047 refused.** That objection was against moving the presentation
 /// while `D` stood still, which fails a validator recomputing `D`. Here `D` itself moves, inside the
@@ -83,10 +108,16 @@ public func canonicalMatches(
 /// amount, so **the total matched length is invariant** and the result is still minimal — the
 /// property `diffscope-verify` already asserts against a brute-force LCS on random pairs.
 ///
-/// **The boundary set is `0x0A` and nothing else.** Snapping to tokens or tree nodes would fix more
-/// and would make `D` depend on a parse that can fail, at which point the independent check is no
-/// longer independent of the thing it checks.
-func shiftToLineBoundaries(
+/// **The boundary set is a pure function of the bytes.** DEC-087 admitted only `0x0A`, on the
+/// ground that snapping to *lexer tokens or tree-sitter nodes* would make `D` depend on a parse
+/// that can fail. A byte-class transition needs no parser and cannot fail, so it is inside that
+/// argument rather than against it; the door DEC-087 shut stays shut. `D` remains minimal,
+/// deterministic, over bytes, and free of structural input.
+///
+/// Rank 2 sits above rank 3 because a class transition alone does not separate the two candidates
+/// in the case that motivated this: `…| '⟦compact' | ⟧'wide'` and `…| ⟦'compact' | ⟧'wide'` are both
+/// class transitions at both ends, and only whitespace adjacency prefers the second.
+func shiftToReadableBoundaries(
     _ matches: [MatchBlock],
     old: UnsafeBufferPointer<UInt8>,
     new: UnsafeBufferPointer<UInt8>
@@ -94,12 +125,26 @@ func shiftToLineBoundaries(
     guard matches.count > 1 else { return matches }
     var blocks = matches
 
-    // A range is whole-line when it begins at a line start and ends at one. An empty range is a
-    // point, and a point is aligned when it sits at a line start.
+    // How well a single position reads. A file edge is the strongest boundary there is.
     @inline(__always)
-    func aligned(_ buffer: UnsafeBufferPointer<UInt8>, _ start: Int, _ end: Int) -> Bool {
-        guard start == 0 || buffer[start - 1] == 0x0A else { return false }
-        return end == start || end == 0 || buffer[end - 1] == 0x0A
+    func rank(_ buffer: UnsafeBufferPointer<UInt8>, _ offset: Int) -> Int? {
+        guard offset > 0, offset < buffer.count else { return rankLine }
+        let before = buffer[offset - 1]
+        let after = buffer[offset]
+        if before == 0x0A { return rankLine }
+        let beforeClass = lexicalClass(before)
+        guard beforeClass != lexicalClass(after) else { return nil }
+        return beforeClass == 0 || lexicalClass(after) == 0 ? rankSpaced : rankLexical
+    }
+
+    // A hunk is as good as its worst end, and as good as its worse side. An empty range is a point,
+    // and a point is judged once.
+    @inline(__always)
+    func rank(_ buffer: UnsafeBufferPointer<UInt8>, _ start: Int, _ end: Int) -> Int? {
+        guard let atStart = rank(buffer, start) else { return nil }
+        guard end > start else { return atStart }
+        guard let atEnd = rank(buffer, end) else { return nil }
+        return max(atStart, atEnd)
     }
 
     // One step is legal when the byte leaving the front of the hunk equals the byte entering the
@@ -125,36 +170,49 @@ func shiftToLineBoundaries(
         let newEnd = current.newStart
         guard oldEnd > oldStart || newEnd > newStart else { continue }
 
+        // The best shift found at each rank. Ranks are compared first and the shift only breaks
+        // ties, so a whole-line position anywhere in reach beats a token boundary next door.
+        var bestAtRank = [Int?](repeating: nil, count: rankLexical + 1)
+
+        @inline(__always)
+        func score(_ shift: Int) -> Int? {
+            guard let oldRank = rank(old, oldStart + shift, oldEnd + shift),
+                  let newRank = rank(new, newStart + shift, newEnd + shift)
+            else { return nil }
+            return max(oldRank, newRank)
+        }
+
+        // Shift 0 is a candidate like any other, and scoring it is what keeps the ranks honest:
+        // Myers often lands on a line boundary already, and a rank-2 position one byte away must
+        // not be allowed to pull it off one. DEC-087 could leave this out because it accepted only
+        // whole-line positions, so moving from one to another cost nothing.
+        if let found = score(0) { bestAtRank[found] = 0 }
+
         // Neither neighbouring match may be consumed: a match shrinking to nothing merges two hunks
         // into one, which is a different edit script rather than the same one written down better.
-        var best: Int?
         var shift = 0
         while shift + 1 < current.length,
               stepHolds(old, oldStart + shift, oldEnd + shift, down: true),
               stepHolds(new, newStart + shift, newEnd + shift, down: true) {
             shift += 1
-            if aligned(old, oldStart + shift, oldEnd + shift),
-               aligned(new, newStart + shift, newEnd + shift) {
-                best = shift
-            }
+            // Overwriting keeps the largest shift at each rank: the position furthest down the file.
+            if let found = score(shift) { bestAtRank[found] = shift }
         }
-        // The furthest position down the file wins, so the upward search only runs when the
-        // downward one found nothing, and stops at the first candidate it reaches.
-        if best == nil {
+        // The furthest position down the file wins, so the upward search keeps only what the
+        // downward one did not reach, and stops as soon as it finds the best rank there is.
+        if bestAtRank[rankLine] == nil {
             shift = 0
             while -shift + 1 < previous.length,
                   stepHolds(old, oldStart + shift, oldEnd + shift, down: false),
                   stepHolds(new, newStart + shift, newEnd + shift, down: false) {
                 shift -= 1
-                if aligned(old, oldStart + shift, oldEnd + shift),
-                   aligned(new, newStart + shift, newEnd + shift) {
-                    best = shift
-                    break
-                }
+                if let found = score(shift), bestAtRank[found] == nil { bestAtRank[found] = shift }
+                if bestAtRank[rankLine] != nil { break }
             }
         }
-        // No reachable position covers whole lines: the alignment stays exactly where Myers put it,
-        // and no boundary is invented.
+        // No reachable position reads as a boundary: the alignment stays exactly where Myers put
+        // it, and no boundary is invented.
+        let best = (rankLine...rankLexical).lazy.compactMap { bestAtRank[$0] }.first
         guard let chosen = best, chosen != 0 else { continue }
 
         blocks[index - 1] = MatchBlock(oldStart: previous.oldStart, newStart: previous.newStart,
@@ -169,9 +227,10 @@ func shiftToLineBoundaries(
 public func canonicalDiff(
     old: [UInt8],
     new: [UInt8],
-    workBudget: Int = defaultCanonicalDiffWorkBudget
+    workBudget: Int = defaultCanonicalDiffWorkBudget,
+    applyShift: Bool = true
 ) -> CanonicalDiffOutcome {
-    let result = canonicalMatches(old: old, new: new, workBudget: workBudget)
+    let result = canonicalMatches(old: old, new: new, workBudget: workBudget, applyShift: applyShift)
     if result.exceededBudget {
         return .budgetExceeded(workUsed: result.workUsed)
     }

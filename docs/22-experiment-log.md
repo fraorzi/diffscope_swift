@@ -2783,3 +2783,63 @@ is minimality itself, and the answer is a presentation that shows a substitution
 `PageComponents.tsx` (4 false) and `BannerWithImage.tsx` (8) are the remaining shape: adjacent
 single-line insertions whose surrounding matches are too short to shift within — `current.length` and
 `previous.length` bound the search, and a one-line match between two insertions bounds it to nothing.
+
+---
+
+## M11-C — What a lexical boundary rank is worth, and what the line metric cannot see
+
+**2026-08-17.** DEC-093. Same corpus as M11-A and M11-B — the eleven modified files of
+`5bonsai__website__nextjs` — and the instrument is now in the repository rather than beside it:
+`Scripts/devtools/measure-alignment.sh`, which reproduces M11-B's baseline exactly.
+
+### What was measured
+
+Same definitions as M11-B. `false` = a line the model stars on the new side that `git diff -U0` says
+is untouched. `missed` = a line git removes that the old side does not mark.
+
+| | segments | lines reported new-side | **false** | missed old-side |
+|---|---|---|---|---|
+| M11-A (coalescing only) | 175 | 159 | 35 | 20 |
+| M11-B (line-boundary shift + snap guard) | 185 | 147 | **24** | 20 |
+| \+ lexical ranks, shift 0 scored | 182 | 147 | **23** | 20 |
+
+**One line, and that is the honest headline.** A boundary that moves *within* a line changes no
+line's status, so the metric M11-B introduced is nearly blind to this change by construction. What it
+can see is the segment count: 185 → 182.
+
+### What the metric cannot see, shown instead
+
+```
+  before                                          after
+* 11 |   TitleSize: '⟦L' | ⟧⟦~'⟧XL' | 'XXL';    * 11 |   TitleSize: ⟦'L' | ⟧'XL' | 'XXL';
+* 13 |   …: 'base' | '⟦compact' | ⟧⟦~'⟧wide';   * 13 |   …: 'base' | ⟦'compact' | ⟧'wide';
+```
+
+Three marks become one, on each line. The `~` goes with them, and for M11-B's reason restated: 0.6
+confidence is produced only where `reconcile` overrules a tree anchor, and the tree had the
+apostrophe of `'wide'` right all along. `DImageText.model.ts` now reports three lines, three marks,
+and nothing else — the second file in this corpus the model describes exactly.
+
+### The regression scoring shift 0 prevents
+
+Measured while the entry was being written, and kept because it is the argument for the rule:
+
+| | false |
+|---|---|
+| lexical ranks, shift 0 unscored | **24** → the insertion at `function f({ … }` moved *off* a line boundary |
+| lexical ranks, shift 0 scored | **23** |
+
+With shift 0 unscored, an insertion Myers had already placed on a line boundary was pulled one byte
+up onto a rank-2 position, marking the line above it as well. DEC-087 could leave shift 0 out because
+every position it accepted was equally good; with a second rank in the order that stops being true.
+
+### What did not move
+
+- **`missed` is unchanged at 20 of 31**, for M11-B's reason exactly: when a block is reflowed the old
+  bytes are a subsequence of the new, and a minimal alignment legitimately puts every changed byte on
+  the new side. No boundary rank reaches it.
+- **The confetti is untouched**, and cannot be reached from here. `ImageText.tsx` lines 41–45 hold
+  single-byte *matches* inside a large insertion; removing them lowers the matched length below the
+  LCS. Presentation, not alignment — DEC-094.
+- `BannerWithImage.tsx` (8 false) and `PageComponents.tsx` (4) are still M11-B's remaining shape:
+  adjacent single-line insertions whose surrounding matches are too short to shift within.

@@ -135,4 +135,112 @@ func runAlignmentChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("the guard needs the bytes, and says so by doing nothing without them",
                legacy.count == 1)
     }
+
+    print("\n=== DEC-093: a lexical rank below the line rank ===")
+    do {
+        func unshifted(_ old: String, _ new: String) -> [Hunk] {
+            guard case let .exact(result) = canonicalDiff(old: [UInt8](old.utf8),
+                                                          new: [UInt8](new.utf8), applyShift: false)
+            else { return [] }
+            return result
+        }
+        func newText(_ hunks: [Hunk], _ new: String) -> [String] {
+            let bytes = [UInt8](new.utf8)
+            return hunks.map { String(decoding: bytes[$0.newStart..<$0.newEnd], as: UTF8.self) }
+        }
+
+        // The owner's fifth case, and the one no line boundary can reach: a union member inserted
+        // between two others. Myers anchors after the shared `'`, so the mark reads `compact' | '`
+        // and the apostrophe of `'wide'` — a byte nobody touched — is drawn as changed.
+        let oldUnion = "  TextColumnSize: 'base' | 'wide';\n"
+        let newUnion = "  TextColumnSize: 'base' | 'compact' | 'wide';\n"
+        report("an inserted union member is presented as whole tokens",
+               newText(hunks(oldUnion, newUnion), newUnion) == ["'compact' | "],
+               "\(newText(hunks(oldUnion, newUnion), newUnion))")
+        report("negative control: without the shift it lands where Myers put it",
+               newText(unshifted(oldUnion, newUnion), newUnion) == ["compact' | '"],
+               "\(newText(unshifted(oldUnion, newUnion), newUnion))")
+
+        let oldSize = "  TitleSize: 'XL' | 'XXL';\n"
+        let newSize = "  TitleSize: 'L' | 'XL' | 'XXL';\n"
+        report("and so is one inserted at the head of the union",
+               newText(hunks(oldSize, newSize), newSize) == ["'L' | "],
+               "\(newText(hunks(oldSize, newSize), newSize))")
+
+        // Rank before position. Both of DEC-087's cases sit at shift 0 already, and a lexical
+        // candidate one byte away must not be allowed to pull them off a line boundary — the
+        // regression this rank order exists to prevent, and the reason shift 0 is scored.
+        let oldMember = "function f({\n  a = 'x',\n}: P) {\n  return 1;\n}\n"
+        let newMember = "function f({\n  a = 'x',\n  b = false,\n}: P) {\n  const q = 1;\n\n  return 1;\n}\n"
+        let members = hunks(oldMember, newMember)
+        report("a whole-line position still outranks a lexical one",
+               wholeLines(members, oldMember, newMember),
+               members.map(\.description).joined(separator: " "))
+        report("and the line above the insertion keeps no mark",
+               newText(members, newMember).allSatisfy { !$0.contains("a = 'x'") },
+               "\(newText(members, newMember))")
+
+        // Shift 0 survives where nothing is reachable: DEC-087's rule 3, which rank 2 must not
+        // quietly repeal. The hunk is byte-identical with the shift on and off.
+        let oldToken = "const total = alpha + beta;\n"
+        let newToken = "const total = gamma + beta;\n"
+        report("a mid-token edit is not moved by the lexical rank either",
+               hunks(oldToken, newToken) == unshifted(oldToken, newToken),
+               hunks(oldToken, newToken).map(\.description).joined(separator: " "))
+
+        // `\r` and `\n` are the same class, so no boundary can be invented between them.
+        let oldCRLF = "a\r\nb\r\n"
+        let newCRLF = "a\r\nx\r\nb\r\n"
+        let crlf = hunks(oldCRLF, newCRLF)
+        report("no hunk boundary falls between a CR and its LF",
+               crlf.allSatisfy { hunk in
+                   let bytes = [UInt8](newCRLF.utf8)
+                   func safe(_ at: Int) -> Bool {
+                       at == 0 || at == bytes.count || !(bytes[at - 1] == 0x0D && bytes[at] == 0x0A)
+                   }
+                   return safe(hunk.newStart) && safe(hunk.newEnd)
+               }, crlf.map(\.description).joined(separator: " "))
+
+        // Bytes at or above 0x80 are word bytes, so a class transition never falls inside a UTF-8
+        // sequence. `D` has never promised scalar boundaries — Myers cuts wherever minimality says
+        // and `snapToGraphemeBoundaries` repairs it afterwards (DEC-021) — so what is asserted here
+        // is the property the rank is responsible for: the shift never moves a boundary *into* a
+        // character it was clear of.
+        var generator = SystemRandomNumberGenerator()
+        var scalarSafe = true
+        var matchedEqual = true
+        for _ in 0..<200 {
+            let alphabet = Array("ab ;'|_$\nżąć😀🙂")
+            func sample() -> String {
+                String((0..<Int.random(in: 1...60, using: &generator)).map { _ in
+                    alphabet.randomElement(using: &generator)!
+                })
+            }
+            let a = sample(), b = sample()
+            let bytes = [UInt8](b.utf8)
+            var scalarStarts = Set([0, bytes.count])
+            var offset = 0
+            for scalar in b.unicodeScalars {
+                offset += String(scalar).utf8.count
+                scalarStarts.insert(offset)
+            }
+            func cuts(_ hunks: [Hunk]) -> Int {
+                hunks.reduce(0) {
+                    $0 + (scalarStarts.contains($1.newStart) ? 0 : 1)
+                       + (scalarStarts.contains($1.newEnd) ? 0 : 1)
+                }
+            }
+            if cuts(hunks(a, b)) > cuts(unshifted(a, b)) { scalarSafe = false }
+            // Minimality is invariant under the shift: it moves both ends of a hunk by the same
+            // amount, so the total matched length cannot change. Asserted directly rather than
+            // inferred from the LCS check, which runs on a different alphabet.
+            let shifted = canonicalMatches(old: [UInt8](a.utf8), new: bytes).matches
+            let plain = canonicalMatches(old: [UInt8](a.utf8), new: bytes, applyShift: false).matches
+            if shifted.reduce(0, { $0 + $1.length }) != plain.reduce(0, { $0 + $1.length }) {
+                matchedEqual = false
+            }
+        }
+        report("the shift never cuts more multi-byte characters than Myers already did", scalarSafe)
+        report("and the shift leaves the total matched length exactly where it was", matchedEqual)
+    }
 }

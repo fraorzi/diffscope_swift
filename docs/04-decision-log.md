@@ -3979,3 +3979,103 @@ Option 3, and four sub-decisions answered the same day:
 ### Revisit trigger
 
 Reopen if M11 or M12 cannot make R-8b hold on the fixture corpus — a staging surface that cannot prove which bytes it wrote is worse than no staging surface, and the terminal drawer remains the honest fallback.
+
+---
+
+## DEC-093 — The canonical shift ranks lexical boundaries below line boundaries
+
+- **Date:** 2026-08-17 · **Topic:** Where a hunk begins and ends *below* the line · **Status:** Accepted · **Amends DEC-087**
+- **Prompted by:** the owner's fifth diff session — `'base' | 'wide'` becoming `'base' | 'compact' | 'wide'`, drawn as `'base' | '⟦compact' | ⟧⟦~'⟧wide'`, with the apostrophe of `'wide'` — a byte nobody touched — carrying a mark of its own
+
+### Context
+
+DEC-087 moved `D`'s match boundaries onto line boundaries and fixed the case where an untouched line
+read as removed-and-re-added. It fixed nothing below the line, and said so: **the boundary set is
+`0x0A` and nothing else.**
+
+The owner's fifth session is the case that lives there. Inserting a union member anchors after the
+shared `'`, so the mark reads `compact' | ` and stops one byte short of where a reader would put it.
+The stray apostrophe is the visible half; the other half is that `reconcile` then finds the byte mask
+overlapping a tree anchor it had right, and emits a second segment at `confidence 0.6`, which
+`coalesceAdjacent` refuses to merge because the floor is between them. One misplaced boundary, three
+marks where one was wanted.
+
+### Why this is inside DEC-087's argument rather than against it
+
+DEC-087 shut the door on **"lexer tokens or tree-sitter nodes"**, and it named the reason: they would
+make `D` depend on a parse that can fail, at which point the independent check is no longer
+independent of the thing it checks.
+
+A **byte-class transition is a pure function of the bytes.** There is no parser, so there is nothing
+to fail. The four properties INV-2 names all hold:
+
+- **Minimal.** A shift moves both ends of a hunk by the same amount, so the total matched length is
+  invariant — DEC-087's argument unchanged, now asserted directly against the unshifted alignment as
+  well as transitively through the 600-pair LCS check.
+- **Deterministic.** One shift is chosen by a total order.
+- **Over bytes**, and **no structural input.** The door DEC-087 shut stays shut.
+
+DEC-039's weakened independence is unchanged by this entry and is restated rather than dropped: a
+defect in the shift is a defect in both the model and its check, because `canonicalMatches` is the
+single implementation behind both. That was true before this entry and is still the next thing to
+repair.
+
+### Decision
+
+The total order gains two ranks between DEC-087's whole-line rank and its shift-0 floor. Classes are
+**word** (`A-Z a-z 0-9 _ $` and every byte ≥ `0x80`), **whitespace**, and **other**:
+
+1. both sides begin and end at a **line** start;
+2. both boundaries sit on a **class transition with whitespace on one side of it**;
+3. both boundaries sit on a **class transition**;
+4. shift 0 — the alignment stays exactly where Myers put it.
+
+Within a rank, the largest shift wins: the position furthest down the file, DEC-087's rule 2 unchanged.
+
+**Rank 2 exists because rank 3 does not separate the case that prompted this.** Both `…| '⟦compact' |
+⟧'wide'` and `…| ⟦'compact' | ⟧'wide'` are class transitions at both ends; only whitespace adjacency
+prefers the second, which is the one a reader would write.
+
+**Bytes ≥ `0x80` are word bytes** so that a class transition can never fall inside a UTF-8 sequence.
+It also puts `\r` and `\n` in one class, so no boundary can be invented between them.
+
+**And, in the same entry because it is the same fact: shift 0 is now scored as a candidate.** DEC-087
+could leave it out — it accepted only whole-line positions, so moving from one to another cost
+nothing. With a second rank in the order that is no longer true, and leaving it out is a regression
+rather than an omission: measured, an insertion Myers had already placed on a line boundary was
+pulled one byte up onto a rank-2 position, and the corpus reported **two** wrong lines where it had
+reported one. Scoring shift 0 is what makes rank 1 able to win at the place Myers already chose.
+
+### Consequences
+
+- **The change is confined to hunks where DEC-087 chose shift 0**, because rank 1 is still searched
+  first and still wins wherever it is reachable. M11-B's 24 wrong lines is therefore a ceiling, not a
+  hope, and M11-C measures 23.
+- **The line-counting metric understates this.** A boundary that moves within a line changes no line's
+  status, so `false` falls by one while the two union cases go from three marks to one each. Segments
+  over the corpus: 185 → 182. The metric M11-B introduced cannot see most of what this entry does,
+  which is worth saying rather than dressing up.
+- **`canonicalMatches` and `canonicalDiff` gain `applyShift`,** defaulting to on. Production never
+  passes `false`; the suite does, because a check asserting where a hunk lands cannot otherwise tell a
+  shift that fired from one that was never needed. Same precedent as `boundarySnapBudget: 0`.
+- **It does not touch the confetti.** Single-byte matches held inside a large insertion are *matched*
+  bytes; dropping them would lower the matched length below the LCS and the 600-pair check would fail
+  on the first run. That is a presentation problem by necessity and not by preference, and it is
+  DEC-094's.
+
+### Options considered
+
+1. **Nothing.** Rejected: the stray apostrophe is in every union edit, and union edits are common in
+   the corpus that prompted this.
+2. **Tree-sitter or lexer boundaries.** Rejected for DEC-087's reason, unchanged.
+3. **Relax "no neighbouring match may be consumed".** Legal — a shift that consumes a match preserves
+   the total matched length; it merges two hunks — and it would reach the cases M11-B named, where a
+   one-line match between two insertions bounds the search to nothing. Deferred rather than dismissed:
+   it moves `changeStops`, and navigation, folds, formatting collapses and the unified blocks all key
+   off stops. Its own entry, with its own measurement.
+4. **Rank lexical boundaries, scoring shift 0.** Chosen.
+
+### Revisit trigger
+
+Reopen if a corpus measurement shows "furthest down" losing for rank 2 specifically. That tie-break
+was derived for whole lines in DEC-087 and inherited here rather than re-measured.

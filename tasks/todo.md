@@ -2752,10 +2752,34 @@ against hollow is the shape carrier. Each is named in DEC-091 with its reason, s
 does not have to re-derive them.
 
 
+## Step — the alignment reads below the line as well as on it (DEC-093, M11-C)
+
+- [x] `shiftToLineBoundaries` → `shiftToReadableBoundaries` in `CanonicalDiff.swift`: two lexical
+      ranks below the whole-line rank, and **shift 0 scored as a candidate**, without which an
+      insertion already on a line boundary is pulled off it (measured: 24 false lines, not 23)
+- [x] `applyShift` on `canonicalMatches` / `canonicalDiff` — the negative control, so a check can
+      tell a shift that fired from one that was never needed
+- [x] nine checks in `AlignmentChecks.swift`, including the two union cases with their controls,
+      "the shift leaves the total matched length exactly where it was", and the CRLF and
+      multi-byte-character guards on the new byte classes
+- [x] `Scripts/devtools/measure-alignment.sh` — M11-B's instrument, now in the repository, and it
+      reproduces M11-B's baseline exactly (147 reported, 24 false, 20 missed)
+
+The stray apostrophe is gone: `'base' | '⟦compact' | ⟧⟦~'⟧wide'` is now `'base' | ⟦'compact' | ⟧'wide'`,
+three marks to one. The line metric barely moves — 24 → 23 — because a boundary that travels inside a
+line changes no line's status. Segments over the corpus: 185 → 182.
+
 ### Still open
 
 - [ ] minimum-run absorption of unchanged gaps shorter than a token (phantom retention). `alpha` →
-      `gamma` still shreds into two hunks around a coincidental `a`.
+      `gamma` still shreds into two hunks around a coincidental `a`. **This cannot be fixed in `D`** —
+      the islands are matched bytes and dropping them fails the 600-pair LCS check. Presentation.
+- [ ] the whole-file fallback: a `.css` file with one word changed marks every line, and
+      `.ds-fallback`'s hairline then boxes the entire body. The rule was written for `markUnparsed`'s
+      partial regions and its own comment says so.
+- [ ] the unified view prints byte-identical lines twice wherever a mark leaks onto one; the peel
+      belongs in the engine, because `unifiedBlocks` is the one part of that layout deciding *what is
+      shown* that the renderer works out for itself.
 - [ ] the old pane's silence on a reflow — 20 of 31 removed lines carry no mark, and no alignment
       fixes it. Needs substitutions presented on both sides.
 - [ ] insertions separated by a single unchanged line cannot shift: the search is bounded by the
