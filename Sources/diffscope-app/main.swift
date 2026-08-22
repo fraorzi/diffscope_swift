@@ -39,9 +39,10 @@ final class AppState {
     var repositoryLabels: [String: String] = [:]
     /// The file list as drawn: headers and files interleaved (DEC-033 as amended).
     var fileRows: [FileListRow] = []
-    /// Group key → what its header says (DEC-074). Computed with the rows, because the shortest
-    /// unique form depends on every other group in the list.
-    var groupTitles: [String: String] = [:]
+    /// Which folders of the changed-file tree are folded (DEC-099). Keyed by the directory's full
+    /// path, and cleared when the repository changes: which folders a reader had folded is not a
+    /// setting they would look for later.
+    var collapsedDirectories: Set<String> = []
     /// Path → what the list can say about the file cheaply. Filled in by a background pass, so a
     /// large working tree lists immediately and gains its badges a moment later.
     var annotations: [String: FileAnnotation] = [:]
@@ -4694,6 +4695,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         case "focus.repositories": return #selector(focusRepositories)
         case "focus.files": return #selector(focusFiles)
         case "focus.diff": return #selector(focusDiff)
+        case "files.fold": return #selector(foldFolder)
+        case "files.unfold": return #selector(unfoldFolder)
         case "openInEditor": return #selector(openInEditor)
         // Version two (DEC-092). Every one of these writes, and every one of them goes through
         // `WriteActions` — there is no second path into the repository from this window.
@@ -4838,6 +4841,63 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 self.restoreFileSelection()
             }
         }
+    }
+
+    /// The folder mark was clicked (DEC-099). The state is keyed by the directory's path rather
+    /// than by its row, because the rows are rebuilt the moment it changes.
+    @objc func toggleDirectory(_ sender: NSButton) {
+        guard state.fileRows.indices.contains(sender.tag),
+              let key = state.fileRows[sender.tag].directoryKey else { return }
+        setDirectory(key, folded: !state.collapsedDirectories.contains(key))
+    }
+
+    func setDirectory(_ key: String, folded: Bool) {
+        if folded { state.collapsedDirectories.insert(key) } else { state.collapsedDirectories.remove(key) }
+        let selected = selectedFilePath()
+        state.fileRows = fileTreeRows(state.files, collapsed: state.collapsedDirectories)
+        fileTable.reloadData()
+        // The selection follows its file if the file is still on screen, and falls to the folder
+        // that swallowed it otherwise — never to nothing, which is a pane that has gone blank for
+        // a reason the reader did not ask for.
+        if let selected, let row = state.fileRows.firstIndex(where: { $0.file?.path == selected }) {
+            fileTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            fileTable.scrollRowToVisible(row)
+        } else if let first = RowNavigation.firstSelectable(in: state.fileRows) {
+            fileTable.selectRowIndexes(IndexSet(integer: first), byExtendingSelection: false)
+            fileTable.scrollRowToVisible(first)
+        }
+        statusLabel.stringValue = folded ? "folded \(key)" : "unfolded \(key)"
+    }
+
+    /// ⌥← : fold the folder the selection is standing in. The tier is DEC-065's — ⌥ is the file
+    /// list — so this sits beside ⌥↑ and ⌥↓ rather than inventing a fourth modifier.
+    @objc private func foldFolder() {
+        guard fileTable.selectedRow >= 0, state.fileRows.indices.contains(fileTable.selectedRow) else { return }
+        let row = fileTable.selectedRow
+        let depth = state.fileRows[row].depth
+        guard depth > 0 else {
+            statusLabel.stringValue = "this file is not in a folder"
+            return
+        }
+        // The nearest directory above it that is shallower: its parent, whatever else lies between.
+        for index in stride(from: row - 1, through: 0, by: -1) {
+            guard let key = state.fileRows[index].directoryKey,
+                  state.fileRows[index].depth < depth else { continue }
+            setDirectory(key, folded: true)
+            return
+        }
+    }
+
+    /// ⌥→ : unfold the next folded folder, starting from where the reader is standing.
+    @objc private func unfoldFolder() {
+        let start = max(0, fileTable.selectedRow)
+        let order = Array(start..<state.fileRows.count) + Array(0..<start)
+        for index in order {
+            guard case let .directory(key, _, _, collapsed) = state.fileRows[index], collapsed else { continue }
+            setDirectory(key, folded: false)
+            return
+        }
+        statusLabel.stringValue = "nothing is folded"
     }
 
     @objc private func nextFile() { step(fileTable, by: 1) }
@@ -5493,12 +5553,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         } else {
             state.files = (try? scopes.changedFiles(scope: state.scope, in: repository.url, baseRef: baseRef)) ?? []
         }
-        state.fileRows = fileListRows(state.files,
-                                      workspacePackages: declaredWorkspacePackages(in: repository.url))
-        state.groupTitles = groupHeaderTitles(state.fileRows.compactMap {
-            if case let .header(key) = $0 { return key }
-            return nil
-        })
+        state.fileRows = fileTreeRows(state.files, collapsed: state.collapsedDirectories)
         state.annotations = [:]
         updatePaneHeaders()
         // DEC-092: the staging state is read before the rows are drawn, because the box in each
@@ -5919,18 +5974,40 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
     private func fileCell(_ cell: NSTableCellView, row: Int) -> NSView {
         switch state.fileRows[row] {
-        case let .header(key):
-            let header = label(Theme.textSizeTiny, .semibold, Theme.inkQuiet)
-            // The short, front-anchored form (DEC-074). Truncating the key from the head removed
-            // the components that tell one group from another — `…/components/nested`, nine times.
-            header.stringValue = filesCollapsed ? "···" : (state.groupTitles[key] ?? key)
-            header.lineBreakMode = .byTruncatingTail
-            _ = self.row([header], in: cell)
-            // The path in full, where nothing else in the row carries it.
+        case let .directory(key, title, depth, collapsed):
+            let name = label(Theme.textSizeSmall, .semibold, Theme.inkQuiet)
+            name.stringValue = filesCollapsed ? "···" : title
+            name.lineBreakMode = .byTruncatingTail
+            if filesCollapsed {
+                _ = self.row([name], in: cell)
+                cell.toolTip = key
+                return cell
+            }
+            // The disclosure mark is a **path** (DEC-091), pointing down when the folder is open
+            // and right when it is folded — the shape says the state, so it survives greyscale.
+            let disclosure = MarkButton(title: title, target: self, action: #selector(toggleDirectory(_:)))
+            disclosure.isBordered = false
+            disclosure.setButtonType(.momentaryChange)
+            disclosure.tag = row
+            disclosure.mark = { box in Theme.drawDisclosure(in: box, open: !collapsed) }
+            disclosure.widthAnchor.constraint(equalToConstant: Theme.minimumHitTarget).isActive = true
+            disclosure.toolTip = collapsed ? "Show what is inside \(key)" : "Fold \(key)"
+
+            let stack = NSStackView(views: [IndentGuides(depth: depth), disclosure, name, spacerView()])
+            stack.orientation = .horizontal
+            stack.alignment = .centerY
+            stack.spacing = 0
+            stack.translatesAutoresizingMaskIntoConstraints = false
+            cell.addSubview(stack)
+            NSLayoutConstraint.activate([
+                stack.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: Theme.space2),
+                stack.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -Theme.space2),
+                stack.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+            ])
             cell.toolTip = key
             return cell
 
-        case let .file(file, display):
+        case let .file(file, display, depth):
             let annotation = state.annotations[file.path]
             let count = state.counts[file.path]
             if filesCollapsed {
@@ -5954,11 +6031,22 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
             let name = label(Theme.textSizeSmall, .regular, Theme.ink)
             name.stringValue = display
-            name.lineBreakMode = .byTruncatingHead
+            // **Middle elision, which is what DEC-033 asked for and the flat list could not use.**
+            // Truncating from the head made sense while a row carried a whole path; in a tree the
+            // row is a file name, and cutting its head off produces `…hImage.adapter.tsx` — the end
+            // every sibling shares, and none of the beginning that tells them apart.
+            name.lineBreakMode = .byTruncatingMiddle
+            name.cell?.lineBreakMode = .byTruncatingMiddle
+            // And the name is what yields when the row runs out of room: it can lose its middle
+            // and still be read, which is not true of a three-letter chip or of a line count.
+            name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
             // The note is a chip, not a word in the middle of a row: it is a different kind of
             // fact from the path beside it, and the design draws it as one.
             let note: NSView = annotation.map { ChipView(text: $0.badge) } ?? spacerView()
+            // A chip is three letters or it is nothing: `raw` clipped to `ra` reads as a broken
+            // control rather than as a short one, so the name yields first.
+            note.setContentCompressionResistancePriority(.required, for: .horizontal)
 
             // Counts on the right, where the eye can compare them down the column instead of
             // hunting for them at the end of paths of different lengths.
@@ -5981,7 +6069,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                          : "Not staged — click to put it in the commit")
             let staging: NSView = state.scope == .branchVsMergeBase ? spacerView() : box
 
-            let stack = NSStackView(views: [staging, glyph, name, spacerView(), note, counts])
+            let stack = NSStackView(views: [IndentGuides(depth: depth), staging, glyph, name,
+                                            spacerView(), note, counts])
             stack.orientation = .horizontal
             stack.alignment = .centerY
             stack.spacing = Theme.space2
@@ -6022,6 +6111,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
             startWatching(repository)
             followTerminalIfPossible(repository)
+            state.collapsedDirectories = []
             reloadFiles()
             refreshGitState()
         } else {

@@ -222,93 +222,61 @@ func runFileListChecks(_ reportRaw: (String, Bool, String) -> Void) {
         ChangedFile(path: path, originalPath: nil, kind: .modified)
     }
 
-    print("\n=== the file list groups by what actually groups it (DEC-033) ===")
+    print("\n=== the file list nests by directory, and steps only through files (DEC-099) ===")
     do {
-        // The shape measured in `philips__signify-wiz-euro__preact`: twenty files under a handful
-        // of directories, no workspace packages anywhere in sight.
+        func file(_ path: String) -> ChangedFile {
+            ChangedFile(path: path, originalPath: nil, kind: .modified)
+        }
+        // The shape DEC-033 was measured against: one Astro repository's changed set, a handful of
+        // directories, no workspace packages anywhere in sight.
         let files = [
             "src/components/features/Boxes/Expanded/ExpandedSection1.tsx",
             "src/components/features/Boxes/Expanded/ExpandedSection2.tsx",
             "src/components/features/Boxes/Expanded/ExpandedSection3.tsx",
             "src/scripts/boxes.ts", "src/scripts/header.ts", "src/scripts/video.ts",
         ].map(file)
-        let rows = fileListRows(files)
-        let headers = rows.compactMap { if case let .header(h) = $0 { return h } else { return nil } }
-        report("directories become the groups when no workspace is declared",
-               headers == ["src/components/features/Boxes/Expanded", "src/scripts"],
-               headers.joined(separator: " | "))
+        let rows = fileTreeRows(files)
+        let folders = rows.compactMap { $0.directoryKey }
+        let drawn = rows.compactMap { $0.file == nil ? $0.display : nil }
+        report("the directories become the branches, deepest chain folded into one row",
+               folders == ["src", "src/components/features/Boxes/Expanded", "src/scripts"]
+                   && drawn == ["src", "components/features/Boxes/Expanded", "scripts"],
+               folders.joined(separator: " | ") + " drawn: " + drawn.joined(separator: " | "))
         report("every file still appears exactly once",
                rows.compactMap(\.file).count == files.count)
-        report("headers are not files, so navigation can skip them",
-               rows.filter { $0.file == nil }.count == 2)
-        // The header already says the directory; repeating it on every row spends the width that
-        // middle elision existed to save.
-        report("a grouped row shows the path relative to its group",
-               rows.compactMap { if case let .file(_, display) = $0 { return display } else { return nil } }
-                   .contains("ExpandedSection1.tsx"),
-               rows.compactMap { if case let .file(_, d) = $0 { return d } else { return nil } }.joined(separator: " "))
-        report("an ungrouped row still shows its whole path",
-               fileListRows(["a/one.ts", "b/two.ts", "c/three.ts"].map(file))
-                   .allSatisfy { $0.display.contains("/") })
+        report("folders are not files, so navigation can skip them",
+               rows.filter { $0.file == nil }.count == folders.count)
+        // The header used to carry the path and the row the remainder; a tree carries the path in
+        // the indentation, so the row is the file's own name and nothing else.
+        report("a row shows the file's own name",
+               rows.compactMap { $0.file != nil ? $0.display : nil }
+                   .allSatisfy { !$0.contains("/") },
+               rows.compactMap { $0.file != nil ? $0.display : nil }.joined(separator: " "))
+        report("and the depth says where it is",
+               rows.first { $0.file?.path.hasSuffix("boxes.ts") == true }?.depth == 2,
+               rows.compactMap { $0.file != nil ? "\($0.display)@\($0.depth)" : nil }.joined(separator: " "))
     }
 
-    print("\n=== grouping that would not group is not applied ===")
+    print("\n=== a tree of one file is still a tree, and a walk still works ===")
     do {
-        // One file per directory: headers would double the list and separate nothing.
-        let scattered = ["a/one.ts", "b/two.ts", "c/three.ts"].map(file)
-        report("a list with one file per directory stays flat",
-               fileListRows(scattered).allSatisfy { $0.file != nil })
+        func file(_ path: String) -> ChangedFile {
+            ChangedFile(path: path, originalPath: nil, kind: .modified)
+        }
+        // One file per directory: three branches of one file each, which is the shape DEC-033
+        // refused to group at all. A tree draws it, because the folders are where the files are.
+        let scattered = fileTreeRows(["a/one.ts", "b/two.ts", "c/three.ts"].map(file))
+        report("one file per directory still nests",
+               scattered.compactMap { $0.directoryKey } == ["a", "b", "c"],
+               scattered.map { $0.display }.joined(separator: " | "))
+        report("and every one of them is reachable by stepping",
+               scattered.compactMap { $0.file }.count == 3
+                   && RowNavigation.firstSelectable(in: scattered) != nil)
 
-        // Everything in one directory: a single header says nothing the repository name did not.
-        let together = ["src/a.ts", "src/b.ts", "src/c.ts"].map(file)
-        report("a list with a single group stays flat",
-               fileListRows(together).allSatisfy { $0.file != nil })
-
-        report("an empty list produces no rows", fileListRows([]).isEmpty)
-    }
-
-    print("\n=== a declared workspace package wins over the directory ===")
-    do {
-        let files = ["packages/ui/src/Button.tsx", "packages/ui/src/Card.tsx",
-                     "packages/api/index.ts", "packages/api/routes.ts"].map(file)
-        let rows = fileListRows(files, workspacePackages: ["packages/ui", "packages/api"])
-        let headers = rows.compactMap { if case let .header(h) = $0 { return h } else { return nil } }
-        report("files group under their package, not their directory",
-               headers == ["packages/api", "packages/ui"], headers.joined(separator: " | "))
-        report("the deepest matching package wins",
-               groupKey(for: "packages/ui/nested/x.ts",
-                        workspacePackages: ["packages", "packages/ui"]) == "packages/ui")
-        report("a file at the repository root gets a named bucket, not an empty one",
-               groupKey(for: "README.md", workspacePackages: []) == "(repository root)")
-    }
-
-    print("\n=== pnpm-workspace.yaml is read for packages, and nothing else ===")
-    do {
-        let fm = FileManager.default
-        let scratch = URL(fileURLWithPath: NSTemporaryDirectory())
-            .appendingPathComponent("diffscope-ws-\(UUID().uuidString)")
-        try? fm.createDirectory(at: scratch, withIntermediateDirectories: true)
-        defer { try? fm.removeItem(at: scratch) }
-
-        // Exactly the file every repository in this corpus has: no `packages:` key at all.
-        try? "onlyBuiltDependencies:\n  - '@tailwindcss/oxide'\n  - esbuild\n"
-            .write(to: scratch.appendingPathComponent("pnpm-workspace.yaml"),
-                   atomically: true, encoding: .utf8)
-        report("build-tool entries are never mistaken for packages",
-               declaredWorkspacePackages(in: scratch).isEmpty,
-               declaredWorkspacePackages(in: scratch).joined(separator: ", "))
-
-        try? "packages:\n  - 'packages/*'\n  - 'apps/**'\nonlyBuiltDependencies:\n  - esbuild\n"
-            .write(to: scratch.appendingPathComponent("pnpm-workspace.yaml"),
-                   atomically: true, encoding: .utf8)
-        report("declared packages are read, and the key after them ends the list",
-               declaredWorkspacePackages(in: scratch) == ["apps", "packages"],
-               declaredWorkspacePackages(in: scratch).joined(separator: ", "))
-
-        try? #"{"workspaces":["libs/*"]}"#
-            .write(to: scratch.appendingPathComponent("package.json"), atomically: true, encoding: .utf8)
-        report("npm-style workspaces in package.json are read too",
-               declaredWorkspacePackages(in: scratch).contains("libs"))
+        let together = fileTreeRows(["src/a.ts", "src/b.ts", "src/c.ts"].map(file))
+        report("a single directory is a single branch",
+               together.compactMap { $0.directoryKey } == ["src"],
+               together.map { $0.display }.joined(separator: " | "))
+        report("an empty list produces no rows", fileTreeRows([]).isEmpty)
     }
 
     print("\n=== the list says only what it can know cheaply (12-… §4) ===")

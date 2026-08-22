@@ -78,10 +78,13 @@ func runKeyboardChecks(_ reportRaw: (String, Bool, String) -> Void) {
         ChangedFile(path: "packages/app-\(index / 6)/src/components/nested/File\(index).tsx",
                     originalPath: nil, kind: .modified)
     }
-    let rows = fileListRows(files)
+    // DEC-099 made the list a tree, which gives the walk *more* rows that are not files to survive
+    // — every folder on the way down is one. The claim is unchanged and the measurement is
+    // stricter than it was under DEC-033's headers.
+    let rows = fileTreeRows(files)
     let headers = rows.filter { $0.file == nil }.count
-    report("the 63-file list groups, so the walk has headers to survive", headers > 1,
-           "\(headers) headers over \(rows.count) rows")
+    report("the 63-file tree has folders, so the walk has rows to survive", headers > 1,
+           "\(headers) folder rows over \(rows.count) rows")
 
     var visited: [String] = []
     var cursor = RowNavigation.firstSelectable(in: rows)
@@ -114,11 +117,14 @@ func runKeyboardChecks(_ reportRaw: (String, Bool, String) -> Void) {
     report("the walk stops at the top rather than wrapping",
            RowNavigation.step(rows: rows, from: RowNavigation.firstSelectable(in: rows), delta: -1) == nil)
 
-    // A header can be *asked for* by a click or by a restored selection, and the answer must be no.
-    let headerIndex = rows.firstIndex { $0.file == nil } ?? 0
-    report("a header cannot be selected by any route",
-           !RowNavigation.isSelectable(rows: rows, row: headerIndex))
-    report("a file can", RowNavigation.isSelectable(rows: rows, row: headerIndex + 1))
+    // A folder can be *asked for* by a click or by a restored selection, and the answer must be
+    // no. Under DEC-099 the row after a folder is usually another folder, so the file this asks
+    // about is found rather than assumed to be the next one along.
+    let folderIndex = rows.firstIndex { $0.file == nil } ?? 0
+    let fileIndex = rows.firstIndex { $0.file != nil } ?? 0
+    report("a folder cannot be selected by any route",
+           !RowNavigation.isSelectable(rows: rows, row: folderIndex))
+    report("a file can", RowNavigation.isSelectable(rows: rows, row: fileIndex))
 
     // Negative control for the walk: the behaviour the arrow keys actually had until M8-J — step to
     // the next row whatever it is. It must reach the end more slowly *and* stop on rows that show
@@ -167,8 +173,8 @@ func runKeyboardChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("24 concurrent parses on one shared parser all return a tree", false, "no parser")
     }
 
-    // An ungrouped list — one file, or a shape the grouping threshold rejects — must still walk.
-    let flat = fileListRows([ChangedFile(path: "only.tsx", originalPath: nil, kind: .modified)])
+    // A list with no folders in it at all — one file at the repository root — must still walk.
+    let flat = fileTreeRows([ChangedFile(path: "only.tsx", originalPath: nil, kind: .modified)])
     report("a one-file list has a first stop and nowhere further to go",
            RowNavigation.firstSelectable(in: flat) == 0
                && RowNavigation.step(rows: flat, from: 0, delta: 1) == nil)

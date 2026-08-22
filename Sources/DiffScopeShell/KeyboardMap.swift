@@ -26,6 +26,9 @@ public enum KeyboardFunction: String, CaseIterable, Sendable {
     case rawForCurrentRegion
     case openInEditor
     case moveFocus
+    /// DEC-099's row, in §9 rather than §9b: folding a folder is a way of reading the list, not a
+    /// way of changing a repository.
+    case foldFolders
     // Version two's rows (DEC-092). `12-…` §9b is the table these transcribe, added with them —
     // DEC-016's rule is unchanged and now covers operations that write: a function reachable only
     // by pointer is still a defect, and staging by clicking a box would have been exactly that.
@@ -48,6 +51,7 @@ public enum KeyboardFunction: String, CaseIterable, Sendable {
         case .rawForCurrentRegion: return "Show raw for the current region"
         case .openInEditor: return "Open current file and line in the editor"
         case .moveFocus: return "Focus movement between sidebar, file list, and diff"
+        case .foldFolders: return "Fold and unfold a folder in the changed-file list"
         case .stageAndUnstage: return "Stage and unstage the selected file"
         case .commitChanges: return "Commit what is staged"
         case .manageBranches: return "Switch, create and manage branches"
@@ -244,6 +248,12 @@ public enum KeyboardMap {
               menu: .navigate, satisfies: .moveFocus),
         .init(id: "focus.diff", title: "Focus Diff", key: "3", modifiers: [.option, .command],
               menu: .navigate, satisfies: .moveFocus),
+        // DEC-099. The ⌥ tier is the file list's (DEC-065), so these sit beside ⌥↑ and ⌥↓ — one
+        // direction key per axis, and folding is the horizontal one.
+        .init(id: "files.fold", title: "Fold This Folder", key: "←", modifiers: [.option],
+              menu: .navigate, satisfies: .foldFolders),
+        .init(id: "files.unfold", title: "Unfold the Next Folder", key: "→", modifiers: [.option],
+              menu: .navigate, satisfies: .foldFolders),
         // `⌘O` is *Open…* everywhere in macOS, and this application has things to open — roots and
         // repositories, which hold ⇧⌘O and ⇧⌘R (DEC-065).
         .init(id: "openInEditor", title: "Open in Editor", key: "⏎", modifiers: [.command],

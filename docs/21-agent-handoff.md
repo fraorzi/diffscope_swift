@@ -8,6 +8,14 @@ Reading order: this document → `glossary.md` → `04-decision-log.md` → `19-
 
 ## 0. Where the project stands right now
 
+**2026-08-22 — the changed-file list is a tree ([DEC-099](04-decision-log.md), answering OQ-041). 1912 → 1990 checks.** The owner asked for it with a picture: nested rows, disclosure marks, guide lines, `app/[locale]/(dev)/components` as **one** row rather than four. DEC-033's headers and DEC-074's shortening are retired with the workspace-package machinery that fed them — a tree puts `packages/app-2` on a row because it *is* a directory, and the indentation says what a header used to spell out.
+
+**What DEC-033 got right is kept exactly**: folder rows are labels, never focus stops, so a 63-file list is still 62 keystrokes however deep it nests — the definition of done's measurement is unchanged. ⌥← folds the folder the selection is in and ⌥→ unfolds the next folded one, which is DEC-065's tier system gaining its horizontal axis (`12-…` §9, tenth row).
+
+**Three things were only visible in a photograph**, and each is now a rule with a reason in the code: the guides drawn in the window's `hairline` were **invisible** on a single surface (that rule borrows contrast from the two surfaces it separates, and a guide has only one); the file names still truncated from the **head**, which in a tree removes the half that tells siblings apart — middle elision, which is what DEC-033 asked for and the flat list could not use; and `raw` was drawn as `ra` because `ChipView` refused to shrink while the label inside it did not.
+
+---
+
 **2026-08-17 — it writes. M11 and M12 are built, and most of M13–M17 came with them. 1832 → 1912 checks, and a new selftest arm that stages a file and commits it through the controls a reader would use.** [DEC-098](04-decision-log.md).
 
 **What a reader can now do in the window**: tick a file to stage it (a real index write, with the three-state box GitHub Desktop draws), stage the hunk under the caret (⌥⌘G), write a summary and a description and commit (⇧⌘⏎, or ⌘⏎ inside the box), amend, undo the last commit, commit empty on purpose, discard to the Trash, switch and create and rename and delete branches, merge, stash and pop, resolve a conflict by taking a side, tag, open a worktree, bisect from the banner, revert, cherry-pick, reset, reword/squash/fixup/drop/move a commit, amend an old commit, fetch, pull, push, force-push with a lease behind a typed branch name, run a custom command in the drawer — and read **what DiffScope ran**, argv and exit code, in a panel of its own.

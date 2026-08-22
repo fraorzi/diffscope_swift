@@ -10,6 +10,35 @@ import DiffScopeShell
 /// DEC-091 gave: a mark set in a font wears that font's weight and optical centre, and none of
 /// those belongs to this window.
 
+/// The vertical rules that say which folder a row belongs to (DEC-099).
+///
+/// Indentation alone leaves a file eight levels deep floating in white space with nothing tying it
+/// to its parent — which is the failure a tree is supposed to fix, not introduce. One hairline per
+/// level, at the same weight every other seam in this window is drawn at.
+final class IndentGuides: NSView {
+    let depth: Int
+
+    init(depth: Int) {
+        self.depth = depth
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        widthAnchor.constraint(equalToConstant: CGFloat(depth) * Theme.treeIndent).isActive = true
+        setContentHuggingPriority(.required, for: .horizontal)
+        setContentCompressionResistancePriority(.required, for: .horizontal)
+    }
+
+    required init?(coder: NSCoder) { nil }
+
+    override func draw(_ dirtyRect: NSRect) {
+        guard depth > 0 else { return }
+        Theme.treeGuide.setFill()
+        for level in 0..<depth {
+            let x = CGFloat(level) * Theme.treeIndent + Theme.treeIndent / 2
+            NSRect(x: x, y: 0, width: Theme.treeGuideWidth, height: bounds.height).fill()
+        }
+    }
+}
+
 /// How much of a file is staged. Three states, because *some of this file* is a fact a reader has
 /// to be able to see without opening it — the state GitHub Desktop draws as a dash.
 enum InclusionState: Equatable {

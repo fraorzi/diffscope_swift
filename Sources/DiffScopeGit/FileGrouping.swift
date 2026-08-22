@@ -1,175 +1,125 @@
 import Foundation
 
-/// The changed-file list, grouped (DEC-033 as amended, 2026-07-31).
+/// The changed-file list, as a **tree** (DEC-099, answering OQ-041 and superseding DEC-033's
+/// grouping and DEC-074's shortening).
 ///
-/// DEC-033 specified **group headers per workspace package**, on the planning-time observation that
-/// "12 of 21 repositories are pnpm monorepos". Measured at implementation time: 12 repositories do
-/// contain a `pnpm-workspace.yaml`, and **not one of them declares a `packages:` key**; no
-/// `package.json` in the corpus carries a `workspaces` key either. Grouping by workspace package
-/// would therefore put a single header reading "everything" above the same flat list, in every
-/// repository the product owner actually has.
+/// DEC-033 gave the list one header per group and a flat run of files under it, and OQ-041 recorded
+/// that this was "a middle position, not an answer". The position it was in the middle of is this
+/// one: a header is a *label*, it says where the files under it are and nothing about how those
+/// places relate, and two sibling directories spent forty characters each never saying they were
+/// siblings. The indentation says it for free.
 ///
-/// So the rule is: **a workspace package where one is declared, the file's parent directory
-/// otherwise.** That keeps DEC-033's intent — monorepo context preserved, two `page.tsx` entries in
-/// different places distinguishable — and delivers it on the repositories that exist. The 20 changed
-/// files in `philips__signify-wiz-euro__preact` sit under seven directories; that is the grouping
-/// that makes the list scannable.
+/// What DEC-033 got right is kept exactly: **the rows that are not files are not focus stops**, so
+/// stepping through the list costs one keystroke per file however deep it nests.
+
 public enum FileListRow: Sendable, Equatable {
-    /// A label, never a focus stop (DEC-033: headers that take focus add navigation stops carrying
-    /// no content).
-    case header(String)
-    /// The file, and how much of its path is worth drawing. DEC-033 asks for middle elision so that
-    /// "the start identifies the package, the end identifies the file" — but under a header the
-    /// start is already on screen one row above, and repeating it spends the width elision existed
-    /// to save. So a grouped row shows the path *relative to its group*, and an ungrouped one shows
-    /// the whole path.
-    case file(ChangedFile, display: String)
+    /// A directory. A label, never a focus stop (DEC-033's rule, kept by DEC-099): a row that takes
+    /// the selection and shows nothing is a stop carrying no content.
+    ///
+    /// `key` is the full path, which is what the collapse state is keyed by; `title` is what the row
+    /// draws — the last component, or the whole compressed chain where one was folded.
+    case directory(key: String, title: String, depth: Int, collapsed: Bool)
+    /// The file, its own name, and how deep it sits. DEC-033 asked for middle elision so that "the
+    /// start identifies the package, the end identifies the file"; in a tree the start is the
+    /// indentation, so the row draws the name and nothing else.
+    case file(ChangedFile, display: String, depth: Int)
 
     public var file: ChangedFile? {
-        if case let .file(file, _) = self { return file }
+        if case let .file(file, _, _) = self { return file }
         return nil
     }
 
     public var display: String {
         switch self {
-        case let .header(title): return title
-        case let .file(_, display): return display
-        }
-    }
-}
-
-/// Groups declared by the repository, if any. Empty is the normal case in this corpus.
-public func declaredWorkspacePackages(in repository: URL) -> [String] {
-    var prefixes: [String] = []
-
-    if let yaml = try? String(contentsOf: repository.appendingPathComponent("pnpm-workspace.yaml"),
-                              encoding: .utf8) {
-        var inPackages = false
-        for line in yaml.split(separator: "\n", omittingEmptySubsequences: false) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if trimmed.hasPrefix("packages:") { inPackages = true; continue }
-            // Any other top-level key ends the list. `onlyBuiltDependencies:` is the key every
-            // file in this corpus actually has, and reading its entries as packages would invent
-            // groups named after build tools.
-            if inPackages, !line.hasPrefix(" "), !line.hasPrefix("\t"), !trimmed.hasPrefix("-"),
-               !trimmed.isEmpty { inPackages = false }
-            guard inPackages, trimmed.hasPrefix("- ") else { continue }
-            let glob = trimmed.dropFirst(2)
-                .trimmingCharacters(in: CharacterSet(charactersIn: "'\" "))
-            let prefix = glob.replacingOccurrences(of: "/**", with: "")
-                .replacingOccurrences(of: "/*", with: "")
-            if !prefix.isEmpty, prefix != "." { prefixes.append(prefix) }
+        case let .directory(_, title, _, _): return title
+        case let .file(_, display, _): return display
         }
     }
 
-    if let data = try? Data(contentsOf: repository.appendingPathComponent("package.json")),
-       let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
-        let globs = (json["workspaces"] as? [String])
-            ?? ((json["workspaces"] as? [String: Any])?["packages"] as? [String])
-            ?? []
-        for glob in globs {
-            let prefix = glob.replacingOccurrences(of: "/**", with: "")
-                .replacingOccurrences(of: "/*", with: "")
-            if !prefix.isEmpty, prefix != "." { prefixes.append(prefix) }
+    public var depth: Int {
+        switch self {
+        case let .directory(_, _, depth, _): return depth
+        case let .file(_, _, depth): return depth
         }
     }
 
-    return Array(Set(prefixes)).sorted()
+    public var directoryKey: String? {
+        if case let .directory(key, _, _, _) = self { return key }
+        return nil
+    }
 }
 
-/// The group a path belongs to: the deepest declared workspace prefix that contains it, or its
-/// parent directory. Files at the repository root fall into one bucket rather than a nameless one.
-public func groupKey(for path: String, workspacePackages: [String]) -> String {
-    let matching = workspacePackages
-        .filter { path == $0 || path.hasPrefix($0 + "/") }
-        .max(by: { $0.count < $1.count })
-    if let matching { return matching }
-    let parent = (path as NSString).deletingLastPathComponent
-    return parent.isEmpty ? repositoryRootGroup : parent
-}
-
-/// Rows for the list, headers included.
+/// The rows of the changed-file list, as a tree (DEC-099).
 ///
-/// **Headers are suppressed when grouping buys nothing.** If nearly every file sits in its own
-/// group, headers double the length of the list and separate nothing — so past a threshold the list
-/// stays flat. Stated as a rule rather than left to taste, because "it looked cluttered" is not
-/// something a later reader can check.
-public func fileListRows(
-    _ files: [ChangedFile],
-    workspacePackages: [String] = [],
-    groupingThreshold: Double = 0.5
-) -> [FileListRow] {
+/// Three rules, and each is here rather than in the view because each is a claim a check can ask
+/// about:
+///
+/// 1. **A chain of single-child directories is one row.** `app/[locale]/(dev)/components` is four
+///    path components and one branch; drawing four rows would spend four lines saying nothing.
+/// 2. **Directories before files, alphabetically**, at every level.
+/// 3. **A collapsed directory takes its whole subtree with it** — including directories inside it,
+///    whose own collapse state is remembered but not consulted while their parent is folded.
+public func fileTreeRows(_ files: [ChangedFile], collapsed: Set<String> = []) -> [FileListRow] {
     guard !files.isEmpty else { return [] }
 
-    var order: [String] = []
-    var grouped: [String: [ChangedFile]] = [:]
-    for file in files {
-        let key = groupKey(for: file.path, workspacePackages: workspacePackages)
-        if grouped[key] == nil { order.append(key) }
-        grouped[key, default: []].append(file)
+    final class Node {
+        let key: String
+        var title: String
+        var children: [String: Node] = [:]
+        var files: [ChangedFile] = []
+        init(key: String, title: String) {
+            self.key = key
+            self.title = title
+        }
     }
 
-    // One group per file is not grouping. So is one group in total: a single header above the whole
-    // list says nothing that the repository name has not already said.
-    let ratio = Double(grouped.count) / Double(files.count)
-    guard grouped.count > 1, ratio <= groupingThreshold else {
-        return files.map { .file($0, display: $0.path) }
+    let root = Node(key: "", title: "")
+    for file in files {
+        var components = file.path.split(separator: "/").map(String.init)
+        guard !components.isEmpty else { continue }
+        components.removeLast()
+        var node = root
+        var prefix = ""
+        for component in components {
+            prefix = prefix.isEmpty ? component : prefix + "/" + component
+            if let existing = node.children[component] {
+                node = existing
+            } else {
+                let child = Node(key: prefix, title: component)
+                node.children[component] = child
+                node = child
+            }
+        }
+        node.files.append(file)
     }
+
+    // Rule 1, applied bottom-up: a directory with no files of its own and exactly one child folds
+    // that child into itself and takes its children. The compressed row keeps the **deepest** key,
+    // so collapsing it is remembered against the directory the reader actually sees.
+    func compress(_ node: Node) -> Node {
+        for (name, child) in node.children { node.children[name] = compress(child) }
+        guard node.files.isEmpty, node.children.count == 1, let only = node.children.values.first,
+              !node.key.isEmpty else { return node }
+        let merged = Node(key: only.key, title: node.title + "/" + only.title)
+        merged.children = only.children
+        merged.files = only.files
+        return merged
+    }
+    let tree = compress(root)
 
     var rows: [FileListRow] = []
-    for key in order.sorted() {
-        rows.append(.header(key))
-        for file in (grouped[key] ?? []).sorted(by: { $0.path < $1.path }) {
-            let relative = file.path.hasPrefix(key + "/")
-                ? String(file.path.dropFirst(key.count + 1))
-                : file.path
-            rows.append(.file(file, display: relative))
+    func walk(_ node: Node, depth: Int) {
+        for child in node.children.values.sorted(by: { $0.title.lowercased() < $1.title.lowercased() }) {
+            let folded = collapsed.contains(child.key)
+            rows.append(.directory(key: child.key, title: child.title, depth: depth, collapsed: folded))
+            if !folded { walk(child, depth: depth + 1) }
+        }
+        for file in node.files.sorted(by: { $0.path.lowercased() < $1.path.lowercased() }) {
+            rows.append(.file(file, display: (file.path as NSString).lastPathComponent, depth: depth))
         }
     }
+    walk(tree, depth: 0)
     return rows
-}
-
-/// The sentinel group for files sitting at the repository root. A label rather than a path, so the
-/// shortening below leaves it alone.
-public let repositoryRootGroup = "(repository root)"
-
-/// What a group header **says**, as opposed to what a group **is** (DEC-074).
-///
-/// The key is a path — `packages/app-2/src/components/nested` — and a 320 pt pane truncates it from
-/// the head, which removes exactly the part that tells one group from another. The header is the
-/// shortest **front-anchored** form that stays unique in this list: the first *n* components,
-/// upper-cased, with `…` where more follow, and *n* raised for the whole list until no two headers
-/// are equal.
-///
-/// **Uniqueness is what makes shortening safe.** Two groups under one header is a list that lies
-/// about where its files are, and it is the one failure mode this function must not have — asserted
-/// as a property rather than on examples.
-public func groupHeaderTitles(_ keys: [String]) -> [String: String] {
-    let paths = keys.filter { $0 != repositoryRootGroup }
-    var titles: [String: String] = [:]
-    for key in keys where key == repositoryRootGroup { titles[key] = key }
-    guard !paths.isEmpty else { return titles }
-
-    func components(_ key: String) -> [String] { key.split(separator: "/").map(String.init) }
-    let deepest = paths.map { components($0).count }.max() ?? 1
-
-    func candidate(_ key: String, depth: Int) -> String {
-        let parts = components(key)
-        let head = parts.prefix(depth).joined(separator: "/").uppercased()
-        return parts.count > depth ? head + "…" : head
-    }
-
-    for depth in 2...max(2, deepest) {
-        let candidates = paths.map { candidate($0, depth: depth) }
-        if Set(candidates).count == paths.count {
-            for (key, title) in zip(paths, candidates) { titles[key] = title }
-            return titles
-        }
-    }
-    // Two keys differing only in case — `a/Web` and `a/web`. Upper-casing cannot separate them at
-    // any depth, so the list keeps its paths rather than drawing two identical headers.
-    for key in paths { titles[key] = key }
-    return titles
 }
 
 /// Where the selection lands when the reader steps through the list.

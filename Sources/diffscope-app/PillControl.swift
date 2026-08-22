@@ -695,6 +695,10 @@ final class ChipView: NSView {
         ])
         setContentHuggingPriority(.required, for: .horizontal)
         setContentCompressionResistancePriority(.required, for: .horizontal)
+        // **The label inside it, as well as the chip around it** (DEC-099). The chip's width is
+        // derived from this label, so a chip that refuses to shrink while its label does not is a
+        // chip that shrinks anyway: `raw` was drawn as `ra` in the deepest rows of the tree.
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
     }
 
     @available(*, unavailable) required init?(coder: NSCoder) { nil }

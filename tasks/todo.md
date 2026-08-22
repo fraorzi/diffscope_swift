@@ -2782,6 +2782,26 @@ a click on a commit picks it — the shell had that handler since M9 and the pag
 message — and a click on a sign stages or unstages that line.
 
 
+## Step 93 — the changed-file list becomes a tree (DEC-099)
+
+**1912 → 1990 checks.** The owner asked with a screenshot; OQ-041 had been open since Phase 4 and
+this answers it. `fileTreeRows` replaces `fileListRows`: directories nest, a chain of single-child
+directories folds into one row, directories come before files at every level, and a folded
+directory takes its subtree with it. `IndentGuides` draws one hairline per level. ⌥← / ⌥→ fold and
+unfold; folder rows stay labels, so the 63-file walk is still 62 keystrokes.
+
+**Retired with it:** DEC-074's shortest-unique header titles, and the workspace-package machinery
+(`declaredWorkspacePackages`, `groupKey`) that fed DEC-033's grouping. A tree puts `packages/app-2`
+on a row because it is a directory.
+
+**Three findings, all from the first photograph of it.** The guides were drawn in `hairline` and
+were invisible: that rule separates two surfaces and borrows contrast from both, and a guide runs
+down one. File names still truncated from the head — `…hImage.adapter.tsx` — which removes exactly
+the half that tells siblings apart; middle elision is what DEC-033 asked for in the first place.
+And `raw` drew as `ra`, because `ChipView` held a required compression resistance while the label
+inside it did not, so the chip shrank anyway.
+
+
 ### Still open
 
 - [ ] minimum-run absorption of unchanged gaps shorter than a token (phantom retention). `alpha` →

@@ -4405,3 +4405,44 @@ The two items this entry first recorded as *not built* — the graph column and 
 - **History draws its topology.** `GraphCommit.laneColumn` composes the lane marks in the Git layer — `●`, `│`, and `─` where a merge reaches for its second parent — and the page draws them in a fixed-width column, so the lines join up between rows. git's own `--graph` output is still never parsed: it is a presentation, and the lanes come from `%P`.
 - **A commit can be picked at last.** The shell has had a `pickCommit` handler since M9 and **the page never sent the message** — so DEC-061's two-commit comparison, and every verb in the Repository menu that acts on a commit, had no way to be given one. Found by writing the verbs, not by a check.
 - **The sign column stages its line.** `+` and `−` are already the mark that says which side a line is on, so they carry the action rather than a second column of checkboxes saying the same thing. The message is validated like the sha beside it: a line number that becomes a patch against the index is input, not instruction.
+
+---
+
+## DEC-099 — The changed-file list is a tree
+
+- **Date:** 2026-08-22
+- **Topic:** How the changed-file list is structured. **Answers OQ-041**, open since Phase 4, and supersedes the grouping half of [DEC-033](#dec-033--changed-file-list-grouping-and-path-elision) and the whole of [DEC-074](#dec-074--group-headers-say-the-shortest-form-that-stays-unique).
+- **Status:** Accepted — the product owner asked for it directly, with a picture.
+
+### Context
+
+DEC-033 gave the list **one header per group** — a workspace package where one is declared, the parent directory otherwise — and a flat run of files under it. OQ-041 recorded that this was "a middle position, not an answer" and left the tree open on purpose.
+
+The owner reopened it with a screenshot of a directory tree: nested rows, disclosure arrows, indentation guides, `app/[locale]/(dev)/components` drawn as **one** row rather than four. Their words: *"chciałbym żeby changed files miało strukturę wizualną a nie tylko napisane w jakim są folderze."*
+
+### What was wrong with the middle position
+
+A header is a *label*: it says where the files under it are, and says nothing about how those places relate. `src/components/features/bg-img-banner` and `src/components/features/image-text` are siblings, and the flat form spent 40 characters twice to say so without ever saying it. DEC-074 then had to invent a shortening rule to make those headers fit — a rule whose entire job was to compress a fact the tree carries for free, in the indentation.
+
+### Final decision
+
+**The list is a directory tree.** Rows are directories and files; a directory's children are indented under it, with a guide line per level; a directory row can be collapsed and its subtree disappears with it.
+
+Three rules make it a tree rather than a nesting of every path component:
+
+1. **A chain of single-child directories is one row.** `app` → `[locale]` → `(dev)` → `components`, none of which holds a file of its own, is drawn as `app/[locale]/(dev)/components`. Four rows carrying no branch would be four rows carrying no information.
+2. **Directories before files, each alphabetically**, at every level — the order every file browser uses, and the one a reader can predict without being told.
+3. **Directory rows are labels, never focus stops** — DEC-033's rule, kept exactly. ⌥↑ / ⌥↓ still step *files*, so a 63-file list is still 62 keystrokes however deep it nests, and the definition of done's measurement is unchanged.
+
+**Collapsing is per directory, by pointer or by keyboard**: ⌥← collapses the folder the selection is in, ⌥→ expands the folder under it. That is DEC-065's tier system unchanged — ⌥ is the file-list tier — and it adds one row to `12-…` §9's coverage table.
+
+### Consequences
+
+- **DEC-074 is retired.** Its shortening rule existed to fit a long path into a header; a tree draws the last component and the indentation says the rest. Its uniqueness property survives in a stronger form: two directories can only share a row if they are the same directory.
+- **The workspace-package machinery is retired with it.** `pnpm-workspace.yaml` declared a prefix so the flat list could group by it; a tree puts `packages/app-2` on its own row because it *is* a directory, and the declaration adds nothing. Measured at implementation time (2026-07-31) that none of the twelve workspace files in this corpus declares a `packages:` key at all, which is why this costs nothing.
+- **Indentation is a drawn guide, not spaces.** A vertical hairline per level, so a file eight levels deep can still be traced back to its parent — the reason a tree beats a header at all.
+- The collapse state is per repository and lives in the window, not in the configuration file: which folders a reader had folded is not a setting they would look for later.
+
+### Revisit trigger
+
+Reopen if a repository in the corpus produces a tree deeper than the pane can indent — the guides are 10 pt each, and past about ten levels the names have nowhere left to start.

@@ -351,6 +351,42 @@ enum Theme {
     static let doubleChevronScale: CGFloat = 0.75
     static let plusArmLength: CGFloat = 9
 
+    // ---- the changed-file tree (DEC-099) -------------------------------------------------------
+
+    /// One level of nesting. Ten points is two characters of the 10 pt face the rows are set in —
+    /// enough for the guide to be read as a column, small enough that eight levels still leave a
+    /// name room to start.
+    static let treeIndent: CGFloat = 10
+    /// The guide line itself. **Not the window's hairline**: that rule separates two surfaces of
+    /// different colours and borrows contrast from both, while a guide runs down one surface with
+    /// nothing behind it — drawn in `hairline` it was invisible in the first photograph of the
+    /// tree. The row ring is the quietest line in this window that can be seen on its own.
+    static let treeGuideWidth: CGFloat = 1
+    static var treeGuide: NSColor { rowRing }
+
+    /// The folder's own mark, drawn rather than typed (DEC-091): a chevron pointing **down** when
+    /// the folder is open and **right** when it is folded, so the state is a shape before it is
+    /// anything else.
+    static func drawDisclosure(in box: NSRect, open: Bool) {
+        let arm = promptChevronWidth
+        let centre = NSPoint(x: box.midX, y: box.midY)
+        let path = NSBezierPath()
+        path.lineWidth = chevronStroke
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        if open {
+            path.move(to: NSPoint(x: centre.x - arm, y: centre.y + arm / 2))
+            path.line(to: NSPoint(x: centre.x, y: centre.y - arm / 2))
+            path.line(to: NSPoint(x: centre.x + arm, y: centre.y + arm / 2))
+        } else {
+            path.move(to: NSPoint(x: centre.x - arm / 2, y: centre.y + arm))
+            path.line(to: NSPoint(x: centre.x + arm / 2, y: centre.y))
+            path.line(to: NSPoint(x: centre.x - arm / 2, y: centre.y - arm))
+        }
+        inkQuiet.setStroke()
+        path.stroke()
+    }
+
     // ---- version two: the inclusion mark, the commit box, the banner (DEC-092) ----------------
 
     /// The box a reader ticks to put a file in the next commit. Drawn rather than typed, for

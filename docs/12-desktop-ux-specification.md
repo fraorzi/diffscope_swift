@@ -212,6 +212,9 @@ DEC-016 commits to **full keyboard operation of every function**. This is a comp
 | Show raw for the current region | ⌘R |
 | Open current file and line in the editor | ⌘⏎ |
 | Focus movement between sidebar, file list, and diff | ⌥⌘1 / ⌥⌘2 / ⌥⌘3 |
+| Fold and unfold a folder in the changed-file list ([DEC-099](04-decision-log.md)) | ⌥← / ⌥→ |
+
+**The tenth row arrived with the tree.** DEC-099 made the changed-file list a directory tree, and ⌥ is the file-list tier (DEC-065) — so folding sits beside ⌥↑ and ⌥↓ as the horizontal axis of the same control. Folder rows remain **labels rather than focus stops**, so the walk is still one keystroke per file however deep the tree nests.
 
 The **coverage** above is binding: any function reachable only by pointer is a defect. Since DEC-057 the right-hand column is not documentation of the code — it *is* the code, transcribed from `KeyboardMap.bindings`, and a row nothing binds fails the check suite by name. Group headers are not stops (DEC-033), on any route.
 

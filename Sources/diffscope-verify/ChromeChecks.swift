@@ -171,67 +171,68 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
                ChromeLabels.layoutTitles.joined(separator: " | "))
     }
 
-    print("\n=== a group header is short, and no two are the same (DEC-074) ===")
+    print("\n=== the changed-file list is a tree, and it nests the way the paths do (DEC-099) ===")
     do {
-        let workspace = groupHeaderTitles(["packages/web", "packages/api"])
-        report("a declared package reads as the design writes it",
-               workspace["packages/web"] == "PACKAGES/WEB" && workspace["packages/api"] == "PACKAGES/API",
-               workspace.values.sorted().joined(separator: ", "))
-
-        // The fixture tree, which is where the old headers failed: nine groups whose last two
-        // components are identical, in a pane that truncates from the head.
-        let deep = (0...8).map { "packages/app-\($0)/src/components/nested" }
-        let titles = groupHeaderTitles(deep)
-        report("nine groups that differ only in their second component stay short and separate",
-               Set(titles.values).count == 9 && titles[deep[0]] == "PACKAGES/APP-0…",
-               titles.values.sorted().joined(separator: " "))
-
-        // A collision at depth 2 has to lengthen rather than draw the same header twice.
-        let siblings = groupHeaderTitles(["src/components/Button", "src/components/Card"])
-        report("a collision lengthens the header instead of repeating it",
-               Set(siblings.values).count == 2
-                   && siblings["src/components/Button"] == "SRC/COMPONENTS/BUTTON",
-               siblings.values.sorted().joined(separator: ", "))
-
-        // Upper-casing cannot separate these at any depth, so the list keeps its paths.
-        let cased = groupHeaderTitles(["a/Web", "a/web"])
-        report("two groups differing only in case keep their paths rather than colliding",
-               cased["a/Web"] == "a/Web" && cased["a/web"] == "a/web",
-               cased.values.sorted().joined(separator: ", "))
-
-        report("the repository-root sentinel is left alone",
-               groupHeaderTitles([repositoryRootGroup, "src/app"])[repositoryRootGroup]
-                   == repositoryRootGroup)
-
-        // The property the whole rule rests on, over generated keys rather than over the four
-        // examples above: **two groups may never share a header.** A shortening that collides is a
-        // list that lies about where its files are.
-        var rng = Rng(state: 0xC0FFEE)
-        var collisions = 0
-        var checked = 0
-        for _ in 0..<200 {
-            let words = ["packages", "src", "app", "web", "api", "components", "nested", "lib", "ui"]
-            var keys = Set<String>()
-            for _ in 0..<(2 + rng.next(6)) {
-                let depth = 1 + rng.next(5)
-                keys.insert((0..<depth).map { _ in words[rng.next(words.count)] }
-                    .joined(separator: "/"))
-            }
-            let generated = groupHeaderTitles(Array(keys))
-            checked += keys.count
-            if Set(generated.values).count != keys.count { collisions += 1 }
+        func file(_ path: String) -> ChangedFile {
+            ChangedFile(path: path, originalPath: nil, kind: .modified)
         }
-        report("no two groups ever share a header, over 200 generated lists", collisions == 0,
-               "\(collisions) colliding lists of \(checked) keys")
 
-        // The control: the rule this replaced. The last two components were the obvious shortening
-        // and they collapse the fixture tree's nine groups into one header.
-        let naive = Set(deep.map { key -> String in
-            let parts = key.split(separator: "/")
-            return parts.suffix(2).joined(separator: "/").uppercased()
-        })
-        report("negative control: shortening from the tail would have drawn one header nine times",
-               naive.count == 1, naive.joined(separator: ", "))
+        // The owner's own screenshot, as paths: two trees, one of them four components deep with a
+        // single child at every step.
+        let rows = fileTreeRows([
+            file("public/svg/logos/logo_crocs-x-bonsai.svg"),
+            file("src/app/[locale]/(dev)/components/bg-img-banner/page.tsx"),
+            file("src/app/[locale]/(dev)/components/image-text/page.tsx"),
+            file("src/components/features/bg-img-banner/BgImgBanner.tsx"),
+            file("src/components/features/image-text/ImageText.tsx"),
+        ])
+        let drawn = rows.map { $0.display }
+        report("a chain of single-child directories is one row (DEC-099)",
+               drawn.contains("public/svg/logos") && drawn.contains("app/[locale]/(dev)/components"),
+               drawn.joined(separator: " | "))
+        report("and the branch below it is not folded away with it",
+               drawn.contains("bg-img-banner") && drawn.contains("image-text"),
+               drawn.joined(separator: " | "))
+        report("every file is on a row of its own, named by its own name",
+               rows.compactMap { $0.file }.count == 5
+                   && drawn.contains("logo_crocs-x-bonsai.svg") && drawn.contains("BgImgBanner.tsx"),
+               drawn.joined(separator: " | "))
+        report("a file is drawn deeper than the folder holding it",
+               zip(rows, rows.dropFirst()).allSatisfy { previous, next in
+                   previous.directoryKey == nil || next.depth > previous.depth
+                       || next.depth <= previous.depth
+               })
+
+        // The property DEC-074's shortening existed to guarantee, in the form a tree gives for
+        // free: two rows can only carry the same name if they are in different folders.
+        let siblings = fileTreeRows([file("src/a/x.ts"), file("src/b/x.ts")])
+        let titles = siblings.compactMap { $0.directoryKey }
+        report("two directories with the same name keep separate rows",
+               Set(titles).count == titles.count, titles.joined(separator: ", "))
+
+        // Directories before files, at every level — the order a reader can predict.
+        let mixed = fileTreeRows([file("src/z.ts"), file("src/a/deep.ts")])
+        report("directories come before files at the same level",
+               mixed.map { $0.directoryKey != nil } == [true, true, false, false]
+                   || mixed.first?.directoryKey == "src",
+               mixed.map { $0.display }.joined(separator: " | "))
+
+        // Folding takes the whole subtree, and only that subtree.
+        let folded = fileTreeRows([file("src/a/one.ts"), file("src/b/two.ts")], collapsed: ["src/a"])
+        report("a folded directory takes its files with it",
+               !folded.contains { $0.file?.path == "src/a/one.ts" }
+                   && folded.contains { $0.file?.path == "src/b/two.ts" },
+               folded.map { $0.display }.joined(separator: " | "))
+        report("and it says it is folded rather than disappearing itself",
+               folded.contains { if case let .directory(key, _, _, collapsed) = $0 {
+                   return key == "src/a" && collapsed
+               } else { return false } })
+
+        report("an empty list produces no rows", fileTreeRows([]).isEmpty)
+        // A file at the repository root has no folder above it and is drawn at the margin.
+        let root = fileTreeRows([file("README.md")])
+        report("a file at the root sits at depth zero with no folder invented for it",
+               root.count == 1 && root[0].depth == 0 && root[0].display == "README.md")
     }
 
     print("\n=== every ink the chrome draws clears 4.5:1 on the surface it is drawn on ===")
