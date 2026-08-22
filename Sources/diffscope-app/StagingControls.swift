@@ -94,9 +94,10 @@ final class CommitBox: NSView {
         body.textColor = Theme.ink
         body.textContainerInset = NSSize(width: 0, height: 2)
         body.identifier = NSUserInterfaceItemIdentifier("commit.description")
-        // What the second field is for, in the field. A commit's body is where the *why* goes —
-        // the summary already says what changed.
-        body.placeholder = "Description — why this change, and anything the summary cannot hold"
+        // What the second field is for, in the field — and nothing more. A placeholder is a name,
+        // not an instruction: the sentence explaining what belongs in a commit body was advice the
+        // reader would read once and then look past for the rest of the product's life.
+        body.placeholder = "Description"
 
         let descriptionScroll = OverlayScrollView()
         descriptionScroll.documentView = body
