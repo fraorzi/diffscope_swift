@@ -33,6 +33,13 @@ public enum ChromeLabels {
         count > 999 ? "999+" : String(count)
     }
 
+    /// The exact figure, for the tooltip that stands behind a collapsed pane's short form
+    /// (DEC-098). The rail can hold two characters; the number of repositories is not bounded by
+    /// two characters, so the shortened form on screen has to have somewhere to point.
+    public static func paneCountTooltip(count: Int, noun: String, plural: String) -> String {
+        "\(count) \(count == 1 ? noun : plural)"
+    }
+
     /// The repositories list. Its count is drawn **only when collapsed**: expanded, the design gives
     /// that end of the header to the `+`, and the repository rows are individually visible anyway.
     public static func repositoriesHeader(count: Int, collapsed: Bool) -> PaneHeaderText {

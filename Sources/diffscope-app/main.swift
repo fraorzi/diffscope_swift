@@ -167,6 +167,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// The bars themselves, held for the selftest: *drawn where the pane is* is the assertion, and
     /// M8-D's blank lists are what happens when only the string is checked.
     var repoHeaderBar: NSView!
+    /// The two header rows themselves (DEC-098). Held because a collapsed pane is 44 pt wide and
+    /// the expanded one is 280: the same insets cannot serve both, and the count is what loses.
+    var repoHeaderStack: NSStackView!
+    var fileHeaderStack: NSStackView!
+    /// The rows inside them that hold the controls: their spacing is the last four points a 44 pt
+    /// rail has to give the count.
+    var repoTrailingStack: NSStackView?
+    var fileTrailingStack: NSStackView?
     var fileHeaderBar: NSView!
     /// The two collapse controls (DEC-077). Held because their glyph says which way the pane will go.
     /// Held since DEC-083, so the arm can measure the target rather than trust the constraint.
@@ -363,17 +371,23 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         fileCollapseButton = buildCollapseButton(action: #selector(toggleFilesPane),
                                                  collapsed: filesCollapsed)
         addSourceButton = buildAddSourceButton()
-        let repoTrailing = NSStackView(views: [addSourceButton, repoCollapseButton])
+        repoTrailingStack = NSStackView(views: [addSourceButton, repoCollapseButton])
+        let repoTrailing = repoTrailingStack!
         repoTrailing.orientation = .horizontal
         repoTrailing.spacing = Theme.space2
-        let fileTrailing = NSStackView(views: [fileHeaderCount, fileCollapseButton])
+        fileTrailingStack = NSStackView(views: [fileHeaderCount, fileCollapseButton])
+        let fileTrailing = fileTrailingStack!
         fileTrailing.orientation = .horizontal
         fileTrailing.spacing = Theme.space2
 
+        var repoStack: NSStackView?
+        var fileStack: NSStackView?
         let repoHeader = buildPaneHeader(caption: repoHeaderCaption, trailing: repoTrailing,
-                                         surface: Theme.panelRepositories)
+                                         surface: Theme.panelRepositories, stack: &repoStack)
         let fileHeader = buildPaneHeader(caption: fileHeaderCaption, trailing: fileTrailing,
-                                         surface: Theme.panelFiles)
+                                         surface: Theme.panelFiles, stack: &fileStack)
+        repoHeaderStack = repoStack
+        fileHeaderStack = fileStack
         repoHeaderBar = repoHeader
         fileHeaderBar = fileHeader
         updatePaneHeaders()
@@ -2846,24 +2860,54 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             let headersWorded = self.repoHeaderCaption.stringValue == railHeader.caption
                 && self.fileHeaderCaption.stringValue == spineHeader.caption
                 && self.fileHeaderCount.stringValue == spineHeader.count
-            // Drawn inside the collapsed pane, which is the assertion `fitsCollapsedPane` makes in
-            // characters and this makes in points.
-            func fits(_ label: NSTextField, _ pane: CGFloat) -> Bool {
-                label.intrinsicContentSize.width <= pane
+            // **Against the label's own drawn width, not the pane's.** The first version of this
+            // compared the string against the *pane* — 12 pt of `21` against a 44 pt rail, which
+            // passes — while the label itself was laid out beside a 24 pt chevron in a bar with
+            // 16 pt of insets and was handed nothing. The reader saw `2`. A count clipped to its
+            // first digit is a number that lies about its own magnitude, which is the one thing
+            // `compactCount` exists to prevent.
+            func fits(_ label: NSTextField) -> Bool {
+                label.stringValue.isEmpty || label.intrinsicContentSize.width <= label.frame.width + 0.5
             }
-            let headersFit = fits(self.repoHeaderCaption, railDrawn)
-                && fits(self.fileHeaderCount, spineDrawn)
+            let headersFit = fits(self.repoHeaderCaption) && fits(self.fileHeaderCount)
+
+            // **The fixture has one repository, and one digit fits anything.** The rail this arm
+            // is about is the owner's, where the number is 21 — so the label is stressed with two
+            // digits and with the widest form `compactCount` can produce, and the two are held to
+            // different promises: two digits must be drawn in full, and anything longer may be
+            // shortened *provided the tooltip still states the exact figure*. A count clipped with
+            // nothing behind it is the defect this arm exists over.
+            let restore = self.repoHeaderCaption.stringValue
+            self.repoHeaderCaption.stringValue = "21"
+            self.repoHeaderCaption.superview?.layoutSubtreeIfNeeded()
+            let twoDigitsFit = fits(self.repoHeaderCaption)
+            let twoDigitsDrawn = self.repoHeaderCaption.frame.width
+            self.repoHeaderCaption.stringValue = ChromeLabels.compactCount(1000)
+            self.repoHeaderCaption.superview?.layoutSubtreeIfNeeded()
+            let widestMarked = fits(self.repoHeaderCaption)
+                || self.repoHeaderCaption.lineBreakMode == .byTruncatingTail
+            let tooltipExact = self.repoHeaderCaption.toolTip
+                == ChromeLabels.paneCountTooltip(count: self.state.repositories.count,
+                                                 noun: "repository", plural: "repositories")
+            self.repoHeaderCaption.stringValue = restore
+            self.repoHeaderCaption.superview?.layoutSubtreeIfNeeded()
+            let stressed = twoDigitsFit && widestMarked && tooltipExact
             FileHandle.standardError.write(Data(
-                ("SELFTEST collapse=\(ok && indented && headersWorded && headersFit ? "OK" : "MISMATCH") "
+                ("SELFTEST collapse=\(ok && indented && headersWorded && headersFit && stressed ? "OK" : "MISMATCH") "
                     + "rail=\(railDrawn) "
                     + "spine=\(spineDrawn) indent=\(indent) "
                     + "repoRow=\(field?.stringValue ?? "nil")@\(fieldInWindow.width) "
                     + "fileRow=\(firstLabel(fileCell)?.stringValue ?? "nil") "
                     + "railHeader=\"\(self.repoHeaderCaption.stringValue)\""
-                    + "@\(Int(self.repoHeaderCaption.intrinsicContentSize.width))pt "
+                    + "@\(Int(self.repoHeaderCaption.intrinsicContentSize.width))pt"
+                    + "/drawn\(Int(self.repoHeaderCaption.frame.width))pt "
+                    + "twoDigits=\(twoDigitsFit)@\(Int(twoDigitsDrawn))pt widestMarked=\(widestMarked) "
+
+                    + "tooltip=\"\(self.repoHeaderCaption.toolTip ?? "")\" "
                     + "spineHeader=\"\(self.fileHeaderCaption.stringValue)|\(self.fileHeaderCount.stringValue)\""
-                    + "@\(Int(self.fileHeaderCount.intrinsicContentSize.width))pt\n").utf8))
-            guard ok, indented, headersWorded, headersFit else { exit(48) }
+                    + "@\(Int(self.fileHeaderCount.intrinsicContentSize.width))pt"
+                    + "/drawn\(Int(self.fileHeaderCount.frame.width))pt\n").utf8))
+            guard ok, indented, headersWorded, headersFit, stressed else { exit(48) }
             // **And it has to still be collapsed a second later.** A collapse is a set of
             // constraints on panes whose frames `NSSplitView` owns, so any later layout pass can
             // redistribute the width back — and until the status line started ticking once a second
@@ -3758,7 +3802,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let field = NSTextField(labelWithString: "")
         field.font = Theme.font(Theme.textSizeTiny, weight: .semibold)
         field.textColor = Theme.inkFaint
-        field.lineBreakMode = .byClipping
+        // Truncation rather than clipping (DEC-098): a count cut off mid-number reads as a
+        // different number, and an ellipsis is the only form that says *there is more of this*.
+        //
+        // **Resistance stays at the default.** Making the label refuse to shrink widened the file
+        // spine from 42 pt to 46.5 — a header that cannot be squeezed becomes a floor under the
+        // pane, which is the same defect the commit box's button title had. The room comes from
+        // the insets instead, which belong to the header rather than to the pane.
+        field.lineBreakMode = .byTruncatingTail
+        field.cell?.lineBreakMode = .byTruncatingTail
         field.translatesAutoresizingMaskIntoConstraints = false
         return field
     }
@@ -3770,8 +3822,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// header drawn on the window's surface would read as belonging to the window rather than to the
     /// list under it, which is the seam DEC-066's two panel tokens exist to draw.
     private func buildPaneHeader(caption: NSTextField, trailing: NSView,
-                                 surface: NSColor) -> NSView {
+                                 surface: NSColor, stack stackOut: inout NSStackView?) -> NSView {
         let stack = NSStackView(views: [caption, spacerView(), trailing])
+        stackOut = stack
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = Theme.space2
@@ -3901,6 +3954,30 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         repoHeaderCaption.stringValue = repositories.caption
         fileHeaderCaption.stringValue = files.caption
         fileHeaderCount.stringValue = files.count
+
+        // DEC-098: **the collapsed rail was drawing `2` for twenty-one repositories.** The header
+        // is one row — a label, a spacer, and a 24 pt chevron — laid out with the expanded pane's
+        // 16 pt of insets, which in a 44 pt rail leaves the count nothing and clips it to its first
+        // digit. A number clipped to one digit is not a smaller number, it is a wrong one.
+        //
+        // Collapsed, the insets go to the seam and the spacer is squeezed; the label keeps every
+        // point that is left, and anything still too long is *marked* by an ellipsis rather than
+        // silently cut. The exact figure is on the tooltip in both states.
+        for (stack, collapsed) in [(repoHeaderStack, reposCollapsed), (fileHeaderStack, filesCollapsed)] {
+            guard let stack else { continue }
+            let side = collapsed ? Theme.space1 : Theme.space3 + Theme.space2
+            stack.edgeInsets = NSEdgeInsets(top: 0, left: side, bottom: 0,
+                                            right: collapsed ? Theme.space1 : Theme.space3)
+            stack.spacing = collapsed ? Theme.space1 : Theme.space2
+        }
+        // The trailing row's own gap goes too: with the `+` hidden it sits between the count and
+        // the chevron, and in a rail those four points are a third of what the number has.
+        repoTrailingStack?.spacing = reposCollapsed ? 0 : Theme.space2
+        fileTrailingStack?.spacing = filesCollapsed ? 0 : Theme.space2
+        repoHeaderCaption.toolTip = ChromeLabels.paneCountTooltip(count: state.repositories.count,
+                                                                  noun: "repository", plural: "repositories")
+        fileHeaderCount.toolTip = ChromeLabels.paneCountTooltip(count: state.files.count,
+                                                                noun: "changed file", plural: "changed files")
     }
 
     /// The status line, at the bottom edge where the design puts it. A line that reports what just
