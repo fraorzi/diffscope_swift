@@ -510,6 +510,32 @@ func runChromeChecks(_ reportRaw: (String, Bool, String) -> Void) {
         }
     }
 
+    print("\n=== the commit box says what its fields are for, and amending borrows them ===")
+    do {
+        let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+        let controls = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/StagingControls.swift"),
+                                    encoding: .utf8)) ?? ""
+        let actions = (try? String(contentsOf: root.appendingPathComponent("Sources/diffscope-app/GitActions.swift"),
+                                   encoding: .utf8)) ?? ""
+        // `NSTextField` has a placeholder and `NSTextView` has none, so the description field was a
+        // blank rectangle stating nothing about itself — DEC-058's defect, in a control.
+        report("both commit fields say what they are for",
+               controls.contains("summary.placeholderString = \"Summary\"")
+                   && controls.contains("body.placeholder = "))
+        report("and the placeholder is drawn only while the field is empty",
+               controls.contains("guard string.isEmpty, !placeholder.isEmpty else { return }"))
+        // Amending edits a message, so the fields have to be editable and filled — a switch that
+        // blocked them would leave `--amend` able to change only the content.
+        report("the amend switch fills the fields rather than blocking them",
+               actions.contains("commitBox.summary.stringValue = parts[0]")
+                   && !controls.contains("summary.isEditable = false"))
+        report("and what the reader had typed is put back when it goes off",
+               actions.contains("commitBox.summary.stringValue = commitBox.draftSummary")
+                   && actions.contains("commitBox.draftSummary = commitBox.summaryText"))
+        report("and it refuses when there is no commit to amend",
+               actions.contains("there is no commit to amend yet"))
+    }
+
     print("\n=== the contract describes the chrome it cannot see ===")
     do {
         // The class table in `24-…` §3 lists what the *renderer* emits, and the chrome emits nothing:

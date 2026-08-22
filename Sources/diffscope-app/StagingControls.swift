@@ -32,11 +32,33 @@ final class CheckButton: HandButton {
     override var isFlipped: Bool { false }
 }
 
+/// An `NSTextView` that says what it is for while it is empty.
+///
+/// `NSTextField` has `placeholderString` and `NSTextView` has nothing — so the description field
+/// was a blank rectangle with no way of knowing what belonged in it, which is the same defect
+/// DEC-058 has been paid for three times: a control that states nothing about itself.
+final class PlaceholderTextView: NSTextView {
+    var placeholder: String = "" { didSet { needsDisplay = true } }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard string.isEmpty, !placeholder.isEmpty else { return }
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font ?? Theme.prose(Theme.textSizeSmall),
+            .foregroundColor: Theme.inkQuiet.withAlphaComponent(0.7),
+        ]
+        // Laid out on the same inset the text uses, so the placeholder sits exactly where the
+        // reader's first character will.
+        placeholder.draw(at: NSPoint(x: textContainerInset.width + 2,
+                                     y: textContainerInset.height), withAttributes: attributes)
+    }
+}
+
 /// GitHub Desktop's commit box, with its two fields and its one wide button — and with the
 /// index still visible beside it, which is the half of the hybrid DEC-092 chose.
 final class CommitBox: NSView {
     let summary = NSTextField()
-    let body = NSTextView()
+    let body = PlaceholderTextView()
     let button = NSButton()
     let amend = NSButton()
     let status = NSTextField(labelWithString: "")
@@ -46,6 +68,12 @@ final class CommitBox: NSView {
     var branchName: String = "" {
         didSet { button.title = branchName.isEmpty ? "Commit" : "Commit to \(branchName)" }
     }
+
+    /// What the reader had typed before the amend switch borrowed the fields (DEC-098). Turning
+    /// the switch off puts it back: a switch that eats a half-written message is a switch nobody
+    /// dares press twice.
+    var draftSummary = ""
+    var draftBody = ""
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -66,6 +94,9 @@ final class CommitBox: NSView {
         body.textColor = Theme.ink
         body.textContainerInset = NSSize(width: 0, height: 2)
         body.identifier = NSUserInterfaceItemIdentifier("commit.description")
+        // What the second field is for, in the field. A commit's body is where the *why* goes —
+        // the summary already says what changed.
+        body.placeholder = "Description — why this change, and anything the summary cannot hold"
 
         let descriptionScroll = OverlayScrollView()
         descriptionScroll.documentView = body

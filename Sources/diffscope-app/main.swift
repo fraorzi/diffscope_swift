@@ -465,6 +465,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // button under it means everywhere else in macOS.
         commitBox.summary.target = self
         commitBox.summary.action = #selector(commitStaged)
+        // The amend switch fills the fields from the commit it is about to replace (DEC-098).
+        commitBox.amend.target = self
+        commitBox.amend.action = #selector(amendToggled)
         filePane.footer = commitBox
         filePane.footerHeight = Theme.commitBoxHeight
         filePane.addSubview(commitBox)

@@ -250,6 +250,36 @@ extension Controller {
         }
     }
 
+    /// The amend switch **borrows the fields rather than blocking them**, which is what amending
+    /// is: the last commit's message becomes editable, because changing it is half the point of
+    /// the operation. Blocked fields would leave `--amend` able to change only the *content*, and
+    /// the reader with no way to fix the typo they turned the switch on for.
+    ///
+    /// What the reader had already typed is kept and put back when the switch goes off.
+    @objc func amendToggled() {
+        guard let repository = state.selectedRepository, let commitBox else { return }
+        if commitBox.amend.state == .on {
+            commitBox.draftSummary = commitBox.summaryText
+            commitBox.draftBody = commitBox.descriptionText
+            let message = gitState.commitMessage(of: "HEAD", in: repository.url)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !message.isEmpty else {
+                statusLabel.stringValue = "there is no commit to amend yet"
+                commitBox.amend.state = .off
+                return
+            }
+            // Subject, blank line, body — the shape `composeMessage` writes, read back the same way.
+            let parts = message.components(separatedBy: "\n\n")
+            commitBox.summary.stringValue = parts[0].replacingOccurrences(of: "\n", with: " ")
+            commitBox.body.string = parts.dropFirst().joined(separator: "\n\n")
+            statusLabel.stringValue = "amending the last commit — edit its message, or leave it as it is"
+        } else {
+            commitBox.summary.stringValue = commitBox.draftSummary
+            commitBox.body.string = commitBox.draftBody
+        }
+        commitBox.body.needsDisplay = true
+    }
+
     @objc func focusCommitSummary() {
         guard let commitBox else { return }
         window.makeFirstResponder(commitBox.summary)
