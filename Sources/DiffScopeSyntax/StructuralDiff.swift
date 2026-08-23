@@ -228,17 +228,76 @@ public func structuralDiff(
 
     var oldChangedMask: [(start: Int, end: Int)] = []
     var newChangedMask: [(start: Int, end: Int)] = []
+    // How each hunk relates to the reflow question (DEC-101). The canonical hunk is a correspondence
+    // by construction, which is what lets this say `whitespace` about a mark that `reconcile` has
+    // already cut away from its counterpart. `layout` is the whole hunk; `reflow` is its whitespace.
+    var oldLayout: [(start: Int, end: Int)] = []
+    var newLayout: [(start: Int, end: Int)] = []
+    var oldReflowed: [(start: Int, end: Int)] = []
+    var newReflowed: [(start: Int, end: Int)] = []
+    var allHunks: [(oldStart: Int, oldEnd: Int, newStart: Int, newEnd: Int)] = []
     var coverageKnown = false
     if case let .exact(hunks) = canonicalDiff(old: oldBytes, new: newBytes) {
         coverageKnown = true
         for hunk in hunks {
             if hunk.oldEnd > hunk.oldStart { oldChangedMask.append((hunk.oldStart, hunk.oldEnd)) }
             if hunk.newEnd > hunk.newStart { newChangedMask.append((hunk.newStart, hunk.newEnd)) }
+            allHunks.append((hunk.oldStart, hunk.oldEnd, hunk.newStart, hunk.newEnd))
         }
     }
 
-    let reconciledOld = reconcile(oldSegments, against: oldChangedMask, applied: coverageKnown)
-    let reconciledNew = reconcile(newSegments, against: newChangedMask, applied: coverageKnown)
+    // Classified here, before every widening pass, so a flank the snap adds can inherit the claim
+    // through `widenPresented`'s agreement rule rather than arriving unclassified beside it.
+    // Asked of the region the hunks jointly cover rather than of each hunk, because a reorder is
+    // only visible at the scale of the thing reordered (DEC-101).
+    var oldPreservedGaps: [(start: Int, end: Int)] = []
+    var newPreservedGaps: [(start: Int, end: Int)] = []
+    if settings.classifyWhitespaceHunks {
+        for region in layoutRegions(hunks: allHunks, old: oldBytes, new: newBytes) {
+            // The finest of the three rules, and the one that reaches a prop added to an element
+            // that was rewrapped around it: a gap between two tokens that are still neighbours on
+            // the other side is a line break moving and nothing else.
+            let layout = hunkLayout(old: oldBytes[region.oldStart..<region.oldEnd],
+                                    new: newBytes[region.newStart..<region.newEnd])
+            if layout != .reordered {
+                let oldPairs = adjacentTokenPairs(bytes: oldBytes, from: region.oldStart,
+                                                  to: region.oldEnd)
+                let newPairs = adjacentTokenPairs(bytes: newBytes, from: region.newStart,
+                                                  to: region.newEnd)
+                oldPreservedGaps += preservedGapRanges(bytes: oldBytes, from: region.oldStart,
+                                                       to: region.oldEnd, otherAdjacentPairs: newPairs)
+                newPreservedGaps += preservedGapRanges(bytes: newBytes, from: region.newStart,
+                                                       to: region.newEnd, otherAdjacentPairs: oldPairs)
+            }
+            switch layout {
+            case .layoutOnly:
+                if region.oldEnd > region.oldStart { oldLayout.append((region.oldStart, region.oldEnd)) }
+                if region.newEnd > region.newStart { newLayout.append((region.newStart, region.newEnd)) }
+            case .reflowed:
+                if region.oldEnd > region.oldStart { oldReflowed.append((region.oldStart, region.oldEnd)) }
+                if region.newEnd > region.newStart { newReflowed.append((region.newStart, region.newEnd)) }
+            case .reordered, .substantive:
+                continue
+            }
+        }
+    }
+
+    func layoutClassified(_ segments: [Segment], bytes: [UInt8],
+                          layout: [(start: Int, end: Int)],
+                          reflowed: [(start: Int, end: Int)],
+                          gaps: [(start: Int, end: Int)]) -> [Segment] {
+        guard settings.classifyWhitespaceHunks else { return segments }
+        return classifyLayoutMarks(
+            Partition(totalLength: bytes.count, segments: segments),
+            bytes: bytes, layoutRanges: layout, reflowRanges: reflowed,
+            preservedGaps: gaps).segments
+    }
+    let reconciledOld = layoutClassified(
+        reconcile(oldSegments, against: oldChangedMask, applied: coverageKnown),
+        bytes: oldBytes, layout: oldLayout, reflowed: oldReflowed, gaps: oldPreservedGaps)
+    let reconciledNew = layoutClassified(
+        reconcile(newSegments, against: newChangedMask, applied: coverageKnown),
+        bytes: newBytes, layout: newLayout, reflowed: newReflowed, gaps: newPreservedGaps)
 
     unchangedOld = reconciledOld.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
     unchangedNew = reconciledNew.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
@@ -282,23 +341,41 @@ public func structuralDiff(
     // budget-0 control honest: were absorption to run after the snap, its input would be a function
     // of `boundarySnapBudget`, and turning the snap off would exercise a different absorption from
     // the shipped one.
+    // The word snap sits between the two (DEC-100). After the syntax snap, because a mark that has
+    // already reached a node boundary has no word left to finish and the pass costs nothing; before
+    // the grapheme snap, which must stay last for the reason above. All three only widen, so the
+    // order changes what is spent and never what is claimed.
     let absorption = AbsorptionSettings(islandBytes: settings.absorbIslandBytes)
-    let oldPartition = snapToGraphemeBoundaries(snapPresentation(
+    let oldStrings = stringRegions(tree: oldTree)
+    let newStrings = stringRegions(tree: newTree)
+    let oldPartition = snapToGraphemeBoundaries(snapToWordBoundaries(snapPresentation(
         absorbIslands(movedOld, bytes: oldBytes, settings: absorption),
         boundaries: SyntaxBoundaries(tree: oldTree),
         budget: settings.boundarySnapBudget, bytes: oldBytes
-    ), bytes: oldBytes)
-    let newPartition = snapToGraphemeBoundaries(snapPresentation(
+    ), bytes: oldBytes, stringRegions: oldStrings,
+       budget: settings.wordSnapBudget), bytes: oldBytes)
+    let newPartition = snapToGraphemeBoundaries(snapToWordBoundaries(snapPresentation(
         absorbIslands(movedNew, bytes: newBytes, settings: absorption),
         boundaries: SyntaxBoundaries(tree: newTree),
         budget: settings.boundarySnapBudget, bytes: newBytes
-    ), bytes: newBytes)
+    ), bytes: newBytes, stringRegions: newStrings,
+       budget: settings.wordSnapBudget), bytes: newBytes)
 
     // Last, so it catches fragmentation from every pass above it rather than only from its
     // neighbour: `reconcile` cut by the other side's structure, the snap added flanks of its own,
     // and `markUnparsed` may have split a run again.
-    let oldMarked = coalesceAdjacent(markUnparsed(oldPartition, regions: oldErrors))
-    let newMarked = coalesceAdjacent(markUnparsed(newPartition, regions: newErrors))
+    // The word merge runs first and `coalesceAdjacent` after it, because the two answer different
+    // questions: one says a junction inside a word reports no fact of its own, the other says two
+    // neighbours making the same claim are one mark. Both are off when the budget is 0, so the
+    // negative control turns off the whole of DEC-100 rather than half of it.
+    func merged(_ partition: Partition, bytes: [UInt8], strings: [(start: Int, end: Int)]) -> Partition {
+        guard settings.mergeSplitMarksInWords else { return coalesceAdjacent(partition) }
+        return coalesceAdjacent(coalesceAcrossWords(partition, bytes: bytes, stringRegions: strings))
+    }
+    let oldMarked = merged(markUnparsed(oldPartition, regions: oldErrors),
+                           bytes: oldBytes, strings: oldStrings)
+    let newMarked = merged(markUnparsed(newPartition, regions: newErrors),
+                           bytes: newBytes, strings: newStrings)
 
     unchangedOld = oldMarked.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }
     unchangedNew = newMarked.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }

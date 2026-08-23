@@ -1,5 +1,6 @@
 import DiffScopeEngine
 import DiffScopeGit
+import DiffScopeSyntax
 import Foundation
 
 if CommandLine.arguments.count > 3, CommandLine.arguments[1] == "--emit-model" {
@@ -20,6 +21,35 @@ if CommandLine.arguments.count > 3, CommandLine.arguments[1] == "--emit-structur
                           ? Int(CommandLine.arguments[5]) : nil,
                       islandFloor: CommandLine.arguments.count > 6
                           ? Int(CommandLine.arguments[6]) : nil)
+    exit(0)
+}
+
+if CommandLine.arguments.count > 2, CommandLine.arguments[1] == "--corpus-survey" {
+    // `--corpus-survey <dir> [json-out] [--limit N] [--only substring]`
+    var jsonOut: String?
+    var limit: Int?
+    var only: String?
+    var settings = MatcherSettings()
+    var index = 3
+    if index < CommandLine.arguments.count, !CommandLine.arguments[index].hasPrefix("--") {
+        jsonOut = CommandLine.arguments[index]
+        index += 1
+    }
+    while index + 1 < CommandLine.arguments.count {
+        switch CommandLine.arguments[index] {
+        case "--limit": limit = Int(CommandLine.arguments[index + 1])
+        case "--only": only = CommandLine.arguments[index + 1]
+        case "--word-snap": settings.wordSnapBudget = Int(CommandLine.arguments[index + 1]) ?? wordSnapBudget
+        case "--snap": settings.boundarySnapBudget = Int(CommandLine.arguments[index + 1]) ?? boundarySnapBudget
+        case "--word-merge": settings.mergeSplitMarksInWords = CommandLine.arguments[index + 1] != "0"
+        case "--ws-class": settings.classifyWhitespaceHunks = CommandLine.arguments[index + 1] != "0"
+        case "--island": settings.absorbIslandBytes = Int(CommandLine.arguments[index + 1]) ?? absorbIslandBytes
+        default: break
+        }
+        index += 2
+    }
+    runCorpusSurvey(root: CommandLine.arguments[2], jsonOut: jsonOut, limit: limit, only: only,
+                    settings: settings)
     exit(0)
 }
 
@@ -295,6 +325,7 @@ runBoundaryChecks { name, ok, detail in report(name, ok, detail) }
 runAlignmentChecks { name, ok, detail in report(name, ok, detail) }
 runCoalesceChecks { name, ok, detail in report(name, ok, detail) }
 runAbsorptionChecks { name, ok, detail in report(name, ok, detail) }
+runWordSnapChecks { name, ok, detail in report(name, ok, detail) }
 runDisclosureChecks { name, ok, detail in report(name, ok, detail) }
 runMoveChecks { name, ok, detail in report(name, ok, detail) }
 runNavigationChecks { name, ok, detail in report(name, ok, detail) }

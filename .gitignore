@@ -5,3 +5,4 @@ Renderer/node_modules/
 Renderer/dist/
 dist/
 .claude/worktrees/
+corpus/

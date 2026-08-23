@@ -119,7 +119,11 @@ func runBoundaryChecks(_ reportRaw: (String, Bool, String) -> Void) {
         func diff(_ old: String, _ new: String, budget: Int = boundarySnapBudget) -> StructuralResult {
             structuralDiff(oldPath: "a.tsx", oldBytes: [UInt8](old.utf8),
                            newPath: "a.tsx", newBytes: [UInt8](new.utf8), parser: parser,
-                           settings: MatcherSettings(boundarySnapBudget: budget))
+                           // The word snap turns off with the syntax snap here (DEC-100). Both are
+                           // wideners and both finish an identifier, so a control that turned off
+                           // only one would be asserting the *other* pass's absence.
+                           settings: MatcherSettings(boundarySnapBudget: budget,
+                                                     wordSnapBudget: budget == 0 ? 0 : DiffScopeSyntax.wordSnapBudget))
         }
 
         /// Runs of adjacent presented segments — one visible change is one run, whatever the

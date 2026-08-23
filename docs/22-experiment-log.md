@@ -3056,3 +3056,113 @@ both sides.
 The rise at M11-B and again at M11-G are both real and both explained where they happened: the first
 is the snap guard trading marks for correct lines, the second is a merged hunk occasionally
 re-splitting a run elsewhere.
+
+---
+
+## M12-A — What recurs across 4016 real changes, ranked
+
+**2026-08-23.** The owner asked for the reflow case to be fixed generally, and for the evidence to be
+*their own diffs* rather than the one file they reported. So the instrument came first.
+
+`Scripts/devtools/build-corpus.sh` walks the last 200 commits of each repository, takes every
+**modified** `.ts/.tsx/.js/.jsx` blob pair, and stores it with the line numbers `git diff -U0`
+touches. Filters: nothing generated or minified (one line over 2000 characters), nothing over 512 KB,
+and a pair whose two blobs have been seen together before is dropped — a formatting sweep landing in
+ten repositories must not decide the taxonomy on its own. **4016 pairs from 13 Next.js repositories**,
+53 generated and 78 duplicate pairs refused.
+
+`diffscope-verify --corpus-survey` then runs the shipped pipeline over all of them, in one process,
+and reports the M11 metrics summed plus a taxonomy of named shapes. Both halves matter: the metrics
+say whether a change is an improvement, the taxonomy says what to fix next.
+
+### The baseline, with every DEC-100/101 switch off
+
+| | |
+|---|---|
+| git lines | −35518 +51800 |
+| false lines | 9731 (18.8% of + lines) |
+| missed lines | 7075 (19.9% of − lines) |
+| marks | 81665 |
+| presented bytes | 2663458 |
+| loud bytes | 2596001 (97.5% of presented) |
+
+| shape | pairs | instances | share of pairs |
+|---|---|---|---|
+| `split-mark` | 1610 | **30942** | 40.1% |
+| `whitespace-only-mark` | 738 | **13090** | 18.4% |
+| `shredded-word` | 907 | **6723** | 22.6% |
+| `micro-island` | 974 | 4766 | 24.3% |
+| `silent-old-side` | 1909 | 3986 | **47.5%** |
+| `reflow-insertion` | 1848 | 3795 | **46.0%** |
+| `duplicated-line` | 1151 | 2320 | 28.7% |
+| `mark-confetti` | 118 | 118 | 2.9% |
+| `reflow-only` | 76 | 115 | 1.9% |
+| `whole-file-fallback` | 0 | 0 | 0.0% |
+
+**Read the two columns against each other.** By *instances* the top three are all mark-level: marks
+split, marks over whitespace nobody labelled, marks cutting words in half. By *share of pairs* the
+top two are the reflow case the owner reported — `silent-old-side` and `reflow-insertion` are the
+same event seen from either pane, and they are in **nearly half of all changes**.
+
+### A detector was wrong, and finding that out is what the negative columns are for
+
+The first `shredded-word` counted every mark edge falling inside a word: 742 instances on the first
+250 pairs. Most were `⟦t⟧⟦ransition⟧`, where **both halves are marked** and nothing is missing — a
+different defect with a different fix. It is counted separately as `split-mark` now, and the two
+have moved independently ever since, which is the evidence that splitting them was right.
+
+---
+
+## M12-B — Where the word-snap budget goes
+
+**2026-08-23.** DEC-100. The first 1200 pairs of the corpus, the merge on, `wordSnapBudget` the only
+thing moving.
+
+| budget | marks | presented bytes | `shredded-word` |
+|---|---|---|---|
+| 8 | 19753 | 683458 | 601 |
+| 16 | 19623 | 689192 | 361 |
+| **24** | **19565** | **693429** | **233** |
+| 32 | 19533 | 699409 | 125 |
+| 48 | 19530 | 709112 | 27 |
+
+**This curve does not saturate, and that is the point.** Every other budget in this project was
+chosen where its benefit stopped; here the benefit keeps coming and the *cost* keeps coming with it —
+48 removes 96% of the shreds for 3.8% more presented bytes. 24 is chosen on the other criterion: a
+word longer than 24 bytes is a URL, a base64 blob or a hashed class name, and dragging a mark across
+all of it shows the reader more than the change. The mark count is nearly flat from 24 up, so what a
+larger budget buys is bytes rather than legibility.
+
+---
+
+## M12-C — What DEC-100 and DEC-101 are worth, over the whole corpus
+
+**2026-08-23.** All 4016 pairs, one run per arm, every other setting at its shipped value.
+
+| | control | shipped | |
+|---|---|---|---|
+| marks | 81665 | **75873** | −7.1% |
+| presented bytes | 2663458 | 2706941 | +1.6% |
+| loud bytes | 2596001 | 2607726 | 97.5% → **96.3%** of presented |
+| `shredded-word` | 6723 | **682** | −90% |
+| `split-mark` | 30942 | **27284** | −11.8% |
+| `whitespace-only-mark` | 13090 | **10495** | −19.8% |
+| `mark-confetti` | 118 | **63** | −47% |
+| `micro-island` | 4766 | 5305 | **+11.3%** |
+| false lines | 9731 | 9731 | unmoved |
+| missed lines | 7075 | 7075 | unmoved |
+
+**The two unmoved rows are the property, not luck.** Neither pass can add or remove a reported line:
+the word snap cannot cross a terminator, and the classification changes no byte's label. The line
+metrics are therefore the control that says these passes did what they claim and nothing else.
+
+**`micro-island` going up is the cost of the word snap** and is named rather than buried: a widened
+mark leaves a shorter unchanged gap behind it, and absorption's relative rule refuses gaps that are
+short relative to their flanks. It is the next thing to measure, and `tasks/todo.md` carries it.
+
+### What is still there afterwards
+
+`silent-old-side` (3986) and `reflow-insertion` (3795) are **exactly where they were**, and no mark-
+level pass can move them: they are statements about which *lines the unified view prints*, not about
+where a mark begins. That is the second half of the owner's report and it needs the unified layout to
+know what a rewrap is — the entry after this one.

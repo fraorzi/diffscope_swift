@@ -6,6 +6,15 @@ public struct MatcherSettings: Sendable {
     public var minimumDice: Double
     public var maximumCandidates: Int
     public var boundarySnapBudget: Int
+    /// How far a mark may be widened to finish a word it cut (DEC-100). Zero turns the pass off,
+    /// which is the negative control every measurement in this series is stated against.
+    public var wordSnapBudget: Int
+    /// Whether two marks meeting inside a word are drawn as one (DEC-100). Its own switch rather
+    /// than a second effect of `wordSnapBudget`, so each half of that entry can be measured against
+    /// the other's absence.
+    public var mergeSplitMarksInWords: Bool
+    /// Whether a hunk whose two sides differ only in layout says so on its marks (DEC-101).
+    public var classifyWhitespaceHunks: Bool
     public var absorbIslandBytes: Int
     public var moveContentFloor: Int
     /// Counted work, not elapsed time. A wall-clock deadline makes the *result* depend on machine
@@ -15,6 +24,9 @@ public struct MatcherSettings: Sendable {
 
     public init(minimumHeight: Int = 1, minimumDice: Double = 0.5, maximumCandidates: Int = 32,
                 boundarySnapBudget: Int = DiffScopeSyntax.boundarySnapBudget,
+                wordSnapBudget: Int = DiffScopeSyntax.wordSnapBudget,
+                mergeSplitMarksInWords: Bool = true,
+                classifyWhitespaceHunks: Bool = true,
                 absorbIslandBytes: Int = DiffScopeEngine.absorbIslandBytes,
                 moveContentFloor: Int = DiffScopeSyntax.moveContentFloor,
                 matchWorkBudget: Int = DiffScopeSyntax.matchWorkBudget) {
@@ -22,6 +34,9 @@ public struct MatcherSettings: Sendable {
         self.minimumDice = minimumDice
         self.maximumCandidates = maximumCandidates
         self.boundarySnapBudget = boundarySnapBudget
+        self.wordSnapBudget = wordSnapBudget
+        self.mergeSplitMarksInWords = mergeSplitMarksInWords
+        self.classifyWhitespaceHunks = classifyWhitespaceHunks
         self.absorbIslandBytes = absorbIslandBytes
         self.moveContentFloor = moveContentFloor
         self.matchWorkBudget = matchWorkBudget

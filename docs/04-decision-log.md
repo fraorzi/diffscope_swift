@@ -4446,3 +4446,143 @@ Three rules make it a tree rather than a nesting of every path component:
 ### Revisit trigger
 
 Reopen if a repository in the corpus produces a tree deeper than the pane can indent — the guides are 10 pt each, and past about ten levels the names have nowhere left to start.
+
+---
+
+## DEC-100 — A mark finishes the word it cut, and two marks inside one word are one mark
+
+- **Date:** 2026-08-23
+- **Topic:** The two mark-level shapes a 4016-change corpus ranked first. Presentation only; no
+  invariant is reopened.
+- **Status:** Accepted — built, checked and measured.
+
+### What the corpus said
+
+The owner asked for the reflow case to be fixed *generally* rather than on the file they reported it
+on, and for the fix to be steered by their own history rather than by one screenshot. So the first
+thing built was not a fix: it was `Scripts/devtools/build-corpus.sh`, which extracts real
+(before, after) pairs from thirteen Next.js repositories, and `--corpus-survey`, which runs the
+shipped pipeline over all of them and names what recurs. 4016 pairs. The taxonomy is
+[M12-A](22-experiment-log.md).
+
+Two of the nine shapes are about *marks* rather than about alignment, and together they are the two
+largest by instance count:
+
+- **`split-mark`, 30942 instances in 40.1% of pairs** — two marks that touch, drawn as two. Most of
+  them fall **inside a word**: `⟦t⟧⟦ransition⟧`.
+- **`shredded-word`, 6723 instances in 22.6% of pairs** — a mark that starts or ends inside a word
+  whose other half is *not* marked: `bg-o⟦pacity-30⟧`.
+
+### The decision
+
+**A word is one thing to a reader, so a mark may finish one and two marks may not divide one.**
+
+- `snapToWordBoundaries` widens each mark's edges to the ends of the word they cut, with two rules
+  chosen by where the edge falls: inside a string or template literal a word runs whitespace to
+  whitespace (a Tailwind class, a URL segment, a path); everywhere else it is the language's
+  identifier rule, so `a-b` is left alone — outside a string a hyphen is a minus sign.
+- `coalesceAcrossWords` merges two presented segments whose junction falls inside a word, taking the
+  **lower** confidence. This is the one place `coalesceAdjacent`'s refusal to merge across
+  `confidenceFloor` is relaxed, and only there: nothing in the file distinguishes the `t` of
+  `transition` from its `ransition`, so two marks do not report two facts, they report one twice.
+  `disclosure` and `link` still refuse, and a junction between two words is still left alone.
+
+**Budget 24 bytes**, from the curve in [M12-B](22-experiment-log.md). The curve does not saturate —
+48 removes almost every shred — and 24 is where the marks it saves stop being worth the bytes it
+spends: a "word" longer than 24 bytes is a URL or a hashed class name, not something a reader is
+holding in their head.
+
+**Why `snapPresentation` could not do this.** The syntax snap offers named-node boundaries, and the
+only boundaries inside a 130-byte class attribute are its two quotes — which a 16-byte budget will
+never reach. Raising that budget to reach them marks the whole attribute, which is a different and
+worse answer. The word rule is what the syntax tree does not have.
+
+### Consequences, measured over 4016 real changes ([M12-C](22-experiment-log.md))
+
+- `shredded-word` **6723 → 682**, and the pairs affected 907 → 240.
+- `split-mark` **30942 → 27284**; marks overall **81665 → 75873**, −7.1%.
+- Presented bytes **2663458 → 2706941**, +1.6%. DEC-047 spent 4.4% for less.
+- **`false` and `missed` lines do not move at all** — 9731 and 7075 either way. That is the property
+  rather than a coincidence: a word cannot straddle a line terminator, because a terminator is not a
+  word byte under either rule, so the widening cannot add a line to `changedLines`. Asserted over
+  every fixture as well as measured over the corpus.
+- `micro-island` rises 4766 → 5305: a widened mark leaves a shorter unchanged gap behind it, and
+  absorption's relative rule then refuses that gap. Named here rather than left for someone to find.
+
+### Revisit trigger
+
+Reopen if a corpus shows marks reaching across content a reader needed to see as two names. The dial
+is `wordSnapBudget`, and the measurement to redo is M12-B.
+
+---
+
+## DEC-101 — A rewrap says it is a rewrap
+
+- **Date:** 2026-08-23
+- **Topic:** Marks over the whitespace a reflow moved are classified `whitespace`, so a rewrapped
+  element costs the reader one loud mark instead of twelve. Grouping under DEC-017, never filtering.
+- **Status:** Accepted — built, checked and measured.
+
+### The report and the shape behind it
+
+*"A prop was added to `<Image>`, prettier rewrapped the element, and the whole element is shown as
+changed twice."* The corpus says this is not one file: `reflow-insertion` — a block whose old tokens
+are a subsequence of its new ones — occurs **3795 times in 46.0% of pairs**, and 13090 marks across
+the corpus are made of **nothing but whitespace** and carry no classification at all.
+
+`changeClassification` cannot reach them. It runs on the gap pair between two anchors, and
+`reconcile` then cuts those gaps against the canonical mask — so by the time a mark exists it no
+longer knows its counterpart. It also stops being able to say *whitespace* the moment anything else
+in the pair changed, which is exactly the reported case: rewrap **plus** a new prop.
+
+### The decision
+
+The canonical hunk is a correspondence by construction, so the layout question is asked of it rather
+than of the gap. Three rules, in order of how much they claim:
+
+1. **`layoutOnly`** — the two sides of the region are equal ignoring whitespace: every mark in it is
+   layout, whatever bytes it covers.
+2. **`reflowed`** — one side's tokens are a subsequence of the other's: the marks made only of
+   whitespace are layout; the marks over the inserted or removed tokens stay loud.
+3. **`preserved gap`** — the finest, and the one that reaches the report: a gap between two tokens
+   that are still **neighbours on the other side**. `<Image` was followed by `src` before and is
+   followed by `src` now, so whatever happened between them is a line break moving.
+
+The question is asked of the **region** the hunks jointly cover, not of each hunk: a reorder is only
+visible at the scale of the thing reordered.
+
+**A region whose tokens are a permutation is refused outright** (`reordered`), and the gap rule is
+refused inside it. DEC-048 lets the interface collapse a `formatting-only` run, and a reorder with
+one quiet gap in it is a reorder a reader can miss.
+
+### Three drafts, and the suite refused two of them
+
+1. *Any mark made only of whitespace is formatting.* True of the bytes in isolation and wrong about
+   the change: `prop-reordering` moves four JSX attributes onto one line and four marks of a reorder
+   came out `formatting-only`. The fixture's own check — **a reorder is never presented as
+   formatting-only** — failed on the first run.
+2. *Guard on the `reordering` classification.* Changed nothing, because that fixture produces **no
+   classified segment at all**: its gap is subdivided by anchors before the classifier sees it.
+   **Measure the control before believing the check**, twice in one pass.
+3. *Ask the token sequence*, which is the question itself rather than a proxy for it — a reflow
+   preserves it, a reorder permutes it. Then once more: equal token *counts* were still too strict,
+   because `prop-reordering` also pulls `/>` onto the line, so the test is multiset containment.
+
+### Consequences, over 4016 real changes
+
+- Unclassified whitespace-only marks **13090 → 10495**, in 738 → 482 pairs.
+- Quiet bytes **67457 → 99215**; the loud share of what is presented falls 97.5% → **96.3%**.
+- Nothing is hidden, nothing is dropped, no byte enters or leaves the presented set — asserted.
+- On the reported shape the whole rewrap is quiet and the added prop is the only loud mark, which is
+  the case the check in `WordSnapChecks.swift` is written against.
+
+**The honest part of this entry is how little it moves on its own.** Where the rewrap is the *only*
+change in its region, `changeClassification` already said so and this pass adds nothing; the 20% it
+does move is the case where a real edit sits in the same region and used to drown it out. The check
+was rewritten to measure that case after the first version of it measured the classifier that was
+already there.
+
+### Revisit trigger
+
+Reopen if a reader reports a change they had to look for because it was drawn quietly. The switch is
+`classifyWhitespaceHunks`, and every rule above is off with it.
