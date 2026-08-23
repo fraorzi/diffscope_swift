@@ -14,6 +14,11 @@ OUT="${1:-$ROOT/dist}"
 APP="$OUT/DiffScope.app"
 VERSION="$(cd "$ROOT" && git rev-parse --short HEAD 2>/dev/null || echo unversioned)"
 mkdir -p "$OUT"
+# Spotlight indexes any application bundle it finds, including the staged one — so a search for
+# "DiffScope" would offer the copy in `dist/` beside the installed one, and the two are the same name
+# with different lifetimes. This marker tells the indexer to leave the directory alone; the installed
+# bundle is the only one the owner should ever be offered.
+touch "$OUT/.metadata_never_index"
 
 echo "==> building the renderer bundle"
 (cd "$ROOT/Renderer" && npm run build >/dev/null)

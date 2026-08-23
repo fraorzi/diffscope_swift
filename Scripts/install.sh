@@ -40,6 +40,12 @@ rm -rf "$DEST/DiffScope.app.previous"
 # Spotlight indexes a moved bundle on its own, but not always promptly, and an installer that leaves
 # the reader wondering whether it worked has not finished. `mdimport` asks for it directly.
 mdimport "$DEST/DiffScope.app" 2>/dev/null || true
+# And the staged copy goes away, so there is exactly one DiffScope.app on this machine. Spotlight
+# offering two entries with the same name and different lifetimes is the failure this avoids, and
+# deleting the stage is a more reliable way to avoid it than asking the indexer to ignore it.
+# `package.sh` stages into the same directory and keeps its own copy for the zip; it does not call
+# this script, so nothing it needs is removed here.
+rm -rf "$STAGE/DiffScope.app"
 # The quarantine attribute is what makes an unsigned bundle need a right-click on first launch. It is
 # set by browsers and archive tools, not by a local copy — clearing it anyway costs nothing and means
 # the owner never sees the dialog for a build they made themselves.
