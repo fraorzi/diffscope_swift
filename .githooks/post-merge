@@ -1,0 +1,16 @@
+#!/bin/bash
+# Installs the commit that was just made (Scripts/install.sh), in the background.
+#
+# **In the background on purpose.** A release build of this project takes minutes, and a commit that
+# blocks for minutes is a commit nobody makes twice — the hook would be disabled within a day and the
+# application would go stale again, which is the exact failure this exists to prevent.
+#
+# The log is the only place a failure can be seen, so it is named in the line this prints.
+ROOT="$(git rev-parse --show-toplevel)"
+LOG="$ROOT/.git/diffscope-install.log"
+{
+  echo "=== $(date '+%Y-%m-%d %H:%M:%S')  $(git rev-parse --short HEAD)  $(git log -1 --format=%s)"
+  "$ROOT/Scripts/install.sh"
+  echo "=== done"
+} >"$LOG" 2>&1 &
+echo "diffscope: installing this commit into ~/Applications in the background — log: .git/diffscope-install.log"

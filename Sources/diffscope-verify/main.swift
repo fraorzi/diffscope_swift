@@ -355,6 +355,7 @@ runKeyboardChecks { name, ok, detail in report(name, ok, detail) }
 runTrustSurfaceChecks { name, ok, detail in report(name, ok, detail) }
 runAutoGcChecks { name, ok, detail in report(name, ok, detail) }
 runBundleFreshnessCheck { name, ok, detail in report(name, ok, detail) }
+runInstallChecks { name, ok, detail in report(name, ok, detail) }
 
 print("\n\(checks - failures)/\(checks) checks passed")
 if failures > 0 {

@@ -1094,7 +1094,14 @@ func runTesterPacketChecks(_ reportRaw: (String, Bool, String) -> Void) {
                script.contains("proving it runs with nothing from the source tree")
                    && script.contains("mktemp -d"))
         report("it records a checksum beside the zip", script.contains("shasum -a 256"))
+        // The bundle moved to `make-app.sh` when the installer needed the same one, so this reads
+        // the script that assembles it rather than the one that ships it — and asserts the two are
+        // still connected, because a release that proves a *different* bundle proves nothing.
+        let assembly = (try? String(contentsOf: root.appendingPathComponent("Scripts/make-app.sh"),
+                                    encoding: .utf8)) ?? ""
+        report("the release script assembles the shared bundle",
+               script.contains("Scripts/make-app.sh") && !assembly.isEmpty)
         report("the resource bundle is placed where both lookup rules find it",
-               script.contains("Contents/Resources/") && script.contains("Contents/MacOS/"))
+               assembly.contains("Contents/Resources/") && assembly.contains("Contents/MacOS/"))
     }
 }

@@ -3034,3 +3034,55 @@ model's own numbers unchanged to the byte.
       threshold, so the margin is known to be crossable rather than assumed to be
 
 2019/2019. Three runs in a row, on the machine where the old form failed two in three.
+
+## Next — three candidates, ranked by what the corpus says (2026-08-23)
+
+Written down rather than acted on, so the next session starts from evidence instead of from the last
+thing anybody remembered. Each one names the number it should move and the instrument that measures
+it (`Scripts/devtools/build-corpus.sh`, then `diffscope-verify --corpus-survey corpus`).
+
+1. **The 1075 byte-identical lines still printed twice** (14.0% of pairs), in blocks that are *not*
+   rewraps so DEC-102 does not reach them. DEC-096's peel refuses them for a good reason — a stop
+   covers those bytes — so the answer is a **finer stop, not a wider peel**: a stop spanning whole
+   lines that are byte-equal on both sides can be split at those line boundaries, after which the
+   peel takes them under its existing rule. The property to keep is DEC-096's: every stop must still
+   lie inside a block on both sides. Target: `duplicated-line` toward 0 without moving `false`.
+
+2. **The split view has no equivalent of DEC-102.** Unified now withholds a rewrapped old half; the
+   two-pane layout still shows the rewrapped element on the left with nothing saying it is the same
+   code. The fact is already in the model (`UnifiedBlock.reflowed`, and `hunkLayout` behind it), so
+   this is a presentation question: a chip, a quiet tint, or the fold DEC-048 already draws for a
+   formatting group. Visible in the application on the first launch, unlike the three entries above
+   it.
+
+3. **The corpus is TypeScript and JavaScript only.** `.css`, `.scss`, `.json` and `.md` take the
+   fallback path (DEC-095) and **nothing has ever measured them** — although a `.module.css` file was
+   one of the five cases the owner reported in M11. `build-corpus.sh` needs one more extension list;
+   the survey needs nothing. Expect the taxonomy to look different there, which is the point.
+
+## Step — the application in Spotlight is the commit that was just made
+
+The owner asked never to have to request an update again, and asked for it **not** to be a rule in a
+document — a document cannot install anything. So it is a hook.
+
+- [x] `Scripts/make-app.sh` — the bundle, extracted from `package.sh` so there is one description of
+      what the application *is* and two callers with different obligations: the release gate proves
+      it runs away from the checkout and zips it, the installer puts it where Spotlight looks
+- [x] `Scripts/install.sh` — builds, stages into `dist/`, and only swaps `~/Applications/DiffScope.app`
+      when there is an executable to swap in, so a failed build never replaces a working application.
+      `mdimport` so the index is not left waiting, and the quarantine attribute cleared so a build the
+      owner made themselves never asks to be trusted.
+- [x] `~/Applications` by default and `/Applications` behind `DIFFSCOPE_INSTALL_DIR`: the home one
+      needs no administrator rights, and an installer that can stop and ask for a password is an
+      installer that eventually gets turned off
+- [x] `.githooks/post-commit` and `.githooks/post-merge` run it **in the background** — a release
+      build takes minutes, and a commit that blocks for minutes is a hook somebody disables within a
+      day. The commit prints where the log is.
+- [x] `git config core.hooksPath .githooks`, and `InstallChecks.swift` asserts the whole chain,
+      including that this clone has the hooks armed — that setting lives in `.git/config`, which is
+      not part of the repository, so a fresh clone fails the check and is told the one command to run
+- [x] the G3 packaging check now reads `make-app.sh` for the resource-bundle rule and asserts that
+      `package.sh` still delegates to it, so the bundle that is proved and the bundle that is
+      installed cannot drift apart
+
+2027/2027.
