@@ -54,6 +54,19 @@ if CommandLine.arguments.count > 2, CommandLine.arguments[1] == "--corpus-survey
     exit(0)
 }
 
+if CommandLine.arguments.count > 3, CommandLine.arguments[1] == "--emit-matches" {
+    // The canonical alignment itself, printed. *Why is this byte marked* is a question about which
+    // match the diff chose, and until now the only way to ask it was to read the marks and guess.
+    let old = [UInt8]((try? Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[2]))) ?? Data())
+    let new = [UInt8]((try? Data(contentsOf: URL(fileURLWithPath: CommandLine.arguments[3]))) ?? Data())
+    for match in canonicalMatches(old: old, new: new).matches where match.length > 0 {
+        let text = String(decoding: old[match.oldStart..<(match.oldStart + match.length)], as: UTF8.self)
+        print(String(format: "  old %5d  new %5d  len %4d  ", match.oldStart, match.newStart,
+                     match.length) + text.debugDescription)
+    }
+    exit(0)
+}
+
 if CommandLine.arguments.count > 1, CommandLine.arguments[1] == "--write-manifest" {
     writeFixtureManifest(root: URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         .appendingPathComponent("fixtures"))

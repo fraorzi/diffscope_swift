@@ -3086,3 +3086,23 @@ document — a document cannot install anything. So it is a hook.
       installed cannot drift apart
 
 2027/2027.
+
+## Step — a shift may consume a match the reader was never shown (DEC-104, M12-F)
+
+- [x] `--emit-matches` in `diffscope-verify`: the canonical alignment printed, one line per match.
+      The whole diagnosis was three lines of it.
+- [x] `--emit-structural` prints the unified blocks and whether each is withheld by DEC-102 — which
+      immediately settled that the reported double `<NextImage>` was a stale build rather than a bug
+- [x] **the scoring bug**: a consuming shift was scored at the position the walk reached, not at the
+      edge that survives the consumption. In the reported shape that offset is the middle of `class`,
+      so the candidate scored `nil` and DEC-097's permission was unreachable.
+- [x] `matchConsumeRankLimit = rankSpaced`: a whitespace-adjacent landing earns a consumption, a bare
+      class transition still does not
+- [x] `isNoise`: a match under the floor whose bytes begin or end **inside a word** on either side may
+      be consumed at any rank, entering the candidate list at the worst one so anything better wins
+- [x] the 600-pair LCS reference and every tiling property unchanged — consumption moves bytes between
+      neighbouring matches and preserves the matched total
+
+`src` and `img` are no longer marked in the owner's file. Over the corpus: marks 70916 → 70689,
+presented bytes 2717731 → **2708728** (the first fall in the series), false lines 9731 → 9682, missed
+7075 → 7080.

@@ -103,6 +103,24 @@ private let rankLine = 1
 private let rankSpaced = 2
 private let rankLexical = 3
 
+/// The worst rank a landing may have and still be allowed to **consume** the match it walked
+/// through (DEC-104, widening DEC-097's `rankLine`-only rule).
+///
+/// DEC-097 let a shift swallow a match shorter than `matchConsumeFloor`, and allowed it only when the
+/// shift landed on a whole line, on the reasoning that merging two hunks is the one thing this pass
+/// does that a reader can see as a *different* answer rather than a better-placed one.
+///
+/// The corpus says the rule is one rank too strict. `<NextImage src={img.src} …>` rewrapped with a
+/// prop added aligns as `"s"` matched inside `className` and `"rc={img.src}"` matched at the real
+/// `src` — so `src`, a word the reader can see is untouched, is drawn as changed. Consuming that
+/// one-byte match lands on a **whitespace-adjacent** boundary, rank 2, and the alignment that
+/// results pairs `src` with `src`.
+///
+/// Rank 3 is still refused: a bare class transition — `)}` against `src` — is a boundary the language
+/// sees and a reader does not, and consuming a match to reach one would be the unmeasured licence
+/// DEC-097 was right to withhold.
+private let matchConsumeRankLimit = rankSpaced
+
 /// Moves each hunk along the file, while the alignment stays equally minimal, to the position where
 /// it reads best: whole lines first, then whole tokens (DEC-087, extended by DEC-088).
 ///
@@ -151,6 +169,38 @@ func shiftToReadableBoundaries(
         return beforeClass == 0 || lexicalClass(after) == 0 ? rankSpaced : rankLexical
     }
 
+    /// A match that **cuts a word in half on one side** — the diff borrowing letters from the middle
+    /// of an unrelated identifier (DEC-104).
+    ///
+    /// `img.height}` rewrapped beside an inserted `compactImageDimensions?.height ?? ` aligns as the
+    /// `i` of `Dimensions` matched to the `i` of `img`, and `mg.height}` matched at the real one. The
+    /// `i` is a match by the letter and noise by the eye: it begins and ends inside a word that
+    /// neither side changed. Consuming it pairs `img.height}` with `img.height}`.
+    ///
+    /// It is a separate permission from the landing rank because it is a fact about the match being
+    /// removed rather than about the position gained. The rank rule asks *is the place I am going to
+    /// readable*; this asks *was the thing I am giving up ever visible*. `{` to `i` is a class
+    /// transition and rank 3, so no rank rule would ever have allowed this one.
+    @inline(__always)
+    func buriedInWord(_ buffer: UnsafeBufferPointer<UInt8>, _ start: Int, _ length: Int) -> Bool {
+        guard length > 0 else { return false }
+        func isWord(_ byte: UInt8) -> Bool {
+            (byte >= 0x30 && byte <= 0x39) || (byte >= 0x41 && byte <= 0x5A)
+                || (byte >= 0x61 && byte <= 0x7A) || byte == 0x5F || byte == 0x24 || byte >= 0x80
+        }
+        let end = start + length
+        if start > 0, isWord(buffer[start - 1]), isWord(buffer[start]) { return true }
+        if end < buffer.count, isWord(buffer[end - 1]), isWord(buffer[end]) { return true }
+        return false
+    }
+
+    @inline(__always)
+    func isNoise(_ block: MatchBlock) -> Bool {
+        block.length <= matchConsumeFloor
+            && (buriedInWord(old, block.oldStart, block.length)
+                || buriedInWord(new, block.newStart, block.length))
+    }
+
     // A hunk is as good as its worst end, and as good as its worse side. An empty range is a point,
     // and a point is judged once.
     @inline(__always)
@@ -188,10 +238,34 @@ func shiftToReadableBoundaries(
         // ties, so a whole-line position anywhere in reach beats a token boundary next door.
         var bestAtRank = [Int?](repeating: nil, count: rankLexical + 1)
 
+        // **The boundary a consuming shift is scored on is the one it would leave behind, not the one
+        // it walks past** (DEC-104). When the shift swallows a neighbouring match, that match stops
+        // existing, and the hunk's edge moves to where *it* began — so scoring the walked-to position
+        // asks about a boundary the move removes.
+        //
+        // This is what kept `<NextImage src={img.src} …>` wrong through DEC-097. The alignment matches
+        // the `s` of the old `src` inside the inserted `className` and the rest at the real `src`;
+        // consuming that one-byte match pairs `src` with `src`, and the position it lands on reads as
+        // a word boundary. Scored at the walked-to offset it reads as the middle of `class` instead —
+        // rank `nil`, refused, every time.
         @inline(__always)
         func score(_ shift: Int) -> Int? {
-            guard let oldRank = rank(old, oldStart + shift, oldEnd + shift),
-                  let newRank = rank(new, newStart + shift, newEnd + shift)
+            var oldFrom = oldStart + shift, newFrom = newStart + shift
+            var oldTo = oldEnd + shift, newTo = newEnd + shift
+            if shift < 0, -shift == previous.length {
+                // The consumed match joins the hunk, and so does whatever hunk lay in front of it:
+                // the edge that survives is the end of the match *before* the one being swallowed.
+                let before = index >= 2 ? blocks[index - 2] : nil
+                oldFrom = before.map { $0.oldStart + $0.length } ?? 0
+                newFrom = before.map { $0.newStart + $0.length } ?? 0
+            }
+            if shift > 0, shift == current.length {
+                let after = index + 1 < blocks.count ? blocks[index + 1] : nil
+                oldTo = after?.oldStart ?? old.count
+                newTo = after?.newStart ?? new.count
+            }
+            guard let oldRank = rank(old, oldFrom, oldTo),
+                  let newRank = rank(new, newFrom, newTo)
             else { return nil }
             return max(oldRank, newRank)
         }
@@ -216,8 +290,13 @@ func shiftToReadableBoundaries(
               stepHolds(new, newStart + shift, newEnd + shift, down: true) {
             shift += 1
             // Overwriting keeps the largest shift at each rank: the position furthest down the file.
-            guard let found = score(shift) else { continue }
-            if shift == current.length, found != rankLine { continue }
+            // Consuming noise is a candidate even where the edge it leaves reads as nothing at all:
+            // the gain is the match that stops existing, not the position gained, so it enters at the
+            // worst rank and wins only when nothing better is in reach.
+            let scored = score(shift)
+                ?? (shift == current.length && isNoise(current) ? rankLexical : nil)
+            guard let found = scored else { continue }
+            if shift == current.length, found > matchConsumeRankLimit, !isNoise(current) { continue }
             bestAtRank[found] = shift
         }
         // The furthest position down the file wins, so the upward search keeps only what the
@@ -229,8 +308,10 @@ func shiftToReadableBoundaries(
                   stepHolds(old, oldStart + shift, oldEnd + shift, down: false),
                   stepHolds(new, newStart + shift, newEnd + shift, down: false) {
                 shift -= 1
-                if let found = score(shift), bestAtRank[found] == nil,
-                   -shift != previous.length || found == rankLine {
+                let scored = score(shift)
+                    ?? (-shift == previous.length && isNoise(previous) ? rankLexical : nil)
+                if let found = scored, bestAtRank[found] == nil,
+                   -shift != previous.length || found <= matchConsumeRankLimit || isNoise(previous) {
                     bestAtRank[found] = shift
                 }
                 if bestAtRank[rankLine] != nil { break }

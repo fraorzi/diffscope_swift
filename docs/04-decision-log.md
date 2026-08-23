@@ -4720,3 +4720,80 @@ still mean something. It is left alone on that evidence rather than on taste.
 Reopen if a third widening pass is added — the ordering rule this establishes is *absorb after
 anything that widens*, and a new widener without a following absorption would rebuild the islands
 this removed.
+
+---
+
+## DEC-104 — A shift may consume a match the reader was never shown
+
+- **Date:** 2026-08-23
+- **Topic:** The owner's `src` case. Widens [DEC-097](#dec-097--a-shift-may-consume-a-short-match-and-merge-the-two-hunks-either-side-of-it)
+  in two ways, and fixes a scoring bug that made its rule unreachable in exactly this shape.
+- **Status:** Accepted — built, checked and measured.
+
+### The report
+
+*"`src` is highlighted although it was the same before."* Reproduced on the owner's own file, then
+reduced: `<NextImage src={img.src} alt={img.alt} width={img.width} … />` with a `className` added and
+prettier rewrapping the element. The new `--emit-matches` dump says what no amount of reading the
+marks could:
+
+```
+old    10  new    12  len    1  " "
+old    11  new    16  len    1  "s"        ← the s of the old `src`, matched inside `className`
+old    12  new    82  len   12  "rc={img.src}"
+```
+
+The alignment is minimal and legal. It is also unreadable: `src` is a word the reader can see is
+untouched, and it is drawn as changed because one of its three letters was borrowed by an unrelated
+identifier. The same thing happens to `img` in `height={compactImageDimensions?.height ?? img.height}`,
+where the `i` is matched inside `Dimensions`.
+
+### Three findings, and the first is a bug in DEC-097
+
+**1. The score was asked about a boundary the shift removes.** DEC-097 permits a shift to consume a
+match shorter than `matchConsumeFloor`, and scores the candidate at the position the walk reaches.
+When the shift *consumes* the neighbouring match, that match stops existing and the hunk's edge moves
+to where the match **before it** ended — a different offset, often a different rank. Here the walked-to
+offset lands in the middle of `class`, which is not a boundary at all, so the candidate scored `nil`
+and was dropped before any rule could consider it. **DEC-097's permission was unreachable in the shape
+it was written for.** Scoring the surviving edge is the fix, and it is a correction rather than a
+widening: the old number described a position the file would not have.
+
+**2. Rank 2 earns a consumption.** DEC-097 allowed only whole-line landings, reasoning that merging
+two hunks is the one thing the pass does that a reader can see as a *different* answer. A
+whitespace-adjacent boundary is the reader's unit too — DEC-100 established that a word is what a
+reader tracks — so the limit is rank 2. Rank 3, a bare class transition, is still refused.
+
+**3. A match buried inside a word is not a match, and no rank rule reaches it.** The `i` of
+`Dimensions` case lands on `{` against `i`: a class transition, rank 3, refused for ever. What makes
+it consumable is not where the shift goes but **what it gives up** — a match whose bytes begin or end
+inside a word on either side is the diff borrowing letters from an identifier neither side changed.
+Such a match, under the floor, may be consumed at any rank, and it enters the candidate list at the
+worst rank so that anything better still wins.
+
+### The invariant is untouched, and that is checkable
+
+Consumption transfers bytes between two neighbouring matches; the matched total is unchanged, which
+is why the 600-pair LCS reference and every tiling property still hold. Nothing here relaxes INV-2:
+the presented set is derived from whichever alignment is chosen, and both are equally minimal.
+
+### Consequences, over 4016 real changes ([M12-F](22-experiment-log.md))
+
+| | before | after |
+|---|---|---|
+| marks | 70916 | **70689** |
+| presented bytes | 2717731 | **2708728** |
+| false lines | 9731 | **9682** |
+| missed lines | 7075 | 7080 |
+| uncertain marks | 5611 | **5225** |
+
+**Presented bytes went down**, which no entry in this series had managed before: every earlier
+improvement bought legibility by showing more. **`missed` went up by five**, and that is the cost —
+an alignment that pairs `src` with `src` leaves five removed lines somewhere in the corpus without a
+mark they used to have. It is recorded rather than netted off.
+
+### Revisit trigger
+
+Reopen if a corpus shows a match being consumed that a reviewer needed to see as a match. The two
+dials are `matchConsumeFloor` and `matchConsumeRankLimit`, and the third rule — buried in a word — is
+a predicate rather than a dial, so it would be removed rather than tuned.

@@ -36,6 +36,31 @@ func runEmitStructural(oldPath: String, newPath: String, displayPath: String, sn
     emitSide("OLD", bytes: old, partition: result.model.oldPartition)
     print("")
     emitSide("NEW", bytes: new, partition: result.model.newPartition)
+
+    // The unified layout's own view of the same model (DEC-096, DEC-102). Printed here because
+    // "why is this element shown twice" is a question about blocks, and until now the only way to
+    // ask it was to read the window.
+    print("")
+    print("=== UNIFIED BLOCKS ===")
+    let stops = changeStops(result.model)
+    func lineOf(_ bytes: [UInt8], _ offset: Int) -> Int {
+        var line = 1
+        var index = 0
+        while index < min(offset, bytes.count) {
+            if bytes[index] == 0x0A { line += 1 }
+            index += 1
+        }
+        return line
+    }
+    for (index, block) in unifiedBlocks(result.model, stops: stops).enumerated() {
+        let oldLines = block.oldEnd > block.oldStart
+            ? "\(lineOf(old, block.oldStart))–\(lineOf(old, block.oldEnd - 1))" : "—"
+        let newLines = block.newEnd > block.newStart
+            ? "\(lineOf(new, block.newStart))–\(lineOf(new, block.newEnd - 1))" : "—"
+        print(String(format: "  %2d  old %-10@ new %-10@ %@", index,
+                     oldLines as NSString, newLines as NSString,
+                     block.reflowed ? "reflowed — old half withheld" : ""))
+    }
 }
 
 private func emitSide(_ title: String, bytes: [UInt8], partition: Partition) {

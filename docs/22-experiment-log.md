@@ -3251,3 +3251,45 @@ And the diagnosis afterwards: 266 islands still unexplained on the subset, again
 about them is beside it: **uncertain marks are 7.9% of marks and 3.0% of presented bytes**. A flag
 that fired on a third of everything would have to be reconsidered; one that fires on 3% of the bytes
 is a flag. Left alone, on the measurement rather than on taste.
+
+---
+
+## M12-F — What consuming an invisible match is worth
+
+**2026-08-23.** DEC-104, over all 4016 pairs, everything else at its shipped value.
+
+| | DEC-103 shipped | + DEC-104 |
+|---|---|---|
+| marks | 70916 | **70689** |
+| presented bytes | 2717731 | **2708728** |
+| false lines | 9731 | **9682** |
+| missed lines | 7075 | **7080** |
+| uncertain marks | 5611 (7.9%) | **5225 (7.4%)** |
+| `shredded-word` | 629 | 613 |
+| `split-mark` | 27423 | 27044 |
+| `whitespace-only-mark` | 10495 | 10370 |
+
+**The first entry in this series where presented bytes fall.** DEC-047 spent 4.4%, DEC-094 spent 0.7%,
+DEC-100 spent 1.6% — each bought legibility by showing more. This one shows 9003 bytes *fewer*,
+because pairing `src` with `src` removes a mark rather than widening one.
+
+**`missed` rises by five, and it is the cost.** Choosing a different equally-minimal alignment moves
+which side a change is attributed to; in five places across the corpus a removed line lost the mark it
+had. The whole point of measuring on 4016 changes rather than on the file that was reported is that a
+number like this cannot hide.
+
+### The diagnosis this needed, and the two tools it left behind
+
+Neither the taxonomy nor the marks could say *why* `src` was marked — both describe the output. Two
+dumps were added and both stay:
+
+- **`--emit-matches`** prints the canonical alignment itself, one line per match. The answer was three
+  lines of it: `" "`, `"s"` matched inside `className`, then `"rc={img.src}"`.
+- **`--emit-structural` now prints the unified blocks**, with their line ranges and whether DEC-102
+  withholds the old half. *Why is this element shown twice* is a question about blocks, and until now
+  the only place to ask it was the window.
+
+**And the first thing the block dump settled was not a defect.** The owner's screenshot showed
+`<NextImage>` on both sides; the block dump says block 8 is `old 50 / new 70–78, reflowed — old half
+withheld`. The engine had been right since DEC-102 shipped; the screenshot was of a build made before
+it. That is the kind of question a diagnostic is for.
