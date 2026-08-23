@@ -17,6 +17,11 @@ set -euo pipefail
 out=${1:?usage: build-corpus.sh <out-dir> <repo> [repo ...]}
 shift
 commits=${CORPUS_COMMITS:-150}
+# The languages to take. TypeScript and JavaScript are what the structural path parses; the rest go
+# through DEC-095's fallback, which **nothing had ever measured** although a `.module.css` file was
+# one of the five cases the owner reported in M11.
+#   CORPUS_EXTENSIONS='*.css *.scss *.json *.md' build-corpus.sh corpus-styles ../repo …
+CORPUS_EXTENSIONS=${CORPUS_EXTENSIONS:-'*.ts *.tsx *.js *.jsx'}
 maxbytes=${CORPUS_MAX_BYTES:-524288}
 
 mkdir -p "$out"
@@ -38,10 +43,16 @@ for repo in "$@"; do
   while read -r sha; do
     while IFS=$'\t' read -r status path; do
       [ "$status" = "M" ] || continue
-      case "$path" in
-        *.ts|*.tsx|*.js|*.jsx) ;;
-        *) continue ;;
-      esac
+      # A loop rather than `case "$path" in $CORPUS_EXTENSIONS)`: a variable expands to **one**
+      # pattern there, so `|` inside it is a literal character and every path is refused. That
+      # version ran and reported 0 pairs across ten repositories, which is the only reason it was
+      # noticed at all.
+      wanted=0
+      for pattern in $CORPUS_EXTENSIONS; do
+        # shellcheck disable=SC2053
+        [[ "$path" == $pattern ]] && { wanted=1; break; }
+      done
+      [ "$wanted" = 1 ] || continue
       case "$path" in
         */node_modules/*|*/.next/*|*/dist/*|*/build/*|*.min.js|*.d.ts|*/generated/*|*.config.js) continue ;;
       esac

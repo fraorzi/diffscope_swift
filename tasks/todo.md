@@ -3122,3 +3122,28 @@ no finer stop can reach it: matching that line would put the total above the LCS
       pairing is what patience and histogram diffs do by matching unique lines first, and neither is
       minimal — so it changes what the canonical diff *is*, and INV-2's reference changes with it.
       It needs its own decision, its own control, and a measurement against this corpus.
+
+## Step — the languages nobody had measured, and the fallback's last resort (DEC-105, M12-H)
+
+- [x] `CORPUS_EXTENSIONS` on `build-corpus.sh`, and 364 `.css/.scss/.json/.md` pairs from ten
+      repositories. The first version of the filter used `case "$path" in $CORPUS_EXTENSIONS)`, where
+      a variable expands to **one** pattern so `|` is a literal — it reported 0 pairs across ten
+      repositories, which is the only reason it was noticed.
+- [x] `Sources/DiffScopeEngine/LineFallback.swift`: unique-line anchors, longest increasing run,
+      identical head and tail trimmed, and **recursion** into every region between anchors
+- [x] wired into `fallbackPartitions` behind `lineFallback`, taken only when the byte diff reports
+      `budgetExceeded`
+- [x] `LineFallbackChecks.swift`: the shipped budget really does give up on a translation-shaped pair,
+      every edited line is marked, few others are, the negative control returns the whole file, and
+      the safety property — what is left unmarked is byte-identical on both sides — on the fixture and
+      on 60 random line edits
+
+false lines **10589 → 218**, presented bytes 1126638 → 265602, and the TypeScript corpus does not move.
+
+### Still open, from M12-H
+
+- [ ] `missed` is 38% on the fallback corpus against 20% on TypeScript — the old side is under-marked
+      and nothing has looked at why
+- [ ] DEC-100's word snap runs on the structural path only, so `.css` still shows `2⟦00⟧ms` and
+      `--animated-background-active-⟦hover⟧`. The identifier rule needs no tree; the string rule does.
+- [ ] every fallback mark is drawn uncertain, so the texture says nothing in a whole family of files

@@ -362,6 +362,7 @@ runChromeChecks { name, ok, detail in report(name, ok, detail) }
 runDesignChecks { name, ok, detail in report(name, ok, detail) }
 runTesterPacketChecks { name, ok, detail in report(name, ok, detail) }
 runDegradationChecks { name, ok, detail in report(name, ok, detail) }
+runLineFallbackChecks { name, ok, detail in report(name, ok, detail) }
 runPartialFailureChecks { name, ok, detail in report(name, ok, detail) }
 runTerminalChecks { name, ok, detail in report(name, ok, detail) }
 runKeyboardChecks { name, ok, detail in report(name, ok, detail) }

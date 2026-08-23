@@ -4797,3 +4797,71 @@ mark they used to have. It is recorded rather than netted off.
 Reopen if a corpus shows a match being consumed that a reviewer needed to see as a match. The two
 dials are `matchConsumeFloor` and `matchConsumeRankLimit`, and the third rule — buried in a word — is
 a predicate rather than a dial, so it would be removed rather than tuned.
+
+---
+
+## DEC-105 — A file the byte diff gives up on is localised by line, not painted
+
+- **Date:** 2026-08-23
+- **Topic:** The fallback path's last resort. Completes [DEC-095](#dec-095--a-language-with-no-grammar-gets-a-real-diff-and-the-hairline-marks-a-region-rather-than-a-file),
+  which localised the fallback with a byte diff and left the case where that diff cannot finish.
+- **Status:** Accepted — built, checked and measured.
+
+### The corpus nobody had built
+
+Every measurement in this project until now was taken on TypeScript and JavaScript, because that is
+what the structural path parses. `.css`, `.scss`, `.json` and `.md` take DEC-095's fallback and
+**had never been measured at all** — although a `.module.css` file was one of the five cases the
+owner reported in M11.
+
+364 of them, from ten repositories ([M12-H](22-experiment-log.md)). The headline number is not
+subtle: the model reported **10589 changed lines against git's 5580 — 190%**. Eight translation files
+account for almost all of it: `src/messages/pl.json`, where git reports 94 changed lines and the
+model painted 1098.
+
+**The cause is a budget doing its job.** DEC-095 gives the fallback a tenth of the normal work budget,
+which is right for the dense-JSX gate case it was measured against. A 40 KB translation file with a
+hundred rewritten sentences has an enormous *edit distance*, so Myers exhausts that budget,
+`fallbackPartitions` returns `nil`, and the whole file becomes the answer.
+
+### The decision
+
+When the byte diff cannot answer, the fallback asks the same question **by line**:
+
+1. lines that appear exactly once on each side and are byte-equal become anchors;
+2. the longest increasing run of those pairs is kept, so no anchor crosses another;
+3. identical lines are trimmed from the head and tail of every region between anchors;
+4. the search **recurses** into what is left — a line that is not unique in the file is very often
+   unique in the twenty lines around it;
+5. whatever survives all of that is presented.
+
+That is patience's idea, and **it is not minimal**. On the structural path that would be
+disqualifying, because INV-2 is stated against a byte-minimal diff. Here it is not: this runs only
+where the byte diff has already refused to answer, so there is no minimal alignment to be contained
+by, and `validate` reports the model unverified in either case.
+
+**What it must never do is hide a change**, and the shape of the rule prevents it: only a matched pair
+of *byte-identical* lines is ever left unmarked, so anything the anchors cannot explain is presented
+whole. The property is checked directly — the unmarked text of the two sides, concatenated in order,
+must be identical — on the fixture and on 60 random line edits including insertions, deletions and
+reordered duplicates.
+
+### Consequences, over 364 real changes
+
+| | before | after |
+|---|---|---|
+| false lines | 10589 (**190%** of git's + lines) | **218 (3.9%)** |
+| presented bytes | 1126638 | **265602** (−76%) |
+| marks | 4013 | 4301 |
+
+Marks go **up** by 7%, and that is the shape of the fix rather than a cost: one mark over a whole file
+becomes a dozen marks over the lines that changed.
+
+**The TypeScript corpus does not move at all** — 4016 pairs, none of which reach this path. A change
+to a fallback that alters the main path would mean the fallback was not where it was thought to be.
+
+### Revisit trigger
+
+Reopen if a reader reports a change they could not find in a file with no grammar. The line pass is
+`lineFallback` on `fallbackPartitions`, off in one place, and the whole-file answer is what it falls
+back to.

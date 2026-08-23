@@ -3343,3 +3343,46 @@ what git's patience and histogram heuristics do by matching unique lines first �
 minimal**, so INV-2's reference would have to change with it. That is a decision about what the
 canonical diff *is*, not a tweak to how it is drawn, and it belongs in its own entry with its own
 argument.
+
+---
+
+## M12-H — The languages nobody had measured
+
+**2026-08-23.** DEC-105. 364 pairs of `.css`, `.scss`, `.json` and `.md` from ten repositories, built
+with `CORPUS_EXTENSIONS='*.css *.scss *.json *.md' build-corpus.sh`. Every one of them takes DEC-095's
+fallback path: **0 structural**.
+
+| | DEC-095 as shipped | + the line pass |
+|---|---|---|
+| false lines | **10589 (189.8% of + lines)** | **218 (3.9%)** |
+| presented bytes | 1126638 | **265602** |
+| marks | 4013 | 4301 |
+| missed lines | 793 (38.0%) | 796 (38.2%) |
+| `shredded-word` | 1452 | 1452 |
+| `whole-file-fallback` | 364 (100%) | 364 (100%) |
+
+**190% is the number that made this an entry.** A model that reports twice as many changed lines as
+git on an entire language family is not a model anyone can review from, and no measurement in this
+repository could have seen it: every corpus before this one was TypeScript.
+
+Eight translation files carry most of it — `src/messages/{pl,en,fr}.json`, 94 changed lines reported
+as 1098 — and they all fail the same way: the byte diff exhausts the fallback's work budget and the
+whole file becomes the answer.
+
+### What the first attempt bought, and why it was not enough
+
+Anchoring on lines unique **in the whole file** took false lines from 10589 to 4949. Still 89%: a
+translation file is full of near-identical lines, and the ones that are unique are exactly the ones
+that changed. Recursing — trimming identical lines off each region and re-anchoring on lines unique
+*within that region* — is what took it to 218. The recursion is not a refinement of the idea; it is
+the idea.
+
+### What is still wrong there, and it is not this entry
+
+- **`missed` sits at 38%** against 20% on the TypeScript corpus: the old side of a fallback file is
+  under-marked, and nothing has looked at why.
+- **`shredded-word` is 1452 in 37.6% of pairs**, untouched by this entry, because DEC-100's word snap
+  runs on the structural path only. A `.css` file has classes and custom properties like
+  `--animated-background-active-hover`, and the fallback marks `20` inside `200ms`.
+- **100% of the marks are drawn as uncertain**, which is honest — nothing was parsed — and means the
+  uncertainty texture carries no information in this whole family of files.

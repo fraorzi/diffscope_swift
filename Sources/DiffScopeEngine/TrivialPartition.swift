@@ -44,11 +44,25 @@ public func fallbackPartitions(
     oldBytes: [UInt8],
     newBytes: [UInt8],
     workBudget: Int = fallbackDiffWorkBudget,
-    absorption: AbsorptionSettings = AbsorptionSettings()
+    absorption: AbsorptionSettings = AbsorptionSettings(),
+    lineFallback: Bool = true
 ) -> (old: Partition, new: Partition)? {
-    guard case let .exact(hunks) = canonicalDiff(old: oldBytes, new: newBytes,
-                                                 workBudget: workBudget)
-    else { return nil }
+    var oldRanges: [(start: Int, end: Int)]
+    var newRanges: [(start: Int, end: Int)]
+    switch canonicalDiff(old: oldBytes, new: newBytes, workBudget: workBudget) {
+    case let .exact(hunks):
+        oldRanges = hunks.map { (start: $0.oldStart, end: $0.oldEnd) }
+        newRanges = hunks.map { (start: $0.newStart, end: $0.newEnd) }
+    case .budgetExceeded:
+        // **Lines, before the whole file** (DEC-105). The byte diff refusing to answer is not the
+        // same thing as there being no answer: a 40 KB translation file with a hundred edited
+        // strings exhausts this path's budget and used to be painted from the first line to the
+        // last, which is 1098 changed lines where git reports 94.
+        guard lineFallback, let hunks = lineAnchoredHunks(old: oldBytes, new: newBytes)
+        else { return nil }
+        oldRanges = hunks.map { (start: $0.oldStart, end: $0.oldEnd) }
+        newRanges = hunks.map { (start: $0.newStart, end: $0.newEnd) }
+    }
 
     func side(_ bytes: [UInt8], _ ranges: [(start: Int, end: Int)]) -> Partition {
         guard !bytes.isEmpty else { return Partition(totalLength: 0, segments: []) }
@@ -71,8 +85,7 @@ public func fallbackPartitions(
             absorbIslands(partition, bytes: bytes, settings: absorption), bytes: bytes))
     }
 
-    return (side(oldBytes, hunks.map { (start: $0.oldStart, end: $0.oldEnd) }),
-            side(newBytes, hunks.map { (start: $0.newStart, end: $0.newEnd) }))
+    return (side(oldBytes, oldRanges), side(newBytes, newRanges))
 }
 
 public func trivialModel(
