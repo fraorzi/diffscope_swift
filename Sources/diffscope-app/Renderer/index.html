@@ -284,6 +284,15 @@
              background: var(--ds-fold);
              border-top: var(--ds-hairline-width) solid var(--ds-border);
              border-bottom: var(--ds-hairline-width) solid var(--ds-border); }
+  /* A header holding back a rewrapped old half (DEC-102). It is an expander, so it says so the way
+     every other expander in this window does — the pointer, and the sentence in the header itself.
+     It borrows `.ds-fold`'s dashed edge rather than inventing a third border style: what is behind
+     it is text the reader can already read on the other side of the block. */
+  .ds-hunk-reflowed {
+    cursor: pointer;
+    border-top-style: dashed;
+    border-bottom-style: dashed;
+  }
 
   .ds-sign { display: inline-block; width: var(--ds-space-6);
              text-align: center; color: var(--ds-mark);

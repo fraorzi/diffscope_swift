@@ -4586,3 +4586,69 @@ already there.
 
 Reopen if a reader reports a change they had to look for because it was drawn quietly. The switch is
 `classifyWhitespaceHunks`, and every rule above is off with it.
+
+---
+
+## DEC-102 — A rewrapped old half is withheld, not printed twice
+
+- **Date:** 2026-08-23
+- **Topic:** The other half of the owner's report: the unified view prints a rewrapped element on
+  both sides. Extends [DEC-096](#dec-096--the-unified-blocks-are-computed-in-the-engine-and-byte-identical-lines-are-peeled-off-them);
+  nothing in DEC-100 or DEC-101 could reach it.
+- **Status:** Accepted — built, checked and measured.
+
+### Why the mark-level entries could not fix it
+
+*"The whole previous `<Image>` line is shown, and the new ones, although it is still the same thing
+and the only change is one added prop."* DEC-100 and DEC-101 make the marks inside those lines right,
+and change **nothing** about the report: `silent-old-side` and `reflow-insertion` sat at 3986 and 3795
+before and after. They are not statements about where a mark begins; they are statements about which
+*lines the unified layout prints*, and the layout printed both halves of every block because it had
+no way to know the two halves said the same thing.
+
+### The decision
+
+`UnifiedBlock` gains **`reflowed`**, and the layout withholds the old half of a block that carries it
+behind an expander in the hunk header.
+
+**The test is subsequence in one direction, and the direction is the whole safety argument.** A block
+is `reflowed` when every token of its old half appears on its new half, in order. Then everything the
+withheld side says is still on screen and only the wrapping differs. The converse — new tokens being a
+subsequence of old — is a **removal**, and what a removal deletes is exactly what a reviewer must see,
+so a block that removes anything is never reflowed however tidy it looks. Both halves must be
+non-empty, because a pure insertion has no old half and an expander over it would open onto nothing.
+
+**Withheld, not dropped**, and by the standard DEC-048 already set for the formatting group: the
+header says how many lines are behind it, one click brings them back, and the engine keeps the block
+whole so every check about stops and containment reads the same as before. The flag is a *fact about
+the block*, decided in the engine where it can be checked, and what the layout does with it stays the
+layout's business — the same division M7-A drew for stops, folds and changed lines.
+
+### Consequences, over the same 4016 changes
+
+| shape | before | after |
+|---|---|---|
+| `silent-old-side` | 3986 (47.5% of pairs) | **202 (4.1%)** |
+| `reflow-insertion` | 3795 (46.0%) | **0** |
+| `duplicated-line` | 2320 (28.7%) | **1075 (14.0%)** |
+| `reflowed-block` | — | 3910 in 46.6% of pairs |
+
+**Nearly half of all the owner's changes contain at least one block this withholds.** The 202 that
+remain are blocks where the old half holds a token the new half does not — a removal beside a
+rewrap — and those are the blocks that *should* print both sides.
+
+`duplicated-line` halves rather than vanishing for the same reason: what is left is byte-identical
+lines inside blocks that are not rewraps, which is DEC-096's peel territory and a separate question.
+
+### What it costs and what it does not
+
+Nothing is hidden that the reader cannot open, the model is unchanged, and no invariant is touched:
+the blocks, the stops and the segments are exactly what they were. The cost is one class of surprise —
+a reader scanning the `−` column will not see a line that is, in the file, still there in a different
+shape — and the header sentence is what pays it: *re-wrapped — N lines not printed, click to show*.
+
+### Revisit trigger
+
+Reopen if a reader reports missing a change that sat inside a withheld half. That cannot happen while
+the subsequence test holds, so the first thing to check would be the test itself — the property is
+asserted over every fixture, and the corpus survey counts the blocks.

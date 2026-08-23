@@ -126,6 +126,10 @@ enum WrongShape: String, CaseIterable, Codable {
     case markConfetti = "mark-confetti"
     /// The structural path was not taken at all.
     case wholeFileFallback = "whole-file-fallback"
+    /// A block whose old half is the new half laid out differently, which the unified layout may
+    /// withhold (DEC-102). Counted so the two shapes above can be read as *what is still printed
+    /// twice* rather than as *what the byte diff produced*.
+    case reflowedBlock = "reflowed-block"
 }
 
 struct PairMeasurement: Codable {
@@ -196,9 +200,16 @@ private func measure(pair: CorpusPair, parser: TSXParser?,
     var reflowInsertions = 0
     var reflowOnly = 0
     var silent = 0
+    var reflowedBlocks = 0
     for block in blocks {
         let oldSlice = Array(pair.old[safe: block.oldStart..<block.oldEnd])
         let newSlice = Array(pair.new[safe: block.newStart..<block.newEnd])
+        // A withheld half prints nothing, so it can duplicate nothing and can be silent about
+        // nothing. The two shapes below therefore count what the reader is actually shown.
+        if block.reflowed {
+            reflowedBlocks += 1
+            continue
+        }
         duplicated += duplicatedLineCount(old: oldSlice, new: newSlice)
 
         let oldTokens = tokens(of: oldSlice)
@@ -219,6 +230,7 @@ private func measure(pair: CorpusPair, parser: TSXParser?,
             silent += 1
         }
     }
+    add(.reflowedBlock, reflowedBlocks)
     add(.duplicatedLine, duplicated)
     add(.reflowInsertion, reflowInsertions)
     add(.reflowOnly, reflowOnly)

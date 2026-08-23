@@ -3166,3 +3166,30 @@ short relative to their flanks. It is the next thing to measure, and `tasks/todo
 level pass can move them: they are statements about which *lines the unified view prints*, not about
 where a mark begins. That is the second half of the owner's report and it needs the unified layout to
 know what a rewrap is — the entry after this one.
+
+---
+
+## M12-D — What withholding a rewrapped half is worth
+
+**2026-08-23.** DEC-102, over the same 4016 pairs, with DEC-100 and DEC-101 shipped in both arms so
+the only thing moving is the block flag.
+
+| shape | mark-level fixes only | + DEC-102 |
+|---|---|---|
+| `silent-old-side` | 3986 (47.5% of pairs) | **202 (4.1%)** |
+| `reflow-insertion` | 3795 (46.0%) | **0** |
+| `reflow-only` | 115 (1.9%) | **0** |
+| `duplicated-line` | 2320 (28.7%) | **1075 (14.0%)** |
+| `reflowed-block` | — | **3910 in 1872 pairs (46.6%)** |
+
+The detectors count what the reader is **shown**: a withheld half prints nothing, so it can duplicate
+nothing and can be silent about nothing. That is why three rows go to zero or near it — those blocks
+are no longer on screen twice.
+
+**The rows that did not move are the honest part.** `marks`, `presented bytes`, `false` and `missed`
+are identical to M12-C, to the byte: this entry changes the layout and not the model, and a
+measurement that showed otherwise would mean the flag had leaked into the analysis.
+
+**What the remaining 202 are.** Blocks whose old half holds a token the new half does not — a removal
+that happened in the same block as a rewrap. Those must print both sides, which is what the
+one-directional subsequence test is for, and they are the reason the number is 202 rather than 0.

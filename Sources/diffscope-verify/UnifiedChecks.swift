@@ -142,4 +142,80 @@ func runUnifiedChecks(_ reportRaw: (String, Bool, String) -> Void) {
         }
         report("the context between blocks is byte-equal on both sides", identical, offender ?? "")
     }
+
+    print("\n=== DEC-102: a rewrapped old half is withheld rather than printed twice ===")
+    do {
+        let parser = TSXParser()
+        func blocks(_ old: String, _ new: String) -> ([UnifiedBlock], DiffModel) {
+            let model = structuralDiff(oldPath: "a.tsx", oldBytes: [UInt8](old.utf8),
+                                       newPath: "a.tsx", newBytes: [UInt8](new.utf8),
+                                       parser: parser).model
+            return (unifiedBlocks(model, stops: changeStops(model)), model)
+        }
+
+        // The owner's report: a prop added, the element rewrapped around it.
+        let rewrapped = blocks(
+            "      <Image src={hero} alt=\"Hero\" width={1200} priority />\n",
+            "      <Image\n        src={hero}\n        alt=\"Hero\"\n        width={1200}\n"
+                + "        priority\n        className=\"rounded\"\n      />\n").0
+        report("a rewrap with a prop added is a reflowed block",
+               rewrapped.contains { $0.reflowed },
+               rewrapped.map { "\($0.oldStart)..<\($0.oldEnd) reflowed=\($0.reflowed)" }
+                   .joined(separator: " "))
+
+        // The negative control that matters most: a block that *removes* something is never
+        // reflowed, however tidy the rest of it is. Withholding it would hide the removal, which is
+        // the one thing a reviewer must see.
+        let removal = blocks(
+            "      <Image src={hero} alt=\"Hero\" priority />\n",
+            "      <Image\n        src={hero}\n        alt=\"Hero\"\n      />\n").0
+        report("negative control: a block that removes a token is never reflowed",
+               removal.allSatisfy { !$0.reflowed },
+               removal.map { "reflowed=\($0.reflowed)" }.joined(separator: " "))
+
+        // A pure insertion has no old half to withhold, so an expander over it would open onto
+        // nothing.
+        let inserted = blocks("const a = 1;\n", "const a = 1;\nconst b = 2;\n").0
+        report("a pure insertion is not a reflowed block",
+               inserted.allSatisfy { !$0.reflowed })
+
+        // A reorder is not a rewrap: the tokens are there, in another order, and the order is the
+        // change. Subsequence in one direction is what refuses it.
+        let reordered = blocks("<Field name=\"a\" required />\n",
+                               "<Field required name=\"a\" />\n").0
+        report("a reorder is not a reflowed block",
+               reordered.allSatisfy { !$0.reflowed })
+
+        // Every fixture: a reflowed block's old tokens really are on the new side, in order. The
+        // property the withholding rests on, asserted rather than assumed.
+        var offenders: [String] = []
+        var found = 0
+        for fixture in loadFixtures(root: URL(fileURLWithPath: "fixtures")) {
+            let model = structuralDiff(oldPath: fixture.oldPath, oldBytes: fixture.old,
+                                       newPath: fixture.newPath, newBytes: fixture.new,
+                                       parser: parser).model
+            for block in unifiedBlocks(model, stops: changeStops(model)) where block.reflowed {
+                found += 1
+                let oldTokens = layoutTokens(fixture.old[block.oldStart..<block.oldEnd])
+                let newTokens = layoutTokens(fixture.new[block.newStart..<block.newEnd])
+                if !isTokenSubsequence(oldTokens, of: newTokens) { offenders.append(fixture.name) }
+            }
+        }
+        report("over every fixture, a withheld half is on screen in the half that stays",
+               offenders.isEmpty, offenders.isEmpty ? "\(found) reflowed blocks" : offenders.joined(separator: ", "))
+    }
+
+    print("\n=== DEC-102: the layout withholds it and offers it back ===")
+    do {
+        // Two facts, not one `contains`: DEC-064's named failure mode is a check that keeps passing
+        // because it only ever asked about the first of the things it cares about. A withheld half
+        // with no way back is the failure this pair exists to catch.
+        let source = (try? String(contentsOfFile: "Renderer/src/main.js", encoding: .utf8)) ?? ""
+        report("the unified layout reads the reflowed flag",
+               source.contains("block.reflowed"))
+        report("and the reader can bring the withheld half back",
+               source.contains("function expandReflow") && source.contains("expandReflow(this.reflowIndex)"))
+        report("and the header says how much is behind it",
+               source.contains("lines not printed"))
+    }
 }

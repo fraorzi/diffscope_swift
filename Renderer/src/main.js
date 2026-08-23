@@ -362,6 +362,10 @@ let unifiedRuns = { old: [], new: [] };
 /// ranges it covers on each side. A hunk header is the answer to *where am I* in a file that has
 /// been folded and interleaved — the two number columns say it per line, and this says it once.
 let unifiedHunks = [];
+/// Which rewrapped blocks the reader has asked to see both halves of (DEC-102). Keyed by the block's
+/// index in `model.unifiedBlocks`, cleared whenever a different comparison is loaded — an expander
+/// is about *this* block, and carrying the set across files would open a block nobody opened.
+let expandedReflows = new Set();
 
 /// The blocks the unified layout prints. Computed by the engine since DEC-096, because this is the
 /// one part of that layout deciding *what is shown*, and a fact derived here cannot be checked
@@ -438,21 +442,39 @@ function buildUnified(model) {
   const hunks = [];
   let oldCursor = 0;
   let newCursor = 0;
-  for (const block of unifiedBlocks(model)) {
+  unifiedBlocks(model).forEach((block, index) => {
     // Context is emitted from the old side only: between two stops the two sides are byte-equal,
     // which is what makes one column able to stand for both.
     emit("old", oldCursor, block.oldStart, " ");
     const at = doc.length;
     const oldFirst = oldNumber;
     const newFirst = newNumber;
-    emit("old", block.oldStart, block.oldEnd, "−");
+    // A rewrapped block's old half says nothing its new half does not — the engine established that
+    // by tokens, in one direction only (DEC-102) — so printing it is printing the same code twice,
+    // which is what the owner reported. It is **withheld, not dropped**: the header says how many
+    // lines are behind it and one click brings them back, exactly as DEC-048's formatting group does
+    // for bytes that genuinely differ.
+    const withheld = block.reflowed && !expandedReflows.has(index);
+    if (!withheld) emit("old", block.oldStart, block.oldEnd, "−");
     emit("new", block.newStart, block.newEnd, "+");
+    const facts = blockFacts(model, block);
+    let hiddenLines = 0;
+    if (withheld) {
+      const chunk = oldText.slice(block.oldStart, block.oldEnd);
+      hiddenLines = chunk.split("\n").length - (chunk.endsWith("\n") ? 1 : 0);
+      facts.unshift(hiddenLines === 1
+        ? "re-wrapped — 1 line not printed, click to show"
+        : `re-wrapped — ${hiddenLines} lines not printed, click to show`);
+      // The old numbering still has to advance: those lines exist in the file, and the next hunk
+      // header names a line by its number in it.
+      oldNumber += hiddenLines;
+    }
     hunks.push({ at, oldFirst, oldCount: oldNumber - oldFirst,
                  newFirst, newCount: newNumber - newFirst,
-                 facts: blockFacts(model, block) });
+                 facts, reflowIndex: withheld ? index : null });
     oldCursor = block.oldEnd;
     newCursor = block.newEnd;
-  }
+  });
   emit("old", oldCursor, oldText.length, " ");
 
   unifiedLines = meta;
@@ -483,14 +505,26 @@ function projectSegments(segments, runs) {
 /// worth keeping: after a fold, the two number columns say where each *line* is and nothing says
 /// where the *change* is.
 class HunkWidget extends WidgetType {
-  constructor(text) { super(); this.text = text; }
-  eq(other) { return other.text === this.text; }
+  constructor(text, reflowIndex) {
+    super();
+    this.text = text;
+    this.reflowIndex = reflowIndex ?? null;
+  }
+  eq(other) { return other.text === this.text && other.reflowIndex === this.reflowIndex; }
   toDOM() {
     const el = document.createElement("div");
-    el.className = "ds-hunk";
+    el.className = "ds-hunk" + (this.reflowIndex === null ? "" : " ds-hunk-reflowed");
     el.textContent = this.text;
+    if (this.reflowIndex !== null) {
+      el.setAttribute("role", "button");
+      el.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        expandReflow(this.reflowIndex);
+      });
+    }
     return el;
   }
+  ignoreEvent() { return false; }
 }
 
 class SignMarker extends GutterMarker {
@@ -592,7 +626,8 @@ function directionDecorations(state) {
     const text = `@@ −${hunk.oldFirst},${hunk.oldCount} +${hunk.newFirst},${hunk.newCount} @@`
       + (hunk.facts && hunk.facts.length ? " · " + hunk.facts.join(" · ") : "");
     items.push({ from: hunk.at,
-                 deco: Decoration.widget({ widget: new HunkWidget(text), block: true, side: -1 }) });
+                 deco: Decoration.widget({ widget: new HunkWidget(text, hunk.reflowIndex),
+                                           block: true, side: -1 }) });
   }
   for (let number = 1; number <= state.doc.lines; number += 1) {
     const meta = unifiedLines[number - 1];
@@ -1070,6 +1105,13 @@ function expandFold(index) {
   refreshDecorations();
 }
 
+/// Brings back the old half of a rewrapped block. The document is rebuilt rather than patched: what
+/// is withheld is decided while composing it, and two ways of deciding would drift.
+function expandReflow(index) {
+  expandedReflows.add(index);
+  if (lastModel) applyLayout(lastModel);
+}
+
 // Both panes scroll to the same stop, because a stop is stated on both sides (DEC-034 uses the
 // same idea for refresh: an anchor that exists on one side only cannot align two panes).
 function goToStop(delta) {
@@ -1447,6 +1489,9 @@ function renderNotices(model) {
 
 window.diffscopeRender = function (json) {
   const model = typeof json === "string" ? JSON.parse(json) : json;
+  if (!lastModel || lastModel.pinOld !== model.pinOld || lastModel.pinNew !== model.pinNew) {
+    expandedReflows = new Set();
+  }
   lastModel = model;
   currentPin = model.pinOld + ":" + model.pinNew;
   currentMode = model.mode;

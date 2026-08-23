@@ -2978,3 +2978,22 @@ Unclassified whitespace-only marks 13090 → 10495; quiet bytes 67457 → 99215.
       that measures 0.11–0.13 s. It fails and passes on the same binary, and it passes on a clean
       tree at the same absolute time. Not a regression from these entries; the threshold is the
       flake.
+
+## Step — a rewrapped old half is withheld rather than printed twice (DEC-102, M12-D)
+
+- [x] `UnifiedBlock.reflowed`, decided in `Unified.swift` by `isReflowedBlock` — old tokens a
+      subsequence of new ones, **one direction only**, both halves non-empty
+- [x] `Codable` with `decodeIfPresent`, so a payload written before this decodes as `false`
+- [x] `main.js` withholds the old half of a reflowed block, states the line count in the hunk header,
+      and `expandReflow` rebuilds the document with it back; `expandedReflows` clears when the
+      comparison changes
+- [x] `.ds-hunk-reflowed` in `index.html` and its row in `24-design-contract.md` — the class audit
+      failed until the row existed, which is the audit working
+- [x] `UnifiedChecks`: the reported shape, and four negative controls — a removal, a pure insertion,
+      a reorder, and the property over every fixture that a withheld half really is on screen in the
+      half that stays
+- [x] two renderer-source checks rather than one, because a withheld half with no way back is the
+      failure that a single `contains` would miss (DEC-064's named failure mode)
+
+`silent-old-side` 3986 → 202, `reflow-insertion` 3795 → 0, `duplicated-line` 2320 → 1075, and the
+model's own numbers unchanged to the byte.

@@ -7,13 +7,48 @@ public struct UnifiedBlock: Codable, Sendable, Equatable {
     public let oldEnd: Int
     public let newStart: Int
     public let newEnd: Int
+    /// The old half of this block says nothing the new half does not (DEC-102): every token of it
+    /// appears on the new side, in order, and only the layout differs. The layout may withhold it
+    /// behind an expander instead of printing the same code twice.
+    ///
+    /// A *fact about the block*, not an instruction: what the renderer does with it is the
+    /// renderer's, and what makes it checkable is that it is decided here.
+    public let reflowed: Bool
 
-    public init(oldStart: Int, oldEnd: Int, newStart: Int, newEnd: Int) {
+    public init(oldStart: Int, oldEnd: Int, newStart: Int, newEnd: Int, reflowed: Bool = false) {
         self.oldStart = oldStart
         self.oldEnd = oldEnd
         self.newStart = newStart
         self.newEnd = newEnd
+        self.reflowed = reflowed
     }
+
+    private enum CodingKeys: String, CodingKey { case oldStart, oldEnd, newStart, newEnd, reflowed }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        oldStart = try container.decode(Int.self, forKey: .oldStart)
+        oldEnd = try container.decode(Int.self, forKey: .oldEnd)
+        newStart = try container.decode(Int.self, forKey: .newStart)
+        newEnd = try container.decode(Int.self, forKey: .newEnd)
+        reflowed = try container.decodeIfPresent(Bool.self, forKey: .reflowed) ?? false
+    }
+}
+
+/// Whether the old half of a block is the new half laid out differently (DEC-102).
+///
+/// **Subsequence in one direction only, and the direction is the whole safety argument.** If the old
+/// tokens are a subsequence of the new ones then everything the old side says is still on screen in
+/// the new side and what differs is where the line breaks fall — withholding it hides no content. The
+/// converse is a *removal*: tokens that exist only on the old side are exactly what a reviewer has to
+/// see, so a block that removes anything is never reflowed, however tidy the rest of it looks.
+///
+/// Both halves must be non-empty. A pure insertion has no old half to withhold, and calling it a
+/// rewrap would put an expander on a block with nothing behind it.
+public func isReflowedBlock(old: ArraySlice<UInt8>, new: ArraySlice<UInt8>) -> Bool {
+    guard !old.isEmpty, !new.isEmpty, !old.elementsEqual(new) else { return false }
+    guard old.count <= reflowTokenBudget, new.count <= reflowTokenBudget else { return false }
+    return isTokenSubsequence(layoutTokens(old), of: layoutTokens(new))
 }
 
 /// The blocks the unified layout prints, **with byte-identical lines peeled off them** (DEC-096).
@@ -137,6 +172,8 @@ public func unifiedBlocks(_ model: DiffModel, stops: [ChangeStop]) -> [UnifiedBl
         // A block that peels to nothing was context all along. It should be unreachable — every
         // stop touches something — and dropping it is the answer rather than printing an empty hunk.
         guard oldEnd > oldStart || newEnd > newStart else { return nil }
-        return UnifiedBlock(oldStart: oldStart, oldEnd: oldEnd, newStart: newStart, newEnd: newEnd)
+        return UnifiedBlock(oldStart: oldStart, oldEnd: oldEnd, newStart: newStart, newEnd: newEnd,
+                            reflowed: isReflowedBlock(old: old[oldStart..<oldEnd],
+                                                      new: new[newStart..<newEnd]))
     }
 }
