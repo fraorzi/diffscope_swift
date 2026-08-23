@@ -64,7 +64,10 @@ public func canonicalMatches(
         new.withUnsafeBufferPointer { b in
             divide(a, 0, a.count, b, 0, b.count, &forward, &backward, half, &matches, budget)
             if applyShift, !budget.exceeded {
-                matches = shiftToReadableBoundaries(matches, old: a, new: b)
+                // Relocation first: it changes which matches exist, and the shift's ranks are about
+                // the hunks between whichever ones do (DEC-110).
+                matches = shiftToReadableBoundaries(relocateBuriedMatches(matches, old: a, new: b),
+                                                    old: a, new: b)
             }
         }
     }
@@ -121,6 +124,13 @@ private let rankLexical = 3
 /// DEC-097 was right to withhold.
 private let matchConsumeRankLimit = rankSpaced
 
+/// Word bytes for the borrowing test: the identifier rule, which is what a reader tracks in code.
+@inline(__always)
+private func isWordish(_ byte: UInt8) -> Bool {
+    (byte >= 0x30 && byte <= 0x39) || (byte >= 0x41 && byte <= 0x5A)
+        || (byte >= 0x61 && byte <= 0x7A) || byte == 0x5F || byte == 0x24 || byte >= 0x80
+}
+
 /// Moves each hunk along the file, while the alignment stays equally minimal, to the position where
 /// it reads best: whole lines first, then whole tokens (DEC-087, extended by DEC-088).
 ///
@@ -149,6 +159,113 @@ private let matchConsumeRankLimit = rankSpaced
 /// Rank 2 sits above rank 3 because a class transition alone does not separate the two candidates
 /// in the case that motivated this: `…| '⟦compact' | ⟧'wide'` and `…| ⟦'compact' | ⟧'wide'` are both
 /// class transitions at both ends, and only whitespace adjacency prefers the second.
+/// Moves a match that is **buried inside a word** onto its neighbour, when the neighbour's own
+/// position can hold both (DEC-110).
+///
+/// The owner reported `?? img⟧.height}` — the `img` of an untouched `img.height}` drawn as inserted.
+/// Its cause is two matches: `"im"`, landed inside `compactImageDimensions` twenty bytes earlier, and
+/// `"g.height}"` at the real one. DEC-104 can *consume* a short match by shifting the hunk beside it,
+/// and here shifting is impossible: the two matches are twenty bytes apart on the new side, and a
+/// hunk only slides where the bytes rotate.
+///
+/// What is possible is to **relocate** the buried match onto its neighbour, which is legal precisely
+/// when the neighbour's other side has room for it and the bytes there are the same: `im` + `g.height}`
+/// becomes `img.height}`, eleven matched bytes either way. **The matched total is invariant**, which
+/// is what keeps this inside the minimality the 600-pair reference asserts — it is a different
+/// tiling of the same length, chosen because one of the two tilings says something about the file
+/// that is not true.
+///
+/// Both directions, because the burial can be on either side of the pair.
+func relocateBuriedMatches(
+    _ matches: [MatchBlock],
+    old: UnsafeBufferPointer<UInt8>,
+    new: UnsafeBufferPointer<UInt8>
+) -> [MatchBlock] {
+    guard matches.count > 1 else { return matches }
+    if ProcessInfo.processInfo.environment["DIFFSCOPE_NO_RELOCATE"] != nil { return matches }
+
+    @inline(__always)
+    func buried(_ buffer: UnsafeBufferPointer<UInt8>, _ start: Int, _ length: Int) -> Bool {
+        guard length > 0 else { return false }
+        let end = start + length
+        if start > 0, isWordish(buffer[start - 1]), isWordish(buffer[start]) { return true }
+        if end < buffer.count, isWordish(buffer[end - 1]), isWordish(buffer[end]) { return true }
+        return false
+    }
+    @inline(__always)
+    func noisy(_ block: MatchBlock) -> Bool {
+        block.length <= matchConsumeFloor
+            && (buried(old, block.oldStart, block.length) || buried(new, block.newStart, block.length))
+    }
+    @inline(__always)
+    func equal(_ a: UnsafeBufferPointer<UInt8>, _ aStart: Int,
+               _ b: UnsafeBufferPointer<UInt8>, _ bStart: Int, _ length: Int) -> Bool {
+        guard aStart >= 0, bStart >= 0, aStart + length <= a.count, bStart + length <= b.count
+        else { return false }
+        for offset in 0..<length where a[aStart + offset] != b[bStart + offset] { return false }
+        return true
+    }
+
+    // **One pass, and the reason is a measurement.** The first version removed the absorbed block
+    // from the array and stepped back — `remove(at:)` is linear, and a minified file with fifty
+    // thousand matches turned a 0.055 s pair into 0.89 s. The corpus survey went from 220 s over
+    // 4016 pairs to 355 s over **400**, which is how it was noticed at all.
+    var out: [MatchBlock] = []
+    out.reserveCapacity(matches.count)
+
+    /// The furthest the block before `out.last` reaches, which is where a relocation may not go
+    /// before.
+    @inline(__always)
+    func floorNew() -> Int {
+        guard out.count >= 2 else { return 0 }
+        let before = out[out.count - 2]
+        return before.newStart + before.length
+    }
+    @inline(__always)
+    func floorOld() -> Int {
+        guard out.count >= 2 else { return 0 }
+        let before = out[out.count - 2]
+        return before.oldStart + before.length
+    }
+
+    for block in matches {
+        var current = block
+        // Merge into whatever is already on the output, while the pair qualifies. A merged block can
+        // qualify again with the next one, so this loops rather than deciding once.
+        while let first = out.last {
+            let second = current
+            if noisy(first), first.oldStart + first.length == second.oldStart,
+               second.newStart - first.length >= floorNew(),
+               equal(old, first.oldStart, new, second.newStart - first.length, first.length) {
+                out.removeLast()
+                current = MatchBlock(oldStart: first.oldStart,
+                                     newStart: second.newStart - first.length,
+                                     length: first.length + second.length)
+                continue
+            }
+            if noisy(first), first.newStart + first.length == second.newStart,
+               second.oldStart - first.length >= floorOld(),
+               equal(new, first.newStart, old, second.oldStart - first.length, first.length) {
+                out.removeLast()
+                current = MatchBlock(oldStart: second.oldStart - first.length,
+                                     newStart: first.newStart,
+                                     length: first.length + second.length)
+                continue
+            }
+            if noisy(second), first.oldStart + first.length == second.oldStart,
+               equal(old, second.oldStart, new, first.newStart + first.length, second.length) {
+                out.removeLast()
+                current = MatchBlock(oldStart: first.oldStart, newStart: first.newStart,
+                                     length: first.length + second.length)
+                continue
+            }
+            break
+        }
+        out.append(current)
+    }
+    return out
+}
+
 func shiftToReadableBoundaries(
     _ matches: [MatchBlock],
     old: UnsafeBufferPointer<UInt8>,
@@ -243,7 +360,18 @@ func shiftToReadableBoundaries(
         // byte. This repository has a rule about machinery that cannot be seen to work, and it
         // applies to a tie-break as much as to a knob.
         var bestAtRank = [Int?](repeating: nil, count: rankLexical + 1)
+        /// A shift that removes a match the reader was never shown, kept apart from the ranks
+        /// (DEC-110).
+        ///
+        /// **It outranks them.** A rank is a claim about how a *position* reads; consuming noise is a
+        /// claim about whether the alignment is telling the truth — `"im"` matched inside
+        /// `compactImageDimensions` says the `im` of `img` survived and the `g` did not, and no
+        /// boundary, however tidy, makes that worth keeping. The owner reported the result of the
+        /// other order twice in one element: `?? img⟧.height}`.
+        var noiseShift: Int?
 
+        /// Within a rank: a placement that does not borrow a word beats one that does, and between
+        /// two that agree the furthest down the file wins, as it always has.
         // **The boundary a consuming shift is scored on is the one it would leave behind, not the one
         // it walks past** (DEC-104). When the shift swallows a neighbouring match, that match stops
         // existing, and the hunk's edge moves to where *it* began — so scoring the walked-to position
@@ -276,6 +404,12 @@ func shiftToReadableBoundaries(
             return max(oldRank, newRank)
         }
 
+        // **A tie-break on the hunk's own content was written here and measured out.** The idea:
+        // between two placements the ranks call equal, prefer the one that does not end with a copy
+        // of the word following it on the other side — `⟦… ?? img⟧.height}` against
+        // `⟦… ?? ⟧img.height}`. Over 1500 corpus changes it moved **nothing at all**: not a mark, not
+        // a byte, not a line. What actually produces that shape is a match landed inside an unrelated
+        // word, and `relocateBuriedMatches` removes it before the ranks are ever consulted.
         // Shift 0 is a candidate like any other, and scoring it is what keeps the ranks honest:
         // Myers often lands on a line boundary already, and a rank-2 position one byte away must
         // not be allowed to pull it off one. DEC-087 could leave this out because it accepted only
@@ -303,11 +437,14 @@ func shiftToReadableBoundaries(
             let scored = score(shift) ?? (consumesNoise ? rankLexical : nil)
             guard let found = scored else { continue }
             if shift == current.length, found > matchConsumeRankLimit, !consumesNoise { continue }
+            if consumesNoise, noiseShift == nil { noiseShift = shift }
             bestAtRank[found] = shift
         }
         // The furthest position down the file wins, so the upward search keeps only what the
         // downward one did not reach, and stops as soon as it finds the best rank there is.
-        if bestAtRank[rankLine] == nil {
+        // The upward walk also runs when the match behind us is noise, because that is a candidate
+        // no rank can express and the downward walk cannot reach.
+        if bestAtRank[rankLine] == nil || (noiseShift == nil && isNoise(previous)) {
             shift = 0
             let upLimit = previous.length <= matchConsumeFloor ? previous.length : previous.length - 1
             while -shift < upLimit,
@@ -316,9 +453,10 @@ func shiftToReadableBoundaries(
                 shift -= 1
                 let consumesNoise = -shift == previous.length && isNoise(previous)
                 let scored = score(shift) ?? (consumesNoise ? rankLexical : nil)
-                if let found = scored, bestAtRank[found] == nil,
+                if let found = scored,
                    -shift != previous.length || found <= matchConsumeRankLimit || consumesNoise {
-                    bestAtRank[found] = shift
+                    if consumesNoise, noiseShift == nil { noiseShift = shift }
+                    if bestAtRank[found] == nil { bestAtRank[found] = shift }
                 }
                 if bestAtRank[rankLine] != nil { break }
             }
@@ -326,7 +464,15 @@ func shiftToReadableBoundaries(
         // No reachable position reads as a boundary: the alignment stays exactly where Myers put
         // it, and no boundary is invented.
         let best = (rankLine...rankLexical).lazy.compactMap { bestAtRank[$0] }.first
-        guard let chosen = best, chosen != 0 else { continue }
+        if ProcessInfo.processInfo.environment["DIFFSCOPE_SHIFT_DEBUG"] != nil,
+           isNoise(previous) || isNoise(current) {
+            FileHandle.standardError.write(Data(("  shift@ old \(previous.oldStart)+\(previous.length)"
+                + " → hunk old \(oldStart)..<\(oldEnd) new \(newStart)..<\(newEnd)"
+                + " noisePrev=\(isNoise(previous)) noiseCur=\(isNoise(current))"
+                + " noiseShift=\(noiseShift.map(String.init) ?? "-")"
+                + " best=\(best.map(String.init) ?? "-")\n").utf8))
+        }
+        guard let chosen = noiseShift ?? best, chosen != 0 else { continue }
 
         blocks[index - 1] = MatchBlock(oldStart: previous.oldStart, newStart: previous.newStart,
                                        length: previous.length + chosen)

@@ -5060,3 +5060,68 @@ the only part a reader can see, and the only part that was flashing.
 **The checks are a pair, deliberately.** A guard against redrawing is one line away from being a way
 to never draw at all, so the suite asserts both halves: that the identical push is skipped, and that a
 fresh document forgets what was last pushed.
+
+---
+
+## DEC-110 — A match landed inside an unrelated word is relocated
+
+- **Date:** 2026-08-24
+- **Topic:** The owner's second report on the same element: `?? img⟧.height}`. Where
+  [DEC-104](#dec-104--a-shift-may-consume-a-match-the-reader-was-never-shown) cannot reach, and why.
+- **Status:** Accepted — built, checked and measured.
+
+### Shifting was the wrong verb
+
+`height={img.height}` becoming `height={compactImageDimensions?.height ?? img.height}` aligns as two
+matches: `"im"`, landed inside `compactImageDimensions` twenty bytes early, and `"g.height}"` at the
+real one. The mark then covers `… ?? img`, and `img` — a word neither side touched — reads as
+inserted.
+
+DEC-104 consumes a short match by **shifting** the hunk beside it, and a hunk only slides where the
+bytes rotate. Here the two matches are twenty bytes apart on the new side: no shift of any size makes
+`im` adjacent to `g`, and the debug trace says exactly that — `noisePrev=true … noiseShift=- best=-`,
+a pair with no legal candidate at all.
+
+### The decision
+
+A match that is **buried inside a word** may be *relocated* onto its neighbour when the neighbour's
+other side has room for it and the bytes there are the same. `im` + `g.height}` becomes
+`img.height}`: eleven matched bytes either way.
+
+**The matched total is invariant**, which is what keeps this inside the minimality the 600-pair
+reference asserts — it is a different tiling of the same length, chosen because one of the two tilings
+says something about the file that is not true. Both directions and both sides, because the burial can
+be on either.
+
+It runs **before** the shift, because it changes which matches exist and the shift's ranks are about
+the hunks between whichever ones do.
+
+### A tie-break was written here and measured out — the second time in this series
+
+Before the cause was understood, the symptom suggested a rule: between two placements the ranks call
+equal, prefer the one that does not end with a copy of the word following it on the other side. It is
+plausible, it is cheap, and over 1500 corpus changes it moved **nothing at all** — not a mark, not a
+byte, not a line. It is recorded in the comment where it would have gone and it is not in the code.
+DEC-104's noise tie-break went the same way for the same reason.
+
+### Consequences, over 4016 real changes ([M12-J](22-experiment-log.md))
+
+| | before | after |
+|---|---|---|
+| false lines | 9682 (18.7%) | **9079 (17.5%)** |
+| marks | 70689 | **70039** |
+| presented bytes | 2708728 | **2699559** |
+| uncertain marks | 5225 | **4564** (−12.7%) |
+| `shredded-word` | 613 | 541 |
+| `split-mark` | 27044 | 26330 |
+| blocks needing a withheld half | 6445 | **5822** |
+| missed lines | 7080 | 7083 |
+
+**Fewer blocks need withholding**, which is the shape of a better alignment rather than a better
+layout: the rewrap artefacts DEC-108 was hiding are, in 623 blocks, no longer there to hide.
+
+### Revisit trigger
+
+Reopen if a corpus shows a relocation joining two things a reviewer needed to see apart. The control
+is `DIFFSCOPE_NO_RELOCATE`, which is how the measurement above was taken and how the next one should
+be.

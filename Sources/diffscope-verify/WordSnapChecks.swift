@@ -267,4 +267,57 @@ func runWordSnapChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("and it reports the same lines as its absence, over every fixture", moved == 0,
                moved == 0 ? "" : "\(moved) sides moved")
     }
+
+    print("\n=== DEC-110: a match landed inside an unrelated word is relocated ===")
+    do {
+        // The owner's second report, reduced: one attribute rewritten beside another that was not.
+        // The alignment lands the `im` of `img.height}` inside `compactImageDimensions` and matches
+        // the `g.height}` at the real one, so `img` — a word neither side touched — is drawn as part
+        // of the insertion.
+        let old = "  height={img.height}\n"
+        let new = "  height={compactImageDimensions?.height ?? img.height}\n"
+        let oldBytes = [UInt8](old.utf8), newBytes = [UInt8](new.utf8)
+
+        let matches = canonicalMatches(old: oldBytes, new: newBytes).matches
+        report("every match is byte-equal after relocation",
+               matches.allSatisfy { match in
+                   Array(oldBytes[match.oldStart..<(match.oldStart + match.length)])
+                       == Array(newBytes[match.newStart..<(match.newStart + match.length)])
+               })
+        report("the matched total is what it was — a different tiling of the same length",
+               matches.reduce(0) { $0 + $1.length }
+                   == canonicalMatches(old: oldBytes, new: newBytes, applyShift: false)
+                       .matches.reduce(0) { $0 + $1.length },
+               matches.map { "\($0.oldStart)→\($0.newStart)×\($0.length)" }.joined(separator: " "))
+
+        let result = diff(old, new)
+        report("the untouched word is not part of the insertion",
+               !marks(result.model.newPartition, newBytes).contains { $0.hasSuffix("img") },
+               marks(result.model.newPartition, newBytes).joined(separator: " | "))
+        report("and what is marked is the expression that was inserted",
+               marks(result.model.newPartition, newBytes)
+                   .contains { $0.contains("compactImageDimensions") })
+    }
+
+    do {
+        // The property, over 300 random pairs: relocation never changes how much is matched, which
+        // is what keeps it inside the minimality the 600-pair reference asserts.
+        var generator = SystemRandomNumberGenerator()
+        var disagreements = 0
+        for _ in 0..<300 {
+            let alphabet = Array("abcimg.{}? \n")
+            let a = [UInt8](String((0..<Int.random(in: 4...90, using: &generator)).map { _ in
+                alphabet.randomElement(using: &generator)!
+            }).utf8)
+            let b = [UInt8](String((0..<Int.random(in: 4...90, using: &generator)).map { _ in
+                alphabet.randomElement(using: &generator)!
+            }).utf8)
+            let shifted = canonicalMatches(old: a, new: b).matches.reduce(0) { $0 + $1.length }
+            let plain = canonicalMatches(old: a, new: b, applyShift: false)
+                .matches.reduce(0) { $0 + $1.length }
+            if shifted != plain { disagreements += 1 }
+        }
+        report("over 300 random pairs the matched total is unchanged", disagreements == 0,
+               disagreements == 0 ? "" : "\(disagreements) pairs disagreed")
+    }
 }

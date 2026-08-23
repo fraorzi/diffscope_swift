@@ -3408,3 +3408,41 @@ analysis.
 `duplicated-line` over the whole of M12: **2320 → 108, −95%.** What is left is 108 lines in 75 pairs,
 and M12-G already says what they are — crossings, where the identical line's two copies cannot both
 be matched without breaking monotonic order. That is an alignment decision, still unmade.
+
+---
+
+## M12-J — What relocating a buried match is worth
+
+**2026-08-24.** DEC-110, all 4016 pairs, everything else shipped.
+
+| | DEC-108 shipped | + DEC-110 |
+|---|---|---|
+| false lines | 9682 (18.7% of + lines) | **9079 (17.5%)** |
+| marks | 70689 | **70039** |
+| presented bytes | 2708728 | **2699559** |
+| uncertain marks | 5225 (7.4%) | **4564 (6.5%)** |
+| `shredded-word` | 613 | 541 |
+| `split-mark` | 27044 | 26330 |
+| `reflowed-block` | 6445 | 5822 |
+| missed lines | 7080 | 7083 |
+
+**Two numbers say the same thing from opposite ends.** `false` lines fall by 603 — the model claims
+fewer lines changed that git says did not — and `uncertain` marks fall by 12.7%, because a match
+landed inside an unrelated word is exactly what `reconcile` was flagging as *the byte diff contradicts
+an anchor*. Removing the bad pairing removes the doubt with it.
+
+**And 623 fewer blocks need their old half withheld.** DEC-108 hides what a bad alignment produced;
+DEC-110 produces less of it. That is the right order for the two to move in.
+
+`missed` rises by three, as it did in M12-F, and for the same reason: a different tiling attributes a
+few removals to the other side.
+
+### The timing scare, and what it was
+
+The first measurement of this pass read 351 s over 400 pairs against 34 s without it — a tenfold
+regression, and the array-removal loop it seemed to indict was rewritten as a single pass on the
+strength of it. The rewrite is better code and it changed nothing: a clean A/B on an idle machine
+reads **109.3 s with the pass and 114.7 s without**. The first pair of numbers was taken while four
+background surveys were running on the same machine.
+
+*Measure the control before believing the check* — this time the control was the machine.

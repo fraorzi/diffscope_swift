@@ -3200,3 +3200,18 @@ TypeScript corpus unchanged.
       nothing ever stages a directory
 
 30 selftest arms and 2052 checks pass with the guards in place.
+
+## Step — a match landed inside an unrelated word is relocated (DEC-110, M12-J)
+
+- [x] `relocateBuriedMatches` in `CanonicalDiff.swift`, run before the shift: a match under the floor
+      whose bytes begin or end inside a word joins its neighbour when the neighbour's other side has
+      room and the bytes match. The matched total is invariant, so minimality is untouched.
+- [x] `DIFFSCOPE_SHIFT_DEBUG` prints the pair, the hunk and what the walk found — the diagnosis was
+      one line of it: `noisePrev=true … noiseShift=- best=-`, a pair with no legal shift at all
+- [x] `DIFFSCOPE_NO_RELOCATE` is the control the measurement was taken against
+- [x] checks: the owner's shape, every match byte-equal after relocation, the matched total unchanged
+      on the fixture and over 300 random pairs
+- [x] **a content tie-break was written and measured out** — over 1500 changes it moved nothing
+
+false lines 9682 → **9079**, uncertain marks −12.7%, presented bytes down again, and 623 fewer blocks
+need a withheld half.
