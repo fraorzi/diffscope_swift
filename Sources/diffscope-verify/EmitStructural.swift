@@ -57,9 +57,14 @@ func runEmitStructural(oldPath: String, newPath: String, displayPath: String, sn
             ? "\(lineOf(old, block.oldStart))–\(lineOf(old, block.oldEnd - 1))" : "—"
         let newLines = block.newEnd > block.newStart
             ? "\(lineOf(new, block.newStart))–\(lineOf(new, block.newEnd - 1))" : "—"
-        print(String(format: "  %2d  old %-10@ new %-10@ %@", index,
-                     oldLines as NSString, newLines as NSString,
-                     block.reflowed ? "reflowed — old half withheld" : ""))
+        let withheld = block.withheldOld.map { range in
+            "\(lineOf(old, range.start))–\(lineOf(old, max(range.start, range.end - 1)))"
+        }.joined(separator: ",")
+        let note = block.reflowed
+            ? "reflowed — the whole old half is withheld"
+            : (withheld.isEmpty ? "" : "withheld old lines \(withheld)")
+        print(String(format: "  %2d  old %-10@ new %-10@ ", index,
+                     oldLines as NSString, newLines as NSString) + note)
     }
 }
 

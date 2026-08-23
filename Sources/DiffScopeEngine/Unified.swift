@@ -2,28 +2,44 @@ import Foundation
 
 /// One block of the unified layout: the old bytes printed with `−` and the new bytes printed with
 /// `+`, both snapped to whole lines.
+public struct ByteRange: Codable, Sendable, Equatable {
+    public let start: Int
+    public let end: Int
+    public init(start: Int, end: Int) {
+        self.start = start
+        self.end = end
+    }
+}
+
 public struct UnifiedBlock: Codable, Sendable, Equatable {
     public let oldStart: Int
     public let oldEnd: Int
     public let newStart: Int
     public let newEnd: Int
-    /// The old half of this block says nothing the new half does not (DEC-102): every token of it
-    /// appears on the new side, in order, and only the layout differs. The layout may withhold it
-    /// behind an expander instead of printing the same code twice.
+    /// The old lines this block need not print, because every token on them is on the new side, in
+    /// order (DEC-102, made line-by-line by DEC-108).
     ///
-    /// A *fact about the block*, not an instruction: what the renderer does with it is the
-    /// renderer's, and what makes it checkable is that it is decided here.
-    public let reflowed: Bool
+    /// A *fact about the block*, not an instruction: what the layout does with it is the layout's,
+    /// and what makes it checkable is that it is decided here.
+    public let withheldOld: [ByteRange]
 
-    public init(oldStart: Int, oldEnd: Int, newStart: Int, newEnd: Int, reflowed: Bool = false) {
+    public init(oldStart: Int, oldEnd: Int, newStart: Int, newEnd: Int,
+                withheldOld: [ByteRange] = []) {
         self.oldStart = oldStart
         self.oldEnd = oldEnd
         self.newStart = newStart
         self.newEnd = newEnd
-        self.reflowed = reflowed
+        self.withheldOld = withheldOld
     }
 
-    private enum CodingKeys: String, CodingKey { case oldStart, oldEnd, newStart, newEnd, reflowed }
+    /// True when the whole old half is withheld — the case DEC-102 shipped with, and still the
+    /// common one: a rewrap that removed nothing.
+    public var reflowed: Bool {
+        guard let first = withheldOld.first, withheldOld.count == 1 else { return false }
+        return first.start <= oldStart && first.end >= oldEnd && oldEnd > oldStart
+    }
+
+    private enum CodingKeys: String, CodingKey { case oldStart, oldEnd, newStart, newEnd, withheldOld }
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
@@ -31,24 +47,73 @@ public struct UnifiedBlock: Codable, Sendable, Equatable {
         oldEnd = try container.decode(Int.self, forKey: .oldEnd)
         newStart = try container.decode(Int.self, forKey: .newStart)
         newEnd = try container.decode(Int.self, forKey: .newEnd)
-        reflowed = try container.decodeIfPresent(Bool.self, forKey: .reflowed) ?? false
+        withheldOld = try container.decodeIfPresent([ByteRange].self, forKey: .withheldOld) ?? []
     }
 }
 
-/// Whether the old half of a block is the new half laid out differently (DEC-102).
+/// The old lines a block need not print, **one line at a time** (DEC-108).
 ///
-/// **Subsequence in one direction only, and the direction is the whole safety argument.** If the old
-/// tokens are a subsequence of the new ones then everything the old side says is still on screen in
-/// the new side and what differs is where the line breaks fall — withholding it hides no content. The
-/// converse is a *removal*: tokens that exist only on the old side are exactly what a reviewer has to
-/// see, so a block that removes anything is never reflowed, however tidy the rest of it looks.
+/// DEC-102 asked the question of the whole half: if every token of the old side is on the new side,
+/// in order, then the old side says nothing the new side does not and the layout may withhold it. It
+/// is the right question and it was asked at the wrong scale. The owner's file has a `<Heading>` that
+/// was rewrapped, given two new class rules, wrapped in a fragment — and lost `as string` from one
+/// attribute. One removed token on one line, and the whole eight-line element is printed twice.
 ///
-/// Both halves must be non-empty. A pure insertion has no old half to withhold, and calling it a
-/// rewrap would put an expander on a block with nothing behind it.
-public func isReflowedBlock(old: ArraySlice<UInt8>, new: ArraySlice<UInt8>) -> Bool {
-    guard !old.isEmpty, !new.isEmpty, !old.elementsEqual(new) else { return false }
-    guard old.count <= reflowTokenBudget, new.count <= reflowTokenBudget else { return false }
-    return isTokenSubsequence(layoutTokens(old), of: layoutTokens(new))
+/// So the question is asked per line, against the new side read in order:
+///
+/// - walk the new side's tokens with a cursor;
+/// - for each old line in turn, try to match its tokens from the cursor onwards;
+/// - if they all match, the line is withheld and the cursor stays where the match left it;
+/// - if any token is missing, the line is **kept** and the cursor is put back — because that line is
+///   the one carrying the removal, and the reader is reading this pane to find it.
+///
+/// The order is what keeps it honest. A line is only withheld when its tokens appear **after**
+/// everything the previous withheld line consumed, so a block that shuffles its lines withholds
+/// nothing: the tokens are all present, and not in that order.
+///
+/// **Only whole lines**, so what remains on screen is still a diff of lines, and the withheld ranges
+/// are merged where they touch so the header can count them.
+public func withheldOldRanges(old: [UInt8], new: [UInt8], block: UnifiedBlock) -> [ByteRange] {
+    guard block.oldEnd > block.oldStart, block.newEnd > block.newStart else { return [] }
+    guard block.oldEnd - block.oldStart <= reflowTokenBudget,
+          block.newEnd - block.newStart <= reflowTokenBudget else { return [] }
+
+    let newTokens = layoutTokens(new[block.newStart..<block.newEnd])
+    guard !newTokens.isEmpty else { return [] }
+
+    var ranges: [ByteRange] = []
+    var cursor = 0
+    var lineStart = block.oldStart
+    while lineStart < block.oldEnd {
+        var lineEnd = lineStart
+        while lineEnd < block.oldEnd, old[lineEnd] != 0x0A { lineEnd += 1 }
+        if lineEnd < block.oldEnd { lineEnd += 1 }
+
+        let lineTokens = layoutTokens(old[lineStart..<lineEnd])
+        var walker = cursor
+        var matched = true
+        for token in lineTokens {
+            var found = false
+            while walker < newTokens.count {
+                let candidate = newTokens[walker]
+                walker += 1
+                if candidate == token { found = true; break }
+            }
+            if !found { matched = false; break }
+        }
+        // A line with no tokens at all — blank, or whitespace — is withheld with its neighbours
+        // rather than breaking a run in half, and consumes nothing.
+        if matched {
+            cursor = lineTokens.isEmpty ? cursor : walker
+            if let last = ranges.last, last.end == lineStart {
+                ranges[ranges.count - 1] = ByteRange(start: last.start, end: lineEnd)
+            } else {
+                ranges.append(ByteRange(start: lineStart, end: lineEnd))
+            }
+        }
+        lineStart = lineEnd
+    }
+    return ranges
 }
 
 /// The blocks the unified layout prints, **with byte-identical lines peeled off them** (DEC-096).
@@ -172,8 +237,9 @@ public func unifiedBlocks(_ model: DiffModel, stops: [ChangeStop]) -> [UnifiedBl
         // A block that peels to nothing was context all along. It should be unreachable — every
         // stop touches something — and dropping it is the answer rather than printing an empty hunk.
         guard oldEnd > oldStart || newEnd > newStart else { return nil }
+        let block = UnifiedBlock(oldStart: oldStart, oldEnd: oldEnd,
+                                 newStart: newStart, newEnd: newEnd)
         return UnifiedBlock(oldStart: oldStart, oldEnd: oldEnd, newStart: newStart, newEnd: newEnd,
-                            reflowed: isReflowedBlock(old: old[oldStart..<oldEnd],
-                                                      new: new[newStart..<newEnd]))
+                            withheldOld: withheldOldRanges(old: old, new: new, block: block))
     }
 }

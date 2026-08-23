@@ -155,6 +155,7 @@ public func buildRenderModel(
         let newMapper = Utf16OffsetMapper(bytes: model.newBytes)
         var oldOffsets: [Int] = byteStops.flatMap { [$0.oldStart, $0.oldEnd] }
         oldOffsets += byteBlocks.flatMap { [$0.oldStart, $0.oldEnd] }
+        oldOffsets += byteBlocks.flatMap { $0.withheldOld.flatMap { [$0.start, $0.end] } }
         oldOffsets += byteCollapses.flatMap { [$0.oldStart, $0.oldEnd] }
         oldOffsets += byteFormatting.flatMap { [$0.oldStart, $0.oldEnd] }
         oldOffsets += byteAnchors.map(\.oldStart)
@@ -179,8 +180,12 @@ public func buildRenderModel(
             // the engine, and then dropped one function before the window — where it was reported as
             // still showing the rewrapped half twice. A default value on a new field is what makes
             // that failure silent, and the check below now asks the contract rather than the engine.
-            return UnifiedBlock(oldStart: a, oldEnd: b, newStart: c, newEnd: d,
-                                reflowed: block.reflowed)
+            // Every withheld range travels with the block, projected like every other offset here.
+            let withheld = block.withheldOld.compactMap { range -> ByteRange? in
+                guard let start = oldMap[range.start], let end = oldMap[range.end] else { return nil }
+                return ByteRange(start: start, end: end)
+            }
+            return UnifiedBlock(oldStart: a, oldEnd: b, newStart: c, newEnd: d, withheldOld: withheld)
         }
         let collapses = byteCollapses.compactMap { range -> CollapseRange? in
             guard let a = oldMap[range.oldStart], let b = oldMap[range.oldEnd],

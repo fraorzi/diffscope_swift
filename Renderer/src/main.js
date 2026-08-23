@@ -449,25 +449,35 @@ function buildUnified(model) {
     const at = doc.length;
     const oldFirst = oldNumber;
     const newFirst = newNumber;
-    // A rewrapped block's old half says nothing its new half does not — the engine established that
-    // by tokens, in one direction only (DEC-102) — so printing it is printing the same code twice,
-    // which is what the owner reported. It is **withheld, not dropped**: the header says how many
-    // lines are behind it and one click brings them back, exactly as DEC-048's formatting group does
-    // for bytes that genuinely differ.
-    const withheld = block.reflowed && !expandedReflows.has(index);
-    if (!withheld) emit("old", block.oldStart, block.oldEnd, "−");
+    // An old line whose every token is on the new side, in order, says nothing the new side does not
+    // — the engine decides that per line (DEC-108, generalising DEC-102) — so printing it is printing
+    // the same code twice, which is what the owner reported. It is **withheld, not dropped**: the
+    // header says how many lines are behind it and one click brings them back, exactly as DEC-048's
+    // formatting group does for bytes that genuinely differ.
+    //
+    // The lines that are *kept* are the ones carrying something the new side does not have, which is
+    // what a reader looking at the removed column is looking for.
+    const ranges = expandedReflows.has(index) ? [] : (block.withheldOld || []);
+    let hiddenLines = 0;
+    let cursor = block.oldStart;
+    for (const range of ranges) {
+      emit("old", cursor, range.start, "−");
+      const chunk = oldText.slice(range.start, range.end);
+      const lines = chunk.split("\n").length - (chunk.endsWith("\n") ? 1 : 0);
+      hiddenLines += lines;
+      // The old numbering still has to advance: those lines exist in the file, and the next hunk
+      // header names a line by its number in it.
+      oldNumber += lines;
+      cursor = range.end;
+    }
+    emit("old", cursor, block.oldEnd, "−");
     emit("new", block.newStart, block.newEnd, "+");
     const facts = blockFacts(model, block);
-    let hiddenLines = 0;
+    const withheld = hiddenLines > 0;
     if (withheld) {
-      const chunk = oldText.slice(block.oldStart, block.oldEnd);
-      hiddenLines = chunk.split("\n").length - (chunk.endsWith("\n") ? 1 : 0);
       facts.unshift(hiddenLines === 1
         ? "re-wrapped — 1 line not printed, click to show"
         : `re-wrapped — ${hiddenLines} lines not printed, click to show`);
-      // The old numbering still has to advance: those lines exist in the file, and the next hunk
-      // header names a line by its number in it.
-      oldNumber += hiddenLines;
     }
     hunks.push({ at, oldFirst, oldCount: oldNumber - oldFirst,
                  newFirst, newCount: newNumber - newFirst,

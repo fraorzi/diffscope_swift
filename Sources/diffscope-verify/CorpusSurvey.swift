@@ -270,14 +270,28 @@ private func measure(pair: CorpusPair, parser: TSXParser?,
     for block in blocks {
         let oldSlice = Array(pair.old[safe: block.oldStart..<block.oldEnd])
         let newSlice = Array(pair.new[safe: block.newStart..<block.newEnd])
-        // A withheld half prints nothing, so it can duplicate nothing and can be silent about
-        // nothing. The two shapes below therefore count what the reader is actually shown.
+        // Withheld lines print nothing, so they can duplicate nothing and be silent about nothing.
+        // The shapes below count what the reader is actually shown: the old half minus what the
+        // layout holds back (DEC-108).
         if block.reflowed {
             reflowedBlocks += 1
             continue
         }
+        if !block.withheldOld.isEmpty { reflowedBlocks += 1 }
+        let shownOld = block.withheldOld.isEmpty
+            ? oldSlice
+            : { () -> [UInt8] in
+                var kept: [UInt8] = []
+                var cursor = block.oldStart
+                for range in block.withheldOld {
+                    kept += pair.old[safe: cursor..<range.start]
+                    cursor = range.end
+                }
+                kept += pair.old[safe: cursor..<block.oldEnd]
+                return kept
+            }()
         let (count, reasons) = duplicatedLineBreakdown(
-            old: pair.old, new: pair.new, block: block, stops: stops)
+            old: pair.old, new: pair.new, block: block, stops: stops, shownOld: shownOld)
         duplicated += count
         for (key, value) in reasons { duplicateReasons[key, default: 0] += value }
 
@@ -291,8 +305,8 @@ private func measure(pair: CorpusPair, parser: TSXParser?,
             }
         }
 
-        // The pane is silent when the block covers old lines but no mark falls inside it.
-        if block.oldEnd > block.oldStart,
+        // The pane is silent when the block still prints old lines and no mark falls inside them.
+        if !shownOld.isEmpty, block.oldEnd > block.oldStart,
            !model.oldPartition.segments.contains(where: {
                $0.isPresented && $0.start < block.oldEnd && $0.end > block.oldStart
            }) {
@@ -417,8 +431,11 @@ private func microIslandCount(_ partition: Partition) -> Int {
 ///   copies are not a pair the peel could take, because taking them would reorder the block.
 /// - `at-the-edge` — neither, which means the peel should have taken it and did not.
 private func duplicatedLineBreakdown(old: [UInt8], new: [UInt8], block: UnifiedBlock,
-                                     stops: [ChangeStop]) -> (Int, [String: Int]) {
+                                     stops: [ChangeStop], shownOld: [UInt8]) -> (Int, [String: Int]) {
+    // Only the old lines the layout still prints can be printed twice.
+    let withheldBytes = Set(block.withheldOld.flatMap { Array($0.start..<$0.end) })
     let oldLines = lineRanges(old, from: block.oldStart, to: block.oldEnd)
+        .filter { !withheldBytes.contains($0.start) }
     let newLines = lineRanges(new, from: block.newStart, to: block.newEnd)
     guard !oldLines.isEmpty, !newLines.isEmpty else { return (0, [:]) }
 

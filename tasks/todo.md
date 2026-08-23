@@ -3172,3 +3172,17 @@ false lines **10589 → 218**, presented bytes 1126638 → 265602, and the TypeS
 
 `shredded-word` on the fallback corpus 1452 → **0**, marks 4301 → 4139, presented bytes +1.2%, and the
 TypeScript corpus unchanged.
+
+## Step — withheld line by line (DEC-108, M12-I)
+
+- [x] `withheldOldRanges` in `Unified.swift`: per old line, its tokens matched against the new half
+      read in order, cursor kept on a match and restored on a miss
+- [x] `UnifiedBlock.withheldOld` replaces the boolean; `reflowed` becomes *the range covers the whole
+      old half*, so DEC-102's case is the special case it always was
+- [x] the contract projects every withheld range into UTF-16 with the rest of the offsets
+- [x] `main.js` emits the old half in pieces, skipping what is withheld, advancing the old line
+      numbers through it, and counting the lines for the header
+- [x] checks: the owner's `<Heading>` shape, a shuffled block withholding nothing, and the property
+      over every fixture that what is withheld really is on the new side in order
+
+`duplicated-line` 1073 → **108** on 4016 changes, and every model number identical.

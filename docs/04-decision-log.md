@@ -4959,3 +4959,56 @@ bytes the widening adds were never part of that comparison.
 | `split-mark` | 0 | 58 |
 
 The TypeScript corpus does not move: 11077 marks either way over 800 pairs.
+
+---
+
+## DEC-108 — Withheld line by line, not half by half
+
+- **Date:** 2026-08-23
+- **Topic:** [DEC-102](#dec-102--a-rewrapped-old-half-is-withheld-not-printed-twice) asked the right
+  question at the wrong scale. Same rule, one line at a time.
+- **Status:** Accepted — built, checked and measured.
+
+### One removed token cost eight printed lines
+
+The owner reported a `<Heading>` in the same file as the `<NextImage>`, still shown twice. It is
+rewrapped, wrapped in a fragment and given two new class rules — and one of its lines lost
+`as string`. DEC-102 asks whether **every** token of the old half is on the new half; one removal
+makes that false, so the whole eight-line element printed twice to show a two-word deletion.
+
+### The decision
+
+The question is asked per line, against the new side read in order:
+
+- walk the new half's tokens with a cursor;
+- for each old line in turn, try to match its tokens from the cursor onwards;
+- if they all match, **withhold** that line and leave the cursor where the match ended;
+- if any token is missing, **keep** the line and put the cursor back — that line is the one carrying
+  the removal, and it is what a reader scanning the removed column is looking for.
+
+**Order is what keeps it honest.** A line is only withheld when its tokens appear after everything the
+previously withheld line consumed, so a block whose lines were shuffled withholds nothing: the tokens
+are all there, and not in that order. Whole lines only, so what remains is still a diff of lines, and
+touching ranges merge so the header can count them.
+
+`UnifiedBlock.reflowed` becomes a computed property — *the withheld range covers the whole old half* —
+so DEC-102's case is the special case it always was, and the contract carries `withheldOld` instead of
+a flag.
+
+### Consequences, over the same 4016 changes
+
+| | DEC-102 | + DEC-108 |
+|---|---|---|
+| `duplicated-line` | 1073 (14.0% of pairs) | **108 (1.9%)** |
+| blocks withholding something | 3860 | 6445 (60.2% of pairs) |
+| `silent-old-side` | 203 | 201 |
+| marks, presented bytes, false and missed lines | — | **identical** |
+
+Against the state before any of this work: **2320 → 108, −95%**. The model is untouched — this is the
+layout deciding what to print, and a measurement that moved the model would mean the flag had leaked
+into the analysis.
+
+### Revisit trigger
+
+Reopen if a reader reports missing a removal. The property that prevents it is asserted on every
+fixture: what is withheld is on the new side, in order.

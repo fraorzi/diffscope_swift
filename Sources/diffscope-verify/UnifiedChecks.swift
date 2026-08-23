@@ -205,6 +205,75 @@ func runUnifiedChecks(_ reportRaw: (String, Bool, String) -> Void) {
                offenders.isEmpty, offenders.isEmpty ? "\(found) reflowed blocks" : offenders.joined(separator: ", "))
     }
 
+    print("\n=== DEC-108: withheld line by line, not half by half ===")
+    do {
+        let parser = TSXParser()
+        // The owner's `<Heading>`: rewrapped, wrapped in a fragment, two class rules added — and one
+        // line lost `as string`. DEC-102 refused the whole block for that one line, so the element
+        // was printed twice.
+        let old = "  <Heading\n    level={3}\n"
+            + "    dangerouslySetInnerHTML={{ __html: title as string }}\n  />\n"
+        let new = "  <>\n    <Heading\n      level={3}\n      className={clsx(styles.title)}\n"
+            + "      dangerouslySetInnerHTML={{ __html: title }}\n    />\n  </>\n"
+        let oldBytes = [UInt8](old.utf8), newBytes = [UInt8](new.utf8)
+        let model = structuralDiff(oldPath: "a.tsx", oldBytes: oldBytes,
+                                   newPath: "a.tsx", newBytes: newBytes, parser: parser).model
+        let blocks = unifiedBlocks(model, stops: changeStops(model))
+        let withheldText = blocks.flatMap { block in
+            block.withheldOld.map { String(decoding: oldBytes[$0.start..<$0.end], as: UTF8.self) }
+        }.joined()
+        report("the rewrapped lines are withheld",
+               withheldText.contains("<Heading") && withheldText.contains("/>"),
+               withheldText.debugDescription)
+        report("and the line that lost a token is kept",
+               !withheldText.contains("as string"),
+               withheldText.debugDescription)
+        // The block that holds the removal withholds *part* of its old half and keeps the rest —
+        // which is the whole of DEC-108. Its neighbour, a clean rewrap, is withheld entirely, and
+        // that is DEC-102 still working.
+        report("the block holding the removal keeps the line and withholds the others",
+               blocks.contains { !$0.reflowed && !$0.withheldOld.isEmpty },
+               blocks.map { "old \($0.oldStart)..<\($0.oldEnd) withheld \($0.withheldOld.count)" }
+                   .joined(separator: " · "))
+
+        // Order is what keeps it honest: the tokens of a shuffled block are all present on the other
+        // side, and not in that order.
+        let shuffledOld = "<Field\n  name=\"a\"\n  label=\"b\"\n/>\n"
+        let shuffledNew = "<Field\n  label=\"b\"\n  name=\"a\"\n/>\n"
+        let shuffled = structuralDiff(oldPath: "a.tsx", oldBytes: [UInt8](shuffledOld.utf8),
+                                      newPath: "a.tsx", newBytes: [UInt8](shuffledNew.utf8),
+                                      parser: parser).model
+        let shuffledBlocks = unifiedBlocks(shuffled, stops: changeStops(shuffled))
+        let shuffledWithheld = shuffledBlocks.flatMap { block in
+            block.withheldOld.map { String(decoding: [UInt8](shuffledOld.utf8)[$0.start..<$0.end],
+                                           as: UTF8.self) }
+        }.joined()
+        report("a line moved past another is not withheld",
+               !shuffledWithheld.contains("name") || !shuffledWithheld.contains("label"),
+               shuffledWithheld.debugDescription)
+
+        // The property, over every fixture: what is withheld really is on the new side, in order.
+        var offenders: [String] = []
+        var withheldLines = 0
+        for fixture in loadFixtures(root: URL(fileURLWithPath: "fixtures")) {
+            let model = structuralDiff(oldPath: fixture.oldPath, oldBytes: fixture.old,
+                                       newPath: fixture.newPath, newBytes: fixture.new,
+                                       parser: parser).model
+            for block in unifiedBlocks(model, stops: changeStops(model)) {
+                guard !block.withheldOld.isEmpty else { continue }
+                let hidden = block.withheldOld.flatMap { Array(fixture.old[$0.start..<$0.end]) }
+                withheldLines += block.withheldOld.count
+                if !isTokenSubsequence(layoutTokens(hidden[...]),
+                                       of: layoutTokens(fixture.new[block.newStart..<block.newEnd])) {
+                    offenders.append(fixture.name)
+                }
+            }
+        }
+        report("over every fixture, what is withheld is on the new side in order",
+               offenders.isEmpty,
+               offenders.isEmpty ? "\(withheldLines) withheld runs" : offenders.joined(separator: ", "))
+    }
+
     print("\n=== DEC-102: the flag reaches the renderer ===")
     do {
         let parser = TSXParser()
@@ -234,8 +303,8 @@ func runUnifiedChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // because it only ever asked about the first of the things it cares about. A withheld half
         // with no way back is the failure this pair exists to catch.
         let source = (try? String(contentsOfFile: "Renderer/src/main.js", encoding: .utf8)) ?? ""
-        report("the unified layout reads the reflowed flag",
-               source.contains("block.reflowed"))
+        report("the unified layout reads the withheld ranges",
+               source.contains("block.withheldOld"))
         report("and the reader can bring the withheld half back",
                source.contains("function expandReflow") && source.contains("expandReflow(this.reflowIndex)"))
         report("and the header says how much is behind it",

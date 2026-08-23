@@ -3386,3 +3386,25 @@ the idea.
   `--animated-background-active-hover`, and the fallback marks `20` inside `200ms`.
 - **100% of the marks are drawn as uncertain**, which is honest — nothing was parsed — and means the
   uncertainty texture carries no information in this whole family of files.
+
+---
+
+## M12-I — Withholding by line
+
+**2026-08-23.** DEC-108, over the 4016-pair TypeScript corpus, with DEC-100…107 shipped in both arms.
+
+| | by half (DEC-102) | by line (DEC-108) |
+|---|---|---|
+| `duplicated-line` | 1073 | **108** |
+| pairs with a duplicate | 563 | **75** |
+| blocks withholding something | 3860 | **6445** |
+| `silent-old-side` | 203 | 201 |
+| marks / presented bytes / false / missed | 70689 / 2708728 / 9682 / 7080 | **unchanged** |
+
+**The last row is the check on the other four.** DEC-108 changes which lines the unified layout
+prints and nothing else; a model number that moved would mean the layout had reached into the
+analysis.
+
+`duplicated-line` over the whole of M12: **2320 → 108, −95%.** What is left is 108 lines in 75 pairs,
+and M12-G already says what they are — crossings, where the identical line's two copies cannot both
+be matched without breaking monotonic order. That is an alignment decision, still unmade.
