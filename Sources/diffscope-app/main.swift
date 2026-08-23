@@ -183,6 +183,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     var repoCollapseButton: NSButton!
     var fileCollapseButton: NSButton!
     var rendererReady = false
+    /// What the repository rows last drew, so a sweep that found nothing new redraws nothing
+    /// (DEC-109). `applicationDidBecomeActive` sweeps on every return to the window, and every cell
+    /// in these tables is built from scratch.
+    var lastDrawnRepositoryRows: [String] = []
     var pendingModel: String?
     var watcher: RepositoryWatcher?
     var emptyState: NSView!
@@ -957,6 +961,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         rendererReady = true
+        // A finished navigation means a **new, empty document**, so what was last pushed is no
+        // longer on screen. Forgetting it here is what keeps `push`'s skip safe: the guard is about
+        // not drawing the same thing twice, never about not drawing at all.
+        lastPushedJSON = nil
         // DEC-059 makes unified the default layout. The shell has always agreed — `sideBySide` is
         // `false` from launch and the menu item drew itself unchecked — and **nobody ever told the
         // page**, whose own default is `split`. So the reader got two panes side by side while
@@ -4234,10 +4242,19 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             let labels = disambiguatedNames(for: outcome.snapshots.map(\.url.path))
             DispatchQueue.main.async {
                 guard !explainEmptyResult(outcome.snapshots.count) else { return }
+                // What a repository row draws, so a sweep that found nothing new redraws nothing
+                // (DEC-109). The snapshots themselves are new objects every time, so identity is no
+                // help; this is the content.
+                let drawn = outcome.snapshots.map { snapshot in
+                    [snapshot.url.path, snapshot.head.displayText, "\(snapshot.uncommittedCount)",
+                     snapshot.aheadCount.map(String.init) ?? "?"].joined(separator: "\u{1}")
+                }
+                let unchanged = drawn == self.lastDrawnRepositoryRows
+                self.lastDrawnRepositoryRows = drawn
                 self.state.repositories = outcome.snapshots
                 self.state.repositoryLabels = labels
                 self.hideEmptyState()
-                self.repoTable.reloadData()
+                if !unchanged { self.repoTable.reloadData() }
                 self.updatePaneHeaders()
                 var summary = String(format: "%d repositories from %d sources · swept in %.0f ms",
                                      outcome.snapshots.count, sources.count - unusable.count,
@@ -5562,6 +5579,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         } else {
             state.files = (try? scopes.changedFiles(scope: state.scope, in: repository.url, baseRef: baseRef)) ?? []
         }
+        let previousRows = state.fileRows
+        let previousStaging = state.staging
         state.fileRows = fileTreeRows(state.files, collapsed: state.collapsedDirectories)
         state.annotations = [:]
         updatePaneHeaders()
@@ -5569,7 +5588,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // row is drawn from it. Read rather than remembered — WebStorm, the drawer and every hook
         // share this index.
         state.staging = gitState.staging(in: repository.url)
-        fileTable.reloadData()
+        // **Only redraw a list that changed** (DEC-109). Every cell here is built from scratch —
+        // there is no reuse — so `reloadData` on a 63-file tree rebuilds sixty-three stacks of views,
+        // and this runs on every refresh, including the one every return to the window triggers.
+        // That is the flicker the owner could see and not reproduce.
+        if state.fileRows != previousRows || state.staging != previousStaging {
+            fileTable.reloadData()
+        }
         restoreFileSelection()
         annotateFiles(of: repository)
         // DEC-010/DEC-011: the age is the signal, not the date. The application never fetches, so
@@ -5850,7 +5875,23 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                             pathTaken: "structural", parser: stats.parserState)
     }
 
+    /// The last document handed to the renderer, so an identical one is not handed over twice.
+    ///
+    /// **The flicker the owner could not reproduce** (DEC-109): `applicationDidBecomeActive` rescans
+    /// on every return to the window (DEC-006, and right to), a rescan refreshes the file on screen,
+    /// and the refresh replaced the whole CodeMirror document with the **same bytes** — clearing and
+    /// re-laying-out every line for nothing. Switching from the desktop to the window therefore cost
+    /// one full re-render of whatever was open.
+    ///
+    /// The comparison is the JSON itself: everything the renderer draws is in it, so equal JSON is
+    /// an identical document by construction, and nothing here has to keep a list of which fields
+    /// matter. A model that differs anywhere — a new pin, a moved anchor, a changed mode — is pushed
+    /// as before.
+    private var lastPushedJSON: String?
+
     private func push(_ json: String) {
+        guard json != lastPushedJSON else { return }
+        lastPushedJSON = json
         let escaped = String(decoding: (try? JSONEncoder().encode(json)) ?? Data("\"\"".utf8), as: UTF8.self)
         webView.evaluateJavaScript("window.diffscopeRender(\(escaped))") { _, error in
             if let error { self.statusLabel.stringValue = "render error: \(error)" }
@@ -6076,6 +6117,18 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 ? "Part of this file is staged — click to stage the rest"
                 : (box.inclusion == .all ? "Staged — click to take it out of the commit"
                                          : "Not staged — click to put it in the commit")
+            // **Say it before it happens** (DEC-106). In two of the four scopes the row is about to
+            // leave the list, and a folder row left with no files leaves with it — which is what the
+            // owner read as *the folder was added to the commit* and *the file jumped*. Neither
+            // happened: a folder has no box, and nothing moved except what the scope stopped
+            // answering for.
+            switch state.scope {
+            case .unstagedVsIndex, .stagedVsHead:
+                box.toolTip = (box.toolTip ?? "")
+                    + " · this row leaves \(state.scope.title) when it does"
+            case .allLocalVsHead, .branchVsMergeBase:
+                break
+            }
             let staging: NSView = state.scope == .branchVsMergeBase ? spacerView() : box
 
             let stack = NSStackView(views: [IndentGuides(depth: depth), staging, glyph, name,

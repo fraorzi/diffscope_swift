@@ -5012,3 +5012,51 @@ into the analysis.
 
 Reopen if a reader reports missing a removal. The property that prevents it is asserted on every
 fixture: what is withheld is on the new side, in order.
+
+---
+
+## DEC-109 — Nothing is redrawn for a state it is already showing
+
+- **Date:** 2026-08-23
+- **Topic:** *The application flickers when I come back to it from the desktop, and I do not know how
+  to reproduce it.* Three redraws that fire on every activation and change nothing.
+- **Status:** Accepted — built and checked.
+
+### Why it could not be reproduced
+
+Because it is not caused by anything the reader does. `applicationDidBecomeActive` rescans on every
+return to the window — DEC-006, and right to: the FSEvents watcher covers the repository being looked
+at, and everything else goes stale while the reader is in their editor. The rescan then redraws three
+things whether or not they changed:
+
+1. **the diff document**, replaced with the same bytes — CodeMirror clears and re-lays-out every line;
+2. **the repository list**, rebuilt from new snapshot objects that draw the same text;
+3. **the file list**, rebuilt row by row — and every cell in these tables is constructed from scratch
+   (there is no `makeView` reuse), so a 63-file tree is sixty-three stacks of views built to look
+   identical.
+
+Any one of them is a flash. All three fire together, on a window that has just come forward, which is
+the one moment a reader is looking at the whole surface at once.
+
+### The decision
+
+Each of the three compares what it is about to draw with what it drew:
+
+- `push` holds the **last JSON handed to the renderer** and skips an identical one. The comparison is
+  the document itself, so nothing has to keep a list of which fields matter; and `webView(_:didFinish:)`
+  forgets it, because a finished navigation means a new empty document and the guard must never be a
+  way to lose a render.
+- the repository table redraws when the **text of its rows** changes — path, head, uncommitted count,
+  ahead count — rather than when the sweep hands over new objects, which it always does.
+- the file table redraws when its **rows or the staging state** change, both of which are `Equatable`
+  and both of which are what the rows draw.
+
+### What this is not
+
+It is not a cache of work. Every refresh still runs: the sweep, the file listing, the staging read,
+the model build. What stops is the **drawing** of an answer identical to the one on screen — which is
+the only part a reader can see, and the only part that was flashing.
+
+**The checks are a pair, deliberately.** A guard against redrawing is one line away from being a way
+to never draw at all, so the suite asserts both halves: that the identical push is skipped, and that a
+fresh document forgets what was last pushed.

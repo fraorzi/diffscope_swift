@@ -53,6 +53,16 @@ func runInstallChecks(_ reportRaw: (String, Bool, String) -> Void) {
            configured.isEmpty
                ? "run: git config core.hooksPath .githooks"
                : "core.hooksPath is \(configured.trimmingCharacters(in: .whitespacesAndNewlines))")
+
+    print("\n=== DEC-109: the window is not redrawn for a document it is already showing ===")
+    // A source check rather than a running window, and the pair is what makes it worth having: the
+    // guard alone would be a way to lose a render, and forgetting the last document on a finished
+    // navigation is what makes it safe.
+    let shell = (try? String(contentsOfFile: "Sources/diffscope-app/main.swift", encoding: .utf8)) ?? ""
+    report("an identical model is not pushed twice",
+           shell.contains("guard json != lastPushedJSON else { return }"))
+    report("and a fresh document forgets what was last pushed",
+           shell.contains("lastPushedJSON = nil"))
 }
 
 private func shellOutput(_ command: String) throws -> String {

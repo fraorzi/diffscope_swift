@@ -3186,3 +3186,17 @@ TypeScript corpus unchanged.
       over every fixture that what is withheld really is on the new side in order
 
 `duplicated-line` 1073 → **108** on 4016 changes, and every model number identical.
+
+## Step — the flicker, the folder that was never staged, and the tooltip (DEC-106 addendum, DEC-109)
+
+- [x] `push` skips a model identical to the one on screen; `webView(_:didFinish:)` clears the memory
+      of it, so a fresh document is always drawn
+- [x] the repository table redraws on the *text of its rows*, not on the sweep handing over new
+      objects — it hands over new objects every time
+- [x] the file table redraws when `fileRows` or the staging state change
+- [x] the box's tooltip says, before it is clicked, that the row will leave this scope — the folder
+      row disappearing with its last file is what read as *the folder was added to the commit*
+- [x] confirmed from the source: **a folder row has no box at all**, only a disclosure mark, so
+      nothing ever stages a directory
+
+30 selftest arms and 2052 checks pass with the guards in place.
