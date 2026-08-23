@@ -123,7 +123,7 @@ func runBoundaryChecks(_ reportRaw: (String, Bool, String) -> Void) {
                            // wideners and both finish an identifier, so a control that turned off
                            // only one would be asserting the *other* pass's absence.
                            settings: MatcherSettings(boundarySnapBudget: budget,
-                                                     wordSnapBudget: budget == 0 ? 0 : DiffScopeSyntax.wordSnapBudget))
+                                                     wordSnapBudget: budget == 0 ? 0 : DiffScopeEngine.wordSnapBudget))
         }
 
         /// Runs of adjacent presented segments — one visible change is one run, whatever the

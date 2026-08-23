@@ -26,7 +26,7 @@ public struct MatcherSettings: Sendable {
 
     public init(minimumHeight: Int = 1, minimumDice: Double = 0.5, maximumCandidates: Int = 32,
                 boundarySnapBudget: Int = DiffScopeSyntax.boundarySnapBudget,
-                wordSnapBudget: Int = DiffScopeSyntax.wordSnapBudget,
+                wordSnapBudget: Int = DiffScopeEngine.wordSnapBudget,
                 mergeSplitMarksInWords: Bool = true,
                 classifyWhitespaceHunks: Bool = true,
                 absorbAfterWidening: Bool = true,

@@ -85,13 +85,27 @@ extension Controller {
         guard let repository = state.selectedRepository,
               state.fileRows.indices.contains(sender.tag),
               let file = state.fileRows[sender.tag].file else { return }
-        perform(sender.inclusion == .all ? "unstage" : "stage") {
+        let verb = sender.inclusion == .all ? "unstage" : "stage"
+        perform(verb) {
             if sender.inclusion == .all {
                 try self.actions.unstage(paths: [file.path], in: repository.url,
                                          hasCommits: self.hasCommits(repository))
             } else {
                 try self.actions.stage(paths: [file.path], in: repository.url)
             }
+        }
+        // **Say why the row went** (DEC-106). Two of the four scopes answer a question a staged file
+        // changes the answer to, so ticking its box correctly removes it from the list — and to the
+        // reader that is a file moving under the pointer for no stated reason, which is how it was
+        // reported. The selection already stays where it was; this says what happened to the row.
+        guard !state.files.contains(where: { $0.path == file.path }) else { return }
+        switch state.scope {
+        case .unstagedVsIndex, .stagedVsHead:
+            let name = (file.path as NSString).lastPathComponent
+            statusLabel.stringValue = "\(verb) — \(name) is no longer part of "
+                + "\(state.scope.title); it is in \(ComparisonScope.allLocalVsHead.title)"
+        case .allLocalVsHead, .branchVsMergeBase:
+            break
         }
     }
 

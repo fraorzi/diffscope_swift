@@ -81,8 +81,26 @@ public func fallbackPartitions(
             segments.append(Segment(start: cursor, end: bytes.count, label: .unchanged, confidence: 1))
         }
         let partition = Partition(totalLength: bytes.count, segments: segments)
-        return coalesceAdjacent(snapToGraphemeBoundaries(
-            absorbIslands(partition, bytes: bytes, settings: absorption), bytes: bytes))
+        // **The word snap runs here too** (DEC-100 was structural-path only). A file with no grammar
+        // is where a reader most needs a whole word: the corpus of stylesheets and JSON reports 1452
+        // marks cutting one, `2⟦00⟧ms` and `--animated-background-active-⟦hover⟧` among them.
+        //
+        // The identifier rule, widened to take a hyphen (DEC-107). Treating the whole file as a
+        // string literal was tried first and is too much: with no whitespace to stop it, `.a{}`
+        // becomes one word and a one-character change paints the line. A hyphen is the only
+        // punctuation that belongs inside a name here — `--custom-property`, `200ms`, `bg-red-500` —
+        // and it is a subtraction only in a language this path has already failed to parse.
+        // And the word merge with it, for the reason it exists: widening gives the finished half of
+        // a word the *unchanged* side's confidence, so the word ends up as two marks that differ
+        // only in how sure they are. Without this the snap trades 1452 cut words for 6809 split
+        // ones, which is not a trade.
+        let widened = snapToGraphemeBoundaries(
+            absorbIslands(snapToWordBoundaries(partition, bytes: bytes, stringRegions: [],
+                                               hyphenIsWord: true),
+                          bytes: bytes, settings: absorption),
+            bytes: bytes)
+        return coalesceAdjacent(coalesceAcrossWords(widened, bytes: bytes, stringRegions: [],
+                                                    hyphenIsWord: true))
     }
 
     return (side(oldBytes, oldRanges), side(newBytes, newRanges))

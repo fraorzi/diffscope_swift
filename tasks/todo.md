@@ -3147,3 +3147,28 @@ false lines **10589 → 218**, presented bytes 1126638 → 265602, and the TypeS
 - [ ] DEC-100's word snap runs on the structural path only, so `.css` still shows `2⟦00⟧ms` and
       `--animated-background-active-⟦hover⟧`. The identifier rule needs no tree; the string rule does.
 - [ ] every fallback mark is drawn uncertain, so the texture says nothing in a whole family of files
+
+## Step — the box, the selection, and the flag that never arrived (DEC-106)
+
+- [x] `FileOrderChecks`: what staging does to the row order in every scope, built on a scratch
+      repository. Nothing reorders; in two scopes the file **leaves the list**, which is those scopes
+      working.
+- [x] `RowNavigation.nearestSelectable` — the selection stays at the index it was on when its row
+      leaves, instead of falling to the top of the file
+- [x] the status line says which scope the file left and where it is now
+- [x] **`buildRenderModel` dropped `reflowed`** when it rebuilt each block in UTF-16 — DEC-102 was
+      computed, checked and thrown away one function before the window. The check now asks the
+      contract, not the engine, and asserts the two agree block for block.
+
+## Step — the word rule follows the path (DEC-107)
+
+- [x] `WordSnap.swift` moves from `DiffScopeSyntax` into `DiffScopeEngine`, with `widenPresented`
+- [x] the fallback path snaps and merges with the identifier rule **plus a hyphen**; the whole-file
+      string rule was tried, painted `.a{}` whole, and was refused by `ClassificationChecks`
+- [x] `widenPresented` keeps the run's label — INV-4 was quietly broken by `.changed` on the fallback
+      path, and the mislabelling also blocked the word merge (1452 cut words became 6809 split ones)
+- [x] a widened `.moved` flank still becomes `.changed`: DEC-038's byte-identity is about the bytes
+      the move search compared, not the ones a snap added afterwards
+
+`shredded-word` on the fallback corpus 1452 → **0**, marks 4301 → 4139, presented bytes +1.2%, and the
+TypeScript corpus unchanged.

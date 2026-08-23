@@ -156,6 +156,27 @@ public enum RowNavigation {
     public static func isSelectable(rows: [FileListRow], row: Int) -> Bool {
         row >= 0 && row < rows.count && rows[row].file != nil
     }
+
+    /// Where the selection goes when the file it was on has **left the list** (DEC-106).
+    ///
+    /// Ticking a file's box in *Unstaged vs index* stages it, and a staged file is not an unstaged
+    /// one — so the row leaves, correctly, and the reader is left wherever `firstSelectable` puts
+    /// them, which is the top of the file. That is what the owner reported as *the file suddenly
+    /// changes position*: it is not the sort, it is the list answering a different question and the
+    /// selection falling to the beginning of it.
+    ///
+    /// The answer is the same one every list makes when a row is deleted: **stay where you were**.
+    /// The nearest selectable row at or after the old index, then the nearest before it, then
+    /// nothing.
+    public static func nearestSelectable(in rows: [FileListRow], to index: Int) -> Int? {
+        guard !rows.isEmpty else { return nil }
+        let start = max(0, min(index, rows.count - 1))
+        for candidate in start..<rows.count where rows[candidate].file != nil { return candidate }
+        for candidate in stride(from: start - 1, through: 0, by: -1) where rows[candidate].file != nil {
+            return candidate
+        }
+        return nil
+    }
 }
 
 /// What the list can say about a file **without reading all of it** (`12-…` §4, §6).

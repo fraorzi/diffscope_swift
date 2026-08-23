@@ -4865,3 +4865,97 @@ to a fallback that alters the main path would mean the fallback was not where it
 Reopen if a reader reports a change they could not find in a file with no grammar. The line pass is
 `lineFallback` on `fallbackPartitions`, off in one place, and the whole-file answer is what it falls
 back to.
+
+---
+
+## DEC-106 — Ticking a box does not move the reader
+
+- **Date:** 2026-08-23
+- **Topic:** *Why does the file suddenly change position when I tick it into the commit?* Two answers,
+  one of them a defect in [DEC-102](#dec-102--a-rewrapped-old-half-is-withheld-not-printed-twice).
+- **Status:** Accepted — built and checked.
+
+### It is not the sort
+
+The list is sorted by path before and after a write, and the tree is built from that order alone, so
+nothing reorders. What moves is **membership**: three of the four scopes answer different questions
+about the same repository, and in *Unstaged vs index* a staged file is no longer part of the answer.
+The row leaves — correctly — and the selection fell to the top of the list with it, which is the
+"jump" that was reported. Measured for every scope in `FileOrderChecks`, including the untracked case,
+where git's own output prints `??` entries last.
+
+Two changes, and neither of them lies about state:
+
+- **The selection stays where the reader left it.** `RowNavigation.nearestSelectable` takes the index
+  the row occupied, not the file that used to be there: the nearest selectable row at or after it,
+  then the nearest before it. That is what every list does when a row is deleted.
+- **The status line says what happened**: *stage — ImageText.tsx is no longer part of Unstaged vs
+  index; it is in All local changes vs HEAD.* The alternative — keeping the row visible after it has
+  left the scope — would be the list showing something git does not say, which this project does not
+  do anywhere else.
+
+### And the reflow flag never reached the window
+
+The same report said the rewrapped `<NextImage>` was still shown twice, after DEC-102 shipped and
+with the checks green. It was: `buildRenderModel` rebuilds every block in UTF-16 for the renderer,
+and rebuilding a value type means **naming every field**. The projection named four of five, so
+`reflowed` was computed, asserted in the engine, and dropped one function before the interface.
+
+**A default value on a new field is what made that silent**, and the check that would have caught it
+is the one that exists now: the contract's blocks and the engine's must agree, block for block. Every
+DEC-102 check until then asked the engine — the half that was right.
+
+---
+
+## DEC-107 — The word rule follows the path, and a widened flank keeps its label
+
+- **Date:** 2026-08-23
+- **Topic:** [DEC-100](#dec-100--a-mark-finishes-the-word-it-cut-and-two-marks-inside-one-word-are-one-mark)
+  ran on the structural path only. The corpus of files with no grammar is where it was needed most.
+- **Status:** Accepted — built, checked and measured.
+
+### What the fallback corpus said
+
+1452 marks cutting a word in half across 364 stylesheets, JSON and Markdown files — 37.6% of pairs.
+`2⟦00⟧ms`, `--animated-background-active-⟦hover⟧`. The word snap could not reach them because it lived
+in the syntax module and took its rules from a tree.
+
+### The decision
+
+`WordSnap` moves into the engine, and the **rule travels with the path**:
+
+- the structural path keeps DEC-100's two rules — whitespace-delimited inside a string literal, the
+  language's identifier rule outside it, where `a-b` is a subtraction;
+- the fallback path uses the identifier rule **widened to take a hyphen**, because
+  `--custom-property`, `200ms` and `bg-red-500` are one name each and there is no parser to say
+  otherwise — in a language this path has already failed to parse, a hyphen is not a minus sign.
+
+**Treating the whole file as a string literal was tried first and is too much**: with no whitespace to
+stop it, `.a{}` becomes one word and a one-character change paints the line. `ClassificationChecks`
+failed on exactly that, which is the check doing its job.
+
+### The finding underneath it
+
+Widening on the fallback path did nothing until `widenPresented` stopped labelling every widened flank
+`.changed`. Two things were wrong with that default:
+
+- **INV-4**: in a file nothing was parsed of, every presented range must be marked as produced without
+  structural analysis. A `.changed` flank in a `.css` file is a structural claim nobody made.
+- and it made the word merge impossible: the two halves of the word the snap had just finished no
+  longer agreed on what they were, so 1452 cut words became **6809 split ones** — measured, and not a
+  trade.
+
+A widened flank now keeps the run's label, with one exception written into the code: **`.moved`
+becomes `.changed`**, because DEC-038 requires the two sides of a move to be byte-identical and the
+bytes the widening adds were never part of that comparison.
+
+### Consequences, over 364 fallback-path changes
+
+| | before | after |
+|---|---|---|
+| `shredded-word` | 1452 (37.6% of pairs) | **0** |
+| marks | 4301 | 4139 |
+| presented bytes | 265602 | 268734 (+1.2%) |
+| `split-mark` | 0 | 58 |
+
+The TypeScript corpus does not move: 11077 marks either way over 800 pairs.

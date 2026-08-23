@@ -4282,8 +4282,17 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// was on is not the row it is on now, and selecting the old index would mark the wrong file.
     private func restoreFileSelection() {
         guard let path = state.selectedFile?.path else { return }
-        let row = state.fileRows.firstIndex { $0.file?.path == path }
-        guard let row, fileTable.selectedRow != row else { return }
+        if let row = state.fileRows.firstIndex(where: { $0.file?.path == path }) {
+            guard fileTable.selectedRow != row else { return }
+            fileTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            return
+        }
+        // The file is gone from this list — staged out of *Unstaged vs index*, or discarded. The
+        // selection stays where the reader left it rather than falling to the top of the file
+        // (DEC-106): a list that reorganises itself under the pointer is the thing being reported.
+        let previous = fileTable.selectedRow
+        guard previous >= 0, let row = RowNavigation.nearestSelectable(in: state.fileRows, to: previous)
+        else { return }
         fileTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
     }
 

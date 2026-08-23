@@ -1,4 +1,3 @@
-import DiffScopeEngine
 import Foundation
 
 /// How far a mark may be widened to finish the word it cut. A word longer than this is not a word
@@ -6,35 +5,25 @@ import Foundation
 /// would show more than the change.
 public let wordSnapBudget = 24
 
-/// The byte ranges of string and template literals, where a "word" is delimited by spaces rather
-/// than by the language's identifier rule.
+/// A hyphen is part of a word **only where there is no grammar to say otherwise** (DEC-107).
 ///
-/// A Tailwind class attribute is one string node holding thirty words. `SyntaxBoundaries` offers
-/// only that node's two ends, so the 16-byte budget can never reach them and the mark stays where
-/// the byte diff put it — `bg-o⟦pacity-30⟧`, over a class name the reader has to reassemble. Inside
-/// these ranges the word rule is *whitespace to whitespace*, which is what a class name, a URL
-/// segment and a sentence in a JSX string all are.
-public func stringRegions(tree: SyntaxTree) -> [(start: Int, end: Int)] {
-    var regions: [(start: Int, end: Int)] = []
-    for node in tree.nodes where node.end > node.start {
-        switch node.type {
-        case "string", "template_string", "string_fragment":
-            regions.append((node.start, node.end))
-        default:
-            continue
-        }
-    }
-    return regions.sorted { $0.start < $1.start }
+/// In TypeScript `a-b` is a subtraction and joining its operands would be a claim about code. In a
+/// `.css` file, `--animated-background-active-hover` is one name and `200ms` is one value, and there
+/// is no parser to tell the two cases apart — so the rule travels with the path: the structural path
+/// says no, the fallback path says yes.
+func isIdentifierByte(_ byte: UInt8, hyphenIsWord: Bool = false) -> Bool {
+    if hyphenIsWord, byte == 0x2D { return true }
+    return isIdentifierByteCore(byte)
 }
 
-private func isIdentifierByte(_ byte: UInt8) -> Bool {
+private func isIdentifierByteCore(_ byte: UInt8) -> Bool {
     (byte >= 0x30 && byte <= 0x39) || (byte >= 0x41 && byte <= 0x5A)
         || (byte >= 0x61 && byte <= 0x7A) || byte == 0x5F || byte == 0x24 || byte >= 0x80
 }
 
 /// Inside a string, everything that is not whitespace and not the quote itself. `md:hover:bg-red-500`
 /// is one word to the reader and thirteen tokens to the language; the reader is who this is for.
-private func isStringWordByte(_ byte: UInt8) -> Bool {
+func isStringWordByte(_ byte: UInt8) -> Bool {
     switch byte {
     case 0x20, 0x09, 0x0A, 0x0D, 0x22, 0x27, 0x60: return false
     default: return true
@@ -69,7 +58,8 @@ public func snapToWordBoundaries(
     _ partition: Partition,
     bytes: [UInt8],
     stringRegions regions: [(start: Int, end: Int)],
-    budget: Int = wordSnapBudget
+    budget: Int = wordSnapBudget,
+    hyphenIsWord: Bool = false
 ) -> Partition {
     guard budget > 0, !bytes.isEmpty else { return partition }
     let presented = partition.segments.filter(\.isPresented).map { (start: $0.start, end: $0.end) }
@@ -89,7 +79,8 @@ public func snapToWordBoundaries(
 
     func isWord(_ offset: Int, string: Bool) -> Bool {
         guard offset >= 0, offset < bytes.count else { return false }
-        return string ? isStringWordByte(bytes[offset]) : isIdentifierByte(bytes[offset])
+        return string ? isStringWordByte(bytes[offset])
+                      : isIdentifierByte(bytes[offset], hyphenIsWord: hyphenIsWord)
     }
 
     var widened: [(start: Int, end: Int)] = []
@@ -147,7 +138,8 @@ public func snapToWordBoundaries(
 public func coalesceAcrossWords(
     _ partition: Partition,
     bytes: [UInt8],
-    stringRegions regions: [(start: Int, end: Int)]
+    stringRegions regions: [(start: Int, end: Int)],
+    hyphenIsWord: Bool = false
 ) -> Partition {
     guard partition.segments.count > 1, !bytes.isEmpty else { return partition }
 
@@ -172,7 +164,8 @@ public func coalesceAcrossWords(
         let at = bytes[offset]
         return string
             ? isStringWordByte(before) && isStringWordByte(at)
-            : isIdentifierByte(before) && isIdentifierByte(at)
+            : isIdentifierByte(before, hyphenIsWord: hyphenIsWord)
+                && isIdentifierByte(at, hyphenIsWord: hyphenIsWord)
     }
 
     var out: [Segment] = []

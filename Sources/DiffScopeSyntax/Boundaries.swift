@@ -124,72 +124,6 @@ public func snapPresentation(
                                                budget: budget, bytes: bytes))
 }
 
-/// Rewrites a partition so that every byte of `snapped` is presented, keeping what the segments
-/// underneath already claimed.
-///
-/// Shared by the two widening passes rather than written twice: `snapPresentation` widens onto
-/// syntax boundaries and `snapToWordBoundaries` onto the ends of a word, and both then face the
-/// identical question of what the widened bytes should say. The answer below is the load-bearing
-/// part — an inherited classification, and only where the run agrees on one.
-public func widenPresented(_ partition: Partition, to snapped: [(start: Int, end: Int)]) -> Partition {
-    // A widened flank is unchanged content, so it cannot make a run behave differently. It may
-    // therefore carry the run's classification — but only where every change inside that run
-    // agrees on one. A run holding an unclassified change stays unclassified.
-    func agreed(_ range: (start: Int, end: Int), _ field: (Segment) -> String?) -> String? {
-        var found: String??
-        for segment in partition.segments
-        where segment.isPresented && segment.start < range.end && segment.end > range.start {
-            if found == nil { found = field(segment) }
-            else if found! != field(segment) { return nil }
-        }
-        return found ?? nil
-    }
-    let inherited = snapped.map { agreed($0, \.classification) }
-    let disclosed = snapped.map { agreed($0, \.disclosure) }
-
-    var out: [Segment] = []
-    func append(_ segment: Segment) {
-        if let last = out.last, last.end == segment.start, last.label == segment.label,
-           last.classification == segment.classification, last.disclosure == segment.disclosure,
-           last.confidence == segment.confidence, last.link == segment.link {
-            out[out.count - 1] = Segment(start: last.start, end: segment.end, label: last.label,
-                                         classification: last.classification,
-                                         disclosure: last.disclosure,
-                                         confidence: last.confidence,
-                                         link: last.link)
-        } else {
-            out.append(segment)
-        }
-    }
-
-    for segment in partition.segments {
-        guard segment.label == .unchanged else { append(segment); continue }
-        var cursor = segment.start
-        for (index, range) in snapped.enumerated() {
-            if range.end <= cursor { continue }
-            if range.start >= segment.end { break }
-            let overlapStart = max(range.start, cursor)
-            let overlapEnd = min(range.end, segment.end)
-            guard overlapEnd > overlapStart else { continue }
-            if overlapStart > cursor {
-                append(Segment(start: cursor, end: overlapStart, label: .unchanged,
-                               classification: segment.classification,
-                               confidence: segment.confidence))
-            }
-            append(Segment(start: overlapStart, end: overlapEnd, label: .changed,
-                           classification: inherited[index], disclosure: disclosed[index],
-                           confidence: segment.confidence))
-            cursor = overlapEnd
-        }
-        if cursor < segment.end {
-            append(Segment(start: cursor, end: segment.end, label: .unchanged,
-                           classification: segment.classification,
-                           confidence: segment.confidence))
-        }
-    }
-    return Partition(totalLength: partition.totalLength, segments: out)
-}
-
 /// The byte ranges tree-sitter could not parse (F1 of `13-error-and-fallback-model.md` §2).
 ///
 /// F1 is *"parse error in part of a file: structural for clean regions, raw for the rest"*. Until
@@ -219,3 +153,25 @@ public func parseErrorRegions(tree: SyntaxTree) -> [(start: Int, end: Int)] {
 func region(containing offset: Int, in regions: [(start: Int, end: Int)]) -> (start: Int, end: Int)? {
     regions.first { offset >= $0.start && offset < $0.end }
 }
+
+/// The byte ranges of string and template literals, where a "word" is delimited by spaces rather
+/// than by the language's identifier rule.
+///
+/// A Tailwind class attribute is one string node holding thirty words. `SyntaxBoundaries` offers
+/// only that node's two ends, so the 16-byte budget can never reach them and the mark stays where
+/// the byte diff put it — `bg-o⟦pacity-30⟧`, over a class name the reader has to reassemble. Inside
+/// these ranges the word rule is *whitespace to whitespace*, which is what a class name, a URL
+/// segment and a sentence in a JSX string all are.
+public func stringRegions(tree: SyntaxTree) -> [(start: Int, end: Int)] {
+    var regions: [(start: Int, end: Int)] = []
+    for node in tree.nodes where node.end > node.start {
+        switch node.type {
+        case "string", "template_string", "string_fragment":
+            regions.append((node.start, node.end))
+        default:
+            continue
+        }
+    }
+    return regions.sorted { $0.start < $1.start }
+}
+

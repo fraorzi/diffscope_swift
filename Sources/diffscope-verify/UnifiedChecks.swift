@@ -205,6 +205,29 @@ func runUnifiedChecks(_ reportRaw: (String, Bool, String) -> Void) {
                offenders.isEmpty, offenders.isEmpty ? "\(found) reflowed blocks" : offenders.joined(separator: ", "))
     }
 
+    print("\n=== DEC-102: the flag reaches the renderer ===")
+    do {
+        let parser = TSXParser()
+        // The engine's blocks were checked from the day the flag existed. The contract's were not,
+        // and the projection into UTF-16 rebuilds every block by naming its fields — so the flag was
+        // computed, asserted, and dropped one function before the window.
+        let old = "      <NextImage src={img.src} alt={img.alt} priority />\n"
+        let new = "      <NextImage\n        src={img.src}\n        alt={img.alt}\n"
+            + "        priority\n        className=\"rounded\"\n      />\n"
+        let result = structuralDiff(oldPath: "a.tsx", oldBytes: [UInt8](old.utf8),
+                                    newPath: "a.tsx", newBytes: [UInt8](new.utf8), parser: parser)
+        let engineBlocks = unifiedBlocks(result.model, stops: changeStops(result.model))
+        let contract = buildRenderModel(model: result.model, pinOld: "a", pinNew: "b")
+        report("the engine says this block is a rewrap",
+               engineBlocks.contains { $0.reflowed })
+        report("and the model the renderer receives says so too",
+               contract.unifiedBlocks.contains { $0.reflowed },
+               contract.unifiedBlocks.map { "\($0.oldStart)..<\($0.oldEnd) reflowed=\($0.reflowed)" }
+                   .joined(separator: " "))
+        report("the two agree block for block",
+               engineBlocks.map { $0.reflowed } == contract.unifiedBlocks.map { $0.reflowed })
+    }
+
     print("\n=== DEC-102: the layout withholds it and offers it back ===")
     do {
         // Two facts, not one `contains`: DEC-064's named failure mode is a check that keeps passing

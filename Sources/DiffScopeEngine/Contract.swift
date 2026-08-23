@@ -173,7 +173,14 @@ public func buildRenderModel(
         let blocks = byteBlocks.compactMap { block -> UnifiedBlock? in
             guard let a = oldMap[block.oldStart], let b = oldMap[block.oldEnd],
                   let c = newMap[block.newStart], let d = newMap[block.newEnd] else { return nil }
-            return UnifiedBlock(oldStart: a, oldEnd: b, newStart: c, newEnd: d)
+            // **`reflowed` travels with the block.** This projection rebuilds every range in UTF-16
+            // for the renderer, and rebuilding a value type means naming every field: the first
+            // version of this line named four of the five, so DEC-102's flag was computed, checked in
+            // the engine, and then dropped one function before the window — where it was reported as
+            // still showing the rewrapped half twice. A default value on a new field is what makes
+            // that failure silent, and the check below now asks the contract rather than the engine.
+            return UnifiedBlock(oldStart: a, oldEnd: b, newStart: c, newEnd: d,
+                                reflowed: block.reflowed)
         }
         let collapses = byteCollapses.compactMap { range -> CollapseRange? in
             guard let a = oldMap[range.oldStart], let b = oldMap[range.oldEnd],
