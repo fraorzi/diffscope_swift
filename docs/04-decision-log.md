@@ -4652,3 +4652,71 @@ shape — and the header sentence is what pays it: *re-wrapped — N lines not p
 Reopen if a reader reports missing a change that sat inside a withheld half. That cannot happen while
 the subsequence test holds, so the first thing to check would be the test itself — the property is
 asserted over every fixture, and the corpus survey counts the blocks.
+
+---
+
+## DEC-103 — Absorption runs again, after the wideners
+
+- **Date:** 2026-08-23
+- **Topic:** The cost DEC-100 created, and the diagnosis that found it. Extends
+  [DEC-094](#dec-094--short-unchanged-islands-inside-a-change-are-absorbed-into-it); its ordering is
+  kept, not reversed.
+- **Status:** Accepted — built, checked and measured.
+
+### The finding
+
+[M12-C](22-experiment-log.md) recorded a cost honestly and left it open: `micro-island` — a one- or
+two-byte unchanged gap left standing between two marks — rose 4766 → 5305 when the word snap shipped.
+The obvious suspect was DEC-094's floor of 8, chosen in M11-D on eleven files.
+
+**It was not the floor.** Raising it to 12, 16 and 24 over 1200 corpus changes moves the mark count by
+0.5% and the islands by 0.7% ([M12-E](22-experiment-log.md)). So the survey was made to say *why* each
+island survived, by re-deriving absorption's four conditions from the finished partition — and **1507
+of 1757 were refused by no condition at all**. A pass whose refusals cannot be explained by its own
+rules did not refuse them: it never saw them.
+
+**It ran too early.** DEC-094 puts absorption first on purpose, and that reasoning still holds — it is
+what makes the budget-0 control honest, and what stops the snap rescuing boundaries absorption would
+have removed. What it cannot do from there is see the gaps the *wideners create*: a mark widened onto
+a word boundary leaves the space beside it standing, and that space did not exist as an island when
+absorption was asked.
+
+### The decision
+
+Absorption runs a **second** time, after the syntax snap, the word snap and the grapheme snap, and
+before the merges. The first run keeps its place and its reasoning; the second one exists because its
+input is a different partition.
+
+**Running it twice is safe for the reason running it once was.** It only relabels `unchanged` as
+presented, so it is monotone and INV-2 survives by construction; its fourth condition — every line
+the island touches already carries a presented byte from a flank — is a theorem about `changedLines`
+whichever partition it is asked about. Both facts are asserted over every fixture against the
+`absorbAfterWidening: false` control.
+
+### Consequences, over 4016 real changes
+
+| | before | after |
+|---|---|---|
+| `micro-island` | 5305 | **1347** (−75%, and below the 4766 it started at) |
+| marks | 75873 | **70916** (−6.5%) |
+| `mark-confetti` | 63 | **37** |
+| presented bytes | 2706941 | 2717731 (+0.4%) |
+| false / missed lines | 9731 / 7075 | **unchanged** |
+
+Cumulatively with [DEC-100](#dec-100--a-mark-finishes-the-word-it-cut-and-two-marks-inside-one-word-are-one-mark)
+and [DEC-101](#dec-101--a-rewrap-says-it-is-a-rewrap): **marks 81665 → 70916, −13.2%, for 2.0% more
+presented bytes, with the reported lines untouched throughout.**
+
+### What the diagnosis says to do next, and what it says to leave alone
+
+The same instrument now reports why two touching marks stay two: **27423 junctions cross the
+confidence floor and 955 differ by `link`**. The floor crossings are `reconcile`'s 0.6 — *the byte
+diff contradicts an anchor* — and the survey answers the question that would have been guessed at:
+uncertain marks are **7.9% of marks and 3.0% of presented bytes**, so the flag is rare enough to
+still mean something. It is left alone on that evidence rather than on taste.
+
+### Revisit trigger
+
+Reopen if a third widening pass is added — the ordering rule this establishes is *absorb after
+anything that widens*, and a new widener without a following absorption would rebuild the islands
+this removed.

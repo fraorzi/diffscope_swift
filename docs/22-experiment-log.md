@@ -3193,3 +3193,61 @@ measurement that showed otherwise would mean the flag had leaked into the analys
 **What the remaining 202 are.** Blocks whose old half holds a token the new half does not — a removal
 that happened in the same block as a rewrap. Those must print both sides, which is what the
 one-directional subsequence test is for, and they are the reason the number is 202 rather than 0.
+
+---
+
+## M12-E — Why short islands survive, and what the floor is not
+
+**2026-08-23.** DEC-103. The first 1200 pairs, DEC-100 through DEC-102 shipped, `absorbIslandBytes`
+the only thing moving.
+
+| floor | marks | presented bytes | `micro-island` |
+|---|---|---|---|
+| 8 (shipped) | 19565 | 693429 | 1757 |
+| 12 | 19508 | 693920 | 1748 |
+| 16 | 19480 | 694253 | 1745 |
+| 24 | 19468 | 694477 | 1745 |
+
+**The floor is not the dial.** Tripling it removes twelve islands. M11-D chose 8 on eleven files and
+the choice survives 4016 changes — but the shape it was chosen to fix is now being refused by
+something else.
+
+### So the survey was made to say why
+
+Each surviving island was tested against absorption's own four conditions, re-derived from the
+finished partition:
+
+| reason | islands |
+|---|---|
+| **unexplained** | **1507** |
+| flanks disagree | 134 |
+
+**A refusal that no rule accounts for is not a refusal.** Those islands were created by the wideners,
+after absorption had already run — the diagnosis that produced DEC-103.
+
+### The second pass, over the whole corpus
+
+| | absorb once | absorb again |
+|---|---|---|
+| marks | 75873 | **70916** |
+| `micro-island` | 5305 | **1347** |
+| `mark-confetti` | 63 | **37** |
+| presented bytes | 2706941 | 2717731 |
+| false / missed | 9731 / 7075 | 9731 / 7075 |
+
+And the diagnosis afterwards: 266 islands still unexplained on the subset, against 1507 before, with
+`longer-than-a-flank` — a real rule, doing its job — becoming the second reason instead.
+
+### The other half of the same diagnostic
+
+| why two touching marks stayed two | junctions |
+|---|---|
+| crosses the confidence floor | 27423 |
+| differs by `link` (one side is a move) | 955 |
+| differs by label | 5 |
+
+`link` is DEC-038 working: two marks because one of them is half of a move. The floor crossings are
+`reconcile`'s 0.6 — the byte diff contradicting an anchor — and the number that decides what to do
+about them is beside it: **uncertain marks are 7.9% of marks and 3.0% of presented bytes**. A flag
+that fired on a third of everything would have to be reconsidered; one that fires on 3% of the bytes
+is a flag. Left alone, on the measurement rather than on taste.

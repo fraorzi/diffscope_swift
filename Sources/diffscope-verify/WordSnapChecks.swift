@@ -161,8 +161,34 @@ func runWordSnapChecks(_ reportRaw: (String, Bool, String) -> Void) {
             $0.isPresented && classificationGroup(of: $0.classification)
                 == ClassificationGroup.formattingOnly.rawValue
         }
-        report("negative control: without the pass the rewrap is drawn at full weight",
-               controlQuiet.count < quiet.count, "\(controlQuiet.count) quiet without it")
+        // The control is a unit rather than the same pair with the switch off, and the reason is
+        // worth recording: with every other pass shipped, `changeClassification` already classifies
+        // this rewrap from the gap pair, so an end-to-end control measures **that** classifier and
+        // reports the same number either way. What has to be shown here is that this pass classifies
+        // a mark nothing else reaches — a whitespace run between two tokens that are still
+        // neighbours, inside a region holding a real edit.
+        let gapBytes = [UInt8]("<Image\n  src={a}\n".utf8)
+        let unclassified = Partition(totalLength: gapBytes.count, segments: [
+            Segment(start: 0, end: 6, label: .unchanged, confidence: 1),
+            Segment(start: 6, end: 9, label: .changed, confidence: 0.8),
+            Segment(start: 9, end: gapBytes.count, label: .unchanged, confidence: 1),
+        ])
+        let pairs = adjacentTokenPairs(bytes: [UInt8]("<Image src={a}\n".utf8), from: 0, to: 15)
+        let gaps = preservedGapRanges(bytes: gapBytes, from: 0, to: gapBytes.count,
+                                      otherAdjacentPairs: pairs)
+        let classified = classifyLayoutMarks(unclassified, bytes: gapBytes,
+                                             layoutRanges: [], reflowRanges: [], preservedGaps: gaps)
+        report("a gap between two tokens that are still neighbours is classified",
+               classified.segments.contains {
+                   $0.isPresented && $0.classification == ChangeClass.whitespace.rawValue
+               },
+               classified.segments.map { "\($0.start)..<\($0.end) \($0.classification ?? "—")" }
+                   .joined(separator: " "))
+        report("negative control: with no preserved gap the same mark stays unclassified",
+               classifyLayoutMarks(unclassified, bytes: gapBytes, layoutRanges: [],
+                                   reflowRanges: [], preservedGaps: []).segments
+                   .allSatisfy { $0.classification == nil })
+
         report("no byte moved in or out of the presented set",
                presentedBytes(result.model.newPartition) == presentedBytes(control.model.newPartition))
     }
@@ -199,5 +225,46 @@ func runWordSnapChecks(_ reportRaw: (String, Bool, String) -> Void) {
                        == ClassificationGroup.formattingOnly.rawValue
                },
                "\(presented.count) marks")
+    }
+
+    print("\n=== DEC-103: absorption runs again after the wideners ===")
+    do {
+        // Two class names change with one space between them. The word snap finishes both names,
+        // and the space left standing between them is an island absorption never saw — because
+        // absorption ran before the snap, which is where DEC-094 deliberately put it.
+        // The string is long enough that the 16-byte syntax snap cannot reach its quotes; otherwise
+        // that pass widens the mark to the whole literal and this measures nothing.
+        let old = "const cls = 'flex items-center justify-center px-6 py-16 clip-lg gap-4 text-sm';\n"
+        let new = "const cls = 'flex items-center justify-center px-8 py-20 clip-lg gap-4 text-sm';\n"
+        let newBytes = [UInt8](new.utf8)
+        let again = diff(old, new)
+        let once = diff(old, new, settings: MatcherSettings(absorbAfterWidening: false))
+
+        report("the island the widener created is absorbed",
+               marks(again.model.newPartition, newBytes).contains { $0.contains("px-8 py-20") },
+               marks(again.model.newPartition, newBytes).joined(separator: " | "))
+        report("negative control: without the second pass it is two marks",
+               !marks(once.model.newPartition, newBytes).contains { $0.contains("px-8 py-20") },
+               marks(once.model.newPartition, newBytes).joined(separator: " | "))
+        report("the presented set grew rather than moved",
+               presentedBytes(again.model.newPartition)
+                   .isSuperset(of: presentedBytes(once.model.newPartition)))
+
+        // DEC-094's theorem, asked of the second pass over every fixture: absorption cannot add a
+        // line to the report, whichever partition it is handed.
+        var moved = 0
+        for fixture in loadFixtures(root: URL(fileURLWithPath: "fixtures")) {
+            let on = structuralDiff(oldPath: fixture.oldPath, oldBytes: fixture.old,
+                                    newPath: fixture.newPath, newBytes: fixture.new, parser: parser)
+            let off = structuralDiff(oldPath: fixture.oldPath, oldBytes: fixture.old,
+                                     newPath: fixture.newPath, newBytes: fixture.new, parser: parser,
+                                     settings: MatcherSettings(absorbAfterWidening: false))
+            if changedLines(bytes: fixture.old, partition: on.model.oldPartition)
+                != changedLines(bytes: fixture.old, partition: off.model.oldPartition) { moved += 1 }
+            if changedLines(bytes: fixture.new, partition: on.model.newPartition)
+                != changedLines(bytes: fixture.new, partition: off.model.newPartition) { moved += 1 }
+        }
+        report("and it reports the same lines as its absence, over every fixture", moved == 0,
+               moved == 0 ? "" : "\(moved) sides moved")
     }
 }

@@ -368,13 +368,32 @@ public func structuralDiff(
     // questions: one says a junction inside a word reports no fact of its own, the other says two
     // neighbours making the same claim are one mark. Both are off when the budget is 0, so the
     // negative control turns off the whole of DEC-100 rather than half of it.
+    // **A second absorption, after the wideners rather than before them (DEC-103).** DEC-094 put the
+    // pass first on purpose and that ordering is kept — it is what makes the budget-0 control honest
+    // and what stops the snap rescuing boundaries absorption would have removed. What it cannot do
+    // from there is see the gaps the wideners *create*: a mark widened onto a word boundary leaves a
+    // one- or two-byte island behind it that absorption was never offered. The corpus counts 1757 of
+    // them over 1200 changes, 1507 refused by no rule at all — which is the signature of a pass that
+    // ran too early rather than of a rule that is too strict.
+    //
+    // Running it twice is safe for the reason the pass was safe once: absorption only relabels
+    // `unchanged` as presented, so it is monotone, and its fourth condition — every line the island
+    // touches already carries a presented byte from a flank — is a theorem about `changedLines`
+    // whichever partition it is asked about.
+    func absorbedAgain(_ partition: Partition, bytes: [UInt8]) -> Partition {
+        guard settings.absorbAfterWidening else { return partition }
+        return absorbIslands(partition, bytes: bytes, settings: absorption)
+    }
+
     func merged(_ partition: Partition, bytes: [UInt8], strings: [(start: Int, end: Int)]) -> Partition {
         guard settings.mergeSplitMarksInWords else { return coalesceAdjacent(partition) }
         return coalesceAdjacent(coalesceAcrossWords(partition, bytes: bytes, stringRegions: strings))
     }
-    let oldMarked = merged(markUnparsed(oldPartition, regions: oldErrors),
+    let oldMarked = merged(markUnparsed(absorbedAgain(oldPartition, bytes: oldBytes),
+                                        regions: oldErrors),
                            bytes: oldBytes, strings: oldStrings)
-    let newMarked = merged(markUnparsed(newPartition, regions: newErrors),
+    let newMarked = merged(markUnparsed(absorbedAgain(newPartition, bytes: newBytes),
+                                        regions: newErrors),
                            bytes: newBytes, strings: newStrings)
 
     unchangedOld = oldMarked.segments.filter { $0.label == .unchanged }.reduce(0) { $0 + $1.length }

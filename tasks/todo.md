@@ -2997,3 +2997,26 @@ Unclassified whitespace-only marks 13090 → 10495; quiet bytes 67457 → 99215.
 
 `silent-old-side` 3986 → 202, `reflow-insertion` 3795 → 0, `duplicated-line` 2320 → 1075, and the
 model's own numbers unchanged to the byte.
+
+## Step — absorption runs again after the wideners (DEC-103, M12-E)
+
+- [x] the island floor swept over the corpus first: 8 → 24 moves the marks by 0.5%, so **the floor is
+      not the dial** and M11-D's choice survives 4016 changes
+- [x] the survey made to say *why* each island survived, by re-deriving absorption's four conditions
+      from the finished partition — 1507 of 1757 refused by no condition at all
+- [x] `absorbIslands` runs a second time after the three wideners, behind `absorbAfterWidening`
+- [x] checks: the island a widener creates is absorbed, the negative control without the second pass,
+      the presented set grows rather than moves, and DEC-094's theorem re-asserted over every fixture
+      against the control
+
+`micro-island` 5305 → 1347, marks 75873 → 70916, presented bytes +0.4%, reported lines unchanged.
+
+### Still open
+
+- [ ] 27423 junctions crossing the confidence floor. The diagnostic now names them, and the same run
+      says uncertain marks are 7.9% of marks and 3.0% of presented bytes — rare enough that the flag
+      still means something, so this is **left alone on the evidence** rather than tuned.
+- [ ] 1075 byte-identical lines still printed twice inside blocks that are not rewraps. DEC-096's
+      peel refuses them because a stop covers them; the answer is a finer stop, not a wider peel.
+- [ ] `--emit-structural`'s printer still stars only the first line of a whole-file fallback
+      (predates DEC-093, confined to the diagnostic tool).

@@ -15,6 +15,8 @@ public struct MatcherSettings: Sendable {
     public var mergeSplitMarksInWords: Bool
     /// Whether a hunk whose two sides differ only in layout says so on its marks (DEC-101).
     public var classifyWhitespaceHunks: Bool
+    /// Whether absorption runs a second time, after the wideners (DEC-103).
+    public var absorbAfterWidening: Bool
     public var absorbIslandBytes: Int
     public var moveContentFloor: Int
     /// Counted work, not elapsed time. A wall-clock deadline makes the *result* depend on machine
@@ -27,6 +29,7 @@ public struct MatcherSettings: Sendable {
                 wordSnapBudget: Int = DiffScopeSyntax.wordSnapBudget,
                 mergeSplitMarksInWords: Bool = true,
                 classifyWhitespaceHunks: Bool = true,
+                absorbAfterWidening: Bool = true,
                 absorbIslandBytes: Int = DiffScopeEngine.absorbIslandBytes,
                 moveContentFloor: Int = DiffScopeSyntax.moveContentFloor,
                 matchWorkBudget: Int = DiffScopeSyntax.matchWorkBudget) {
@@ -37,6 +40,7 @@ public struct MatcherSettings: Sendable {
         self.wordSnapBudget = wordSnapBudget
         self.mergeSplitMarksInWords = mergeSplitMarksInWords
         self.classifyWhitespaceHunks = classifyWhitespaceHunks
+        self.absorbAfterWidening = absorbAfterWidening
         self.absorbIslandBytes = absorbIslandBytes
         self.moveContentFloor = moveContentFloor
         self.matchWorkBudget = matchWorkBudget

@@ -61,6 +61,7 @@ func runCorpusSurvey(root: String, jsonOut: String?, limit: Int?, only: String?,
     report(results, elapsed: elapsed, settingsLine:
            "snap=\(settings.boundarySnapBudget) word=\(settings.wordSnapBudget)"
            + " merge=\(settings.mergeSplitMarksInWords ? 1 : 0)"
+           + " reabsorb=\(settings.absorbAfterWidening ? 1 : 0)"
            + " island=\(settings.absorbIslandBytes)")
     if let jsonOut { writeSurveyJSON(results, to: jsonOut) }
 }
@@ -147,6 +148,17 @@ struct PairMeasurement: Codable {
     let missedLines: Int
     let marks: Int
     let presentedBytes: Int
+    /// Marks the interface draws as uncertain, and the bytes under them. `reconcile` gives a byte the
+    /// canonical mask claims but no anchor explains a confidence of 0.6, and the floor is 0.8 — so
+    /// this counts how often the window says *this attribution is doubtful*. A flag that fires on a
+    /// third of everything is not a flag.
+    let uncertainMarks: Int
+    let uncertainBytes: Int
+    /// Why a junction between two touching marks was not merged, and why a short unchanged island
+    /// between two marks was not absorbed. Both are refusals with reasons, and the reasons are what
+    /// says which rule to look at next.
+    let junctionReasons: [String: Int]
+    let islandReasons: [String: Int]
     /// Presented bytes drawn at full weight — everything the `formatting-only` group does not hold.
     /// The number DEC-101 exists to move: a rewrapped element should cost the reader one loud mark
     /// on what changed and quiet ones on the rewrap.
@@ -186,6 +198,55 @@ private func measure(pair: CorpusPair, parser: TSXParser?,
         }.reduce(0) { $0 + $1.length }
     }
     let loudBytes = loud(model.oldPartition) + loud(model.newPartition)
+
+    func uncertain(_ partition: Partition) -> (marks: Int, bytes: Int) {
+        let below = partition.segments.filter { $0.isPresented && ($0.confidence ?? 1) < confidenceFloor }
+        return (below.count, below.reduce(0) { $0 + $1.length })
+    }
+    let uncertainOld = uncertain(model.oldPartition)
+    let uncertainNew = uncertain(model.newPartition)
+
+    var junctionReasons: [String: Int] = [:]
+    var islandReasons: [String: Int] = [:]
+    for (partition, bytes) in [(model.oldPartition, pair.old), (model.newPartition, pair.new)] {
+        let segments = partition.segments
+        for index in 1..<max(1, segments.count) where index < segments.count {
+            let left = segments[index - 1]
+            let right = segments[index]
+            guard left.isPresented, right.isPresented, left.end == right.start else { continue }
+            let reason: String
+            if left.disclosure != right.disclosure { reason = "disclosure" }
+            else if left.link != right.link { reason = "link" }
+            else if ((left.confidence ?? 1) < confidenceFloor) != ((right.confidence ?? 1) < confidenceFloor) {
+                reason = "crosses-the-floor"
+            } else if left.label != right.label { reason = "label" }
+            else { reason = "other" }
+            junctionReasons[reason, default: 0] += 1
+        }
+        // Why a one- or two-byte unchanged island survived absorption. Recomputed from the finished
+        // partition rather than instrumented inside the pass, so it says what the reader is left
+        // with rather than what the pass was thinking.
+        for index in 1..<max(1, segments.count - 1) where index + 1 < segments.count {
+            let island = segments[index]
+            let before = segments[index - 1]
+            let after = segments[index + 1]
+            guard island.label == .unchanged, island.length <= 2,
+                  before.isPresented, after.isPresented else { continue }
+            let reason: String
+            if before.label != after.label || before.disclosure != after.disclosure
+                || before.link != after.link
+                || ((before.confidence ?? 1) < confidenceFloor) != ((after.confidence ?? 1) < confidenceFloor) {
+                reason = "flanks-disagree"
+            } else if island.length > min(before.length, after.length) {
+                reason = "longer-than-a-flank"
+            } else if touchesAnUnmarkedLine(island: island, before: before, after: after, bytes: bytes) {
+                reason = "would-add-a-line"
+            } else {
+                reason = "unexplained"
+            }
+            islandReasons[reason, default: 0] += 1
+        }
+    }
 
     add(.shreddedWord, shreddedWordCount(bytes: pair.old, partition: model.oldPartition)
         + shreddedWordCount(bytes: pair.new, partition: model.newPartition))
@@ -246,7 +307,11 @@ private func measure(pair: CorpusPair, parser: TSXParser?,
         modelOldLines: oldLines.count, modelNewLines: newLines.count,
         falseLines: newLines.subtracting(gitNew).count,
         missedLines: gitOld.subtracting(oldLines).count,
-        marks: marks, presentedBytes: presentedBytes, loudBytes: loudBytes, shapes: shapes
+        marks: marks, presentedBytes: presentedBytes,
+        uncertainMarks: uncertainOld.marks + uncertainNew.marks,
+        uncertainBytes: uncertainOld.bytes + uncertainNew.bytes,
+        junctionReasons: junctionReasons, islandReasons: islandReasons,
+        loudBytes: loudBytes, shapes: shapes
     )
 }
 
@@ -280,6 +345,28 @@ private func shreddedWordCount(bytes: [UInt8], partition: Partition) -> Int {
         if end < bytes.count, !nextPresented, isWordByte(bytes[end - 1]), isWordByte(bytes[end]) { count += 1 }
     }
     return count
+}
+
+/// Absorption's fourth condition, asked backwards: is there a line the island touches that carries
+/// no presented byte from either flank? That is the rule that makes absorption unable to add a line
+/// to `changedLines`, and it is the one a reader cannot see the effect of.
+private func touchesAnUnmarkedLine(island: Segment, before: Segment, after: Segment,
+                                   bytes: [UInt8]) -> Bool {
+    func line(_ offset: Int) -> Int {
+        var count = 0
+        var index = 0
+        while index < offset, index < bytes.count {
+            if bytes[index] == 0x0A { count += 1 }
+            index += 1
+        }
+        return count
+    }
+    let first = line(island.start)
+    let last = line(max(island.start, island.end - 1))
+    guard first != last || true else { return false }
+    let markedFirst = line(max(0, before.end - 1))
+    let markedLast = line(after.start)
+    return first < markedFirst || last > markedLast
 }
 
 private func splitMarkCount(_ partition: Partition) -> Int {
@@ -395,6 +482,12 @@ private func report(_ results: [PairMeasurement], elapsed: TimeInterval, setting
                  gitOld == 0 ? 0 : 100 * Double(missed) / Double(gitOld)))
     print("  marks                \(marks)")
     print("  presented bytes      \(bytes)")
+    let uncertainMarks = results.reduce(0) { $0 + $1.uncertainMarks }
+    let uncertainBytes = results.reduce(0) { $0 + $1.uncertainBytes }
+    print(String(format: "  uncertain marks      %d  (%.1f%% of marks, %.1f%% of presented bytes)",
+                 uncertainMarks,
+                 marks == 0 ? 0 : 100 * Double(uncertainMarks) / Double(marks),
+                 bytes == 0 ? 0 : 100 * Double(uncertainBytes) / Double(bytes)))
     let loud = results.reduce(0) { $0 + $1.loudBytes }
     print(String(format: "  loud bytes           %d  (%.1f%% of presented)", loud,
                  bytes == 0 ? 0 : 100 * Double(loud) / Double(bytes)))
@@ -406,6 +499,22 @@ private func report(_ results: [PairMeasurement], elapsed: TimeInterval, setting
         let name = shape.rawValue.padding(toLength: 24, withPad: " ", startingAt: 0)
         print("  \(name)" + String(format: "%6d %11d %13.1f%%", affected.count, instances,
                                    100 * Double(affected.count) / Double(results.count)))
+    }
+
+    print("")
+    var junctions: [String: Int] = [:]
+    var islands: [String: Int] = [:]
+    for row in results {
+        for (key, count) in row.junctionReasons { junctions[key, default: 0] += count }
+        for (key, count) in row.islandReasons { islands[key, default: 0] += count }
+    }
+    print("  why two touching marks stayed two:")
+    for (key, count) in junctions.sorted(by: { $0.value > $1.value }) {
+        print("    \(count)  \(key)")
+    }
+    print("  why a short island survived absorption:")
+    for (key, count) in islands.sorted(by: { $0.value > $1.value }) {
+        print("    \(count)  \(key)")
     }
 
     print("")
