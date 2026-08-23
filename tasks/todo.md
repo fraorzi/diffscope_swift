@@ -3020,3 +3020,17 @@ model's own numbers unchanged to the byte.
       peel refuses them because a stop covers them; the answer is a finer stop, not a wider peel.
 - [ ] `--emit-structural`'s printer still stars only the first line of a whole-file fallback
       (predates DEC-093, confined to the diagnostic tool).
+
+## Step — the size-limit check measures the work the path must do
+
+- [x] `BudgetChecks`' *a file above the size limit is refused without parsing it* was intermittent for
+      eight days, and it was right to be: its baseline was **one pass over the bytes**, a model of the
+      cost that DEC-095 invalidated when `trivialModel` gained a real byte diff. The threshold sat a
+      hair above the truth and flipped on how the scan happened to time.
+- [x] the baseline is now the work this path is supposed to do — two `sourceDegradations` scans, which
+      `13-…` §5's precedence requires before the size gate can answer, plus the fallback model — and
+      the assertion is that refusing costs no more than 1.3× it
+- [x] **a positive control beside it**: parsing the same bytes is measured and shown to break the
+      threshold, so the margin is known to be crossable rather than assumed to be
+
+2019/2019. Three runs in a row, on the machine where the old form failed two in three.

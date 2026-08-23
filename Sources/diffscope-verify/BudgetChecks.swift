@@ -75,14 +75,29 @@ func runBudgetChecks(_ reportRaw: (String, Bool, String) -> Void) {
         let oversize = String(repeating: "const value = 1;\n", count: 200_000)
         let oversizeBytes = [UInt8](oversize.utf8)
         let oversizeNew = [UInt8]((oversize + "const tail = 2;\n").utf8)
-        // Refused without building a tree. The remaining cost is `classify`'s content scan, which
-        // runs first because a binary or conflicted file deserves the more specific reason
-        // (`13-…` §5 precedence) — in a debug build that scan is most of the time below. So the
-        // baseline is one pass over the same bytes: the work that cannot be avoided.
+        // Refused without building a tree, and the baseline is **the fallback it returns**.
+        //
+        // This used to compare against one pass over the bytes, on the reasoning that `classify`'s
+        // content scan was most of the cost. DEC-095 changed what a fallback is: `trivialModel` now
+        // runs a real byte diff so a whole-file fallback localises its change instead of painting
+        // the file, and that diff — not the scan — is most of the 1.6 s this path takes. The old
+        // baseline therefore modelled work the code no longer does, the threshold sat a hair above
+        // the truth, and the check failed and passed on the same binary depending on how the scan
+        // happened to time. It was intermittent for eight days and it was right to be: it was
+        // measuring the wrong thing.
+        //
+        // Against the fallback itself the claim is exact and the margin is real: *refusing the file
+        // costs no more than returning the answer it refuses to improve on*. A parse or a match
+        // would show up as a multiple of it, which is what the check exists to catch.
+        // The baseline is every piece of work this path is *supposed* to do, run here in the open:
+        // the two content scans that rank the reason (`13-…` §5 precedence puts binary and conflicted
+        // ahead of oversized, so both sides are classified before the size gate can answer), and the
+        // fallback model itself. A parse or a match would be a multiple of this, which is what the
+        // check is for.
         let scanBaseline = measure {
-            var sum = 0
-            for byte in oversizeBytes { sum &+= Int(byte) }
-            precondition(sum >= 0)
+            _ = sourceDegradations(path: "big.ts", bytes: oversizeBytes)
+            _ = sourceDegradations(path: "big.ts", bytes: oversizeNew)
+            _ = trivialModel(oldBytes: oversizeBytes, newBytes: oversizeNew)
         }
         let oversizeElapsed = measure {
             _ = structuralDiff(oldPath: "big.ts", oldBytes: oversizeBytes,
@@ -90,9 +105,17 @@ func runBudgetChecks(_ reportRaw: (String, Bool, String) -> Void) {
         }
         let oversizeResult = structuralDiff(oldPath: "big.ts", oldBytes: oversizeBytes,
                                             newPath: "big.ts", newBytes: oversizeNew, parser: parser)
+        // A threshold nothing can exceed is not a threshold. This says what the check would cost if
+        // the gate were removed, so the margin above is known to be crossable rather than assumed to
+        // be — the same reason every other control in this suite exists.
+        let parseCost = measure { _ = parser.parseTree(oversizeBytes) }
+        report("positive control: parsing these bytes would break the threshold",
+               scanBaseline + parseCost > scanBaseline * 1.3 + 0.2,
+               String(format: "a parse costs %.2f s against a %.2f s margin",
+                      parseCost, scanBaseline * 0.3 + 0.2))
         report("a file above the size limit is refused without parsing it",
-               oversizeResult.stats.usedFallback && oversizeElapsed < scanBaseline * 12 + 0.2,
-               String(format: "%.2f s against a %.2f s scan baseline · %@",
+               oversizeResult.stats.usedFallback && oversizeElapsed < scanBaseline * 1.3 + 0.2,
+               String(format: "%.2f s against a %.2f s baseline of the work it must do · %@",
                       oversizeElapsed, scanBaseline, oversizeResult.stats.fallbackReason ?? "nil"))
     }
 
