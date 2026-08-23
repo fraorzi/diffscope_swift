@@ -236,6 +236,12 @@ func shiftToReadableBoundaries(
 
         // The best shift found at each rank. Ranks are compared first and the shift only breaks
         // ties, so a whole-line position anywhere in reach beats a token boundary next door.
+        //
+        // **A tie-break preferring the consuming candidate was written here and measured out.** Two
+        // candidates at the same rank are not obviously equal when one of them also removes a match
+        // the reader was never shown — but over 1500 corpus changes it moved exactly one mark and one
+        // byte. This repository has a rule about machinery that cannot be seen to work, and it
+        // applies to a tie-break as much as to a knob.
         var bestAtRank = [Int?](repeating: nil, count: rankLexical + 1)
 
         // **The boundary a consuming shift is scored on is the one it would leave behind, not the one
@@ -293,10 +299,10 @@ func shiftToReadableBoundaries(
             // Consuming noise is a candidate even where the edge it leaves reads as nothing at all:
             // the gain is the match that stops existing, not the position gained, so it enters at the
             // worst rank and wins only when nothing better is in reach.
-            let scored = score(shift)
-                ?? (shift == current.length && isNoise(current) ? rankLexical : nil)
+            let consumesNoise = shift == current.length && isNoise(current)
+            let scored = score(shift) ?? (consumesNoise ? rankLexical : nil)
             guard let found = scored else { continue }
-            if shift == current.length, found > matchConsumeRankLimit, !isNoise(current) { continue }
+            if shift == current.length, found > matchConsumeRankLimit, !consumesNoise { continue }
             bestAtRank[found] = shift
         }
         // The furthest position down the file wins, so the upward search keeps only what the
@@ -308,10 +314,10 @@ func shiftToReadableBoundaries(
                   stepHolds(old, oldStart + shift, oldEnd + shift, down: false),
                   stepHolds(new, newStart + shift, newEnd + shift, down: false) {
                 shift -= 1
-                let scored = score(shift)
-                    ?? (-shift == previous.length && isNoise(previous) ? rankLexical : nil)
+                let consumesNoise = -shift == previous.length && isNoise(previous)
+                let scored = score(shift) ?? (consumesNoise ? rankLexical : nil)
                 if let found = scored, bestAtRank[found] == nil,
-                   -shift != previous.length || found <= matchConsumeRankLimit || isNoise(previous) {
+                   -shift != previous.length || found <= matchConsumeRankLimit || consumesNoise {
                     bestAtRank[found] = shift
                 }
                 if bestAtRank[rankLine] != nil { break }
