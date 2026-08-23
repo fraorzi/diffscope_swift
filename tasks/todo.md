@@ -3106,3 +3106,19 @@ document — a document cannot install anything. So it is a hook.
 `src` and `img` are no longer marked in the owner's file. Over the corpus: marks 70916 → 70689,
 presented bytes 2717731 → **2708728** (the first fall in the series), false lines 9731 → 9682, missed
 7075 → 7080.
+
+## Step — what the duplicated lines actually are (M12-G)
+
+- [x] the survey now says **why** each byte-identical line is printed twice: a stop covers it, the
+      copies cross, or the peel missed it
+- [x] over 1500 pairs: 397 stop-covered, 2 crossing by position, **0 missed by the peel**
+
+The zero is the finding. Every remaining duplicate is a line whose two copies **cannot both be
+matched** without breaking monotonic order — a crossing, produced by Myers pairing `</Container>`
+and `</Section>` with the wrong occurrence when a section is wrapped in a new one. No peel rule and
+no finer stop can reach it: matching that line would put the total above the LCS.
+
+- [ ] **the next entry on this is about the alignment, not the drawing.** Preferring the non-crossing
+      pairing is what patience and histogram diffs do by matching unique lines first, and neither is
+      minimal — so it changes what the canonical diff *is*, and INV-2's reference changes with it.
+      It needs its own decision, its own control, and a measurement against this corpus.

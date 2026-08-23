@@ -3293,3 +3293,53 @@ dumps were added and both stay:
 `<NextImage>` on both sides; the block dump says block 8 is `old 50 / new 70–78, reflowed — old half
 withheld`. The engine had been right since DEC-102 shipped; the screenshot was of a build made before
 it. That is the kind of question a diagnostic is for.
+
+---
+
+## M12-G — Why a byte-identical line is still printed twice
+
+**2026-08-23.** The 1073 duplicates left after DEC-102, broken down on the first 1500 pairs by the
+reason each one survived DEC-096's peel.
+
+| reason | lines |
+|---|---|
+| a change stop covers it | **397** |
+| the copies are out of order within the block | 2 |
+| neither — the peel should have taken it | **0** |
+
+**The peel is doing its whole job.** Nothing is left at a block's edge that it could have taken; the
+zero in the third row is the result that matters, because it says the next entry must not be another
+peel rule.
+
+### What "a stop covers it" has to mean
+
+If a line is byte-identical on both sides and lies **inside** a hunk on both sides, then matching it
+would raise the matched total above the LCS — which is impossible. So every one of these 397 is a
+**crossing**: the identical line's two copies cannot both be matched without breaking the monotonic
+order the alignment requires, because something between them is matched the other way round.
+
+The corpus shows the shape it comes from. A section is wrapped:
+
+```
+  old                                     new
+  <ReferencesSlider data={x} />           <Section>
+  <Section title='Partnerzy…'>              <Container wide>
+    <Container wide>                          <ReferencesSlider />
+      …                                     </Container>
+    </Container>                            </Section>
+  </Section>                              <Section title='Partnerzy…'>
+```
+
+`</Container>` and `</Section>` exist in both files. Myers matches the *old* closers to the **new,
+earlier** ones — equally minimal, and the pairing a reader would never choose — so the closers of the
+section that was actually left alone end up inside a hunk, and both copies are printed.
+
+### What this rules out, and what it leaves
+
+**It is not fixable by any presentation pass**, and that is now a measured statement rather than a
+guess: the peel has nothing left to take, and splitting the stop would mean matching a line that
+minimality forbids matching. The alignment itself has to prefer the non-crossing pairing, which is
+what git's patience and histogram heuristics do by matching unique lines first — **and neither is
+minimal**, so INV-2's reference would have to change with it. That is a decision about what the
+canonical diff *is*, not a tweak to how it is drawn, and it belongs in its own entry with its own
+argument.

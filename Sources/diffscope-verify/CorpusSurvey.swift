@@ -159,6 +159,10 @@ struct PairMeasurement: Codable {
     /// says which rule to look at next.
     let junctionReasons: [String: Int]
     let islandReasons: [String: Int]
+    /// Why a line that is byte-identical on both sides is printed twice anyway. DEC-096's peel takes
+    /// the ones it can; this says what the rest are, so the next entry aims at a shape rather than at
+    /// a number.
+    let duplicateReasons: [String: Int]
     /// Presented bytes drawn at full weight — everything the `formatting-only` group does not hold.
     /// The number DEC-101 exists to move: a rewrapped element should cost the reader one loud mark
     /// on what changed and quiet ones on the rewrap.
@@ -262,6 +266,7 @@ private func measure(pair: CorpusPair, parser: TSXParser?,
     var reflowOnly = 0
     var silent = 0
     var reflowedBlocks = 0
+    var duplicateReasons: [String: Int] = [:]
     for block in blocks {
         let oldSlice = Array(pair.old[safe: block.oldStart..<block.oldEnd])
         let newSlice = Array(pair.new[safe: block.newStart..<block.newEnd])
@@ -271,7 +276,10 @@ private func measure(pair: CorpusPair, parser: TSXParser?,
             reflowedBlocks += 1
             continue
         }
-        duplicated += duplicatedLineCount(old: oldSlice, new: newSlice)
+        let (count, reasons) = duplicatedLineBreakdown(
+            old: pair.old, new: pair.new, block: block, stops: stops)
+        duplicated += count
+        for (key, value) in reasons { duplicateReasons[key, default: 0] += value }
 
         let oldTokens = tokens(of: oldSlice)
         let newTokens = tokens(of: newSlice)
@@ -311,6 +319,7 @@ private func measure(pair: CorpusPair, parser: TSXParser?,
         uncertainMarks: uncertainOld.marks + uncertainNew.marks,
         uncertainBytes: uncertainOld.bytes + uncertainNew.bytes,
         junctionReasons: junctionReasons, islandReasons: islandReasons,
+        duplicateReasons: duplicateReasons,
         loudBytes: loudBytes, shapes: shapes
     )
 }
@@ -398,6 +407,63 @@ private func microIslandCount(_ partition: Partition) -> Int {
         count += 1
     }
     return count
+}
+
+/// Which byte-identical lines a block prints twice, and why each one survived DEC-096's peel.
+///
+/// - `stop-covers-it` — a change stop covers bytes of the line, so peeling it would drop a stop out
+///   of the block, which is the property DEC-096 asserts over every fixture.
+/// - `out-of-order` — the identical line exists on the other side at a different position: the two
+///   copies are not a pair the peel could take, because taking them would reorder the block.
+/// - `at-the-edge` — neither, which means the peel should have taken it and did not.
+private func duplicatedLineBreakdown(old: [UInt8], new: [UInt8], block: UnifiedBlock,
+                                     stops: [ChangeStop]) -> (Int, [String: Int]) {
+    let oldLines = lineRanges(old, from: block.oldStart, to: block.oldEnd)
+    let newLines = lineRanges(new, from: block.newStart, to: block.newEnd)
+    guard !oldLines.isEmpty, !newLines.isEmpty else { return (0, [:]) }
+
+    func covered(_ range: (start: Int, end: Int), _ from: (ChangeStop) -> Int,
+                 _ to: (ChangeStop) -> Int) -> Bool {
+        stops.contains { to($0) > from($0) && from($0) < range.end && to($0) > range.start }
+    }
+
+    var reasons: [String: Int] = [:]
+    var count = 0
+    var taken = Set<Int>()
+    for (oldIndex, oldRange) in oldLines.enumerated() {
+        let text = Array(old[oldRange.start..<oldRange.end])
+        guard !text.allSatisfy(isSpaceByte) else { continue }
+        guard let newIndex = newLines.indices.first(where: {
+            !taken.contains($0) && Array(new[newLines[$0].start..<newLines[$0].end]) == text
+        }) else { continue }
+        taken.insert(newIndex)
+        count += 1
+        let newRange = newLines[newIndex]
+        if covered(oldRange, { $0.oldStart }, { $0.oldEnd })
+            || covered(newRange, { $0.newStart }, { $0.newEnd }) {
+            reasons["stop-covers-it", default: 0] += 1
+        } else if oldIndex != newIndex {
+            reasons["out-of-order", default: 0] += 1
+        } else {
+            reasons["at-the-edge", default: 0] += 1
+        }
+    }
+    return (count, reasons)
+}
+
+/// Whole lines, terminator included, inside a byte range.
+private func lineRanges(_ bytes: [UInt8], from: Int, to: Int) -> [(start: Int, end: Int)] {
+    var out: [(start: Int, end: Int)] = []
+    var start = max(0, from)
+    let limit = min(to, bytes.count)
+    while start < limit {
+        var end = start
+        while end < limit, bytes[end] != 0x0A { end += 1 }
+        if end < limit { end += 1 }
+        out.append((start, end))
+        start = end
+    }
+    return out
 }
 
 private func duplicatedLineCount(old: [UInt8], new: [UInt8]) -> Int {
@@ -510,6 +576,14 @@ private func report(_ results: [PairMeasurement], elapsed: TimeInterval, setting
     }
     print("  why two touching marks stayed two:")
     for (key, count) in junctions.sorted(by: { $0.value > $1.value }) {
+        print("    \(count)  \(key)")
+    }
+    var duplicates: [String: Int] = [:]
+    for row in results {
+        for (key, count) in row.duplicateReasons { duplicates[key, default: 0] += count }
+    }
+    print("  why a byte-identical line is printed twice:")
+    for (key, count) in duplicates.sorted(by: { $0.value > $1.value }) {
         print("    \(count)  \(key)")
     }
     print("  why a short island survived absorption:")
