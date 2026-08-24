@@ -5229,3 +5229,53 @@ moved are redrawn now, which is the third and last of the redraws DEC-109 starte
 
 Reopen if a reader misses a condition because the bar was closed. The summary's wording is the dial —
 it can say more without the bar opening — and the arm that would catch it is the degradation one.
+
+---
+
+## DEC-113 — A hook that refuses a commit is quoted, not swallowed
+
+- **Date:** 2026-08-24
+- **Topic:** *I pressed "Commit to feature/…" and nothing happened; the interface flickered.* It had
+  happened: git refused, and the refusal reached nobody.
+- **Status:** Accepted — built and checked.
+
+### What actually happened
+
+The owner's repository has husky hooks. `commit-msg` runs commitlint, and the message —
+`feat:update webinar page`, no space after the colon — is rejected:
+
+```
+✖   subject may not be empty [subject-empty]
+✖   type may not be empty [type-empty]
+```
+
+`git commit` exits 1. **stderr is empty**: commitlint has already printed its refusal to *stdout*,
+and lint-staged prints its whole report there too. `GitWriter` built its failure message from stderr
+alone, so `GitWriteFailure.failed` carried an empty string and its description fell through to
+`git exited 1` — a sentence in the status line at the bottom of a window whose fields were still
+full, whose files were still staged and whose diff had just been redrawn. Nothing about the surface
+said *refused*, so the honest reading of it is the one the owner made: nothing happened.
+
+### The decision
+
+- **The message is stderr, or stdout when stderr is empty.** A hook is a program git runs on the
+  reader's behalf and its refusal is the most useful sentence in the whole failure; which stream it
+  chose is an implementation detail of the hook.
+- **The refusal is shown where the commit was asked for.** `commitBox.status` reads
+  `refused — ✖ subject may not be empty [subject-empty]`, with the whole output in its tooltip. The
+  status line still says it, and the command drawer still has argv and exit code — but the reader's
+  eyes are on the button they just pressed.
+- The fields keep what was typed and the files stay staged, which they already did: `clear()` is
+  inside the closure that threw.
+
+### Checked on a repository built for it
+
+A `commit-msg` hook that prints to stdout and exits 1: the write fails, the failure quotes the hook,
+the commit is not in the history, and the window's own line is asserted from the source. The negative
+control is the reading this replaces — stderr alone, which had nothing to show.
+
+### Revisit trigger
+
+Reopen if a hook's output is long enough that the first line is not the useful one. `lint-staged` can
+print thirty lines; the tooltip has all of them and the drawer has the invocation, and if that proves
+to be the wrong split the box can grow rather than the sentence.

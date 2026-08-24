@@ -492,8 +492,16 @@ public final class GitWriter: @unchecked Sendable {
 
         guard result.succeeded else {
             if isIndexLock(result.standardError) { throw GitWriteFailure.indexLocked }
+            // **A hook's refusal is usually on stdout** (DEC-113). `git commit` in a repository with
+            // husky exits 1 and says nothing on stderr; commitlint has already printed
+            // `✖ subject may not be empty` to stdout, and lint-staged prints its whole report there.
+            // Reading stderr alone left `message` empty, so the window said *git exited 1* — which is
+            // how a rejected commit came to look like a commit that did nothing at all.
+            let stderr = result.standardError.trimmingCharacters(in: .whitespacesAndNewlines)
+            let stdout = String(decoding: result.standardOutput, as: UTF8.self)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             throw GitWriteFailure.failed(exitCode: result.exitCode,
-                                         message: result.standardError.trimmingCharacters(in: .whitespacesAndNewlines))
+                                         message: stderr.isEmpty ? stdout : stderr)
         }
         return result
     }

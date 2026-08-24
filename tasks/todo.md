@@ -3243,3 +3243,15 @@ Closes the `-uall` and `-z` items that have been open in this file since M11.
 - [x] `ds-chip-summary` documented in `24-design-contract.md`, which the class audit required
 
 2067 checks, 30 selftest arms.
+
+## Step — a refused commit says so (DEC-113)
+
+- [x] `GitWriter` builds the failure message from stderr **or stdout** — a husky `commit-msg` hook
+      exits 1 with an empty stderr, because commitlint prints its refusal to stdout
+- [x] `perform` returns the failure text; `commitStaged` puts it in the commit box as
+      `refused — …` with the whole output in the tooltip
+- [x] checks on a repository with a stdout-only hook: the write fails, the refusal is quoted, the
+      commit is absent from the history, and the window's line is asserted from the source
+
+Reported as *I pressed commit and nothing happened*. It had happened — `git exited 1`, in a status
+line at the bottom of a window that otherwise looked untouched.

@@ -617,4 +617,49 @@ func runWriteChecks(_ reportRaw: (String, Bool, String) -> Void) {
                record.first?.commandLine ?? "-")
         report("the record is bounded rather than a log", record.count <= GitWriter.recordLimit)
     }
+
+    print("\n=== DEC-113: a hook that refuses a commit is quoted, not swallowed ===")
+    do {
+        let hooked = makeRepository("hooked", in: scratch)
+        write("one\n", to: "a.txt", in: hooked)
+        _ = try? actions.stage(paths: ["a.txt"], in: hooked)
+        _ = try? actions.commit(summary: "init", description: "", in: hooked)
+
+        // A `commit-msg` hook that talks on **stdout** and exits 1 — which is what commitlint does,
+        // and what made a rejected commit look like a commit that did nothing.
+        let hooks = hooked.appendingPathComponent(".git/hooks")
+        try? fm.createDirectory(at: hooks, withIntermediateDirectories: true)
+        let hook = hooks.appendingPathComponent("commit-msg")
+        try? Data("#!/bin/sh\necho '✖ subject may not be empty [subject-empty]'\nexit 1\n".utf8)
+            .write(to: hook)
+        try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hook.path)
+
+        write("two\n", to: "a.txt", in: hooked)
+        _ = try? actions.stage(paths: ["a.txt"], in: hooked)
+        var failureText = ""
+        do {
+            _ = try actions.commit(summary: "feat:no space", description: "", in: hooked)
+            report("the hook refuses the commit", false, "the commit went through")
+        } catch let failure as GitWriteFailure {
+            failureText = failure.description
+            report("the hook refuses the commit", true)
+        } catch {
+            report("the hook refuses the commit", false, "\(error)")
+        }
+        report("and what it said is what the reader is told",
+               failureText.contains("subject may not be empty"), failureText)
+        report("negative control: the old reading — stderr only — had nothing to show",
+               !failureText.isEmpty)
+
+        // And the commit really did not happen: the change is still staged, the message still the
+        // reader's to fix.
+        let log = try? runner.run(.log(limit: 5), in: hooked)
+        report("the refused commit is not in the history",
+               !(String(decoding: log?.standardOutput ?? Data(), as: UTF8.self).contains("no space")))
+
+        let shell = (try? String(contentsOfFile: "Sources/diffscope-app/GitActions.swift",
+                                 encoding: .utf8)) ?? ""
+        report("the window shows the refusal where the commit was asked for",
+               shell.contains("commitBox.status.stringValue = \"refused — "))
+    }
 }

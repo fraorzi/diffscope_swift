@@ -256,11 +256,27 @@ extension Controller {
                           detail: "The commit will contain no changes. That is sometimes what you want — a marker, or a trigger — and it is never what you want by accident.",
                           verb: "Commit empty") else { return }
         }
-        perform("commit") {
+        let failure = perform("commit") {
             _ = try self.actions.commit(summary: summary, description: self.commitBox.descriptionText,
                                         amend: amending, allowEmpty: nothingStaged,
                                         in: repository.url)
             DispatchQueue.main.async { self.commitBox.clear() }
+        }
+        // **A refused commit says so where the commit was asked for** (DEC-113). The status line is a
+        // sentence at the bottom of the window; the reader's eyes are on the button they just
+        // pressed, and a hook that rejects a message leaves everything else looking untouched — the
+        // fields still full, the files still staged. That is *nothing happened* to anybody who was
+        // not watching the status line, which is how it was reported.
+        //
+        // The first line only: `lint-staged` can print thirty, and the whole report is in the status
+        // line and in the command drawer, which is where a reader goes when the first line is not
+        // enough.
+        if let failure {
+            let firstLine = failure.split(separator: "\n").first.map(String.init) ?? failure
+            commitBox.status.stringValue = "refused — \(firstLine)"
+            commitBox.status.toolTip = failure
+        } else {
+            commitBox.status.toolTip = nil
         }
     }
 
@@ -940,16 +956,24 @@ extension Controller {
 
     /// Runs a write, says what happened, and re-reads. The `do`/`catch` is here rather than at
     /// thirty call sites so that a failure cannot be swallowed by a call site that forgot one.
-    func perform(_ label: String, _ body: @escaping () throws -> Void) {
+    /// Runs a write, says what happened, and refreshes. Returns the failure text, or `nil` when the
+    /// write succeeded, so a caller with a better place to show it than the status line can use one
+    /// (DEC-113).
+    @discardableResult
+    func perform(_ label: String, _ body: @escaping () throws -> Void) -> String? {
+        var failureText: String?
         do {
             try body()
             statusLabel.stringValue = "\(label) — done"
         } catch let failure as GitWriteFailure {
+            failureText = failure.description
             statusLabel.stringValue = "\(label) — \(failure.description)"
         } catch {
+            failureText = "\(error)"
             statusLabel.stringValue = "\(label) — \(error)"
         }
         afterWrite()
+        return failureText
     }
 
     func report(_ outcome: Result<GitInvocationResult, GitWriteFailure>, success: String? = nil) {
