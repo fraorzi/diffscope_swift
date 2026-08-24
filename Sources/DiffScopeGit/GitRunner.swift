@@ -17,6 +17,22 @@ public struct GitOperation: Sendable, Equatable {
         GitOperation("status-uall", ["status", "--porcelain", "-uall"])
     }
 
+    /// The file list's own status read: **every** untracked file, and NUL-separated (DEC-111).
+    ///
+    /// `--porcelain` alone collapses an untracked *directory* to one entry — `?? src/` — so a new
+    /// file in a new folder appeared in the list as its folder, unnested, and only became a file
+    /// inside a folder when it was staged. That is the jump the owner reported: nothing moved, the
+    /// row stopped being a directory and started being a file.
+    ///
+    /// `-z` comes with it because the line-based form **quotes** any path with a space or a
+    /// non-ASCII byte, and the parser was stripping those quotes by hand — which turns
+    /// `"src/new folder/A.tsx"` into a path that exists and `a"b.ts` into one that does not. In `-z`
+    /// nothing is quoted, entries are separated by NUL, and a rename emits its two paths as two
+    /// entries, new first.
+    public static func statusPorcelainZ() -> GitOperation {
+        GitOperation("status-z", ["status", "--porcelain", "-uall", "-z"])
+    }
+
     public static func revParseVerifyHead() -> GitOperation {
         GitOperation("rev-parse-verify-head", ["rev-parse", "--verify", "--quiet", "HEAD"])
     }
@@ -175,6 +191,7 @@ public struct GitOperation: Sendable, Equatable {
     public static let allProvenReadOnly: [GitOperation] = [
         .statusPorcelain(),
         .statusPorcelainUall(),
+        .statusPorcelainZ(),
         .revParseVerifyHead(),
         .symbolicRefHead(),
         .originHead(),

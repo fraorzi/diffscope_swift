@@ -5125,3 +5125,55 @@ layout: the rewrap artefacts DEC-108 was hiding are, in 623 blocks, no longer th
 Reopen if a corpus shows a relocation joining two things a reviewer needed to see apart. The control
 is `DIFFSCOPE_NO_RELOCATE`, which is how the measurement above was taken and how the next one should
 be.
+
+---
+
+## DEC-111 — The file list reads every untracked file, and reads it unquoted
+
+- **Date:** 2026-08-24
+- **Topic:** *A new file in a new folder is not shown inside that folder until I stage it.* The third
+  report about rows moving, and the only one that was a defect in the list itself.
+- **Status:** Accepted — built, checked and measured.
+
+### What git was being asked
+
+`git status --porcelain` collapses an untracked **directory** to a single entry — `?? src/` — and the
+file list has read it that way since M2. So a new component in a new folder arrived as one row whose
+path was the folder, drawn at the top level because a path ending in `/` has no parent to nest under.
+Staging it made git report the file itself, and the row became a file inside a folder: two rows where
+there had been one, in a different place. Nothing had moved; the row had stopped being one thing and
+started being another.
+
+`-uall` is the answer and the list has had it available since M11 — `statusPorcelainUall` exists and
+the *staging* state has been read with it all along. The list simply asked the other one.
+
+### And `-z` comes with it
+
+The line-based form **quotes** any path with a space, a quote or a non-ASCII byte:
+`?? "src/new folder/Weird Name.tsx"`. The parser stripped those quotes by hand, which turns that path
+into one that exists and `a"b.ts` into one that does not. With `-z` nothing is quoted, entries are
+NUL-separated, and a rename emits its two paths as two entries — new first — which the walk now
+consumes as a pair rather than splitting on ` -> `, a sequence a filename may legally contain.
+
+### The count moved with it, and its footnote changed meaning
+
+`12-…` §2 asks the uncommitted count to state its convention, because X-4 measured the same repository
+as **63 or 165** depending on whether untracked directories are expanded. The count read the collapsed
+form and the list now reads the expanded one, so the number above a 165-row list would have said 63.
+
+**A number that needs a footnote to agree with the list beside it is the wrong number.** The count
+reads the same command as the list, one entry per file, a rename counted once. The sentence stays
+where it is and now describes an agreement instead of a disagreement.
+
+### Consequences
+
+- an untracked folder appears as its files, nested, **before** anything is staged;
+- staging one of them rebuilds an identical tree — asserted, not assumed;
+- a path with a space arrives intact;
+- the repository row's number and the list agree, on a repository built for the question.
+
+### Revisit trigger
+
+Reopen if a repository with tens of thousands of untracked files makes the list slow to build. `-uall`
+is the cost, and the honest fix there would be a limit that says what it hid rather than a convention
+that quietly counts differently from the list.

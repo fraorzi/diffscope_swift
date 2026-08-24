@@ -3215,3 +3215,18 @@ TypeScript corpus unchanged.
 
 false lines 9682 → **9079**, uncertain marks −12.7%, presented bytes down again, and 623 fewer blocks
 need a withheld half.
+
+## Step — every untracked file, unquoted, and a count that agrees (DEC-111)
+
+- [x] `GitOperation.statusPorcelainZ()` — `status --porcelain -uall -z`, added to the read-only
+      registry beside the two it joins
+- [x] `Scopes.statusFiles` parses NUL-separated entries and consumes the rename's second path,
+      instead of splitting on ` -> ` and stripping quotes by hand
+- [x] `RepositoryReader.uncommittedCount` reads the same command, one entry per file, a rename once
+- [x] `uncommittedCountConvention` rewritten: it described the disagreement X-4 measured, and now
+      describes the agreement — the check that the sentence is *true* moved with it
+- [x] checks on a repository built for the question: the untracked folder listed as its files, a path
+      with a space unquoted, the tree identical before and after staging, and the count equal to the
+      list
+
+Closes the `-uall` and `-z` items that have been open in this file since M11.

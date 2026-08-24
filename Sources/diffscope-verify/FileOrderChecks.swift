@@ -120,4 +120,46 @@ func runFileOrderChecks(_ reportRaw: (String, Bool, String) -> Void) {
                guard let landing = RowNavigation.nearestSelectable(in: sample, to: index) else { return true }
                return sample[landing].file != nil
            })
+
+    print("\n=== DEC-111: a new file in a new folder is a file in a folder before it is staged ===")
+    do {
+        let fresh = root.appendingPathComponent("fresh")
+        try? fm.createDirectory(at: fresh, withIntermediateDirectories: true)
+        git(["init", "-q", "-b", "main", "."], in: fresh)
+        git(["config", "user.email", "t@t"], in: fresh)
+        git(["config", "user.name", "t"], in: fresh)
+        write("kept\n", to: "README.md", in: fresh)
+        git(["add", "-A"], in: fresh)
+        git(["commit", "-qm", "init"], in: fresh)
+        // The owner's case: a folder that does not exist in HEAD, with two files in it.
+        write("a\n", to: "src/call-to-action-banner/CallToActionBanner.tsx", in: fresh)
+        write("b\n", to: "src/call-to-action-banner/styles.module.css", in: fresh)
+        // And a path git would quote in the line-based form.
+        write("c\n", to: "src/new folder/Weird Name.tsx", in: fresh)
+
+        let reader = ScopeReader()
+        func paths() -> [String] {
+            ((try? reader.changedFiles(scope: .allLocalVsHead, in: fresh)) ?? []).map(\.path)
+        }
+        let before = paths()
+        report("the untracked folder is listed as its files, not as itself",
+               before.contains("src/call-to-action-banner/CallToActionBanner.tsx")
+                   && !before.contains { $0.hasSuffix("/") },
+               before.joined(separator: " "))
+        report("a path with a space arrives unquoted",
+               before.contains("src/new folder/Weird Name.tsx"), before.joined(separator: " "))
+
+        let rowsBefore = fileTreeRows(((try? reader.changedFiles(scope: .allLocalVsHead, in: fresh)) ?? []))
+        git(["add", "src/call-to-action-banner/CallToActionBanner.tsx"], in: fresh)
+        let rowsAfter = fileTreeRows(((try? reader.changedFiles(scope: .allLocalVsHead, in: fresh)) ?? []))
+        report("and staging one of them rebuilds the same tree",
+               rowsBefore.map { $0.file?.path ?? "d" } == rowsAfter.map { $0.file?.path ?? "d" },
+               "\(rowsBefore.count) rows before, \(rowsAfter.count) after")
+
+        // The number on the repository row and the list it sits above must agree — the whole reason
+        // the count's convention is written under it.
+        let counted = (try? RepositoryReader().uncommittedCount(in: fresh)) ?? -1
+        report("the repository count agrees with the list",
+               counted == paths().count, "count \(counted), list \(paths().count)")
+    }
 }

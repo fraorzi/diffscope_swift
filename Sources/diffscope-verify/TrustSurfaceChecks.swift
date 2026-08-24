@@ -213,14 +213,15 @@ func runTrustSurfaceChecks(_ reportRaw: (String, Bool, String) -> Void) {
         let sentence = RepositoryReader.uncommittedCountConvention
         report("the sentence names the command it describes",
                sentence.contains("git status --porcelain"), sentence)
-        report("and the disagreement it exists because of — an untracked directory counts once",
-               sentence.lowercased().contains("untracked directory"), sentence)
+        report("and what it counts — every untracked file, one per file",
+               sentence.lowercased().contains("untracked file"), sentence)
 
-        // The sentence has to be **true**, which is a different check: `-uall` would expand
-        // untracked directories and make the same words a false statement (63 vs 165 in X-4).
-        let operation = GitOperation.statusPorcelain()
+        // The sentence has to be **true**, which is a different check. It changed with DEC-111: the
+        // list expands untracked directories now, so the count does too, and the footnote that used
+        // to explain the disagreement describes an agreement instead.
+        let operation = GitOperation.statusPorcelainZ()
         report("the operation actually run matches the sentence",
-               operation.arguments.contains("--porcelain") && !operation.arguments.contains("-uall"),
+               operation.arguments.contains("--porcelain") && operation.arguments.contains("-uall"),
                operation.arguments.joined(separator: " "))
 
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)

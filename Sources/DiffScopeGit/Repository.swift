@@ -80,14 +80,36 @@ public struct RepositoryReader: Sendable {
     /// It lives here, next to the operation it describes, so that changing `statusPorcelain()` to
     /// `statusPorcelainAll()` puts the two lines in the same diff.
     public static let uncommittedCountConvention =
-        "counts: git status --porcelain — an untracked directory counts once"
+        "counts: git status --porcelain -uall — every untracked file counts, one per file"
 
+    /// The number on the repository row, read with **the same command the file list reads**
+    /// (DEC-111).
+    ///
+    /// It used to be `--porcelain` without `-uall`, which collapses an untracked directory to one
+    /// entry, while the list — since DEC-111 — expands it. X-4 measured that disagreement as 63
+    /// against 165 on one repository and this project wrote a sentence under the number to explain
+    /// which convention was in force. **A number that needs a footnote to agree with the list beside
+    /// it is the wrong number**: the sentence stays, and now it describes both.
+    ///
+    /// A rename emits its old path as a second entry, which is one change and must not count twice.
     public func uncommittedCount(in repository: URL) throws -> Int {
-        let result = try runner.run(.statusPorcelain(), in: repository)
+        let result = try runner.run(.statusPorcelainZ(), in: repository)
         guard result.succeeded else { return 0 }
-        return String(decoding: result.standardOutput, as: UTF8.self)
-            .split(separator: "\n", omittingEmptySubsequences: true)
-            .count
+        let entries = String(decoding: result.standardOutput, as: UTF8.self)
+            .split(separator: "\0", omittingEmptySubsequences: true)
+        var count = 0
+        var index = 0
+        while index < entries.count {
+            let entry = entries[index]
+            index += 1
+            guard entry.count > 3 else { continue }
+            let chars = Array(entry)
+            count += 1
+            if chars[0] == "R" || chars[0] == "C" || chars[1] == "R" || chars[1] == "C" {
+                index += 1
+            }
+        }
+        return count
     }
 
     public func resolveBaseBranch(in repository: URL, override: String? = nil) throws -> BaseBranchResolution {

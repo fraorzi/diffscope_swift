@@ -195,25 +195,34 @@ public struct ScopeReader: Sendable {
     }
 
     private func statusFiles(scope: ComparisonScope, in repository: URL) throws -> [ChangedFile] {
-        let result = try runner.run(.statusPorcelain(), in: repository)
+        let result = try runner.run(.statusPorcelainZ(), in: repository)
         guard result.succeeded else { return [] }
+        // NUL-separated, `-uall`, nothing quoted (DEC-111). A rename or a copy emits its new path in
+        // the entry and its old path as the **next** entry, so the walk consumes two.
+        var entries = String(decoding: result.standardOutput, as: UTF8.self)
+            .split(separator: "\0", omittingEmptySubsequences: true)
+            .map(String.init)
         var files: [ChangedFile] = []
-        for line in String(decoding: result.standardOutput, as: UTF8.self).split(separator: "\n") {
-            guard line.count > 3 else { continue }
-            let chars = Array(line)
-            let index = chars[0]
+        var index = 0
+        while index < entries.count {
+            let entry = entries[index]
+            index += 1
+            guard entry.count > 3 else { continue }
+            let chars = Array(entry)
+            let indexStatus = chars[0]
             let worktree = chars[1]
-            var path = String(chars[3...])
+            let path = String(chars[3...])
             var original: String?
-            if let arrow = path.range(of: " -> ") {
-                original = String(path[path.startIndex..<arrow.lowerBound])
-                path = String(path[arrow.upperBound...])
+            if indexStatus == "R" || indexStatus == "C" || worktree == "R" || worktree == "C" {
+                if index < entries.count {
+                    original = entries[index]
+                    index += 1
+                }
             }
-            path = path.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
 
-            let staged = index != " " && index != "?"
+            let staged = indexStatus != " " && indexStatus != "?"
             let unstaged = worktree != " " && worktree != "?"
-            let untracked = index == "?" && worktree == "?"
+            let untracked = indexStatus == "?" && worktree == "?"
 
             let include: Bool
             switch scope {
@@ -224,8 +233,9 @@ public struct ScopeReader: Sendable {
             }
             guard include else { continue }
 
-            let marker = scope == .stagedVsHead ? index : (unstaged ? worktree : index)
-            files.append(ChangedFile(path: path, originalPath: original, kind: kind(for: marker, untracked: untracked)))
+            let marker = scope == .stagedVsHead ? indexStatus : (unstaged ? worktree : indexStatus)
+            files.append(ChangedFile(path: path, originalPath: original,
+                                     kind: kind(for: marker, untracked: untracked)))
         }
         return files.sorted { $0.path < $1.path }
     }
