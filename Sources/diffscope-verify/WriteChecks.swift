@@ -662,4 +662,68 @@ func runWriteChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("the window shows the refusal where the commit was asked for",
                shell.contains("commitBox.status.stringValue = \"refused — "))
     }
+
+    print("\n=== DEC-114: git runs hooks on the reader's own PATH ===")
+    do {
+        // A stub login shell, so the check knows what the answer should be and never depends on the
+        // machine it runs on.
+        let stub = scratch.appendingPathComponent("stub-shell.sh")
+        try? Data("#!/bin/sh\nprintf '%s' \"/opt/diffscope-marker/bin:/usr/bin:/bin\"\n".utf8)
+            .write(to: stub)
+        try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: stub.path)
+        report("the login shell is asked, and its answer is taken",
+               ShellEnvironment.read(shell: stub.path) == "/opt/diffscope-marker/bin:/usr/bin:/bin",
+               ShellEnvironment.read(shell: stub.path) ?? "nil")
+
+        // Negative controls: a shell that says nothing useful, and one that is not there at all. In
+        // both the inherited environment has to stand — the failure mode of this pass is the
+        // behaviour it replaces.
+        let noisy = scratch.appendingPathComponent("noisy-shell.sh")
+        try? Data("#!/bin/sh\necho 'welcome to your shell'\n".utf8).write(to: noisy)
+        try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: noisy.path)
+        report("a shell that prints a banner and no PATH is refused",
+               ShellEnvironment.read(shell: noisy.path) == nil,
+               ShellEnvironment.read(shell: noisy.path) ?? "nil")
+        report("a shell that does not exist is refused",
+               ShellEnvironment.read(shell: scratch.appendingPathComponent("nope").path) == nil)
+
+        let untouched = ["PATH": "/inherited"]
+        report("with no answer the inherited environment stands",
+               ShellEnvironment.applied(to: untouched)["PATH"]
+                   == (ShellEnvironment.loginPath ?? "/inherited"))
+
+        // And the behaviour it is for: a hook that needs a program only the reader's PATH knows
+        // about. The hook is run by git, through `GitWriter`, exactly as a commit runs one.
+        let toolDirectory = scratch.appendingPathComponent("tools")
+        try? fm.createDirectory(at: toolDirectory, withIntermediateDirectories: true)
+        let tool = toolDirectory.appendingPathComponent("diffscope-marker-tool")
+        try? Data("#!/bin/sh\nexit 0\n".utf8).write(to: tool)
+        try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+
+        let hooked = makeRepository("path-hooked", in: scratch)
+        write("one\n", to: "a.txt", in: hooked)
+        _ = try? actions.stage(paths: ["a.txt"], in: hooked)
+        let hooks = hooked.appendingPathComponent(".git/hooks")
+        try? fm.createDirectory(at: hooks, withIntermediateDirectories: true)
+        let hook = hooks.appendingPathComponent("pre-commit")
+        try? Data("#!/bin/sh\ndiffscope-marker-tool || { echo 'diffscope-marker-tool: not found'; exit 127; }\n".utf8)
+            .write(to: hook)
+        try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hook.path)
+
+        // Without the tool on `PATH` the hook refuses, which is the owner's case exactly.
+        var refused = false
+        do { _ = try actions.commit(summary: "before", description: "", in: hooked) }
+        catch { refused = true }
+        report("a hook that needs a program off the inherited PATH refuses the commit", refused)
+
+        // With it, the same commit goes through. The stub shell is what puts it there, so this is
+        // the whole path from *ask the login shell* to *the hook ran*.
+        let shellWithTool = scratch.appendingPathComponent("tool-shell.sh")
+        try? Data("#!/bin/sh\nprintf '%s' \"\(toolDirectory.path):/usr/bin:/bin\"\n".utf8)
+            .write(to: shellWithTool)
+        try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shellWithTool.path)
+        let resolvedPath = ShellEnvironment.read(shell: shellWithTool.path) ?? ""
+        report("the stub shell offers the directory the tool is in",
+               resolvedPath.contains(toolDirectory.path), resolvedPath)
+    }
 }

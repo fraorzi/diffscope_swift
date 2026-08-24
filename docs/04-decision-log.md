@@ -5279,3 +5279,56 @@ control is the reading this replaces — stderr alone, which had nothing to show
 Reopen if a hook's output is long enough that the first line is not the useful one. `lint-staged` can
 print thirty lines; the tooltip has all of them and the drawer has the invocation, and if that proves
 to be the wrong split the box can grow rather than the sentence.
+
+---
+
+## DEC-114 — Git runs hooks on the reader's own PATH
+
+- **Date:** 2026-08-24
+- **Topic:** The same commit is accepted in a terminal and refused in the window. Completes
+  [DEC-113](#dec-113--a-hook-that-refuses-a-commit-is-quoted-not-swallowed), which made the refusal
+  visible and thereby made this one findable.
+- **Status:** Accepted — built and checked.
+
+### The second refusal, and why it was not the message
+
+DEC-113 fixed the silence: a hook's refusal is now quoted where the commit was asked for. The owner
+retyped the message correctly — `feat: update webinar sign up page` — and was refused again.
+
+Everything the hooks run passes by hand. `tsc --noEmit`: clean. `next lint .` over the whole project
+and over the two staged files: clean. `commitlint` on the new message: clean.
+
+**The difference is not the repository, it is the process.** An application launched from Spotlight is
+launched by launchd, which hands it `/usr/bin:/bin:/usr/sbin:/sbin`. The owner's node is nvm's, at
+`~/.nvm/versions/node/v22.22.0/bin`. Husky's `commit-msg` is `npx --no-install commitlint` and its
+`pre-commit` is `npx lint-staged`, so in the window both are `npx: command not found`, exit 127, and
+a commit refused for a reason that has nothing to do with the commit — or with anything the reader
+could see, before DEC-113.
+
+### The decision
+
+The login shell is asked, once, for its `PATH`, and git is given it — for writes, where hooks run,
+and for reads, where a repository's `filter.*` and `textconv` programs run for the same reason.
+
+`$SHELL -l -c 'printf %s "$PATH"'` is the only way to obtain it: nvm writes that `PATH` in an rc file
+and there is nowhere else to look it up. The application already starts a login shell for its
+terminal pane, so this is not a new kind of side effect.
+
+**The failure mode of this pass is the behaviour it replaces**, which is what makes it safe to add:
+
+- it runs off the main thread at launch, with a three-second deadline;
+- a shell that is missing, slow, or prints a banner instead of a `PATH` is refused, and the inherited
+  environment stands;
+- when it cannot answer it says so once, in the status line, naming what will not work.
+
+### Checked without depending on the machine
+
+A stub shell that prints a known `PATH`; a noisy shell that prints a banner; a shell that does not
+exist; and then the case itself — a `pre-commit` hook that needs a program which exists only in a
+directory the inherited `PATH` does not have. The commit is refused without it, and the stub shell is
+shown to offer exactly the directory that would fix it.
+
+### Revisit trigger
+
+Reopen if a reader's rc file makes launch slow. The deadline is the dial and three seconds is
+generous; the shell is asked once per run, off the main thread, and the window is usable throughout.

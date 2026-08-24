@@ -3255,3 +3255,17 @@ Closes the `-uall` and `-z` items that have been open in this file since M11.
 
 Reported as *I pressed commit and nothing happened*. It had happened — `git exited 1`, in a status
 line at the bottom of a window that otherwise looked untouched.
+
+## Step — git runs hooks on the reader's own PATH (DEC-114)
+
+- [x] `ShellEnvironment` asks `$SHELL -l -c 'printf %s "$PATH"'` once, off the main thread, with a
+      three-second deadline, and refuses anything that does not look like a `PATH`
+- [x] `GitRunner` and `GitWriter` both apply it — hooks on the write side, filters and textconv on
+      the read side
+- [x] the window says so once, in the status line, when the shell could not be read
+- [x] checks with a stub shell, a noisy shell, a missing shell, and a `pre-commit` hook that needs a
+      program only the reader's `PATH` knows about
+
+Found because DEC-113 made the refusal visible: the owner's second attempt had a valid message and
+was refused anyway, and everything the hooks run passes by hand — `npx` simply is not on launchd's
+`PATH`.

@@ -525,7 +525,9 @@ public final class GitWriter: @unchecked Sendable {
         process.executableURL = executableURL
         process.arguments = ["-C", repository.path] + operation.arguments
 
-        var environment = ProcessInfo.processInfo.environment
+        // **The reader's own `PATH`** (DEC-114). This is the path hooks run on, and husky's hooks are
+        // `npx` — which a window launched from Spotlight cannot find.
+        var environment = ShellEnvironment.applied(to: ProcessInfo.processInfo.environment)
         // A write path needs the index lock, so `GIT_OPTIONAL_LOCKS` is deliberately absent here.
         environment["GIT_TERMINAL_PROMPT"] = "0"
         environment["GIT_CONFIG_NOSYSTEM"] = "1"

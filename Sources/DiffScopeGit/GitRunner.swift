@@ -298,7 +298,9 @@ public final class GitRunner: @unchecked Sendable {
             + ["-C", repository.path]
             + operation.arguments
 
-        var environment = ProcessInfo.processInfo.environment
+        // The reader's own `PATH`, so a repository's filters and textconv programs are found
+        // (DEC-114). Reads do not run hooks, but they do run `filter.*.smudge` and friends.
+        var environment = ShellEnvironment.applied(to: ProcessInfo.processInfo.environment)
         environment["GIT_OPTIONAL_LOCKS"] = "0"
         environment["GIT_TERMINAL_PROMPT"] = "0"
         environment["GIT_CONFIG_NOSYSTEM"] = "1"

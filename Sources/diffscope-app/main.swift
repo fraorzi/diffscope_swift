@@ -246,6 +246,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         buildMenu()
         buildWindow()
         loadRenderer()
+        resolveShellEnvironment()
         loadConfiguredSources()
     }
 
@@ -289,6 +290,22 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// DEC-006: the repository list is refreshed on window focus. The FSEvents watcher covers the
     /// repository being *looked at*; everything else goes stale while the reader is in their editor,
     /// and coming back to counts that are minutes old is the case this closes.
+    /// Ask the login shell for its `PATH` once, off the main thread (DEC-114). Everything git runs
+    /// on the reader's behalf — hooks above all — needs it, and a window launched from Spotlight has
+    /// launchd's four directories and nothing else.
+    private func resolveShellEnvironment() {
+        DispatchQueue.global(qos: .utility).async {
+            let path = ShellEnvironment.resolve()
+            DispatchQueue.main.async {
+                guard path == nil else { return }
+                // Said once, quietly, and only when it failed: the window still works, and hooks
+                // will fail the way they did before this existed.
+                self.statusLabel.stringValue =
+                    "could not read your shell's PATH — git hooks may not find node or npx"
+            }
+        }
+    }
+
     func applicationDidBecomeActive(_ notification: Notification) {
         guard !state.repositories.isEmpty else { return }
         rescan()
