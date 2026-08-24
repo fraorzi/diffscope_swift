@@ -43,6 +43,9 @@
              border-radius: var(--ds-radius-chip); font-size: var(--ds-text-size-small);
              border: var(--ds-hairline-width) solid var(--ds-border-strong); }
   .ds-chip-alert { border-style: dashed; font-weight: var(--ds-weight-emphasis); }
+  /* The one chip drawn at rest (DEC-112). It is an expander, so it says so the way the others in
+     this window do — the pointer — and it holds every sentence behind it in its tooltip. */
+  .ds-chip-summary { cursor: pointer; }
 
   /* The `SHOWING` row lived here — `SHOWING HEAD ↔ working tree · unified`, a band of its own on
      every file. **Removed entirely** (DEC-088), rule and element both, which is what the check

@@ -5177,3 +5177,55 @@ where it is and now describes an agreement instead of a disagreement.
 Reopen if a repository with tens of thousands of untracked files makes the list slow to build. `-uall`
 is the cost, and the honest fix there would be a limit that says what it hid rather than a convention
 that quietly counts differently from the list.
+
+---
+
+## DEC-112 — The row is a name and a number, and the bar is one chip
+
+- **Date:** 2026-08-24
+- **Topic:** *Do not show me things like `raw` or `binary`; the file header should be the path and the
+  diff under it.* Three surfaces the owner reported as noise, and the flicker that came with one.
+- **Status:** Accepted — built and checked.
+
+### What was being drawn, and for whom
+
+Above every interesting file the notice bar said, in full sentences:
+
+> This file is shown as plain text — 2 region(s) of this file did not parse (34 bytes); changes inside
+> them are shown without a structural claim. Every difference in it is still shown. · formatting-only:
+> 7 shown · Part of this file is shown as plain text — 2 regions and 34 bytes could not be read as
+> code. · 12 parts of this file could not be matched confidently — they are marked in the diff.
+
+Every sentence is true and each was written for a reason. Together they are three paragraphs of engine
+state between the file's name and the file's diff, and two of them say the same thing in different
+words. In the list, every row carried a three-letter badge — `raw`, `bin`, `big` — answering *what
+will the diff view do with this file*, which the diff view answers by itself the moment the file is
+opened.
+
+### The decision
+
+- **The badge is not drawn.** `annotate` is untouched, still checked, and the fact is in the row's
+  tooltip beside the path and the counts.
+- **The bar draws one chip at rest**, and only when there is something to say. It names the most
+  conservative thing there is — *plain text* before a count, *invariant* before either — carries every
+  sentence in its tooltip, and opens all of them on click. A file with nothing to report shows
+  nothing, exactly as before.
+
+**INV-4 is condensed, not weakened**, and the distinction is the whole of this entry. The promise is
+that a file shown without a structural claim says so where the reader can see it. It never required
+the whole sentence at rest — and the summary is drawn *whenever the condition holds*, says the
+conservative word rather than a count, and is one click and one hover from the full text. The
+selftest arm that guards INV-4's floor now asserts both halves: the resting chip reads `plain text`,
+and the sentence is behind it.
+
+### And the flicker that came with the boxes
+
+Ticking a checkbox redrew the **whole tree** — sixty-three stacks of views rebuilt to look identical
+except for one box — because the file list has no cell reuse. The rows are the same rows; what
+changed is one row's answer to *is this in the commit*. Only the rows whose staging state actually
+moved are redrawn now, which is the third and last of the redraws DEC-109 started removing.
+
+### Revisit trigger
+
+Reopen if a reader misses a condition because the bar was closed. The summary's wording is the dial —
+it can say more without the bar opening — and the arm that would catch it is the degradation one.

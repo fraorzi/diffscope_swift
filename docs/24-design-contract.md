@@ -78,6 +78,7 @@ Classes marked **load-bearing** carry a difference. They may be restyled and may
 | `ds-gutter-changed` | This line carries a difference (`12-…` §5.1) | **Yes** |
 | `ds-fold` | Byte-equal content folded away, with its line count | **Yes** — the count must stay visible |
 | `ds-fold-formatting` | A group of real formatting differences, with its count | **Yes** — same reason |
+| `ds-chip-summary` | The single chip the notice bar draws at rest (DEC-112): the most conservative thing there is to say — *plain text* before a count — with every sentence in its tooltip and all of them one click away | **Yes** — INV-4's floor. It is drawn whenever there is anything to report, and a file with nothing to report still shows nothing |
 | `ds-badge` | Names an invisible difference, and its codepoints in Expanded | **Yes** |
 | `ds-note` | **Removed by [DEC-083](04-decision-log.md).** It was a grey word after the line — `formatting`, `uncertain`, `M1`, `inserted` — and this row already called it *annotation only* and forbade it from being the sole carrier of anything, which is why removing it took nothing with it. What says a line changed is the sign column, the gutter edge and the tint; what discloses a group is the count in `#diff-footer`, which is DEC-017's actual requirement | Gone |
 | `ds-chip` | One notice in the bar | **Yes** |

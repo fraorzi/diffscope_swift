@@ -162,4 +162,31 @@ func runFileOrderChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("the repository count agrees with the list",
                counted == paths().count, "count \(counted), list \(paths().count)")
     }
+
+    print("\n=== DEC-112: the row is a name and a number, and the bar is one chip ===")
+    do {
+        let shell = (try? String(contentsOfFile: "Sources/diffscope-app/main.swift",
+                                 encoding: .utf8)) ?? ""
+        let renderer = (try? String(contentsOfFile: "Renderer/src/main.js", encoding: .utf8)) ?? ""
+
+        // The three-letter badge is gone from the row and the fact is not: `annotate` still runs and
+        // the tooltip still says it, which is what the check has to pin — a badge removed by deleting
+        // the computation would take the fact with it.
+        report("the file row draws no annotation badge",
+               !shell.contains("ChipView(text: $0.badge)"))
+        report("and the row's tooltip still carries what the badge said",
+               shell.contains("(annotation.map { \" · \\($0.rawValue)\" } ?? \"\")"))
+
+        // Ticking a box redraws the boxes that changed, not the tree.
+        report("staging redraws only the rows whose box changed",
+               shell.contains("fileTable.reloadData(forRowIndexes:"))
+
+        // One chip at rest, every sentence behind it, and the sentences still built the same way.
+        report("the notice bar draws a summary chip",
+               renderer.contains("ds-chip-summary") && renderer.contains("noticesExpanded"))
+        report("and every notice is one click away",
+               renderer.contains("summary.title = items.join"))
+        report("a file with nothing to report still shows nothing",
+               renderer.contains("if (!items.length) return;"))
+    }
 }

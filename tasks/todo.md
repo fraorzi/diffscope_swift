@@ -3230,3 +3230,16 @@ need a withheld half.
       list
 
 Closes the `-uall` and `-z` items that have been open in this file since M11.
+
+## Step — the row is a name and a number, and the bar is one chip (DEC-112)
+
+- [x] the file row draws no `raw`/`bin`/`big` badge; `annotate` is untouched and the tooltip carries it
+- [x] the notice bar draws **one** chip at rest — *plain text*, *invariant*, or a count — with every
+      sentence in its tooltip and all of them one click away
+- [x] `diffscopeProbe` reports `noticeDetails` beside `notices`, because *what is on screen* and
+      *what the reader can reach* are two questions and the INV-4 arm asks both
+- [x] the degradation arm asserts the resting chip is the conservative word, not a count
+- [x] ticking a box redraws only the rows whose box changed, not the tree
+- [x] `ds-chip-summary` documented in `24-design-contract.md`, which the class audit required
+
+2067 checks, 30 selftest arms.

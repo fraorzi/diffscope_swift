@@ -366,6 +366,9 @@ let unifiedHunks = [];
 /// index in `model.unifiedBlocks`, cleared whenever a different comparison is loaded — an expander
 /// is about *this* block, and carrying the set across files would open a block nobody opened.
 let expandedReflows = new Set();
+/// Whether the reader has opened the notice bar on the file they are looking at (DEC-112). One chip
+/// is drawn at rest; this says whether the sentences behind it are on screen.
+let noticesExpanded = false;
 
 /// The blocks the unified layout prints. Computed by the engine since DEC-096, because this is the
 /// one part of that layout deciding *what is shown*, and a fact derived here cannot be checked
@@ -1489,6 +1492,38 @@ function renderNotices(model) {
   // that dropping the *ambiguity* indicator leaves it untouched. Kept, and silent while it is high.
   const confidence = confidenceSummary(model);
   if (confidence) items.push(confidence);
+  if (!items.length) return;
+
+  // **One chip at rest, not seven** (DEC-112). The owner asked for the file header to be the path and
+  // the diff under it, and the bar was answering questions they had not asked: *2 regions did not
+  // parse*, *formatting-only: 7 shown*, *12 parts could not be matched confidently* — three
+  // paragraphs of engine state above every interesting file.
+  //
+  // **INV-4 is not weakened, it is condensed.** The promise is that a file shown without a structural
+  // claim says so where the reader can see it; what it never required was the whole sentence at rest.
+  // The summary is drawn whenever there is anything at all to say, it names the most conservative
+  // thing — *plain text* before a count — it carries every sentence in its tooltip, and one click
+  // opens all of them. A file with nothing to report still shows nothing, exactly as before.
+  const alert = items.some(text => text.startsWith("invariant"));
+  const plain = model.pathTaken === "raw"
+    || (model.parser && model.parser.state && model.parser.state !== "parsed");
+  const summaryText = alert
+    ? "invariant"
+    : (plain ? "plain text" : `${items.length} note${items.length === 1 ? "" : "s"}`);
+
+  const summary = document.createElement("span");
+  summary.className = "ds-chip ds-chip-summary" + (alert ? " ds-chip-alert" : "");
+  summary.textContent = noticesExpanded ? summaryText + " ▾" : summaryText;
+  summary.title = items.join("\n");
+  summary.setAttribute("role", "button");
+  summary.addEventListener("mousedown", event => {
+    event.preventDefault();
+    noticesExpanded = !noticesExpanded;
+    renderNotices(model);
+  });
+  bar.appendChild(summary);
+  if (!noticesExpanded) return;
+
   for (const text of items) {
     const chip = document.createElement("span");
     chip.className = "ds-chip" + (text.startsWith("invariant") ? " ds-chip-alert" : "");
@@ -1501,6 +1536,7 @@ window.diffscopeRender = function (json) {
   const model = typeof json === "string" ? JSON.parse(json) : json;
   if (!lastModel || lastModel.pinOld !== model.pinOld || lastModel.pinNew !== model.pinNew) {
     expandedReflows = new Set();
+    noticesExpanded = false;
   }
   lastModel = model;
   currentPin = model.pinOld + ":" + model.pinNew;
@@ -1805,6 +1841,12 @@ window.diffscopeProbe = function () {
     // Asked from the document rather than from the model: INV-4 is a promise about what the reader
     // can see, and a notice that never reached the DOM is not visible however well it was computed.
     notices: [...document.querySelectorAll("#notices .ds-chip")].map(el => el.textContent),
+    // What the summary chip holds behind it (DEC-112). The bar draws one chip at rest, so a probe
+    // reading only the chips would report that the sentence INV-4 requires had gone — and it has
+    // not: it is in the tooltip and one click away. Both are reported, because *what is on screen*
+    // and *what the reader can reach* are two different questions and this file answers both.
+    noticeDetails: [...document.querySelectorAll("#notices .ds-chip-summary")]
+        .flatMap(el => (el.title || "").split("\n")),
     lineNumbers: document.querySelectorAll(".cm-lineNumbers .cm-gutterElement").length,
     gutterChanged: document.querySelectorAll(".ds-gutter-changed").length,
     uncertainMarks: document.querySelectorAll(".ds-uncertain").length,

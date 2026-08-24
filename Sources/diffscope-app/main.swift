@@ -1247,9 +1247,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             // the screen now and neither is missed: the sentence says what the window did with the
             // file, why, and that nothing was dropped — and it says it **once**, where the two
             // chips and the notice had said overlapping halves of it in three wordings.
+            // Since DEC-112 the bar draws **one** chip at rest, so the sentence is asserted where it
+            // now lives — behind the summary, in `noticeDetails` — and the resting chip is asserted
+            // to be the conservative word rather than a count. Both halves, because a summary that
+            // said *3 notes* over a file the window could not read as code would satisfy neither
+            // INV-4 nor a reader.
             let ok = text.contains("This file is shown as plain text")
                 && text.contains("git status")
                 && text.contains("Every difference in it is still shown")
+                && text.contains("\"notices\":[\"plain text\"]")
                 && !text.contains("mode: ")
                 && !text.contains("parser: ")
             FileHandle.standardError.write(
@@ -5592,8 +5598,21 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // there is no reuse — so `reloadData` on a 63-file tree rebuilds sixty-three stacks of views,
         // and this runs on every refresh, including the one every return to the window triggers.
         // That is the flicker the owner could see and not reproduce.
-        if state.fileRows != previousRows || state.staging != previousStaging {
+        if state.fileRows != previousRows {
             fileTable.reloadData()
+        } else if state.staging != previousStaging {
+            // **Only the boxes that changed** (DEC-112). Ticking one file used to redraw the whole
+            // tree, which is sixty-three stacks of views rebuilt to look identical except for one
+            // checkbox — the flicker the owner reported while staging. The rows are the same rows;
+            // what changed is one row's answer to *is this in the commit*.
+            let changed = state.fileRows.indices.filter { index in
+                guard let path = state.fileRows[index].file?.path else { return false }
+                return state.staging[path] != previousStaging[path]
+            }
+            if !changed.isEmpty {
+                fileTable.reloadData(forRowIndexes: IndexSet(changed),
+                                     columnIndexes: IndexSet(integer: 0))
+            }
         }
         restoreFileSelection()
         annotateFiles(of: repository)
@@ -6091,11 +6110,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             // and still be read, which is not true of a three-letter chip or of a line count.
             name.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-            // The note is a chip, not a word in the middle of a row: it is a different kind of
-            // fact from the path beside it, and the design draws it as one.
-            let note: NSView = annotation.map { ChipView(text: $0.badge) } ?? spacerView()
-            // A chip is three letters or it is nothing: `raw` clipped to `ra` reads as a broken
-            // control rather than as a short one, so the name yields first.
+            // **The badge is not drawn any more** (DEC-112). `raw`, `bin` and `big` were three-letter
+            // chips on the row, and the owner asked for them to go: they answer *what will the diff
+            // view do with this file*, which is a question the diff view answers by itself the moment
+            // the file is opened, and until then the reader is being told about a mechanism.
+            //
+            // The fact is not lost — it is in the row's tooltip, where the path and the counts
+            // already are, and `annotate` is untouched and still checked. What went is a permanent
+            // three letters of chrome on rows that are otherwise a name and a number.
+            let note: NSView = spacerView()
             note.setContentCompressionResistancePriority(.required, for: .horizontal)
 
             // Counts on the right, where the eye can compare them down the column instead of
@@ -6144,6 +6167,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 stack.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
             ])
             cell.toolTip = file.path + (count.map { " · \($0.text)" } ?? "")
+                + (annotation.map { " · \($0.rawValue)" } ?? "")
             return cell
         }
     }
