@@ -358,13 +358,20 @@ func runDesignChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // opening. That is a rule about getting *in*; nothing described getting back out, and
         // `expandAll` only ever added to the set. The live arm asserts the round trip on a real
         // document; this asserts the two things a photograph of that round trip would not show.
+        // **Both sets**, since DEC-115. A rewrap held back in the two-pane layout is collapsed while
+        // its *block* is, not while its own fold index is — that is what keeps the two layouts from
+        // disagreeing about the same fact — so a collapse that cleared only `expanded` would leave
+        // every rewrap the reader had opened standing open under a button reading `Expand`.
         report("the command has both directions, not just the one it is named after",
                script.contains("case \"expandAll\": {")
-                   && script.contains("if (allOpen) expanded = new Set();"))
+                   && script.contains("{ expanded = new Set(); expandedReflows = new Set(); }"))
         // *Everything is open*, not *anything is open* — a reader who has clicked one fold, or who
         // has jumped into one, presses ⌘E to open the rest. The distinction is the decision.
+        // Asked through `foldOpen`, which is the one function that knows which set a given fold's
+        // state lives in; a caller that reads a set directly is a caller that will get it wrong for
+        // one of the three kinds.
         report("and it collapses only when every fold is already open",
-               script.contains("folds.every((_, index) => expanded.has(index))"))
+               script.contains("folds.every((fold, index) => foldOpen(fold, index))"))
         report("the button says which way it will go",
                script.contains("button.textContent = allOpen ? \"Collapse\" : \"Expand\""))
 

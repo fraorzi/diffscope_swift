@@ -3269,3 +3269,40 @@ line at the bottom of a window that otherwise looked untouched.
 Found because DEC-113 made the refusal visible: the owner's second attempt had a valid message and
 was refused anyway, and everything the hooks run passes by hand — `npx` simply is not on launchd's
 `PATH`.
+
+## Step — the two-pane layout withholds a rewrapped old half (DEC-115)
+
+Candidate 2 of the three ranked on 2026-08-23. The fact was already in the model, checked, and acted
+on by one of its two readers.
+
+- [x] `reflowFolds` in `main.js`: one fold per `withheldOld` range, on the **old side only** —
+      `newStart === newEnd`, which is what keeps it out of the pane holding the bytes it points at
+- [x] `foldOpen` / `openFold`: a rewrap fold is collapsed while its **block** is, so ⌘E, a click on
+      the marker, the unified hunk header and a jump landing inside one all write the same set
+- [x] `foldsForUnified` refuses it — unified withholds a rewrap while *composing* its document, and a
+      second marker over the same lines would be a second expander to keep in step
+- [x] `ds-fold-reflow`: solid edges, because what is behind it is not byte-equal to anything in this
+      pane, and an edge on the right, because *the code is that way* is what makes withholding honest
+- [x] the footer counts them beside the unchanged folds — the one place a reader who has scrolled
+      past every marker can still see the fold state
+- [x] the two source checks on `expandAll` updated, and the collapse direction now has to clear
+      **both** sets to pass
+- [x] selftest arm + `reflowed.png`, `24-design-contract.md`, DEC-115
+
+### Step — done, and the arm is the whole point
+
+Nothing here is in the model, which is why this is a selftest arm and not a check: `withheldOld` was
+computed, checked and drawn by unified two milestones ago, and the two-pane layout — the one the
+owner was reading when they reported the case — simply never asked. No assertion about the model
+could have noticed, because the model was right.
+
+The fixture is three old lines against nine new ones on purpose. A one-line rewrap proves a marker
+exists and says nothing about the count on it, and the count is the term DEC-017 permits the
+withholding on.
+
+Two costs measured rather than assumed, and they differ by layout: unified rebuilds its document to
+open one, because what it withholds is decided while composing it; the two-pane layout refreshes
+decorations, because it has the whole old file in the pane already and rebuilding would throw away
+the reader's scroll position for nothing. The first draft did the expensive thing in both.
+
+2078/2078 checks pass, and so do the selftest's 35 reporting arms — one more than before.

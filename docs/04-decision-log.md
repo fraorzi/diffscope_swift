@@ -5332,3 +5332,73 @@ shown to offer exactly the directory that would fix it.
 
 Reopen if a reader's rc file makes launch slow. The deadline is the dial and three seconds is
 generous; the shell is asked once per run, off the main thread, and the window is usable throughout.
+
+
+## DEC-115 — The two-pane layout withholds a rewrapped old half too
+
+- **Date:** 2026-08-28
+- **Topic:** [DEC-102](#dec-102--a-rewrapped-old-half-is-withheld-rather-than-printed-twice) and
+  [DEC-108](#dec-108--withheld-line-by-line) decided *which old lines a rewrap makes redundant* and
+  then acted on it in one of the two layouts. This is the other one. Candidate 2 of the three the
+  corpus ranked on 2026-08-23.
+- **Status:** Accepted — built, checked, and looked at.
+
+### The half that was never built
+
+`withheldOld` is a fact about a block: every token of those old lines is on the new side, in order,
+so printing them prints the same code twice. The unified layout has acted on it since M12-D — the
+half is held back and the hunk header says how many lines are behind it.
+
+The two-pane layout did not. The left pane went on drawing the whole rewrapped element with nothing
+beside it saying that the same code was one pane to the right, which is the case the owner reported
+in the first place — **in the layout they were reading it in**. The model already knew; only one of
+its two readers was listening.
+
+### The decision
+
+A withheld range is drawn in the left pane as a **fold**: content out of sight, its line count
+stated, one click or one ⌘E from coming back. It is not a new kind of widget, because it is not a new
+act — DEC-017 permits exactly this and permits it on exactly those terms.
+
+Three things follow from *what* it is holding back, and each is a rule rather than a detail:
+
+- **The right pane draws none.** A rewrap fold carries an empty range on the new side, so the pane
+  holding the bytes it points at never hides them. `ds-fold-reflow` carries an edge on its right for
+  the same reason: *the code is that way* is the half of the sentence that makes withholding it
+  honest.
+- **Solid edges, not dashed.** `ds-fold`'s dashed border says *byte-equal text*; what is behind this
+  one is not byte-equal to anything in this pane. It takes `ds-fold-formatting`'s solid edge, which
+  is the shape already meaning *this fold holds a real difference*.
+- **Unified draws none.** It withholds a rewrap while **composing** its document, so a marker there
+  as well would hold the same lines back twice, under two expanders that would then have to agree
+  about which one had opened them.
+
+### One fact, one expansion state
+
+A rewrap fold is collapsed while its **block** is, not while its own index in the fold list is. Both
+layouts write the same set, so a reader who opened a block in one finds it open in the other — and
+⌘E, a click on the marker, a click on the unified hunk header and a jump that lands inside one are
+four routes into a single answer rather than four states to keep in step.
+
+The two layouts pay differently for opening it and that difference is in the code with its reason:
+unified rebuilds the document, because what it withholds is decided while composing it; the two-pane
+layout already has the whole old file in the pane and refreshes decorations, because rebuilding
+would throw away the reader's scroll position for nothing.
+
+### Checked, and then looked at
+
+The headless half asserts the shape of the command — that collapsing clears **both** sets, or every
+rewrap a reader had opened would stand open under a button reading `Expand`.
+
+The half that matters is the selftest arm, because none of this is in the model: the fact was already
+there and already checked, and what was missing was a marker on screen. `reflowed.png` is three old
+lines held behind one marker that says so, against nine new ones beside it, with the footer counting
+them a second time in the one place a reader who has scrolled past the marker can still see. The arm
+asks for the count in the marker, zero markers in the right pane, zero anywhere in the page once the
+layout is unified, and the ⌘E round trip.
+
+### Revisit trigger
+
+Reopen if a reader reports losing a removal behind one of these. The rule that prevents it is
+DEC-108's, not this entry's — a line carrying anything the new side does not have is kept — so the
+fix would belong there, and the marker would be the messenger.

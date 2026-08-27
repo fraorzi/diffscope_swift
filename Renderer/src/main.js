@@ -102,12 +102,22 @@ class DisclosureWidget extends WidgetType {
   }
 }
 
-// Unchanged folds and formatting-only groups share one list, because they share one expansion
-// path: ⌘E and a click open either, and a reader should not have to learn two ways to see hidden
-// text. They differ only in what the marker says and in DEC-048's pairing condition, which the
-// engine has already applied by the time a group arrives here.
-let folds = [];        // { oldStart, oldEnd, newStart, newEnd, lines, label, kind }
+// Unchanged folds, formatting-only groups and withheld rewrapped halves share one list, because
+// they share one expansion path: ⌘E and a click open any of them, and a reader should not have to
+// learn three ways to see hidden text. They differ only in what the marker says and in the engine
+// rule that offered them — DEC-048's pairing condition, or DEC-108's per-line subsequence test —
+// each already applied by the time an entry arrives here.
+let folds = [];        // { oldStart, oldEnd, newStart, newEnd, lines, label, kind, blockIndex }
 let expanded = new Set();
+
+// A rewrap fold is collapsed while its **block** is, not while its own index is, so the two layouts
+// cannot disagree about the same fact: unified's header expander and this one write the same set,
+// and a reader who opened the block in one layout finds it open in the other.
+function foldOpen(fold, index) {
+  return fold.kind === "reflow" ? expandedReflows.has(fold.blockIndex) : expanded.has(index);
+}
+
+const FOLD_CLASS = { formatting: "ds-fold-formatting", reflow: "ds-fold-reflow" };
 let stops = [];
 let stopIndex = -1;
 let anchors = [];
@@ -116,12 +126,13 @@ function foldsFor(state, side) {
   const items = [];
   const max = state.doc.length;
   folds.forEach((fold, index) => {
-    if (expanded.has(index)) return;
+    if (foldOpen(fold, index)) return;
     const from = Math.max(0, Math.min(side === "old" ? fold.oldStart : fold.newStart, max));
     const to = Math.max(from, Math.min(side === "old" ? fold.oldEnd : fold.newEnd, max));
+    // A rewrap fold carries an empty range on the new side, which is what keeps it out of the right
+    // pane: those bytes are the ones it is pointing at.
     if (to <= from) return;
-    const widget = new FoldWidget(fold.lines, index, fold.label,
-                                  fold.kind === "formatting" ? "ds-fold-formatting" : "");
+    const widget = new FoldWidget(fold.lines, index, fold.label, FOLD_CLASS[fold.kind] || "");
     items.push({ from, to, deco: Decoration.replace({ widget, block: true }) });
   });
   return items;
@@ -224,7 +235,11 @@ function foldsForUnified(state) {
   const items = [];
   const max = state.doc.length;
   folds.forEach((fold, index) => {
-    if (expanded.has(index)) return;
+    // A rewrap is withheld by `buildUnified` itself, block by block, behind the expander in the
+    // hunk header — so drawing it here as well would hold the same lines back twice, under two
+    // markers that would then have to agree about which one opened them.
+    if (fold.kind === "reflow") return;
+    if (foldOpen(fold, index)) return;
     for (const run of unifiedRuns.old) {
       const from = Math.max(fold.oldStart, run.srcStart);
       const to = Math.min(fold.oldEnd, run.srcEnd);
@@ -232,8 +247,7 @@ function foldsForUnified(state) {
       const start = Math.max(0, Math.min(run.docStart + (from - run.srcStart), max));
       const end = Math.max(start, Math.min(run.docStart + (to - run.srcStart), max));
       if (end <= start) continue;
-      const widget = new FoldWidget(fold.lines, index, fold.label,
-                                    fold.kind === "formatting" ? "ds-fold-formatting" : "");
+      const widget = new FoldWidget(fold.lines, index, fold.label, FOLD_CLASS[fold.kind] || "");
       items.push({ from: start, to: end, deco: Decoration.replace({ widget, block: true }) });
     }
   });
@@ -1113,16 +1127,32 @@ function refreshDecorations() {
   }
 }
 
+/// The set a fold's collapsed state lives in depends on what it is holding back, and only this
+/// function and `openFold` know which — every caller says *open this marker* and nothing else.
+function openFold(fold, index) {
+  if (fold.kind === "reflow") expandedReflows.add(fold.blockIndex);
+  else expanded.add(index);
+}
+
 function expandFold(index) {
+  const fold = folds[index];
+  if (fold && fold.kind === "reflow") return expandReflow(fold.blockIndex);
   expanded.add(index);
   refreshDecorations();
 }
 
-/// Brings back the old half of a rewrapped block. The document is rebuilt rather than patched: what
-/// is withheld is decided while composing it, and two ways of deciding would drift.
+/// Brings back the old half of a rewrapped block, in whichever layout is on screen.
+///
+/// The two layouts withhold it at different moments, so opening it costs different work. Unified
+/// decides while **composing** the document — the withheld lines are never put in it — so the
+/// document is rebuilt rather than patched: two ways of deciding what is in it would drift. The
+/// two-pane layout has the whole old file in the left pane already and hides those lines behind a
+/// decoration, so refreshing the decorations is the whole of it, and rebuilding would throw away
+/// the reader's scroll position for nothing.
 function expandReflow(index) {
   expandedReflows.add(index);
-  if (lastModel) applyLayout(lastModel);
+  if (layout === "unified") { if (lastModel) applyLayout(lastModel); }
+  else refreshDecorations();
 }
 
 // Both panes scroll to the same stop, because a stop is stated on both sides (DEC-034 uses the
@@ -1139,7 +1169,7 @@ function goToStop(delta) {
     folds.forEach((fold, index) => {
       const start = view === left ? fold.oldStart : fold.newStart;
       const end = view === left ? fold.oldEnd : fold.newEnd;
-      if (position >= start && position < end) expanded.add(index);
+      if (position >= start && position < end) openFold(fold, index);
     });
     view.dispatch({
       effects: EditorView.scrollIntoView(position, { y: "center" }),
@@ -1182,7 +1212,7 @@ window.diffscopeAnchorState = function () {
 window.diffscopeStyleAudit = function () {
   const marks = ["ds-changed", "ds-fallback", "ds-parse-error", "ds-moved", "ds-formatting",
                  "ds-behaviour", "ds-uncertain", "ds-invisible", "ds-fold", "ds-fold-formatting",
-                 "ds-badge", "ds-gutter-changed", "ds-chip"];
+                 "ds-fold-reflow", "ds-badge", "ds-gutter-changed", "ds-chip"];
   const probe = document.createElement("span");
   document.body.appendChild(probe);
   const report = {};
@@ -1332,10 +1362,13 @@ window.diffscopeCommand = function (name) {
     // whatever covers its target — presses ⌘E to open the rest, which is the reading of the key
     // they already have. The second press closes them all.
     case "expandAll": {
-      const allOpen = folds.length > 0 && folds.every((_, index) => expanded.has(index));
-      if (allOpen) expanded = new Set();
-      else folds.forEach((_, index) => expanded.add(index));
-      refreshDecorations();
+      const allOpen = folds.length > 0 && folds.every((fold, index) => foldOpen(fold, index));
+      if (allOpen) { expanded = new Set(); expandedReflows = new Set(); }
+      else folds.forEach((fold, index) => openFold(fold, index));
+      // Unified withholds a rewrap while composing the document, so opening one there changes the
+      // document rather than a decoration over it; the two-pane layout only has to redraw.
+      if (layout === "unified" && lastModel) applyLayout(lastModel);
+      else refreshDecorations();
       if (lastModel) updateFooter(lastModel);
       return { expanded: allOpen ? 0 : folds.length, collapsed: allOpen };
     }
@@ -1369,6 +1402,10 @@ function updateFooter(model) {
     }
   }
   const hidden = (model.collapses || []).reduce((sum, fold) => sum + fold.lines, 0);
+  // The bar is the one place the fold state is visible to a reader who has scrolled past every
+  // marker, so a rewrap held back counts here for the same reason an unchanged fold does.
+  const rewrapped = folds.filter(fold => fold.kind === "reflow")
+    .reduce((sum, fold) => sum + fold.lines, 0);
 
   const parts = [];
   if (formatting > 0) {
@@ -1376,6 +1413,9 @@ function updateFooter(model) {
       + (kinds.size ? " — " + [...kinds].sort().join(", ") : ""));
   }
   if (hidden > 0) parts.push(`${hidden} unchanged lines folded`);
+  if (rewrapped > 0) {
+    parts.push(`${rewrapped} re-wrapped line${rewrapped === 1 ? "" : "s"} not printed twice`);
+  }
   bar.hidden = parts.length === 0;
   text.textContent = parts.join(" · ");
 
@@ -1386,7 +1426,7 @@ function updateFooter(model) {
   // and this label is the one place in the webview it had been missed.
   const button = document.getElementById("diff-footer-expand");
   if (button) {
-    const allOpen = folds.length > 0 && folds.every((_, index) => expanded.has(index));
+    const allOpen = folds.length > 0 && folds.every((fold, index) => foldOpen(fold, index));
     button.textContent = allOpen ? "Collapse" : "Expand";
     button.hidden = folds.length === 0;
   }
@@ -1532,6 +1572,41 @@ function renderNotices(model) {
   }
 }
 
+/// DEC-115: **the two-pane layout withholds what the unified layout withholds.**
+///
+/// `withheldOld` is a fact about a block, decided by the engine per line (DEC-108): every token of
+/// those old lines is on the new side, in order, so printing them prints the same code twice. Until
+/// now only one of the two layouts acted on it. Unified held the rewrapped half back and said so in
+/// its hunk header; the left pane went on drawing the whole rewrapped element with nothing beside it
+/// saying that the same code was one pane to the right — which is the case the owner reported, in
+/// the layout they were reading it in.
+///
+/// One entry per withheld range, on the **old side only**: `newStart === newEnd` keeps it out of the
+/// right pane, where those bytes are the thing it is pointing at. It is a fold and not a new kind of
+/// widget because it is the same act — content out of sight, its count stated, one keystroke or one
+/// click from coming back — and DEC-017 permits it on exactly those terms.
+function reflowFolds(model) {
+  const text = model.payload.kind === "text" ? model.payload.old.text : "";
+  const out = [];
+  (model.unifiedBlocks || []).forEach((block, blockIndex) => {
+    for (const range of block.withheldOld || []) {
+      const chunk = text.slice(range.start, range.end);
+      if (!chunk) continue;
+      // The last line of a file with no trailing newline still counts as a line — the same count
+      // `emit` makes, because the two layouts must not disagree about how much they are holding.
+      const lines = chunk.split("\n").length - (chunk.endsWith("\n") ? 1 : 0);
+      out.push({
+        oldStart: range.start, oldEnd: range.end, newStart: 0, newEnd: 0,
+        kind: "reflow", blockIndex, lines,
+        label: lines === 1
+          ? "1 re-wrapped line, the same code is on the right"
+          : `${lines} re-wrapped lines, the same code is on the right`,
+      });
+    }
+  });
+  return out;
+}
+
 window.diffscopeRender = function (json) {
   const model = typeof json === "string" ? JSON.parse(json) : json;
   if (!lastModel || lastModel.pinOld !== model.pinOld || lastModel.pinNew !== model.pinNew) {
@@ -1564,7 +1639,7 @@ window.diffscopeRender = function (json) {
     kind: "formatting",
     // DEC-017: a group is only permissible while it says how much it grouped.
     label: `${group.changes} formatting-only changes over ${group.lines} lines`,
-  })));
+  }))).concat(reflowFolds(model));
   stops = model.stops || [];
   anchors = model.anchors || [];
   expanded = new Set();
@@ -1834,6 +1909,17 @@ window.diffscopeProbe = function () {
     expandLabel: document.getElementById("diff-footer-expand")?.hidden === false
       ? (document.getElementById("diff-footer-expand")?.textContent || "") : "",
     formattingFoldMarks: document.querySelectorAll(".ds-fold-formatting").length,
+    // DEC-115, counted per pane rather than per document. *A rewrap is withheld* and *it is
+    // withheld on the side the reader can already read it from* are two claims, and a count over
+    // the whole page would answer only the first — the second is the one that says the marker is
+    // pointing somewhere rather than hiding the change.
+    reflowFoldMarks: document.querySelectorAll("#left .ds-fold-reflow").length,
+    reflowFoldMarksRight: document.querySelectorAll("#right .ds-fold-reflow").length,
+    // Page-wide, and the question it answers is the one about the *other* layout: unified holds a
+    // rewrap back while composing its document, so a marker drawn here as well would hold the same
+    // lines back twice, under two expanders that would then have to agree about which one opened
+    // them. Zero is the assertion.
+    reflowFoldMarksAll: document.querySelectorAll(".ds-fold-reflow").length,
     foldLabels: [...document.querySelectorAll(".ds-fold")].map(el => el.textContent),
     scrollTop: Math.round(left.scrollDOM.scrollTop),
     stopIndex,

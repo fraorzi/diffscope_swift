@@ -2221,7 +2221,110 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             FileHandle.standardError.write(
                 Data("SELFTEST moves=\(ok ? "OK" : "MISMATCH") \(outcome.summary)\n".utf8))
             if !ok { exit(12) }
-            self.snapshot(named: "moved") { self.runNavigationSelftest() }
+            self.snapshot(named: "moved") { self.runReflowSelftest() }
+        }
+    }
+
+
+    /// DEC-115: **the two-pane layout withholds a rewrapped old half, and says where the code went.**
+    ///
+    /// The owner's reported shape — a prop added to an element, prettier rewrapping it, and the
+    /// whole element drawn twice. DEC-102 answered it in unified and only in unified; this arm is
+    /// the two-pane half, and it is a selftest rather than a check because the fact was already in
+    /// the model and checked there. What was missing was a marker on screen, and no assertion about
+    /// the model can see one.
+    ///
+    /// Three questions, and the second is the one that makes withholding honest:
+    ///   1. the left pane draws the marker, and it says how many lines are behind it (DEC-017);
+    ///   2. the right pane draws none — the bytes it would hide are the ones it is pointing at;
+    ///   3. ⌘E opens it and a second ⌘E closes it again (DEC-078), because a fold that only the
+    ///      pointer can open is one a reader who scrolled past it cannot.
+    private func runReflowSelftest() {
+        // Three old lines against nine new ones, deliberately: a one-line rewrap would prove the
+        // marker exists and say nothing about the count on it, and the count is what DEC-017
+        // permits the withholding for.
+        let old = [UInt8]("""
+        export function Hero({ hero }) {
+          return <Image src={hero} alt="Hero"
+            width={1200} height={630}
+            priority />;
+        }
+
+        """.utf8)
+        let new = [UInt8]("""
+        export function Hero({ hero }) {
+          return (
+            <Image
+              src={hero}
+              alt="Hero"
+              width={1200}
+              height={630}
+              priority
+              className="rounded"
+            />
+          );
+        }
+
+        """.utf8)
+        let outcome = buildModel(path: "selftest.tsx", old: old, new: new, mode: .structural)
+        let render = buildRenderModel(model: outcome.model, pinOld: "pinW", pinNew: "pinX",
+                                      mode: "structural", pathTaken: outcome.pathTaken,
+                                      parser: outcome.parser, validation: outcome.validation,
+                                      notices: outcome.notices)
+        guard let json = try? encodeRenderModel(render) else { exit(57) }
+        push(json)
+
+        func probe(_ handler: @escaping ([String: Any]) -> Void) {
+            webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
+                let data = Data(((value as? String) ?? "").utf8)
+                handler((try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:])
+            }
+        }
+
+        let withheld = render.unifiedBlocks.reduce(0) { $0 + $1.withheldOld.count }
+        probe { first in
+            let marks = first["reflowFoldMarks"] as? Int ?? 0
+            let onTheRight = first["reflowFoldMarksRight"] as? Int ?? -1
+            let labels = (first["foldLabels"] as? [String] ?? []).joined(separator: " | ")
+            // The count has to be *in the marker*, not merely known to the engine: DEC-017 permits
+            // grouping only while it says how much it grouped.
+            let states = withheld > 0 && marks == withheld && onTheRight == 0
+                && labels.contains("re-wrapped line")
+            self.webView.evaluateJavaScript("JSON.stringify(window.diffscopeCommand(\"expandAll\"))") { _, _ in
+                probe { opened in
+                    let afterOpen = opened["reflowFoldMarks"] as? Int ?? -1
+                    self.webView.evaluateJavaScript(
+                        "JSON.stringify(window.diffscopeCommand(\"expandAll\"))") { _, _ in
+                        probe { closed in
+                            let afterClose = closed["reflowFoldMarks"] as? Int ?? -1
+                            let reversible = afterOpen == 0 && afterClose == marks
+                            // And the same lines are **not** held back twice. Unified withholds a
+                            // rewrap while composing its document and says so in the hunk header;
+                            // a marker drawn there as well would be a second expander over the same
+                            // lines, and the two would have to agree about which one opened them.
+                            self.webView.evaluateJavaScript(
+                                "window.diffscopeSetLayout(\"unified\")") { _, _ in
+                                probe { inUnified in
+                                    let markersThere = inUnified["reflowFoldMarksAll"] as? Int ?? -1
+                                    let ok = states && reversible && markersThere == 0
+                                    FileHandle.standardError.write(Data(
+                                        ("SELFTEST reflow-split=\(ok ? "OK" : "MISMATCH") "
+                                            + "withheld=\(withheld) marks=\(marks) "
+                                            + "right=\(onTheRight) opened=\(afterOpen) "
+                                            + "closed=\(afterClose) in-unified=\(markersThere) "
+                                            + "labels=\(labels)\n").utf8))
+                                    self.webView.evaluateJavaScript(
+                                        "window.diffscopeSetLayout(\"split\")") { _, _ in
+                                        self.snapshot(named: "reflowed") {
+                                            if ok { self.runNavigationSelftest() } else { exit(58) }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 

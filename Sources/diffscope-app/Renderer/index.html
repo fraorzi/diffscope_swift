@@ -262,6 +262,16 @@
     border-top-style: solid;
     border-bottom-style: solid;
   }
+  /* The old half of a rewrap, held back in the two-pane layout (DEC-115). What is behind it is not
+     byte-equal to anything in this pane, so it takes the solid edge that says *this fold holds a
+     real difference* rather than the dashed one that says *nothing here*. The edge on the right is
+     the second half of the sentence: the code is in the pane that way, which is the only reason
+     withholding it is honest. Shape, not colour, on both counts (DEC-035). */
+  .ds-fold-reflow {
+    border-top-style: solid;
+    border-bottom-style: solid;
+    border-right: var(--ds-gutter-edge-width) solid var(--ds-mark);
+  }
   /* The gutter is the third carrier of change meaning (`12-…` §5.1), so it marks by shape —
      a solid edge against the text — rather than by colour, which DEC-035 forbids as a sole signal. */
   /* Descendant selectors, not bare class names: CodeMirror injects its own base theme through
