@@ -1898,6 +1898,10 @@ window.diffscopeProbe = function () {
     // carriers of "this line changed", read off the same `changedLines`, must agree.
     tintedLines: document.querySelectorAll(".ds-line-changed").length,
     formattingMarks: document.querySelectorAll(".ds-formatting").length,
+    // The mark a file with no grammar gets. Counted beside `uncertainMarks` because DEC-116 is a
+    // claim about the two together: *this was not parsed* and *this alignment is doubtful* are two
+    // things, and for a whole family of files they had become one.
+    fallbackMarks: document.querySelectorAll(".ds-fallback").length,
     // `ds-note` is gone (DEC-083); the probe keeps the key so an arm that still asks
     // gets an empty list rather than `undefined`, and so the count is assertable.
     notes: [...document.querySelectorAll(".ds-note")].map(el => el.textContent),

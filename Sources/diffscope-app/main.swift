@@ -2316,7 +2316,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                     self.webView.evaluateJavaScript(
                                         "window.diffscopeSetLayout(\"split\")") { _, _ in
                                         self.snapshot(named: "reflowed") {
-                                            if ok { self.runNavigationSelftest() } else { exit(58) }
+                                            if ok { self.runFallbackTextureSelftest() }
+                                            else { exit(58) }
                                         }
                                     }
                                 }
@@ -2324,6 +2325,57 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                         }
                     }
                 }
+            }
+        }
+    }
+
+
+    /// DEC-116: **a stylesheet's marks are not all drawn uncertain.**
+    ///
+    /// `.css`, `.json` and `.md` take the fallback path, and every mark on it used to arrive at
+    /// confidence 0 — so the dotted outline and the dashed underline that mean *this alignment could
+    /// not be confirmed* were drawn over 100% of the presented bytes in a whole family of files. A
+    /// texture that is always on is a texture that says nothing, and no check could see it: the flag
+    /// was computed correctly from the number it was given.
+    ///
+    /// Asked of the document, because that is where the claim is made. Two counts, and it is the
+    /// pair that matters — the marks are still `ds-fallback`, which is what carries *this file was
+    /// not parsed*; what has gone is the second, louder copy of the same sentence.
+    private func runFallbackTextureSelftest() {
+        let old = [UInt8]("""
+        .hero { transition: opacity 200ms ease; }
+        .card { color: var(--animated-background-active-hover); }
+
+        """.utf8)
+        let new = [UInt8]("""
+        .hero { transition: opacity 240ms ease; }
+        .card { color: var(--animated-background-active-focus); }
+
+        """.utf8)
+        let outcome = buildModel(path: "selftest.css", old: old, new: new, mode: .structural)
+        let render = buildRenderModel(model: outcome.model, pinOld: "pinY", pinNew: "pinZ",
+                                      mode: "structural", pathTaken: outcome.pathTaken,
+                                      parser: outcome.parser, validation: outcome.validation,
+                                      notices: outcome.notices)
+        guard let json = try? encodeRenderModel(render) else { exit(59) }
+        push(json)
+        webView.evaluateJavaScript("JSON.stringify(window.diffscopeProbe())") { value, _ in
+            let data = Data(((value as? String) ?? "").utf8)
+            let probe = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] ?? [:]
+            let fallback = probe["fallbackMarks"] as? Int ?? 0
+            let uncertain = probe["uncertainMarks"] as? Int ?? -1
+            // INV-4 is the other half and it is unmoved: the bar still says the file is shown as
+            // plain text. Read from `noticeDetails`, because DEC-112 draws one chip at rest and the
+            // sentence lives behind it.
+            let details = (probe["noticeDetails"] as? [String] ?? [])
+                + (probe["notices"] as? [String] ?? [])
+            let disclosed = details.contains { $0.contains("plain text") }
+            let ok = fallback > 0 && uncertain == 0 && disclosed
+            FileHandle.standardError.write(Data(
+                ("SELFTEST fallback-texture=\(ok ? "OK" : "MISMATCH") fallback-marks=\(fallback) "
+                    + "uncertain=\(uncertain) disclosed=\(disclosed) \(details)\n").utf8))
+            self.snapshot(named: "fallback") {
+                if ok { self.runNavigationSelftest() } else { exit(60) }
             }
         }
     }

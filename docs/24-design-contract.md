@@ -249,7 +249,7 @@ DIFFSCOPE_SELFTEST=1 DIFFSCOPE_SNAPSHOT_DIR=/tmp/shots swift run -c release diff
 
 Step 4 is not optional. The suite proves the model and the rules; only the pictures show whether the result is legible — the lesson M8-D paid for, when both lists rendered blank rows in a window that passed every check.
 
-The snapshots written are `structural`, `expanded`, `disclosure`, `moved`, `reflowed`, `navigation`, `refresh`, `anchored`, `degraded`, `gutter` and `unified`: the founding wrapper-removal case, the two modes side by side, an invisible-difference badge, a paired move, a rewrapped old half held back in the left pane, folds and jumps, a refreshed view, a restored anchor, a ranked degradation notice, the gutter beside line numbers, and the default one-column layout with its two number columns and its sign column.
+The snapshots written are `structural`, `expanded`, `disclosure`, `moved`, `reflowed`, `fallback`, `navigation`, `refresh`, `anchored`, `degraded`, `gutter` and `unified`: the founding wrapper-removal case, the two modes side by side, an invisible-difference badge, a paired move, a rewrapped old half held back in the left pane, a stylesheet whose marks are clean rather than uniformly uncertain ([DEC-116](04-decision-log.md)), folds and jumps, a refreshed view, a restored anchor, a ranked degradation notice, the gutter beside line numbers, and the default one-column layout with its two number columns and its sign column.
 
 `terminal-tabs` is the fourth (DEC-067): two shells in one drawer, the strip above them, and the thing no picture can check asserted beside it — that the second tab's output never turns up in the first one's scrollback, which is exactly what one grid replaying a buffer would produce.
 

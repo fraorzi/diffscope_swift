@@ -4,9 +4,15 @@ public func wholeFilePartition(length: Int, label: SegmentLabel) -> Partition {
     guard length > 0 else {
         return Partition(totalLength: 0, segments: [])
     }
+    // An unchanged whole file is the one thing here that *is* confirmed — the two byte arrays were
+    // compared and found equal — and until DEC-116 it was reported at confidence 0 with everything
+    // else this function makes. Nothing drew it, because an unchanged segment carries no mark; it
+    // was still a segment saying *this alignment could not be confirmed* about the strongest
+    // confirmation the product has.
     return Partition(
         totalLength: length,
-        segments: [Segment(start: 0, end: length, label: label, confidence: 0)]
+        segments: [Segment(start: 0, end: length, label: label,
+                           confidence: label == .unchanged ? 1 : 0)]
     )
 }
 
@@ -40,6 +46,14 @@ public func wholeFilePartition(length: Int, label: SegmentLabel) -> Partition {
 /// gets its localised diff.
 public let fallbackDiffWorkBudget = defaultCanonicalDiffWorkBudget / 10
 
+/// A change whose range came from the canonical byte diff, on the path with no grammar. The same
+/// number an ordinary structural change gets, because it is the same claim: *these bytes differ, and
+/// here is where* — reached by the alignment the structural path is checked against.
+public let exactFallbackConfidence = 0.8
+/// A change whose range came from DEC-105's line anchors. Below the floor on purpose: the marked
+/// boundaries are wider than minimal and were never compared byte for byte.
+public let lineAnchoredFallbackConfidence = 0.6
+
 public func fallbackPartitions(
     oldBytes: [UInt8],
     newBytes: [UInt8],
@@ -49,10 +63,33 @@ public func fallbackPartitions(
 ) -> (old: Partition, new: Partition)? {
     var oldRanges: [(start: Int, end: Int)]
     var newRanges: [(start: Int, end: Int)]
+    // **How the ranges were obtained, in the vocabulary the rest of the engine already uses**
+    // (DEC-116). `confidence` says how far an *alignment* can be trusted, and it was reading 0 —
+    // the value that means no analysis at all — for every mark this function makes, on both of the
+    // two very different routes below. On a corpus of stylesheets, JSON and Markdown that is 99.3%
+    // of marks and 100% of presented bytes drawn uncertain, in a whole family of files, which is
+    // a texture that says nothing.
+    //
+    // The two routes do not deserve the same number:
+    //
+    // - `.exact` is the canonical byte diff — the same alignment INV-2 states the structural path
+    //   *against*. A change taken from it is exactly as well aligned as a change taken from a
+    //   structural gap pair, and that is `0.8`: at the floor, trusted, and still a change rather
+    //   than a confirmed identity.
+    // - the line-anchored fallback (DEC-105) is a heuristic. Its guarantee is that what it leaves
+    //   unmarked is byte-identical; the boundaries of what it *does* mark are wider than minimal
+    //   and were never compared byte for byte. `0.6` is the value already meaning *the byte diff
+    //   and the alignment disagree*, which is the same doubt.
+    //
+    // What says *this file was not parsed* is the `.fallback` label and the notice bar, and it has
+    // said so all along. Confidence restating it was a second copy of one axis, drowning out the
+    // other — two indicators saying the same thing are one indicator and a decoration.
+    let rangeConfidence: Double
     switch canonicalDiff(old: oldBytes, new: newBytes, workBudget: workBudget) {
     case let .exact(hunks):
         oldRanges = hunks.map { (start: $0.oldStart, end: $0.oldEnd) }
         newRanges = hunks.map { (start: $0.newStart, end: $0.newEnd) }
+        rangeConfidence = exactFallbackConfidence
     case .budgetExceeded:
         // **Lines, before the whole file** (DEC-105). The byte diff refusing to answer is not the
         // same thing as there being no answer: a 40 KB translation file with a hundred edited
@@ -62,6 +99,7 @@ public func fallbackPartitions(
         else { return nil }
         oldRanges = hunks.map { (start: $0.oldStart, end: $0.oldEnd) }
         newRanges = hunks.map { (start: $0.newStart, end: $0.newEnd) }
+        rangeConfidence = lineAnchoredFallbackConfidence
     }
 
     func side(_ bytes: [UInt8], _ ranges: [(start: Int, end: Int)]) -> Partition {
@@ -74,7 +112,7 @@ public func fallbackPartitions(
                                         confidence: 1))
             }
             segments.append(Segment(start: range.start, end: range.end, label: .fallback,
-                                    confidence: 0))
+                                    confidence: rangeConfidence))
             cursor = range.end
         }
         if cursor < bytes.count {

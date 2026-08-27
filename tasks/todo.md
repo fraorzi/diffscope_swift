@@ -3306,3 +3306,39 @@ decorations, because it has the whole old file in the pane already and rebuildin
 the reader's scroll position for nothing. The first draft did the expensive thing in both.
 
 2078/2078 checks pass, and so do the selftest's 35 reporting arms — one more than before.
+
+## Step — confidence says how the alignment was reached (DEC-116, M12-K)
+
+The last of the three items M12-H left open, and the one that turned out to be a switch.
+
+- [x] measured first: **99.3% of marks and 100.0% of presented bytes** drawn uncertain across 364
+      `.css/.scss/.json/.md` pairs — a texture that is always on
+- [x] `exactFallbackConfidence = 0.8` for a range from the canonical byte diff: the same value an
+      ordinary structural change gets, because it is the same claim by the same means
+- [x] `lineAnchoredFallbackConfidence = 0.6` for DEC-105's route: the value already meaning *the byte
+      diff and the alignment disagree*, which is the doubt those boundaries actually carry
+- [x] a whole-file answer stays at 0; an unchanged whole file becomes 1, which it always was
+- [x] `.fallback` and the notice bar untouched — INV-4 is where *this file was not parsed* is said
+- [x] checks: both routes, both controls, and the shape the corpus named drawn as one mark per word
+- [x] selftest arm + `fallback.png`, DEC-116, M12-K, handoff, design contract
+
+### Step — done, and the flag was a switch nobody read as one
+
+`absorbIslands` and `coalesceAdjacent` both refuse to merge across `confidenceFloor`, deliberately.
+With every mark at 0 and every unchanged byte at 1, **every junction on this path crossed it** — so
+DEC-094's absorption, DEC-100's word snap and DEC-107's word merge were all switched off in a whole
+family of files, by a constant that read as a description of them rather than as an input to them.
+
+`split-mark` **54 → 0**, `micro-island` 329 → 126, `mark-confetti` 21 → 10, marks 4134 → 3868, for
+0.09% more presented bytes. **`false` and `missed` lines are identical to the line**, which is the
+property this rests on: nothing here changes which bytes are marked, only how sure the mark says it
+is and therefore which neighbours it may join.
+
+The control is the 4016-pair TypeScript corpus, **identical line for line** apart from the wall clock.
+Measured rather than argued from the fact that only `fallbackPartitions` was touched.
+
+The 332 uncertain marks that remain are DEC-105's line-anchored route, 60.8% of presented bytes
+because the files reaching it are the big ones. That is the honest reading and it is the revisit
+trigger: if that share grows, *uncertain* starts meaning *large* rather than *guessed*.
+
+2086/2086 checks, 36 selftest arms.

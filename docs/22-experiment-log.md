@@ -3446,3 +3446,50 @@ reads **109.3 s with the pass and 114.7 s without**. The first pair of numbers w
 background surveys were running on the same machine.
 
 *Measure the control before believing the check* — this time the control was the machine.
+
+
+## M12-K — What the confidence flag was actually doing on the fallback path
+
+**2026-08-28.** DEC-116, `corpus-styles` — 364 `.css/.scss/.json/.md` pairs from ten repositories,
+none of them parsed. `corpus` (4016 TypeScript pairs) measured beside it as the control.
+
+| | before | after |
+|---|---|---|
+| uncertain marks | 4107 (**99.3%** of marks, **100.0%** of presented bytes) | **332 (8.6%, 60.8%)** |
+| marks | 4134 | **3868** |
+| `split-mark` | 54 | **0** |
+| `micro-island` | 329 | **126** |
+| `mark-confetti` | 21 | **10** |
+| `whitespace-only-mark` | 1053 | 1026 |
+| presented bytes | 268486 | 268732 (+0.09%) |
+| false lines | 194 | **194** |
+| missed lines | 796 | **796** |
+| junctions refused by the floor | 54 | **0** |
+
+**The first row is the entry.** A texture drawn over 100% of presented bytes in a whole family of
+files is not a signal, and no check could have found it: `uncertain` was computed correctly from the
+number it was given, and the number was 0 for every mark `fallbackPartitions` made — on both of its
+two routes, which are not equally well aligned.
+
+**The rest of the table is the finding.** `absorbIslands` and `coalesceAdjacent` both refuse to merge
+across `confidenceFloor`, deliberately (DEC-045: merging would lend confidence to bytes that had none
+or spread doubt onto bytes that were fine). With every mark at 0 and every unchanged byte at 1,
+**every junction on this path crossed the floor** — so the whole widening and merging apparatus,
+DEC-094 and DEC-100 and DEC-107, was switched off in a family of files by a flag nobody read as a
+switch. `split-mark` 54 → 0 is that switch coming back on.
+
+**`false` and `missed` do not move at all**, which is the property this rests on rather than a
+coincidence: nothing here changes which bytes are marked, only how confident the mark says it is and
+therefore which neighbours it may join.
+
+### The control
+
+`corpus`, all 4016 TypeScript pairs: **identical, line for line**, apart from the wall clock (228.4 s
+against 225.8 s). The change reaches only `fallbackPartitions`, and the survey says so rather than the
+diff being trusted to.
+
+### The 332 that remain
+
+They are DEC-105's line-anchored route — 60.8% of presented bytes, because the files that reach it are
+the big ones. That is the honest reading: those boundaries are wider than minimal and were never
+compared byte for byte, so the texture now points at the files where the product really did guess.

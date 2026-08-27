@@ -5402,3 +5402,62 @@ layout is unified, and the ⌘E round trip.
 Reopen if a reader reports losing a removal behind one of these. The rule that prevents it is
 DEC-108's, not this entry's — a line carrying anything the new side does not have is kept — so the
 fix would belong there, and the marker would be the messenger.
+
+
+## DEC-116 — Confidence says how the alignment was reached, not which path drew it
+
+- **Date:** 2026-08-28
+- **Topic:** The last of the three items M12-H left open: *every fallback mark is drawn uncertain, so
+  the texture says nothing in a whole family of files.* Measured in
+  [M12-K](22-experiment-log.md).
+- **Status:** Accepted — built, measured against both corpora, and looked at.
+
+### A texture that is always on
+
+`.css`, `.scss`, `.json` and `.md` take the fallback path (DEC-095), and every mark it made arrived at
+`confidence: 0`. The floor is 0.8, so the contract's `uncertain` flag was true for **99.3% of marks
+and 100.0% of presented bytes** on a corpus of 364 such pairs. The dotted outline and the dashed
+underline that mean *this alignment could not be confirmed* were drawn over everything, in every file
+of those kinds, which is the same as not drawing them.
+
+Nothing could have caught it: `uncertain` is computed correctly from the number it is given, and the
+number was a constant nobody had revisited since the fallback path had nothing but `wholeFilePartition`
+to offer.
+
+### The decision
+
+The number now follows **how the range was obtained**, in the vocabulary the engine already uses:
+
+- `.exact` — the canonical byte diff, which is the alignment INV-2 states the structural path
+  *against* — takes **0.8**, the same value an ordinary structural change gets, because it is the same
+  claim reached by the same means;
+- DEC-105's line-anchored route takes **0.6**, the value already meaning *the byte diff and the
+  alignment disagree*: its guarantee is that what it leaves unmarked is byte-identical, and the
+  boundaries of what it does mark are wider than minimal and were never compared byte for byte;
+- a whole-file answer stays at **0**, because nothing smaller is known;
+- and an unchanged whole file becomes **1**, which it always was: two byte arrays compared and found
+  equal is the strongest confirmation the product has, and it was being reported as unconfirmed.
+
+**What says *this file was not parsed* is the `.fallback` label and the notice bar**, and both are
+untouched — INV-4 is unmoved and the selftest reads the sentence out of the live document. Confidence
+restating it was a second copy of one axis drowning out the other, which is what
+[DEC-017](#dec-017--presentation-features-in-version-one)'s trust surface exists to
+prevent: two indicators that say the same thing are one indicator and a decoration.
+
+### The flag was a switch nobody read as one
+
+`absorbIslands` and `coalesceAdjacent` both refuse to merge across the floor, on purpose. With every
+mark at 0 and every unchanged byte at 1, **every junction on this path crossed it** — so DEC-094's
+absorption, DEC-100's word snap and DEC-107's word merge were all switched off in a whole family of
+files, by a constant that read as a description.
+
+`split-mark` **54 → 0**, `micro-island` 329 → 126, `mark-confetti` 21 → 10, marks 4134 → 3868, for
+0.09% more presented bytes — and `false` and `missed` lines identical to the line, because nothing
+here changes which bytes are marked. The 4016-pair TypeScript corpus is identical line for line, which
+is the control: the change reaches `fallbackPartitions` and nothing else.
+
+### Revisit trigger
+
+Reopen if the line-anchored route stops being rare. It is 332 marks and 60.8% of presented bytes on
+this corpus — the files that reach it are the big ones — and if that share grows, *uncertain* starts
+meaning *large* rather than *guessed*, which is the same defect one level up.
