@@ -1,6 +1,16 @@
 # 23a — POC report: how to run it, what every part does, what to look for
 
-**Gate:** G1 of `23-release-gates.md`. **Date:** 2026-07-29, revised 2026-07-31 for root management (DEC-052). **Build:** 884/884 checks pass, 32 fixtures.
+**Gate:** G1 of `23-release-gates.md`. **Date:** 2026-07-29, revised 2026-07-31 for root management (DEC-052). **Build at the time of writing:** 884/884 checks, 32 fixtures.
+
+> ⚠️ **Superseded for anyone about to run the application. Read [`25-tester-packet.md`](25-tester-packet.md) instead.**
+>
+> This document is a record of gate G1 as it stood in July 2026. Almost every keystroke it prints
+> below has since been rebound (DEC-065), the window opens unified rather than side by side
+> (DEC-059), the file list is a tree (DEC-099), and the notice pills it describes were removed
+> (DEC-077). It is kept for the history of the gate, not as instructions.
+>
+> **The one sentence that had to be corrected rather than left as history** is §1's, because it was
+> a safety claim and a false one. It is corrected in place below.
 
 This is written for someone who has never seen the code. No internals — only what appears on screen, what it means, and how to tell whether it is lying to you.
 
@@ -33,7 +43,9 @@ If your editor is not WebStorm:
 DIFFSCOPE_EDITOR="/usr/bin/open -a Visual\ Studio\ Code {file}" swift run -c release diffscope-app
 ```
 
-**It cannot change your repositories.** It only reads. It never fetches, never pushes, never writes to `.git`, and never connects to the internet. You do not need a clean working tree to try it, and you cannot lose work by clicking around.
+**It changes nothing on its own, and it writes only what you asked for.** Refreshing, sweeping and building a diff never write; those commands are a closed list, tested to leave the repository byte-identical. Since DEC-098 the Repository menu also performs real Git writes — stage, commit, discard, branch, merge, stash — but only when you invoke them, and **⌥⌘L** shows every one this window has run with its exact command line. Since DEC-053 there is also a terminal in the window (⌃`), and it runs whatever you type into it. It never connects to the internet.
+
+*(As written on 2026-07-29 this paragraph made the flat claim that the application was incapable of altering a repository and did nothing but read. That was true then and stopped being true twice — when the terminal landed, and when the write registry did. Corrected rather than preserved, because unlike the rest of this document it was a claim someone would act on. The retired wording is deliberately not reproduced here: `DesignChecks` matches the sentence itself, and a document quoting it is indistinguishable from one asserting it.)*
 
 ---
 

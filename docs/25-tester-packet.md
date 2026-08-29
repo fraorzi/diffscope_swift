@@ -14,12 +14,15 @@ Every diff tool does that. The reason this one exists is one specific case it do
 
 ## What it can and cannot do to your repositories
 
-Two different things, and the difference matters:
+Three different things, and the differences matter:
 
-- **The app itself never changes anything.** Looking at a diff, switching branches in the list, refreshing — none of it writes to your files, your staging area, or your Git settings. It does not even fetch. This is not a promise about intent; every Git command the app can issue is snapshot-tested to leave the repository byte-identical.
-- **There is a terminal in it, and a terminal runs what you type.** Press ⌃` and a shell opens at the bottom of the window, in the repository you are looking at. If you type `git commit` in it, you commit — the same as in any terminal. That is the point of it, and it is the newest part of the app, so it is the part most worth trying.
+- **Nothing happens behind your back.** Looking at a diff, walking the file list, refreshing, switching scope — none of it writes to your files, your staging area, or your Git settings, and it never fetches. Every Git command on those paths is listed in the source and tested before each release by fingerprinting the repository's internals before and after and requiring them to be identical.
+- **It writes when you ask it to, and it shows you the command it ran.** There is a Repository menu: stage and unstage a file (⌥⌘S / ⌥⌘U), a hunk (⌥⌘G), or the lines you select; commit (⇧⌘⏎); amend; undo the last commit; discard a file; create, rename, delete and check out branches; merge; stash and pop. These are ordinary Git operations and they do what they say. **⌥⌘L opens *What DiffScope Ran*** — every write this window has performed, with its exact command line and its exit code. If you are ever unsure what just happened, that window is the answer.
+- **There is a terminal in it, and a terminal runs what you type.** Press ⌃` and a shell opens at the bottom of the window, in the repository you are looking at. If you type `git commit` in it, you commit — the same as in any terminal. Nothing types into it for you.
 
-So: the app will not touch your work behind your back, and the terminal will do exactly what you tell it to.
+So: it will not touch your work on its own, it writes only what you asked for and keeps a record of it, and the terminal does exactly what you tell it to.
+
+**Discard is the one to be careful with**, and it behaves differently depending on the file, so the confirmation says which case you are in. A file Git is not tracking is **moved to the Trash** — you can drag it back. A file Git *is* tracking goes back to whatever is in the index, and **there is no undo for that**. Discard has deliberately been given no keyboard shortcut, along with reset and force-push, for this reason.
 
 **Your shell setup is not modified.** The terminal starts your own shell with your own configuration, but it never edits `~/.zshrc`, `~/.zprofile` or anything else in your home folder. It adds what it needs in a temporary folder that goes away when the app closes, and the app's own tests hash those files before and after a session to prove they are untouched.
 
@@ -178,13 +181,14 @@ In order. The first line is worth more than everything below it put together.
 
 ## Privacy, and what it does to your machine
 
-- **On its own, it only reads.** Nothing the app does by itself stages, commits, pushes, pulls or fetches. Every Git command it can run is listed in the source, and each one is tested before every release by fingerprinting the repository's internals before and after and requiring them to be identical.
+- **On any path of its own, it only reads.** Refreshing, sweeping for repositories, building a diff — none of it stages, commits, pushes, pulls or fetches. Those commands are a separate, closed list in the source, and each is tested before every release by fingerprinting the repository's internals before and after and requiring them to be identical.
+- **It writes only what you asked for.** The Repository menu's operations are real Git writes and they run when you invoke them, never on their own. Each is tested to move the index by exactly the bytes you selected and nothing else. **⌥⌘L** shows every one this window has run, with its command line and exit code.
 - **The terminal is yours.** It runs what you type in it, including commands that change your repository. Nothing types into it for you, with one exception worth knowing: when you switch to a different repository and the terminal is sitting at an empty prompt, the app sends a `cd` so the shell follows you. If you have a command half-typed, or something is running, it sends nothing and tells you the directory no longer matches.
 - **It does not touch your shell configuration.** Your `~/.zshrc` and the rest are read, never written; the app's own additions live in a temporary folder. This is tested by hashing those files around a real session.
 - It **never connects to the internet**. There is no network code in it and it asks for no network permission.
 - It sends **no telemetry, no analytics, no crash reports**. Nothing leaves your machine.
 - It uses **no AI** while running.
-- The only thing it writes anywhere is its own settings file — which folders you added — at `~/Library/Application Support/DiffScope/config.json`. Delete that and it forgets everything.
+- Outside the repository operations above, the only thing it writes is its own settings file — which folders you added — at `~/Library/Application Support/DiffScope/config.json`. Delete that and it forgets everything.
 - To uninstall: drag the app to the trash, and delete that settings file.
 
 ---

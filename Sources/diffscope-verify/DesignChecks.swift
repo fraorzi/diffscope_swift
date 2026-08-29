@@ -1048,11 +1048,27 @@ func runTesterPacketChecks(_ reportRaw: (String, Bool, String) -> Void) {
             // see, and a document that describes the window and never mentions the shell in it is
             // the silent half of this check.
             "docs/27-design-adoption.md",
+            // The POC report. It was never on this list, and it was the one document still telling
+            // a stranger *It cannot change your repositories* eleven days after the write registry
+            // shipped. A list of documents is a thing that can be incomplete, and this is the
+            // second time that has been the finding.
+            "docs/23a-poc-report.md",
         ]
         // Each phrase is an unqualified claim about what the product cannot do. The qualified forms
         // — "on its own", "on any path of its own" — are the point and are not matched.
+        //
+        // The first four are DEC-053's: the terminal made *this product cannot write* false.
+        // The rest are DEC-098's, and `29-git-operations-plan.md` §5 item 7 wrote this step down
+        // in advance — "the true sentence is different again — *it writes only what you asked for,
+        // and it shows you the command it ran* — and the check has to hold the new sentence with
+        // the same negative control discipline." That was never done, and four documents kept the
+        // old sentence for eleven days. It is done here.
         let retired = ["It cannot commit", "incapable of modifying a repository.",
-                       "It never writes.", "Strictly read-only;"]
+                       "It never writes.", "Strictly read-only;",
+                       "The app itself never changes anything",
+                       "It cannot change your repositories",
+                       "It does not even fetch",
+                       "The only thing it writes anywhere is its own settings file"]
 
         func offences(in text: String) -> [String] { retired.filter { text.contains($0) } }
 
@@ -1071,11 +1087,43 @@ func runTesterPacketChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("and every one of them says the terminal exists", silent.isEmpty,
                silent.joined(separator: ", "))
 
+        // The half that matters more. Deleting a false sentence and stopping there leaves the
+        // reader with **no** account of what can change their repository, which is worse than the
+        // wrong one — they at least knew the old sentence was a claim. So the two documents a
+        // stranger actually reads have to state the true sentence, both halves of it:
+        // *it writes only what you asked for*, and *it shows you the command it ran*.
+        //
+        // Only these two. `15-test-corpus-plan.md` has no reader to reassure and requiring it to
+        // carry product wording would be a check that teaches documents to recite.
+        let readerFacing = ["docs/25-tester-packet.md", "docs/23a-poc-report.md"]
+        func statesTheWriteEra(_ text: String) -> Bool {
+            let lower = text.lowercased()
+            // The verbs it can now perform on request, and the place the record of them lives.
+            // `⌥⌘L` rather than the window's title, because a keystroke is what a tester is told
+            // to press and `KeyboardMap` is what the rest of this file already checks against.
+            let writes = lower.contains("when you ask") || lower.contains("only what you asked")
+            return writes && lower.contains("commit") && text.contains("⌥⌘L")
+        }
+        var quiet: [String] = []
+        for path in readerFacing {
+            let text = (try? String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)) ?? ""
+            if !statesTheWriteEra(text) { quiet.append(path) }
+        }
+        report("and the two a stranger reads say what it does write, and where the record is",
+               quiet.isEmpty, quiet.joined(separator: ", "))
+
         // The negative control. Without it this whole table could be matching nothing at all and
         // would read exactly the same.
         let hostile = "This product is demonstrably incapable of modifying a repository."
         report("the check catches the retired sentence when it is put back",
                !offences(in: hostile).isEmpty, hostile)
+        // Its twin for DEC-098's phrases, and for the positive half — a control on one clause of a
+        // compound condition proves nothing about the others.
+        let hostileWrite = "The app itself never changes anything. It does not even fetch."
+        report("control: the write-era sentence is caught too",
+               offences(in: hostileWrite).count == 2, hostileWrite)
+        report("control: a document that removes the lie and says nothing is caught",
+               !statesTheWriteEra("It has a terminal in it. Nothing else to report."))
 
         // DEC-003 is where a reader lands first, so the amendment has to be on the entry itself.
         let decisions = (try? String(contentsOf: root.appendingPathComponent("docs/04-decision-log.md"),

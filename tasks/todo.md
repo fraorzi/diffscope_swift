@@ -3342,3 +3342,40 @@ because the files reaching it are the big ones. That is the honest reading and i
 trigger: if that share grows, *uncertain* starts meaning *large* rather than *guessed*.
 
 2086/2086 checks, 36 selftest arms.
+
+## Step — the read-only sentence, retired a second time (29-… §5 item 7)
+
+- [x] `29-git-operations-plan.md` §5 item 7 said in advance what would have to happen after DEC-098:
+      the retired-phrase check had to hold the *new* true sentence. It was never done, and four
+      documents kept the old one for eleven days
+- [x] `docs/23a-poc-report.md` added to `DesignChecks`'s `currentState` — it had never been on the
+      list, and it was the document still telling a stranger the application could not change a
+      repository. The list of documents is itself a thing that can be incomplete, and this is the
+      second time that has been the finding
+- [x] four DEC-098-era phrases added beside DEC-053's four, and a **positive half**: the two
+      documents a stranger actually reads must say what it *does* write and where the record is
+      (⌥⌘L, `GitActions.showCommandRecord`). Removing a false sentence without stating the true one
+      leaves the reader with no account at all, which is the worse defect
+- [x] three negative controls, one per clause — a control on one clause of a compound condition
+      proves nothing about the others
+- [x] `25-tester-packet.md` rewritten from two cases to three: nothing on its own · writes when
+      asked, with the record · the terminal
+- [x] `23a-poc-report.md` given a superseded banner pointing at `25-…`; only its safety sentence
+      corrected, the rest left as the July record it is
+
+2089/2089 checks pass (2086 → 2089).
+
+### Step — done, two things the run found that reasoning had not
+
+- **The check caught the correction's own footnote.** The note explaining what the paragraph used
+  to say quoted the retired sentence verbatim, and the check failed on it — correctly. A document
+  containing the string is indistinguishable from one asserting it, so the history is now described
+  rather than quoted. Any future correction of a checked phrase has the same constraint.
+- **Discard was documented backwards.** The packet was about to tell a tester that a discarded file
+  goes to the Trash and is recoverable. That is true only for an **untracked** file; a tracked one
+  goes back to the index with no undo (`WriteActions.swift:91-98`, `GitActions.swift:158-163`).
+  Read from the source rather than from the summary that suggested it.
+- **A "known missing" entry survived audit review.** `25-…` §"Known missing" still says there is no
+  arbitrary branch-or-commit comparison. An audit had reported this as stale; `ComparisonScope` has
+  four cases and no branch-vs-branch, so the entry is correct and was left alone. Branch
+  *management* shipping is not branch *comparison* shipping.
