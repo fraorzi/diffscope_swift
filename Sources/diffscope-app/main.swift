@@ -187,6 +187,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// (DEC-109). `applicationDidBecomeActive` sweeps on every return to the window, and every cell
     /// in these tables is built from scratch.
     var lastDrawnRepositoryRows: [String] = []
+    /// Every redraw of either list, with its reason. DEC-109 and DEC-112 are grepped for today and
+    /// both are defeated at run time by a second, unguarded call on the same path; this is where
+    /// that becomes a number a scenario can assert. See `RedrawLedger`.
+    let redraw = RedrawLedger()
     var pendingModel: String?
     var watcher: RepositoryWatcher?
     var emptyState: NSView!
@@ -991,7 +995,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // The selftest could not catch it: its unified arm calls `diffscopeSetLayout("unified")`
         // first and then asks what the layout is. A check that sets the thing it is about to read
         // is asking what it asked for.
-        webView.evaluateJavaScript(
+        bridge(
             "window.diffscopeSetLayout(\"\(sideBySide ? "split" : "unified")\")") { _, _ in }
         if let pending = pendingModel { push(pending); pendingModel = nil }
         guard ProcessInfo.processInfo.environment["DIFFSCOPE_SELFTEST"] != nil else { return }
@@ -1080,6 +1084,90 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
+    /// The redraw counters, read in a running window rather than grepped for.
+    ///
+    /// Every guard against an unnecessary redraw in this project so far has been checked by
+    /// searching `main.swift` for the text of the guard. Both of them pass today and both are
+    /// defeated at run time. This arm is the answer to that: it drives the product path and reads
+    /// what the page and the ledger actually counted.
+    ///
+    /// Two claims are asserted, and one number is recorded without being asserted.
+    ///
+    /// 1. A fresh model renders once and replaces the documents. If this ever reads zero the
+    ///    counters have come unwired, which is the way instrumentation fails — silently, reporting
+    ///    a clean nothing.
+    /// 2. **The identical model does not render again.** DEC-109's claim, measured. Until now it
+    ///    was `shell.contains("guard json != lastPushedJSON")`.
+    /// 3. The same model carrying a *different reader position* is recorded, not asserted. `push`
+    ///    compares the whole JSON and `restore` is part of it, so a reader who has scrolled since
+    ///    the last refresh defeats the guard and pays a full document replacement for bytes that
+    ///    did not change. That is a defect with a fix of its own; asserting the number it produces
+    ///    today would be writing the defect into the suite as a requirement.
+    private func runRedrawSelftest(then next: @escaping () -> Void) {
+        let old = [UInt8]("const a = 1;\nconst b = 2;\nconst c = 3;\n".utf8)
+        let new = [UInt8]("const a = 1;\nconst b = 22;\nconst c = 3;\n".utf8)
+        let outcome = buildModel(path: "redraw.tsx", old: old, new: new, mode: .structural)
+        func model(anchoredAt start: Int?) -> String {
+            let anchor = start.map { RefreshAnchor(digest: "d", occurrence: 0, oldStart: $0, newStart: $0) }
+            let render = buildRenderModel(model: outcome.model, pinOld: "pinR", pinNew: "pinS",
+                                          mode: "structural", pathTaken: outcome.pathTaken,
+                                          parser: outcome.parser, validation: outcome.validation,
+                                          notices: outcome.notices, previousAnchor: anchor)
+            guard let json = try? encodeRenderModel(render) else { exit(71) }
+            return json
+        }
+
+        let first = model(anchoredAt: nil)
+        // The dedupe remembers the *last* document pushed, and the arms above have pushed several.
+        // Zeroing both sides here makes the numbers below belong to this arm alone.
+        lastPushedJSON = nil
+        redraw.reset()
+        bridge("window.diffscopeResetCounters()") { _, _ in
+            self.push(first)
+            self.bridge("JSON.stringify(window.diffscopeCounters())") { value, _ in
+                let afterFirst = (value as? String) ?? "nil"
+                // Byte-identical, so `push` must swallow it.
+                self.push(first)
+                self.bridge("JSON.stringify(window.diffscopeCounters())") { value, _ in
+                    let afterSecond = (value as? String) ?? "nil"
+                    let drew = afterFirst.contains("\"renders\":1")
+                        && !afterFirst.contains("\"documentReplacements\":0")
+                    let heldStill = afterSecond.contains("\"renders\":1")
+
+                    // The measurement. Same model, same bytes, different reader position.
+                    let moved = self.model(differingAnchorFrom: first, outcome: outcome)
+                    self.push(moved)
+                    self.bridge("JSON.stringify(window.diffscopeCounters())") { value, _ in
+                        let afterMoved = (value as? String) ?? "nil"
+                        let anchorDefeatsGuard = !afterMoved.contains("\"renders\":1")
+                        let ok = drew && heldStill
+                        FileHandle.standardError.write(Data(
+                            ("SELFTEST redraw=\(ok ? "OK" : "MISMATCH")"
+                             + " first=\(afterFirst) identical=\(afterSecond)"
+                             + " ledger=[\(self.redraw.summary)]"
+                             + " · measured: a moved anchor re-renders an unchanged document"
+                             + "=\(anchorDefeatsGuard)\n").utf8))
+                        if !ok { exit(72) }
+                        next()
+                    }
+                }
+            }
+        }
+    }
+
+    /// The same document with the reader somewhere else in it. Separated so the arm above reads as
+    /// three pushes rather than as a paragraph of model construction.
+    private func model(differingAnchorFrom first: String, outcome: ModelOutcome) -> String {
+        let render = buildRenderModel(model: outcome.model, pinOld: "pinR", pinNew: "pinS",
+                                      mode: "structural", pathTaken: outcome.pathTaken,
+                                      parser: outcome.parser, validation: outcome.validation,
+                                      notices: outcome.notices,
+                                      previousAnchor: RefreshAnchor(digest: "d", occurrence: 0,
+                                                                    oldStart: 24, newStart: 24))
+        guard let json = try? encodeRenderModel(render) else { exit(73) }
+        return json
+    }
+
     /// M7: two edits far apart, so the middle is foldable and "next change" has somewhere to go.
     private func runNavigationSelftest() {
         let lines = (1...40).map { "const value\($0) = \($0);\n" }.joined()
@@ -1101,7 +1189,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                     Data("SELFTEST navigation=\(ok ? "OK" : "MISMATCH") jump=\(jump) stops=\(render.stops.count) folds=\(render.collapses.count)\n".utf8))
                 if !ok { exit(14) }
                 self.snapshot(named: "navigation") {
-                    self.runExpandToggleSelftest { self.runRefreshSelftest() }
+                    self.runExpandToggleSelftest {
+                        self.runRedrawSelftest { self.runRefreshSelftest() }
+                    }
                 }
             }
         }
@@ -3620,7 +3710,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
     private func emptyStateSelftest() {
         state.repositories = []
-        repoTable.reloadData()
+        redraw.reloadAll(repoTable, .repo, reason: "empty-state selftest")
         updatePaneHeaders()
         showEmptyState(problems: [])
         window.contentView?.layoutSubtreeIfNeeded()
@@ -4389,7 +4479,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         func explainEmptyResult(_ count: Int) -> Bool {
             guard count == 0, !sources.isEmpty, unusable.count < sources.count else { return false }
             self.state.repositories = []
-            self.repoTable.reloadData()
+            self.redraw.reloadAll(self.repoTable, .repo, reason: "sweep found nothing to explain")
             self.updatePaneHeaders()
             self.emptyStateDetail.stringValue =
                 noRepositoriesFoundMessage(paths: sources.map(\.path),
@@ -4405,7 +4495,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             // picker rather than an empty table with no explanation (DEC-036, `12-…` §7.5).
             DispatchQueue.main.async {
                 self.state.repositories = []
-                self.repoTable.reloadData()
+                self.redraw.reloadAll(self.repoTable, .repo, reason: "no usable source, showing the picker")
                 self.updatePaneHeaders()
                 self.showEmptyState(problems: unusable)
             }
@@ -4432,7 +4522,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 self.state.repositories = outcome.snapshots
                 self.state.repositoryLabels = labels
                 self.hideEmptyState()
-                if !unchanged { self.repoTable.reloadData() }
+                if !unchanged {
+                    self.redraw.reloadAll(self.repoTable, .repo, reason: "sweep changed the row text")
+                }
                 self.updatePaneHeaders()
                 var summary = String(format: "%d repositories from %d sources · swept in %.0f ms",
                                      outcome.snapshots.count, sources.count - unusable.count,
@@ -4596,7 +4688,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         wrapEnabled.toggle()
         wrapMenuItem?.state = wrapEnabled ? .on : .off
         wrapButton?.state = wrapEnabled ? .on : .off
-        webView.evaluateJavaScript("window.diffscopeSetWrap(\(wrapEnabled))") { _, _ in }
+        bridge("window.diffscopeSetWrap(\(wrapEnabled))") { _, _ in }
         statusLabel.stringValue = wrapEnabled ? "long lines wrap" : "long lines scroll horizontally"
     }
 
@@ -4608,7 +4700,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         sideBySide.toggle()
         sideBySideMenuItem?.state = sideBySide ? .on : .off
         layoutControl?.selectedSegment = sideBySide ? 1 : 0
-        webView.evaluateJavaScript("window.diffscopeSetLayout(\"\(sideBySide ? "split" : "unified")\")") { _, _ in }
+        bridge("window.diffscopeSetLayout(\"\(sideBySide ? "split" : "unified")\")") { _, _ in }
         statusLabel.stringValue = sideBySide ? "side by side" : "unified"
     }
 
@@ -4696,8 +4788,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         addSourceButton.isHidden = reposCollapsed
         updatePaneHeaders()
         updateCollapseButtons()
-        repoTable.reloadData()
-        fileTable.reloadData()
+        redraw.reloadAll(repoTable, .repo, reason: "pane collapse")
+        redraw.reloadAll(fileTable, .file, reason: "pane collapse")
         // The dividers are moved through the split view's own API as well as by constraint.
         // Constraints alone were satisfied for the rail and quietly ignored for the spine — twice,
         // at two different priorities — because `NSSplitView` keeps the divider position it last
@@ -4986,7 +5078,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     @objc private func expandAll() { runCommand("expandAll") }
 
     private func runCommand(_ name: String) {
-        webView.evaluateJavaScript("JSON.stringify(window.diffscopeCommand(\"\(name)\"))") { value, _ in
+        bridge("JSON.stringify(window.diffscopeCommand(\"\(name)\"))") { value, _ in
             guard let text = value as? String, text != "null" else { return }
             self.statusLabel.stringValue = "\(name): \(text)"
         }
@@ -5037,7 +5129,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 guard self.state.selectedRepository?.url == repository.url else { return }
                 self.state.annotations = found
                 self.state.counts = counts
-                self.fileTable.reloadData()
+                self.redraw.reloadAll(self.fileTable, .file, reason: "annotateFiles landed")
                 // The annotations arrive on a background sweep and land after the list is already
                 // on screen. `reloadData` keeps the selected *index* and this pass does not change
                 // the rows — but it is the one place a selection could be dropped without anybody
@@ -5059,7 +5151,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         if folded { state.collapsedDirectories.insert(key) } else { state.collapsedDirectories.remove(key) }
         let selected = selectedFilePath()
         state.fileRows = fileTreeRows(state.files, collapsed: state.collapsedDirectories)
-        fileTable.reloadData()
+        redraw.reloadAll(fileTable, .file, reason: "directory folded or unfolded")
         // The selection follows its file if the file is still on screen, and falls to the folder
         // that swallowed it otherwise — never to nothing, which is a pane that has gone blank for
         // a reason the reader did not ask for.
@@ -5166,7 +5258,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             return
         }
         let leaving = state.mode
-        webView.evaluateJavaScript("window.diffscopeCommand(\"currentStop\")") { value, _ in
+        bridge("window.diffscopeCommand(\"currentStop\")") { value, _ in
             let stop = (value as? Int) ?? (value as? NSNumber)?.intValue ?? -1
             self.rawRegionReturn = (mode: leaving, stop: stop)
             self.rawRegionMenuItem?.state = .on
@@ -5208,7 +5300,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // The line comes from the renderer, which is the only side that knows where the reader is
         // looking. It used to be a literal 1 — correct in the sense that it opened the file, and
         // useless on the 900-line file where the change is at the bottom.
-        webView.evaluateJavaScript("window.diffscopeCurrentLine()") { value, _ in
+        bridge("window.diffscopeCurrentLine()") { value, _ in
             let line = hit?.line ?? (value as? Int) ?? (value as? NSNumber)?.intValue ?? 1
             guard let command = EditorCommand(template: template, file: path, line: max(1, line)) else {
                 self.statusLabel.stringValue = "open in editor failed — the editor template is empty"
@@ -5368,7 +5460,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
               let wrapped = try? JSONSerialization.data(withJSONObject: [json]),
               let escaped = String(data: wrapped, encoding: .utf8) else { return }
         let argument = String(escaped.dropFirst().dropLast())
-        webView.evaluateJavaScript("window.diffscopeShowRendered(\(argument))") { _, _ in }
+        bridge("window.diffscopeShowRendered(\(argument))") { _, _ in }
         statusLabel.stringValue = summary
     }
 
@@ -5380,7 +5472,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     @objc private func showDiffLens() {
         state.lens = .diff
         updateLensMenu()
-        webView.evaluateJavaScript("window.diffscopeHideLens()") { _, _ in }
+        bridge("window.diffscopeHideLens()") { _, _ in }
         statusLabel.stringValue = "lens: diff"
     }
 
@@ -5571,7 +5663,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // The payload is passed as a JSON string inside a JSON array, so quoting it is the
         // serialiser's problem rather than a piece of string arithmetic here.
         let argument = String(escaped.dropFirst().dropLast())
-        webView.evaluateJavaScript("window.diffscopeShowLens(\(argument))") { _, _ in }
+        bridge("window.diffscopeShowLens(\(argument))") { _, _ in }
         statusLabel.stringValue = summary
     }
 
@@ -5675,7 +5767,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
               let json = String(data: data, encoding: .utf8),
               let wrapped = try? JSONSerialization.data(withJSONObject: [json]),
               let escaped = String(data: wrapped, encoding: .utf8) else { return }
-        webView.evaluateJavaScript(
+        bridge(
             "window.diffscopeShowSearch(\(String(escaped.dropFirst().dropLast())))") { _, _ in }
         statusLabel.stringValue = summary
     }
@@ -5744,7 +5836,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             state.fileRows = []
             updateBaseBlock(for: repository)
             updatePaneHeaders()
-            fileTable.reloadData()
+            redraw.reloadAll(fileTable, .file, reason: "scope unavailable, list emptied")
             statusLabel.stringValue = "\(state.scope.title) unavailable — \(reason)"
             return
         }
@@ -5771,7 +5863,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // and this runs on every refresh, including the one every return to the window triggers.
         // That is the flicker the owner could see and not reproduce.
         if state.fileRows != previousRows {
-            fileTable.reloadData()
+            redraw.reloadAll(fileTable, .file, reason: "the rows themselves changed")
         } else if state.staging != previousStaging {
             // **Only the boxes that changed** (DEC-112). Ticking one file used to redraw the whole
             // tree, which is sixty-three stacks of views rebuilt to look identical except for one
@@ -5781,10 +5873,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 guard let path = state.fileRows[index].file?.path else { return false }
                 return state.staging[path] != previousStaging[path]
             }
-            if !changed.isEmpty {
-                fileTable.reloadData(forRowIndexes: IndexSet(changed),
-                                     columnIndexes: IndexSet(integer: 0))
-            }
+            redraw.reloadRows(fileTable, .file, IndexSet(changed), reason: "staging box")
         }
         restoreFileSelection()
         annotateFiles(of: repository)
@@ -5830,7 +5919,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     private func pushComparison(_ text: String) {
         guard let json = try? JSONSerialization.data(withJSONObject: [text]),
               let argument = String(data: json, encoding: .utf8) else { return }
-        webView.evaluateJavaScript(
+        bridge(
             "window.diffscopeSetComparison(\(argument.dropFirst().dropLast()))") { _, _ in }
     }
 
@@ -5838,7 +5927,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         state.selectedFile = file
         if let json = try? JSONSerialization.data(withJSONObject: [file.path]),
            let argument = String(data: json, encoding: .utf8) {
-            webView.evaluateJavaScript(
+            bridge(
                 "window.diffscopeSetFile(\(argument.dropFirst().dropLast()))") { _, _ in }
         }
         render(file: file, previousAnchor: nil, restoringStop: stop)
@@ -5849,7 +5938,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// lands in the new model; the renderer only executes the decision.
     private func refreshCurrentFile() {
         guard let file = state.selectedFile else { return }
-        webView.evaluateJavaScript("JSON.stringify(window.diffscopeAnchorState())") { value, _ in
+        bridge("JSON.stringify(window.diffscopeAnchorState())") { value, _ in
             var anchor: RefreshAnchor?
             if let text = value as? String, let data = text.data(using: .utf8) {
                 anchor = try? JSONDecoder().decode(RefreshAnchor.self, from: data)
@@ -5921,7 +6010,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 // ⌥⌘V (DEC-057): the stop is restored *after* the new model is in the document,
                 // because the stop list belongs to the model that is on screen.
                 if let stop = restoringStop {
-                    self.webView.evaluateJavaScript(
+                    self.bridge(
                         "JSON.stringify(window.diffscopeCommand(\"goToStopIndex:\(stop)\"))"
                     ) { value, _ in
                         guard let text = value as? String, text != "null" else { return }
@@ -6080,11 +6169,28 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// as before.
     private var lastPushedJSON: String?
 
+    /// One product-path crossing of the JavaScript bridge, counted.
+    ///
+    /// Every crossing is an asynchronous round trip, and the count is the point: one file save
+    /// currently makes three of them — the anchor read that `refreshCurrentFile` needs, the render
+    /// that `push` sends, and the comparison sentence that `reloadFiles` pushes whether or not it
+    /// changed. Naming that as a number is the first step to it not being three.
+    ///
+    /// **Selftest calls deliberately do not come through here.** The selftest crosses the bridge
+    /// dozens of times per arm to interrogate the page, and counting those would drown the signal
+    /// in the measurement — the same reason `diffscopeTimings` exists instead of reading
+    /// `diffscopeProbe`, which returns the whole document and would report the bridge rather than
+    /// the work.
+    func bridge(_ script: String, _ completion: @escaping (Any?, Error?) -> Void = { _, _ in }) {
+        redraw.bridgeCall()
+        webView.evaluateJavaScript(script, completionHandler: completion)
+    }
+
     private func push(_ json: String) {
         guard json != lastPushedJSON else { return }
         lastPushedJSON = json
         let escaped = String(decoding: (try? JSONEncoder().encode(json)) ?? Data("\"\"".utf8), as: UTF8.self)
-        webView.evaluateJavaScript("window.diffscopeRender(\(escaped))") { _, error in
+        bridge("window.diffscopeRender(\(escaped))") { _, error in
             if let error { self.statusLabel.stringValue = "render error: \(error)" }
         }
     }
@@ -6134,6 +6240,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     }
 
     func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
+        // The unit cost the reload counts stand for. There is no `makeView` reuse in either table,
+        // so this allocates a fresh stack of labels and three or four constraints every time it is
+        // called — which is why *how many reloads* and *how much they cost* are counted apart.
+        redraw.cellBuilt()
         let cell = NSTableCellView()
         if tableView === repoTable {
             return repositoryCell(cell, row: row)

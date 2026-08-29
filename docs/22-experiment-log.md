@@ -3493,3 +3493,51 @@ diff being trusted to.
 They are DEC-105's line-anchored route — 60.8% of presented bytes, because the files that reach it are
 the big ones. That is the honest reading: those boundaries are wider than minimal and were never
 compared byte for byte, so the texture now points at the files where the product really did guess.
+
+## M13-A — the redraw counters, and three numbers the reasoning did not have
+
+**Date:** 2026-08-29. **Decision:** the instrumentation half of the UI audit (plan phase 1).
+
+Every guard against an unnecessary redraw in this project is checked by grepping `main.swift` for
+the text of the guard: `InstallChecks` looks for `guard json != lastPushedJSON`, `FileOrderChecks`
+looked for `fileTable.reloadData(forRowIndexes:`. Both passed throughout the period in which both
+were being defeated at run time. A grep for the presence of a guard cannot see a second, unguarded
+call on the same path.
+
+`RedrawLedger` makes the Swift side's redraws a counted road with a stated reason, `RedrawChecks`
+proves no other road exists, and `window.diffscopeCounters()` does the same inside the page. The
+new selftest arm `runRedrawSelftest` drives the product path and reads both.
+
+### What one render actually costs, measured
+
+```
+first     {"renders":1,"documentReplacements":3,"decorationRebuilds":2,
+           "layoutSwitches":0,"noticeRebuilds":1,"foldStateResets":1}
+identical {"renders":1, … unchanged … }
+moved anchor → re-renders an unchanged document = true
+```
+
+Three findings, none of which was available from reading the code:
+
+1. **A split render costs three document replacements, not two.** The window opens unified
+   (DEC-059), so `unified` exists by the time the reader switches to two panes, and the split
+   branch of `applyLayout` clears it — a third whole-document dispatch to empty a pane nobody is
+   looking at. Reading the source suggests two, one per side.
+2. **`foldStateResets` is 1 on an ordinary render.** The reader's open folds and their position in
+   the change list are discarded, and the count says so as a number rather than as a reading of
+   `main.js:1679`.
+3. **DEC-109's guard holds only for a reader who has not moved.** The identical push is swallowed,
+   exactly as the decision claims. The *same model carrying a different reader position* is not:
+   `push` compares the whole JSON and `restore` is part of it. Recorded rather than asserted —
+   writing today's number into the suite would make the defect a requirement.
+
+### Method note
+
+The check that broke when the ledger landed is the finding in miniature. `FileOrderChecks`'s
+*"staging redraws only the rows whose box changed"* failed the moment the literal call moved behind
+`redraw.reloadRows`, because it was matching **the phrase, not the behaviour** — and it had gone on
+passing the whole time `annotateFiles` and `refreshGitState` were full-reloading the same table on
+the same path. Rewired to name the ledger road; `RedrawChecks` is what now proves the road is the
+only one.
+
+2089 → 2102 checks, 36 → 37 selftest arms.

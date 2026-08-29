@@ -210,6 +210,7 @@ function lineTintItems(state, changedLines) {
 }
 
 function decorationsFor(state, segments, side, changedLines) {
+  counters.decorationRebuilds += 1;
   const items = lineTintItems(state, changedLines || [])
     .concat(markItems(state, segments))
     .concat(foldsFor(state, side));
@@ -255,6 +256,7 @@ function foldsForUnified(state) {
 }
 
 function decorationsForUnified(state, segments) {
+  counters.decorationRebuilds += 1;
   const items = markItems(state, segments)
     .concat(directionDecorations(state))
     .concat(foldsForUnified(state));
@@ -700,7 +702,35 @@ document.getElementById("diff-footer-expand")?.addEventListener("click", () => {
 let currentPin = null;
 let lastSummary = null;
 
+/// What the page actually redrew, since the last `diffscopeResetCounters()`.
+///
+/// The renderer's half of `RedrawLedger`. The Swift side can see how many times it told a table to
+/// rebuild; it cannot see what happened inside the page, and the page is where the diff lives.
+/// These are the numbers a scenario asserts: *one save adds one line and costs one render and one
+/// document replacement*, rather than *the screen looked fine*.
+///
+/// `documentReplacements` is counted **inside `applySide`** rather than at its call sites, because
+/// a unified render calls it three times — once with the composed document and twice with an empty
+/// one to clear the panes that are not showing — and a count taken at the call site would say one.
+const counters = {
+  renders: 0,
+  documentReplacements: 0,
+  decorationRebuilds: 0,
+  layoutSwitches: 0,
+  noticeRebuilds: 0,
+  /// How many times the reader's open folds and change-stop position were thrown away. Not a cost
+  /// — a loss. It is here so that "the refresh collapsed everything I had opened" is a number.
+  foldStateResets: 0,
+};
+
+window.diffscopeCounters = function () { return { ...counters }; };
+window.diffscopeResetCounters = function () {
+  for (const key of Object.keys(counters)) counters[key] = 0;
+  return true;
+};
+
 function applySide(view, side) {
+  counters.documentReplacements += 1;
   view.dispatch({
     changes: { from: 0, to: view.state.doc.length, insert: side.text },
   });
@@ -724,12 +754,19 @@ let lastTimings = null;
 /// Only the active layout holds a document. Populating both and hiding one would double every
 /// mark in the DOM, and the probes that count marks would agree with themselves while saying
 /// nothing — the shape of failure this project keeps finding in checks that cannot fail.
+let lastAppliedLayout = null;
+
 function applyLayout(model) {
   const stage = document.getElementById("stage");
   const host = document.getElementById("unified");
   const empty = { text: "", segments: [], changedLines: [] };
   const clock = () => performance.now();
   const startedAt = clock();
+  // A *switch*, not an application. `display: none` ↔ `flex` on `#unified` is a subtree torn down
+  // and rebuilt for layout purposes, so it costs far more than re-applying the layout already in
+  // force — and the two are worth telling apart when a scenario asks what a refresh cost.
+  if (lastAppliedLayout !== null && lastAppliedLayout !== layout) counters.layoutSwitches += 1;
+  lastAppliedLayout = layout;
   if (layout === "unified") {
     // **The host is shown before the view is built**, so the editor is never constructed inside a
     // `display: none` element and never has to start from the font's own defaults.
@@ -749,6 +786,7 @@ function applyLayout(model) {
       .concat(projectSegments(model.payload.new.segments, unifiedRuns.new))
       .sort((a, b) => a.start - b.start || a.end - b.end);
     const dispatchAt = clock();
+    counters.documentReplacements += 1;
     unified.dispatch({ changes: { from: 0, to: unified.state.doc.length, insert: doc } });
     unified.__segments = segments;
     unified.dispatch({ effects: setSegments.of(segments) });
@@ -774,6 +812,7 @@ function applyLayout(model) {
     unified.requestMeasure();
   } else {
     if (unified) {
+      counters.documentReplacements += 1;
       unified.dispatch({ changes: { from: 0, to: unified.state.doc.length, insert: "" } });
       unified.__segments = [];
     }
@@ -1502,6 +1541,7 @@ function confidenceSummary(model) {
 }
 
 function renderNotices(model) {
+  counters.noticeRebuilds += 1;
   const bar = document.getElementById("notices");
   bar.innerHTML = "";
   const items = [...model.notices];
@@ -1608,6 +1648,7 @@ function reflowFolds(model) {
 }
 
 window.diffscopeRender = function (json) {
+  counters.renders += 1;
   const model = typeof json === "string" ? JSON.parse(json) : json;
   if (!lastModel || lastModel.pinOld !== model.pinOld || lastModel.pinNew !== model.pinNew) {
     expandedReflows = new Set();
@@ -1642,6 +1683,12 @@ window.diffscopeRender = function (json) {
   }))).concat(reflowFolds(model));
   stops = model.stops || [];
   anchors = model.anchors || [];
+  // Counted, not yet changed. `expandedReflows` and `noticesExpanded` above are cleared only when
+  // the pinned pair changes; these two are cleared every time. Three variables of the same kind
+  // and two rules, with nothing saying why — so the first step is to make the loss a number and
+  // see how often a refresh that changed nothing the reader cares about still costs them their
+  // open folds and their place in the change list.
+  if (expanded.size || stopIndex !== -1) counters.foldStateResets += 1;
   expanded = new Set();
   stopIndex = -1;
   // **Before** the layout, not after. The footer changes the page's height, and an editor

@@ -3379,3 +3379,37 @@ trigger: if that share grows, *uncertain* starts meaning *large* rather than *gu
   arbitrary branch-or-commit comparison. An audit had reported this as stale; `ComparisonScope` has
   four cases and no branch-vs-branch, so the entry is correct and was left alone. Branch
   *management* shipping is not branch *comparison* shipping.
+
+## Step — the redraw ledger: guards stop being phrases and become counters (plan phase 1)
+
+- [x] `RedrawLedger` in `Sources/diffscope-app/` — `reloadAll` and `reloadRows`, each taking a
+      **reason**, counting `fileTableFull`, `fileTableRows`, `repoTableFull`, `repoTableRows`,
+      `cellsBuilt`, `bridgeCalls`, and keeping the ordered list of entries
+- [x] all 11 `reloadData` call sites in `main.swift` and `GitActions.swift` routed through it
+- [x] `bridge(_:_:)` — the counted product-path crossing of the JavaScript bridge; 16 sites moved.
+      Selftest crossings deliberately stay uncounted, for the reason `diffscopeTimings` exists
+      rather than a probe: a measurement that costs more than the thing it measures reports itself
+- [x] `cellBuilt()` in `viewFor` — the unit cost the reload counts stand for, since neither table
+      reuses a view
+- [x] `window.diffscopeCounters()` / `diffscopeResetCounters()` in the renderer, with
+      `documentReplacements` counted **inside** `applySide` because a unified render calls it three
+      times and a count at the call site would say one
+- [x] `RedrawChecks.swift` — no surface may call `reloadData` for itself, with two negative
+      controls (a direct call is caught; a comment naming it is not)
+- [x] `runRedrawSelftest` — the counters read in a running window, not grepped for
+
+2089 → 2102 checks, 37 selftest arms. Numbers in `22-experiment-log.md` → **M13-A**.
+
+### Step — done, what the counters said that the code did not
+
+- **A split render costs three document replacements.** The window opens unified, so the hidden
+  unified view exists and the split branch clears it. The source reads as two, one per side.
+- **`foldStateResets` is 1 on an ordinary render** — the reader's open folds and change-stop
+  position, discarded, now as a number.
+- **DEC-109's guard is defeated by the reader's own scroll position.** The identical push is
+  swallowed; the same model carrying a different `restore` anchor is not. Measured and recorded,
+  deliberately not asserted — asserting today's number would write the defect in as a requirement.
+- **A check broke, and the break was the finding.** `FileOrderChecks`'s staging assertion matched
+  the literal `fileTable.reloadData(forRowIndexes:` and failed the moment the call moved behind the
+  ledger. It was matching the phrase, not the behaviour, which is why it kept passing while two
+  other call sites full-reloaded the same table on the same path.

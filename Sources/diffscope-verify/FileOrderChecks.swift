@@ -178,8 +178,14 @@ func runFileOrderChecks(_ reportRaw: (String, Bool, String) -> Void) {
                shell.contains("(annotation.map { \" · \\($0.rawValue)\" } ?? \"\")"))
 
         // Ticking a box redraws the boxes that changed, not the tree.
+        //
+        // This asked for the literal `fileTable.reloadData(forRowIndexes:` until the redraw ledger
+        // landed, and the move is worth recording: the check was matching **the phrase, not the
+        // behaviour**, and it went on passing the whole time `annotateFiles` and `refreshGitState`
+        // were full-reloading the same table on the same path. It now names the road every redraw
+        // takes, and `RedrawChecks` is what proves there is no other one.
         report("staging redraws only the rows whose box changed",
-               shell.contains("fileTable.reloadData(forRowIndexes:"))
+               shell.contains("redraw.reloadRows(fileTable, .file"))
 
         // One chip at rest, every sentence behind it, and the sentences still built the same way.
         report("the notice bar draws a summary chip",

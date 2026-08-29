@@ -39,7 +39,7 @@ extension Controller {
         commitBox?.status.stringValue = commitSummaryLine()
         branchButton?.title = head.displayText
         updateSyncButton()
-        fileTable?.reloadData()
+        redraw.reloadAll(fileTable, .file, reason: "refreshGitState")
     }
 
     /// `3 files staged · 2 not staged`, or the reason there is nothing to commit. In `ChromeLabels`'
@@ -178,7 +178,7 @@ extension Controller {
             statusLabel.stringValue = "no file selected"
             return
         }
-        webView.evaluateJavaScript("window.diffscopeCurrentLine()") { [weak self] value, _ in
+        bridge("window.diffscopeCurrentLine()") { [weak self] value, _ in
             guard let self else { return }
             let line = (value as? Int) ?? (value as? NSNumber)?.intValue ?? 1
             let scope: ComparisonScope = unstage ? .stagedVsHead : .unstagedVsIndex
