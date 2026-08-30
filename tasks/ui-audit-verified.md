@@ -160,3 +160,144 @@ non-identity `before→after` pair means the metrics were stale with nothing to 
 - **A5.5** `expandedReflows` leaking across files — the reset is per **pinned content pair**, not
   per comparison (`Scopes.swift:446-447`), so walking a directory does reset it. Residual: two
   files with byte-identical old *and* new sides share a pin.
+
+---
+
+## Run D — verified (20 confirmed · 10 refuted). Several were **reproduced**, not just read.
+
+### V-10 · **Pipe deadlock on a noisy hook** (D4.1) — the worst thing in the audit
+
+`Sources/DiffScopeGit/GitWrite.swift:556-557`, identically `GitRunner.swift:320-321`:
+
+```swift
+let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+```
+
+Strictly sequential drain, on the calling thread, no readability handler. stdout reaches EOF only
+when git **and every child** exit; a hook blocked writing into a full stderr pipe never exits.
+
+**Reproduced.** Scratch repo, `pre-commit` writing ~200 KB to stderr and exiting 0, driven by a
+harness copying `invoke`'s exact sequence: **still running after 40 s, killed.** Swap the read order
+or drain concurrently and it completes instantly.
+
+`perform` calls this **synchronously on the main thread** (`GitActions.swift:963-967`), so the
+window is frozen, not merely slow — exit only by quitting. Any `eslint` / `lint-staged` report over
+the pipe buffer (16–64 KB) on stderr triggers it.
+
+### V-11 · **An INV-6 violation: a byte nobody selected is destroyed** (D2.4)
+
+`StagingPatch.swift:291-294` re-emits an *unselected* removal as context carrying
+`old.isUnterminated(oldIndex)`, and `:357-359` then writes `\ No newline at end of file` after it —
+even when `+` lines follow in the same hunk.
+
+**Reproduced.** Index holds `"alpha\nbeta"` (no trailing newline); worktree
+`"alpha\nbeta\ngamma\n"`; the reader selects only `gamma`:
+
+```
+@@ -1,2 +1,3 @@
+ alpha
+ beta
+\ No newline at end of file
++gamma
+```
+
+git **accepts** it (exit 0) and the index becomes `alpha\nbetagamma\n` — two lines merged, a byte
+nobody selected destroyed. `applySelection` says the answer is `alpha\nbeta\ngamma\n`.
+
+The existing INV-6 edge arm (`WriteChecks.swift:132-148`) selects *every* change, which is the one
+selection that happens to be well-formed, so it passes.
+
+### V-12 · Line staging and file staging commit different bytes (D2.3)
+
+File staging is `git add` (`GitWrite.swift:41`); line staging is `git apply --cached` fed patch
+bytes built from the raw index blob and the **raw worktree file** (`Scopes.swift:342-345`), so no
+clean filter runs on either side.
+
+**Reproduced.** `core.autocrlf=input`, CRLF worktree file, one line edited:
+
+| Path | Index bytes |
+|---|---|
+| `git add f.txt` | `61 0a 42 0a 63 0a` (LF) |
+| diffscope line staging | `61 0d 0a 42 0d 0a 63 0d 0a` (CRLF) |
+
+**INV-6 is blind to it.** `makeRepository` (`GitChecks.swift:39-46`) sets only `user.email` and
+`user.name` — no `core.autocrlf`, no `.gitattributes`, no clean/smudge driver — and the `crlf.txt`
+arm compares two filter-free paths against each other. *Correction to the candidate:* the checkbox
+does not stick at partial; git reports `M ` (fully staged). The lie is in the committed bytes.
+
+### V-13 · Stage-hunk always stages the **first** hunk in the default layout (D2.5)
+
+Same root as V-3. `diffscopeCurrentLine` (`main.js:1346-1354`) reads the split right pane, which
+unified empties, so it returns **1 unconditionally**. `stageHunk` (`GitActions.swift:181-194`) feeds
+that to `hunkSelection(walk:aroundNewLine:)`, whose nearest-run rule (`StagingPatch.swift:220-229`)
+picks the first hunk and reports `"stage hunk — done"` naming nothing.
+
+*The candidate's stated mechanism is refuted:* in **split** layout it is correct — folds are
+`Decoration.replace`, not text deletion, so displayed row equals new-side line. The bug is the
+layout, not the addressing.
+
+### V-14 · Hooks inherit five scrubbed environment variables (D4.6)
+
+`GitWrite.swift:532-538` sets `GIT_TERMINAL_PROMPT=0`, `GIT_CONFIG_NOSYSTEM=1`, `GIT_EDITOR=true`,
+`GIT_SEQUENCE_EDITOR=true`, `GIT_PAGER=cat` — all inherited by every hook. DEC-114's comment two
+lines above addresses **PATH only**; the other five were never revisited. The same commit passes
+typed in the drawer and fails from the menu, reported faithfully as git's own words.
+
+### V-15 · `--cleanup=strip` silently deletes `#` body lines, then the box is cleared (D4.5)
+
+`GitWrite.swift:87` uses `--cleanup=strip`; the box is cleared on success at `GitActions.swift:263`.
+**Reproduced:** a body containing `#1234 is the ticket` loses that line entirely, and the only copy
+is gone. Issue references written `#123` are the common form.
+
+### V-16 · A line click stages against a comparison that is not on screen (D2.1, = V-4)
+
+Confirmed with one correction: **additions are safe**, because `.allLocalVsHead` and
+`.unstagedVsIndex` share the same new side (the worktree). **Removals are not** — the sign column
+posts `-oldLine` in HEAD's numbering (`main.js:585-586`) and `stageSelection` resolves it against
+the index's numbering (`GitActions.swift:227`). In the default combined scope a click can only ever
+mean stage (`main.swift:5604`).
+
+### V-17 · The repository snapshot is never refreshed in place (D3.2, sharpens V-1)
+
+`main.swift:4549-4555` re-selects the row only `if self.repoTable.selectedRow != row`. When the open
+repository is already at that row — the normal case — the delegate never fires and
+`state.selectedRepository` keeps the **old** snapshot with its old head, base and counts. So scope
+availability (`main.swift:5822-5831`, computed from `repository.head`) drifts too, not just the
+branch button.
+
+### Also confirmed (D)
+
+| # | Finding | Where |
+|---|---|---|
+| D5.4 | "done" attests to an exit code, not an effect; `RestorePoint` is returned and discarded with `_ =`, and **no restore affordance exists anywhere in the app** | `GitActions.swift:966`, `:260` |
+| D5.3 | Every read collapses failure into emptiness — branches, stashes, conflicts, headSha, commitMessage — and reads never enter the record shown under "What DiffScope Ran" | `RepositoryState.swift:147,155,220,353,358` |
+| D1.4 | A failed `changedFiles` is indistinguishable from a clean tree; full reload, selection dropped, empty-scope sentence | `main.swift:5850`, `Scopes.swift:199` |
+| D5.6 | A saved command sends `force: true`, skipping all three guard terms, into whatever is running in the drawer | `GitActions.swift:918,922` |
+| D2.2 | A line click that resolves to nothing returns bare — the keyboard route two dozen lines up does say so | `GitActions.swift:231`, cf. `:198` |
+| D3.1 | Base override keyed by repository path, not branch | `main.swift:4675-4677` |
+| D3.3 | The branch menu's current-branch exclusion is computed from a stale list; git refuses, and the `catch` asks the **wrong** second question and runs `-D` | `GitActions.swift:390`, `:412-418` |
+| D3.5 | `pickedCommits` / `historyPair` cleared only on scope change — not on checkout, not on repository change | `main.swift:61-62`, `:5070`, `:4898` |
+| D4.2 | The lock classifier is a substring test (`"Unable to create"` + `".lock"`) and **replays** the write; a `pre-commit` with side effects runs twice | `GitWrite.swift:518-520`, `:479-483` |
+| D4.3 | stderr wins even when it carries only a runner's exit line, discarding the whole stdout report | `GitWrite.swift:503-504` |
+| D5.5 | `trashItem` and `terminal.type` never enter the record titled "What DiffScope Ran" | `WriteActions.swift:97`, `GitActions.swift:918` |
+
+### Notable refutations (D)
+
+- **D1.1 echo-off passphrase** — "nothing typed" is **not** read from the visible buffer;
+  `typedLine` comes from the app's own input field and the first guard term requires `mode ==
+  .local`, which requires an OSC 133 prompt mark. During `ssh` the shell is `.programRunning` →
+  refused. The real hole is `force: true`, which is D5.6.
+- **D1.2 OSC 7 re-scopes the repository** — it does not; `onDirectoryChange` publishes a chip and a
+  divergence flag, both drawer-local. No cd-back loop exists.
+- **D1.3 amend produces no events** — `.git` is inside the watched root and is never excluded, and
+  T3-A measured the signal at ~440 ms. The stale-header residue is real but is D3.2/D3.5.
+- **D1.5 `add -p` answers land in the file table** — nothing re-focuses a view on refresh, and
+  during `add -p` the session is `.programRunning`, so keystrokes go raw to the PTY.
+- **D5.1 / D5.2 / D3.4 restore points and the shared stash stack** — all unreachable.
+  `stashWorktree` defaults to `false` and no production caller overrides it; `RestorePoint` has no
+  consumer; `Confirmation.required(for:)` has **zero call sites**. Two genuine latent bugs sit
+  inside `capture` (`WriteActions.swift:45`, `:52`) but nothing arms them. *Side note found here:*
+  `capture` still runs a real `git write-tree` on every commit, writing tree objects nobody reads.
+- **D3.6 two writers of the configuration file** — the sweep only reads `baseOverrides`, and
+  `Configuration.save` writes `options: .atomic`. No losing write.
