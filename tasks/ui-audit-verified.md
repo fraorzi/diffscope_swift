@@ -301,3 +301,116 @@ branch button.
   `capture` still runs a real `git write-tree` on every commit, writing tree objects nobody reads.
 - **D3.6 two writers of the configuration file** — the sweep only reads `baseOverrides`, and
   `Configuration.save` writes `options: .atomic`. No losing write.
+
+---
+
+## Run C — verified (13 confirmed · 1 needs-measurement · 8 refuted · 8 duplicate)
+
+### V-18 · **DEC-111's fix was never carried to the second status reader** — found while checking, outside the candidate list
+
+`RepositoryStateReader.staging` (`RepositoryState.swift:154-171`) still uses the **line-based**
+`statusPorcelainUall()` and still strips quotes by hand at `:164`:
+
+```swift
+path = path.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+```
+
+`GitRunner.swift:26-31` documents exactly why that is wrong and fixed it for the file list by moving
+to `-z`. `core.quotePath` is on by default, so line-based output gives:
+
+```
+ M "\305\274\303\263\305\202\304\207.txt"      # żółć.txt
+ M "q\"r.txt"                                   # q"r.txt
+```
+
+After trimming, the key is the literal `\305\274…`, so `state.staging[path]` is **nil for every
+non-ASCII filename**. Consequences, all live:
+
+- the box on any non-ASCII path always draws **Not staged**, whatever the index says;
+- `toggleInclusion` (`GitActions.swift:88`) reads `sender.inclusion == .all` to pick the verb, so
+  the click can only ever mean *stage* — **the file can never be unstaged from its checkbox**;
+- `commitSummaryLine()` counts over `state.staging.values`, which *do* exist under the mangled keys,
+  so the sentence above the commit box is right while the boxes below it are wrong;
+- DEC-112's row-diff (`main.swift:5872-5876`) compares `state.staging[path]` against
+  `previousStaging[path]` — both nil — so the row is never redrawn when its real staging changes.
+
+**Given the owner's locale, any repository with a Polish filename reproduces this today.**
+
+### V-19 · The conflict checkbox destroys the merge stages, one-way, and reports success (C2.6)
+
+`GitActions.swift:88-96` picks the verb from the drawn box; unstage is `restore --staged`. `git add`
+on a `UU` path collapses stages 1/2/3 into one blob; `git restore --staged` sets the entry to HEAD
+and **cannot** put the stages back.
+
+**Reproduced:** `ls-files -u` = 3 stages → `git add` → 0 stages → `git restore --staged` (exit 0) →
+status ` M`, `ls-files -u` still empty, `MERGE_HEAD` still present. The conflict is silently resolved
+to a file containing conflict markers, `perform` prints "unstage — done", and only
+`git checkout --merge` recovers it. The box drawn for `UU` is `.partial` — the same mark as
+*staged then edited again*.
+
+### V-20 · The app's own reads **do** write `.git/index` — and R-8 cannot see it (C2.1)
+
+The premise in my brief was half wrong. `--no-optional-locks` + `GIT_OPTIONAL_LOCKS=0` suppress
+`git status`'s index refresh. They do **not** suppress `git diff`'s — `refresh_index_quietly()` in
+`builtin/diff.c` never consults `use_optional_locks()`. Measured, git 2.50.1, flags applied:
+
+| operation | `.git/index` |
+|---|---|
+| `status --porcelain -uall -z` | same |
+| `diff --numstat` (unstaged vs index) | **rewritten** |
+| `diff --numstat HEAD` (all-local — the default scope) | **rewritten** |
+| `diff --numstat --cached`, `diff base HEAD` | same |
+| `ls-files`, `merge-base`, `cat-file blob`, `branch`, `stash list`, `blame`, `check-attr` | same |
+
+The writer is `changeCounts` (`Scopes.swift:192`), called from `annotateFiles` on every
+`reloadFiles`. `.git` is inside the watched root and `deliver(flags:)` never looks at paths.
+
+**The loop is not self-sustaining** — the rewrite only happens when an entry is stat-stale but
+content-identical, and a second identical `diff` writes nothing. Net effect: exactly **one extra
+full refresh ~400 ms after any batch that leaves stale stat entries** — `touch`, a formatter that
+rewrites bytes-identical files, a branch round-trip, a sync client restoring timestamps.
+
+**Corollary — a hole in R-8.** `GitChecks.swift:89-95` probes the stale stat cache with
+`statusPorcelain()` only, and the fixture never contains a stat-stale-but-identical entry. Replicate
+that fixture and all three `diff` ops are SAME; `touch` first and `diff --numstat` **rewrites**. The
+check that certifies "all 32 registered operations leave `.git` byte-identical" cannot see this.
+
+### Also confirmed (C)
+
+| # | Finding | Where |
+|---|---|---|
+| C2.3 | A disabled scope keeps its last diff **rendered, scrollable and stageable** — `state.selectedFile` is not cleared, nothing is pushed, and neither `stageSelection` nor `stageHunk` consults `scopes.availability` | `main.swift:5834-5842`, `GitActions.swift:211`, `:177` |
+| C4.1 | The mid-write guard is terminal. `refreshCurrentFile()` has one caller — the FSEvents arm — so *"showing it once the file settles"* is a promise kept only by the next event. The final save of a burst that lands unstable is never re-read | `main.swift:5969`, `:6061` |
+| C3.1 | Annotation sweeps have no generation token; two on the same repository both pass the guard and **stale-wins** permanently, then unconditionally full-reload | `main.swift:5114-5139` |
+| C5.4 | The repository sweep has no ticket number either, and stamps `markRefreshed()` regardless of which started last. `rescan()` has eight call sites | `main.swift:4505`, `:4538` |
+| C5.5 | If the open repository is absent from a sweep's results, `row` falls to **0** and the delegate re-roots everything. `SweepOutcome.failures` is collected and never used | `main.swift:4549-4553`, `Sweep.swift:40-44` |
+| C1.4 | The activation rescan sweeps **every** repository at `max(4, cores × 2)` concurrent git processes, bound to the gesture of returning to the window. DEC-109 guarded the redraw; nothing guards the work | `main.swift:313-316` |
+| C5.2 | The dropped-events rescan shares one body with an ordinary change: no `rescan()`, no `refreshGitState()`, just a suffix on whatever sentence was there | `main.swift:6051`, `:6065-6067` |
+| C4.3 | `● Watching` is set when `FSEventStreamStart` returns true. FSEvents does not deliver on SMB/NFS and `start()` still succeeds; nothing polls, so the list never refreshes while the bar claims it is watching | `main.swift:6033-6034` |
+| C3.6 | `reloadFiles` clears `state.annotations` but **not** `state.counts`, so rows carry the previous refresh's numbers with no mark until the sweep lands — a stale number, not a placeholder, which is the worse of the two | `main.swift:5855`, `:6409` |
+
+### NEEDS-MEASUREMENT (C)
+
+**C3.5 — the `node_modules` exclusion budget.** `nodeModulesDirectories(under:maximumDepth: 3)`
+never finds `a/b/c/node_modules` or deeper, and `FSEventStreamSetExclusionPaths` takes at most 8.
+Measure `RepositoryWatcher.nodeModulesDirectories(under:).count` against 8 on the owner's largest
+repository, and the resulting event rate. The truncation *is* disclosed — but only into
+`statusLabel.stringValue`, a transient line overwritten by the next status write, so treat it as
+undisclosed. *Also worth a number:* the `pair.stable` refusal rate. DEC-068 recorded 42–52 refusals
+per 100 pins at a 20 ms confirm delay; the delay is now 5 ms and has never been re-measured on a
+synced or loaded filesystem.
+
+### Notable refutations (C)
+
+- **C1.3** the 1 Hz tick invalidating views beyond itself — `updateWatchLabel` is guarded and the
+  wording is deliberately coarse. This is DEC-086's fix working as designed.
+- **C2.4** the base commit remembered by name — `reloadFiles` re-runs `merge-base` on every reload
+  and both readers re-resolve it again. Nothing is remembered across a rewrite.
+- **C2.5** unmerged paths counted twice — `statusFiles` emits one `ChangedFile` per status entry and
+  the header reads `state.files.count`. No arithmetic disagrees.
+- **C3.2** events swallowed during the git run — the FSEvents callback is dispatched on the same
+  `.main` queue, so callbacks arriving mid-work queue and then open a **new** burst.
+- **C3.4** a change-stop "seen" baseline — no such concept exists anywhere in the app.
+- **C4.4** freshness by mtime+size — the stamp (inode + size + nanosecond mtime) is used to *reject*
+  a read, never to skip one; every listed failure mode makes it re-read, which is the safe direction.
+- **C4.5** no collapsing during a stall — the debounce *is* that collapsing; recovery is O(1).
