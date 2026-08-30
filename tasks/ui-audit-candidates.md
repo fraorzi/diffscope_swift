@@ -5,7 +5,7 @@ different cognitive frames, told explicitly *not* to cite file or line numbers b
 looked at the code. A guessed line number is worse than none. Every entry below is a hypothesis
 until a verification pass labels it CONFIRMED / NEEDS-MEASUREMENT / REFUTED / DUPLICATE.
 
-Frames that completed: A1–A5, B1–B4, C1–C4, D1–D5. Frames pending: B5, C5.
+Frames that completed: A1–A5, B1–B4, C1–C4, D1–D5. Frames pending: B5.
 
 ---
 
@@ -166,3 +166,11 @@ Frames that completed: A1–A5, B1–B4, C1–C4, D1–D5. Frames pending: B5, C
 4. "Done" attests to an exit code, not to an effect. A formatter hook exits zero and the app reports success against the diff the reader approved, while the object that landed contains bytes they never saw. Nothing compares what was committed against what was staged when the sheet opened.
 5. Trashing files during a discard, writing the message and rewrite-plan files, and the lines injected into the drawer are all real state changes that appear nowhere in the window claiming to show everything the app ran. A mixed discard is two transactions reported as one, and a failure partway leaves it half done with only the git half recorded.
 6. Running a saved command forces the drawer's own guards off — starts the shell, forces a `cd`, types a composed line — bypassing the checks that refuse when the reader is not at a prompt. If something is already running, the `cd` and the command go into *its* input, under the reader's shell, indistinguishable from something they typed.
+
+### C5 · wild frame: the refresh paths as competing wire feeds
+1. The "refreshed N ago" caption is stamped by a different job than the one that refreshes the comparison: only the all-repositories sweep advances it. Save a file, watch the diff change, and read "refreshed 3m ago" beside it; alt-tab back without anything being re-read and it resets to "just now". Wrong in both directions.
+2. The one feed that admits it lost data gets the narrowest response. A dropped-events rescan runs exactly the same work as an ordinary single-file change — repository counts, branch state, the operation banner and the other repositories are not re-read — and the only difference is a clause appended to whatever sentence happens to be in the status line.
+3. **Half the window is on a feed nothing routine updates.** Branch name, ahead/behind, stash list, commit summary and the rebase/merge banner are re-read only on a repository-row click or on the app's own git write. A branch switch or commit in the drawer updates the file list and the diff — those ride the FSEvents feed — while the chrome above keeps naming the previous branch and never raises the conflict banner.
+4. The all-repositories sweep runs with no ticket number: whichever finishes last writes its results regardless of which started last, and it stamps the age caption fresh while doing so. Lateness is treated as recency.
+5. A sweep can change which repository is open without saying so. If the open repository is missing from the results — renamed, a volume blip, a transient failure — selection falls back to the first row, which starts a watcher on a different tree and rebuilds everything. No sentence says the repository changed.
+6. The mid-write hold covers the diff pane only. The file list, the per-file change counts and the badges for that same file were computed from the same unsettled bytes and printed with no caveat, so the reader is told to wait for one number while three others from the identical read sit on screen looking authoritative.
