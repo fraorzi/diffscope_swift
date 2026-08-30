@@ -5,7 +5,7 @@ different cognitive frames, told explicitly *not* to cite file or line numbers b
 looked at the code. A guessed line number is worse than none. Every entry below is a hypothesis
 until a verification pass labels it CONFIRMED / NEEDS-MEASUREMENT / REFUTED / DUPLICATE.
 
-Frames that completed: A1–A5, B1–B4, C1–C4, D1–D5. Frames pending: B5.
+Frames that completed: A1–A5, B1–B4, C1–C4, D1–D5. All 20 frames returned.
 
 ---
 
@@ -174,3 +174,11 @@ Frames that completed: A1–A5, B1–B4, C1–C4, D1–D5. Frames pending: B5.
 4. The all-repositories sweep runs with no ticket number: whichever finishes last writes its results regardless of which started last, and it stamps the age caption fresh while doing so. Lateness is treated as recency.
 5. A sweep can change which repository is open without saying so. If the open repository is missing from the results — renamed, a volume blip, a transient failure — selection falls back to the first row, which starts a watcher on a different tree and rebuilds everything. No sentence says the repository changed.
 6. The mid-write hold covers the diff pane only. The file list, the per-file change counts and the badges for that same file were computed from the same unsettled bytes and printed with no caveat, so the reader is told to wait for one number while three others from the identical read sit on screen looking authoritative.
+
+### B5 · wild frame: the window as a certified cockpit
+1. The three-state checkbox uses one symbol for two unrelated conditions — *partly staged* and *I do not know this file's staging state*. After a click it shows the **commanded** position, not a confirmed one; binary, unmerged, mode-only and submodule entries get the same mark. Commanded and confirmed need distinct appearances, and "no valid reading" needs its own that is not any staging state.
+2. **The health of the change-detection sensor is never indicated.** A watch that fails to start, exceeds its exclusion budget, loses its stream after the directory is replaced, or stops delivering after sleep leaves a window identical to a repository nobody is editing. Automatic refresh has reverted to manual and the only symptom is the absence of a symptom.
+3. The same quantity — how much this file changed — is produced by two independent chains two inches apart: the row's number comes from git's own accounting of the raw pair, the added/removed lines drawn come from the engine after whitespace rules, absorption, move detection, truncation and any active filter. They disagree routinely with no explanation.
+4. The app changes its own operating mode without saying so — layout flipping on a narrow window, analysis stepping down for large or unparseable files, a scope carried over to a repository where it means something else, filters left over from an earlier session. The pills report the **request**, not what produced the bytes on screen.
+5. The operation banner's verb acts on a snapshot taken when it was last drawn and is not revalidated when pressed — while the drawer in the same window is the most likely place that rebase was advanced or aborted by hand. Failure is reported in the vocabulary of the command rather than of the state.
+6. The window blinds itself while its own writes settle — quiet periods, burst coalescing, suppression of self-attributed events. A change the reader makes by hand in the drawer during that window can be attributed to the app and dropped, and nothing later contradicts it. Suppression must be scoped to the paths the app wrote and must expire into a reconciling read rather than into nothing.
