@@ -126,3 +126,19 @@ Frames that completed: A1–A5, B1–B4, C2–C4, D1. Frames pending: B5, C1, C5
 4. While a push or fetch holds locks the state probe errors; the failure is read as "nothing here", the table empties to its placeholder and the selection and diff are torn down — a full empty-state flash from a command that changed no files.
 5. `git add -p` rewrites the index once per answered hunk; the list renumbers and reorders under the cursor mid-question, and a refresh that re-focuses a view sends the next `y`/`n` to the file table as a shortcut.
 6. The record of commands the app ran is the basis of its undo affordance, and commits made from the drawer never enter it — so it offers to undo its own last write as if it were the most recent thing that happened.
+
+### D3 · reader switching branches constantly
+1. The base-branch override is keyed by repository, not by the branch the reader was standing on when they chose it. Two feature branches in one clone → the "vs base" scope compares against a ref never picked for this branch, and every later branch inherits it silently.
+2. Whether the branch-vs-base scope is available, and the sentence explaining why not, is decided on repository-open or base-change, never when HEAD moves. The pill's enablement drifts further from the repository the longer the session runs.
+3. The branch names the Repository menu offers come from a list gathered before the menu opened; the current-branch exclusion is computed from the same stale list, so the menu can offer to delete the branch the reader is standing on.
+4. A restore point records a commit and possibly a stash but not which branch they belonged to; after a switch the undo affordance is still armed and moves the wrong branch. Unconsumed restore-point stashes accumulate indistinguishably from the reader's own.
+5. A commit pinned in the History lens survives a checkout onto a branch that does not contain it — the two halves of the window describe different branches with no visible contradiction, and a later branch delete makes the pinned object unreachable.
+6. The base override persists by writing the whole configuration file from an in-memory copy, and the post-checkout repository sweep writes the same file from a copy of its own. The losing write is invisible until relaunch.
+
+### C1 · editor autosaving every 300 ms into the open file
+1. The reader-position round trip is asked of a webview that is mid-navigation; the answer belongs to the previous document. Once every few saves the pane settles at the top or at a line that has moved — not every save, so it reads as random drift.
+2. Row identity churns every save because the file's own stats change, so anything keyed on node identity rather than path resets each save.
+3. The 1 Hz age caption is shared observable state whose tick invalidates views beyond itself, and under typing it is also reset every 400 ms — a timer nobody reads driving layout in the pane being read.
+4. The activation rescan sweeps **every** repository and is bound to the exact gesture the reader makes when they want to look at the diff, so the heaviest refresh fires at the one moment they are looking.
+5. The mid-write guard rejects and waits for the next FSEvent rather than scheduling its own retry; with a 300 ms autosave inside a 400 ms debounce the pane can stay in the rejected state for a whole typing burst.
+6. Hunk boundaries shift as the file grows, so per-hunk state keyed on index or line range is silently remapped every save — expanded context re-collapses, and the next-change cursor points at a different hunk.
