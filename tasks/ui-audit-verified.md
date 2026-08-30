@@ -414,3 +414,116 @@ synced or loaded filesystem.
 - **C4.4** freshness by mtime+size — the stamp (inode + size + nanosecond mtime) is used to *reject*
   a read, never to skip one; every listed failure mode makes it re-read, which is the safe direction.
 - **C4.5** no collapsing during a stall — the debounce *is* that collapsing; recovery is O(1).
+
+---
+
+## Run B — verified (7 confirmed · 2 needs-measurement · 18 refuted · 3 duplicate)
+
+### V-21 · Arrow-walking the repository list fires a full sweep per row (B2.1)
+
+`main.swift:6469-6486`, all synchronous on the main thread per row passed through: `startWatching`
+(tears down and re-creates an `FSEventStream` **and** walks three levels for `node_modules`),
+`reloadFiles` (`merge-base`, `status -z`, a second `status -uall`), `refreshGitState` (five plumbing
+reads plus a full `reloadData`), then a background annotation sweep. Ten repositories, hold ↓ → ten
+full sweeps; a mouse user clicking the tenth row pays one.
+
+### V-22 · Nothing observes WebContent termination, and the dedupe blocks recovery (B3.1)
+
+No `webViewWebContentProcessDidTerminate` anywhere in `Sources/`. `lastPushedJSON = nil` lives in
+`didFinish` (`main.swift:983-988`), which a crash never triggers — so `push` returns early on the
+identical model (`:6189-6191`) and re-selecting the same file pushes nothing. Both the diff pane and
+the drawer are `WKWebView`s. Recovery requires selecting a *different* file.
+
+### V-23 · Untracked files draw a blank count and the shortest possible bar (B5.3)
+
+Rows come from `git status -z -uall` (`include = staged || unstaged || untracked`,
+`Scopes.swift:231`); counts come from `git diff --numstat`, which **never reports untracked files**.
+So `state.counts[path]` is nil for every untracked row:
+
+- `main.swift:6408-6409` — `count?.text ?? ""` → the column is **blank**, not "new file", not "+N";
+- `main.swift:6369` — `count.map { … } ?? 1` → a 2,000-line new file draws the **same bar as a
+  one-line edit**;
+- the pane meanwhile draws the entire file as added (`sources(for:)` returns `.absent`).
+
+`ChangeCount.text` has wording for binary and for `±0`, and none for the absent case.
+
+### V-24 · Sensor health: two cases covered, three gaps (B5.2)
+
+DEC-075 correctly made watch-start failure and root-moved **standing**. Gaps:
+
+- **The exclusion diagnostic is written and overwritten in the same run-loop turn**
+  (`main.swift:6042-6045`), because `reloadFiles()` two lines later ends with its own
+  `statusLabel.stringValue`. It never reaches `watchState`, so the standing field still says
+  `● Watching`.
+- **A stopped watcher has no restart path.** `startWatching` has one caller — the repository row
+  *selection change*. Clicking the already-selected row changes no selection, so the watcher stays
+  dead until the reader selects a different repository and comes back.
+- **Correction to my brief:** `exclusionLimit = 8` caps `node_modules` directories found within
+  three levels, not top-level entries, and exceeding it means the surplus **stays watched** — a
+  noisier watcher, never a deaf one. My framing of that claim was wrong.
+
+### V-25 · Closing the terminal drawer strands first responder on a hidden view (B2.6)
+
+`setTerminalVisible` (`main.swift:878-899`) has an explicit *enter* contract — `terminal.focus()` —
+and no *leave* contract: the `guard visible else { … return }` moves nothing. ⌃\` to open, ⌃\` to
+close, and the hidden web view is still first responder. Menu key equivalents keep working; **arrow
+keys, which are not menu items, go to a hidden view and do nothing.**
+
+### V-26 · A repository that disappears silently opens a different one (B3.5, = C5.5)
+
+`main.swift:4548-4555`: `?? (outcome.snapshots.isEmpty ? nil : 0)`. Unmount the volume, return to
+the window, and row 0 is selected — new title, new file list, new diff, nothing naming the one that
+went. *Refuted half:* per-repository memory is **not** discarded; `baseOverrides` is keyed by
+absolute path and nothing prunes it.
+
+### V-27 · Annotation results have no scope check on the way back (B1.4)
+
+The stated race (pill vs list) does not exist — `reloadFiles` is synchronous, so a second click
+cannot land mid-load. What exists: `annotateFiles` captures `let scope = state.scope`, dispatches
+onto a **concurrent** queue, and guards the completion only on the repository
+(`main.swift:5114-5138`). Two fast scope flips → *Staged vs HEAD* counts land on rows the pill
+labels *All local vs HEAD*.
+
+### Found while checking, outside the candidate list
+
+**`setDirectory`'s fallback contradicts its own comment.** The comment says the selection "falls to
+the folder that swallowed it"; the code calls `RowNavigation.firstSelectable(in:)`
+(`main.swift:5161`), and folders are not selectable (`shouldSelectRow`, `:6463-6466`). **Folding the
+folder your selected file is in sends the selection to the top of the list.**
+
+### NEEDS-MEASUREMENT (B)
+
+- **B4.5** full-screen / Space move blanking the pane. No `NSWindowDelegate` occlusion or
+  full-screen methods exist anywhere. To settle: enter full screen with a diff open and read
+  `window.diffscopeCounters()` — `renders` unchanged across a blank frame means the blank is
+  WebKit's and nothing recovers it.
+- **B4.6** divider drag → PTY column pushes. `Renderer/src/terminal.js:139-140` is unthrottled, but
+  xterm only fires `onResize` when the integer cell count changes, and the main vertical dividers do
+  not change the drawer's width. To settle: count `resize` messages during one slow drawer drag.
+  **Refuted half:** repaint noise cannot reach the refresh path — `onCommandFinished` fires only on
+  OSC 133;D, emitted by `precmd`, which a SIGWINCH repaint does not run.
+
+### Notable refutations (B)
+
+- **B1.1** tri-state box on a folder — a folder row has no box; DEC-109's addendum still holds.
+- **B1.3** focus dropped by the table rebuild — `reloadData` preserves `selectedRowIndexes` and does
+  not resign first responder; no staging path calls `makeFirstResponder`. *Residual:* with Full
+  Keyboard Access on, a click makes the `CheckButton` first responder and `reloadAll` destroys that
+  cell view.
+- **B1.5** commit box losing its insertion point — `CommitBox` is built once; `refreshGitState`
+  touches only `branchName` and `status`; drafts are explicitly preserved across the amend switch.
+- **B2.3** selection dropping to row 0 — `nearestSelectable` searches **forward first**. DEC-106.
+- **B2.4** the menu bar regenerated on refresh — `buildMenu()` has one call site, in
+  `applicationDidFinishLaunching`.
+- **B3.3** a wall-clock deadline on an in-flight write — there is none; both call sites are a bare
+  `waitUntilExit()`. The real defect there is the opposite, and it is V-10.
+- **B3.4** AppKit-imposed widths persisted as preference — `Configuration` has no pane-width field;
+  nothing is persisted, and the write-back is dead code. *Real residual:* un-collapsing a pane the
+  reader had dragged snaps it to the default, and the comment claims a persistence that does not
+  happen.
+- **B4.3** three pane minimums driven unsatisfiable — 580 pt of minimums against a 720 pt window
+  floor; collapsing *lowers* it further.
+- **B5.6** the window blinding itself during its own writes — no self-attribution exists anywhere.
+  *Nearest true thing, and it is a drop not a suppression:* `refreshAfterCommand` returns early when
+  a second command finishes inside 0.4 s, so `git commit && git push` loses the sweep for the second
+  until the next activation.
