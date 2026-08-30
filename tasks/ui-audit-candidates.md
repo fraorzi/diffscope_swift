@@ -5,7 +5,7 @@ different cognitive frames, told explicitly *not* to cite file or line numbers b
 looked at the code. A guessed line number is worse than none. Every entry below is a hypothesis
 until a verification pass labels it CONFIRMED / NEEDS-MEASUREMENT / REFUTED / DUPLICATE.
 
-Frames that completed: A1–A5, B1–B4, C2–C4, D1. Frames pending: B5, C1, C5, D2, D3, D4, D5.
+Frames that completed: A1–A5, B1–B4, C1–C4, D1–D5. Frames pending: B5, C5.
 
 ---
 
@@ -158,3 +158,11 @@ Frames that completed: A1–A5, B1–B4, C2–C4, D1. Frames pending: B5, C1, C5
 4. In a file with no trailing newline, the end-of-file marker attaches to a line that is not the last line being written; the write is refused with a patch error or accepted while moving a byte nobody selected. Eight hunks stage perfectly and the ninth cannot be staged at all.
 5. **Keyboard "stage this hunk" takes the caret's displayed row and treats it as a line number in the new side.** Those are the same number only in the plainest case — unified layout, interleaved removals, open folds and collapsed context all break it. The hunk chooser does not fail; it picks the nearest change run, reports success, and names no hunk.
 6. Unstaging one line requires switching the comparison the whole window is built around — rebuilding the list under a different membership rule, resetting position, re-closing folds and change stops. Undo of a fine-grained action costs the reading position for the rest of the commit.
+
+### D5 · wild frame: the repository as a shared bank ledger
+1. A write that promises undo can take a restore point that records nothing, and nothing checks: with any pre-existing stash the app's parking entry is not recognised as new (positions renumber, so the top looks unchanged) and the tree is never parked; with unmerged paths, writing the index out as a tree fails and the failure is discarded. The confirmation still calls the operation recoverable.
+2. **The app parks the reader's tree by pushing onto the same stash stack the reader and the drawer use, and never claims it back.** Every stash the reader knows by position shifts down; a `git stash pop` in the drawer takes the app's private restore point instead of their own work. The parking entry survives a quit.
+3. Every read collapses failure into emptiness — empty branch list, empty conflict list, no HEAD, a zero-length commit message — indistinguishable from a repository that genuinely has none. Reads never enter the command record, so the emptiness leaves nothing to reconcile against. The amend field opens blank because the read lost a race, and the original message is gone.
+4. "Done" attests to an exit code, not to an effect. A formatter hook exits zero and the app reports success against the diff the reader approved, while the object that landed contains bytes they never saw. Nothing compares what was committed against what was staged when the sheet opened.
+5. Trashing files during a discard, writing the message and rewrite-plan files, and the lines injected into the drawer are all real state changes that appear nowhere in the window claiming to show everything the app ran. A mixed discard is two transactions reported as one, and a failure partway leaves it half done with only the git half recorded.
+6. Running a saved command forces the drawer's own guards off — starts the shell, forces a `cd`, types a composed line — bypassing the checks that refuse when the reader is not at a prompt. If something is already running, the `cd` and the command go into *its* input, under the reader's shell, indistinguishable from something they typed.
