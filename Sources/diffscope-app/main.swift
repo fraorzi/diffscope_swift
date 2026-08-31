@@ -6418,10 +6418,19 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             box.setButtonType(.momentaryChange)
             box.inclusion = inclusion(of: file.path)
             box.tag = row
-            box.toolTip = box.inclusion == .partial
-                ? "Part of this file is staged — click to stage the rest"
-                : (box.inclusion == .all ? "Staged — click to take it out of the commit"
-                                         : "Not staged — click to put it in the commit")
+            switch box.inclusion {
+            case .conflicted:
+                box.toolTip = "Merge conflict — resolve it first"
+                    + (KeyboardMap.binding(id: "git.resolve").map { " (\($0.shortcut))" } ?? "")
+                    + ". Staging it here would discard the other side, "
+                    + "and nothing could undo that."
+            case .partial:
+                box.toolTip = "Part of this file is staged — click to stage the rest"
+            case .all:
+                box.toolTip = "Staged — click to take it out of the commit"
+            case .none:
+                box.toolTip = "Not staged — click to put it in the commit"
+            }
             // **Say it before it happens** (DEC-106). In two of the four scopes the row is about to
             // leave the list, and a folder row left with no files leaves with it — which is what the
             // owner read as *the folder was added to the commit* and *the file jumped*. Neither

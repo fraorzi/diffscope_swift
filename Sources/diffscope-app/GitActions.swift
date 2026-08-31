@@ -73,6 +73,7 @@ extension Controller {
         case .none: return .none
         case .partial: return .partial
         case .all: return .all
+        case .conflicted: return .conflicted
         }
     }
 
@@ -85,6 +86,18 @@ extension Controller {
         guard let repository = state.selectedRepository,
               state.fileRows.indices.contains(sender.tag),
               let file = state.fileRows[sender.tag].file else { return }
+        // **A conflict is not a checkbox question.** `git add` on an unmerged path collapses
+        // stages 1, 2 and 3 into a single blob, and `git restore --staged` sets the entry to HEAD
+        // without restoring them — so the pair this control offers is an irreversible operation
+        // and an inverse that does not exist. Taking it silently resolved the conflict to whatever
+        // was in the working tree, conflict markers included, and printed "unstage — done".
+        guard sender.inclusion != .conflicted else {
+            statusLabel.stringValue =
+                "\(file.path) has a merge conflict — resolve it first"
+                + (KeyboardMap.binding(id: "git.resolve").map { " (\($0.shortcut))" } ?? "")
+                + ", because staging it would discard the other side"
+            return
+        }
         let verb = sender.inclusion == .all ? "unstage" : "stage"
         perform(verb) {
             if sender.inclusion == .all {
@@ -116,8 +129,17 @@ extension Controller {
         return true
     }
 
+    /// The named verb, as opposed to the box. `git add` on an unmerged path is git's own way of
+    /// saying *I have resolved this*, so this route stays open — but it asks first, and the question
+    /// names what goes, because the collapse cannot be undone from inside this application.
     @objc func stageSelectedFile() {
         guard let repository = state.selectedRepository, let file = selectedFilePath() else { return }
+        if state.staging[file] == .conflicted,
+           !confirm("Mark “\(file)” as resolved?",
+                    detail: "It still has a merge conflict. Staging it keeps the file as it stands "
+                        + "now — conflict markers included, if any are left — and discards the other "
+                        + "side. There is no undo for this.",
+                    verb: "Mark Resolved") { return }
         perform("stage") { try self.actions.stage(paths: [file], in: repository.url) }
     }
 
@@ -129,11 +151,27 @@ extension Controller {
         }
     }
 
+    /// **Conflicted paths are left out, and the count says so.** Sweeping them in would resolve
+    /// every conflict in the repository to whatever the working tree happens to hold, irreversibly,
+    /// from a verb whose name promises breadth rather than a decision about any one file.
     @objc func stageEverything() {
         guard let repository = state.selectedRepository else { return }
-        let paths = state.fileRows.compactMap { $0.file?.path }
-        guard !paths.isEmpty else { return }
+        let all = state.fileRows.compactMap { $0.file?.path }
+        let paths = all.filter { state.staging[$0] != .conflicted }
+        guard !paths.isEmpty else {
+            statusLabel.stringValue = all.isEmpty
+                ? "nothing to stage"
+                : "every changed file has a merge conflict — resolve them first"
+                    + (KeyboardMap.binding(id: "git.resolve").map { " (\($0.shortcut))" } ?? "")
+            return
+        }
         perform("stage") { try self.actions.stage(paths: paths, in: repository.url) }
+        let skipped = all.count - paths.count
+        if skipped > 0 {
+            let resolve = KeyboardMap.binding(id: "git.resolve").map { " (\($0.shortcut) to resolve)" } ?? ""
+            statusLabel.stringValue = "stage — \(paths.count) staged · \(skipped) left out "
+                + "for having a merge conflict" + resolve
+        }
     }
 
     @objc func unstageEverything() {

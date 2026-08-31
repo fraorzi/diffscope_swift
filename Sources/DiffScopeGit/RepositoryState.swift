@@ -11,6 +11,9 @@ import Foundation
 /// hook, so a state this application keeps for itself is one it can be wrong about.
 public enum FileStaging: String, Sendable, Equatable {
     case none, partial, all
+    /// A merge conflict: stages 1, 2 and 3 all present. Not a shade of `partial` — see
+    /// `staging(index:worktree:)` for why the distinction is load-bearing rather than cosmetic.
+    case conflicted
 }
 
 public struct BranchInfo: Sendable, Equatable {
@@ -151,23 +154,65 @@ public struct RepositoryStateReader: Sendable {
 
     /// Path → how much of it is staged. `X` is the index's letter and `Y` the working tree's: a
     /// file with both is staged **and** edited since, which is the dash GitHub Desktop draws.
+    /// What the box beside each path draws, read from git rather than remembered.
+    ///
+    /// **NUL-separated, like the file list** (DEC-111). This read was left on the line-based
+    /// `-uall` form when the file list moved off it, and it stripped quotes by hand:
+    ///
+    /// ```swift
+    /// path = path.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+    /// ```
+    ///
+    /// `core.quotePath` is on by default, so git renders `żółć.txt` as `"\305\274\303\263\305\202\304\207.txt"`
+    /// and trimming the quotes leaves the literal backslash escapes. The key never matched the path
+    /// the rest of the application uses, so `staging[path]` was **nil for every non-ASCII filename**
+    /// — the box drew *not staged* whatever the index said, and because the click's verb is chosen
+    /// from the drawn state, such a file could never be taken back out of the commit. The sentence
+    /// above the commit box counts `values` rather than keys, so it stayed right while the boxes
+    /// below it were wrong.
+    ///
+    /// A rename emits its new path in the entry and its old path as the **next** entry, so the walk
+    /// consumes two — the same shape `Scopes.statusFiles` walks.
     public func staging(in repository: URL) -> [String: FileStaging] {
-        guard let result = try? runner.run(.statusPorcelainUall(), in: repository),
+        guard let result = try? runner.run(.statusPorcelainZ(), in: repository),
               result.succeeded else { return [:] }
+        let entries = String(decoding: result.standardOutput, as: UTF8.self)
+            .split(separator: "\0", omittingEmptySubsequences: true)
+            .map(String.init)
         var states: [String: FileStaging] = [:]
-        for line in String(decoding: result.standardOutput, as: UTF8.self).split(separator: "\n") {
-            let characters = Array(line)
-            guard characters.count > 3 else { continue }
+        var cursor = 0
+        while cursor < entries.count {
+            let entry = entries[cursor]
+            cursor += 1
+            guard entry.count > 3 else { continue }
+            let characters = Array(entry)
             let index = characters[0], worktree = characters[1]
-            var path = String(characters[3...])
-            if let arrow = path.range(of: " -> ") { path = String(path[arrow.upperBound...]) }
-            path = path.trimmingCharacters(in: CharacterSet(charactersIn: "\""))
-            if index == "?" { states[path] = FileStaging.none; continue }
-            if index == " " { states[path] = .none }
-            else if worktree == " " { states[path] = .all }
-            else { states[path] = .partial }
+            let path = String(characters[3...])
+            if index == "R" || index == "C" || worktree == "R" || worktree == "C" {
+                if cursor < entries.count { cursor += 1 }
+            }
+            states[path] = Self.staging(index: index, worktree: worktree)
         }
         return states
+    }
+
+    /// The two status characters, as the one question the box asks: *is this in the commit*.
+    ///
+    /// **Unmerged is its own answer, not a shade of `partial`.** Porcelain marks a conflict with a
+    /// `U` on either side, or with `AA` / `DD`; every one of those used to fall through to
+    /// `.partial`, which drew the identical dash as *staged and then edited again*. The two are not
+    /// alike: `git add` on a conflicted path collapses stages 1, 2 and 3 into one blob and
+    /// `git restore --staged` cannot put them back, so a control that offered *stage* and *unstage*
+    /// as a pair was offering an irreversible operation and its non-existent inverse.
+    public static func staging(index: Character, worktree: Character) -> FileStaging {
+        if index == "U" || worktree == "U"
+            || (index == "A" && worktree == "A") || (index == "D" && worktree == "D") {
+            return .conflicted
+        }
+        if index == "?" { return FileStaging.none }
+        if index == " " { return .none }
+        if worktree == " " { return .all }
+        return .partial
     }
 
     public func branches(in repository: URL) -> [BranchInfo] {

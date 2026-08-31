@@ -261,6 +261,227 @@ func runWriteChecks(_ reportRaw: (String, Bool, String) -> Void) {
         } else { report("the untracked walk is exact", false) }
     }
 
+    // The arm above selects **every** change, which is the one selection whose patch happens to be
+    // well-formed, and that is why it passed while the emitter was wrong. A *partial* selection over
+    // the same file is the case that reaches the marker rule.
+    print("\n=== INV-6: `\\ No newline at end of file` stands where git's format allows it ===")
+    do {
+        /// The state both repositories start in: the index holds a file with no final newline, the
+        /// working tree has gained a line after it.
+        func partialRepository(_ name: String) -> URL {
+            let repo = makeRepository(name, in: scratch)
+            write("alpha\nbeta", to: "n.txt", in: repo)
+            shell(["add", "-A"], in: repo)
+            shell(["commit", "-qm", "c1"], in: repo)
+            write("alpha\nbeta\ngamma\n", to: "n.txt", in: repo)
+            return repo
+        }
+
+        let repo = partialRepository("inv6-partial")
+        let old = splitLines(indexBytes("n.txt", in: repo))
+        let new = splitLines([UInt8](read("n.txt", in: repo).utf8))
+        guard case let .exact(steps) = stagingWalk(old: old, new: new) else {
+            report("the partial-selection walk is exact", false); return
+        }
+        // Only `gamma`. `beta` is not selected on either side, so it stays — and it is the last line
+        // of the preimage while the postimage carries on past it.
+        guard let gamma = steps.indices.first(where: {
+            if case let .addition(index) = steps[$0] { return new.lines[index] == [UInt8]("gamma".utf8) }
+            return false
+        }) else {
+            report("the addition of the last line is in the walk", false); return
+        }
+        let selection: Set<Int> = [gamma]
+        let expected = applySelection(old: old, new: new, walk: steps, selection: selection)
+        report("applySelection keeps the line nobody selected whole",
+               expected == [UInt8]("alpha\nbeta\ngamma\n".utf8),
+               String(decoding: expected, as: UTF8.self).debugDescription)
+
+        guard let patch = stagingPatch(path: "n.txt", old: old, new: new,
+                                       walk: steps, selection: selection) else {
+            report("the partial selection produces a patch", false); return
+        }
+        report("the marker is not written above the lines the patch adds",
+               !patch.contains(" beta\n\\ No newline at end of file"), patch.debugDescription)
+        report("it is written under the removal it belongs to, and the line is re-added terminated",
+               patch.contains("-beta\n\\ No newline at end of file\n+beta\n+gamma\n"),
+               patch.debugDescription)
+        do {
+            try actions.apply(patch: patchData(patch), to: .index, reverse: false, in: repo)
+            report("and the index matches applySelection byte for byte",
+                   indexBytes("n.txt", in: repo) == expected,
+                   String(decoding: indexBytes("n.txt", in: repo), as: UTF8.self).debugDescription)
+        } catch { report("the partial patch applies", false, String(describing: error)) }
+
+        // **The behavioural negative control.** The emitter this replaces wrote the marker under the
+        // unselected removal, re-emitted as context. The patch is spelled out here rather than
+        // recovered from history, and applied to a second repository in the identical state: git
+        // takes it, exits 0, and merges two lines into one — a byte destroyed that nobody selected.
+        let control = partialRepository("inv6-partial-control")
+        let broken = """
+            diff --git a/n.txt b/n.txt
+            --- a/n.txt
+            +++ b/n.txt
+            @@ -1,2 +1,3 @@
+             alpha
+             beta
+            \\ No newline at end of file
+            +gamma
+
+            """
+        var accepted = false
+        do {
+            try actions.apply(patch: patchData(broken), to: .index, reverse: false, in: control)
+            accepted = true
+        } catch { accepted = false }
+        let corrupted = indexBytes("n.txt", in: control)
+        report("control: git accepts the patch the old emitter wrote", accepted,
+               "git refused it, so the control proves nothing")
+        report("control: and it leaves the index holding bytes nobody selected",
+               corrupted == [UInt8]("alpha\nbetagamma\n".utf8) && corrupted != expected,
+               String(decoding: corrupted, as: UTF8.self).debugDescription)
+    }
+
+    print("\n=== INV-4, DEC-025: a line-level write refuses where a content filter is in force ===")
+    do {
+        let check = ContentFilterCheck(runner: runner)
+
+        /// The patch a reader's line selection produces for `f.txt`, whatever state the repository
+        /// is in. Built from the index blob and the raw file on disk, which is the whole point.
+        func linePatch(in repository: URL) -> Data? {
+            let old = splitLines(indexBytes("f.txt", in: repository))
+            let new = splitLines([UInt8](read("f.txt", in: repository).utf8))
+            guard case let .exact(steps) = stagingWalk(old: old, new: new) else { return nil }
+            let selection = Set(steps.indices.filter { steps[$0].isChange })
+            return stagingPatch(path: "f.txt", old: old, new: new, walk: steps,
+                                selection: selection).map(patchData)
+        }
+
+        /// Commits a CRLF file, then edits one of its lines in place — still CRLF.
+        func crlfRepository(_ name: String, autocrlf: String? = nil, eol: String? = nil,
+                            attributes: String? = nil) -> URL {
+            let repo = makeRepository(name, in: scratch, autocrlf: autocrlf, eol: eol,
+                                      attributes: attributes)
+            write("a\r\nb\r\nc\r\n", to: "f.txt", in: repo)
+            shell(["add", "-A"], in: repo)
+            shell(["commit", "-qm", "c1"], in: repo)
+            write("a\r\nB\r\nc\r\n", to: "f.txt", in: repo)
+            return repo
+        }
+
+        // The control that has to come first: a guard which refuses everything would make every
+        // other INV-6 arm in this file meaningless while looking like a fix.
+        let plain = crlfRepository("filter-none")
+        report("a repository with no filter configured is not refused",
+               !check.verdict(for: "f.txt", in: plain).transforms,
+               check.verdict(for: "f.txt", in: plain).evidence)
+        report("and its line-level write still goes through",
+               (try? actions.apply(patch: linePatch(in: plain) ?? Data(), to: .index,
+                                   reverse: false, in: plain)) != nil)
+        report("control: core.autocrlf=false is read as off rather than as set",
+               !check.verdict(for: "f.txt", in: crlfRepository("filter-off", autocrlf: "false")).transforms)
+
+        // ---- core.autocrlf=input --------------------------------------------------------------
+        let configured = crlfRepository("filter-autocrlf", autocrlf: "input")
+        let byAdd = { () -> [UInt8] in
+            let sibling = crlfRepository("filter-autocrlf-add", autocrlf: "input")
+            shell(["add", "f.txt"], in: sibling)
+            return indexBytes("f.txt", in: sibling)
+        }()
+        report("git add under core.autocrlf=input stores the file without carriage returns",
+               !byAdd.contains(0x0D) && byAdd == [UInt8]("a\nB\nc\n".utf8),
+               byAdd.map { String(format: "%02x", $0) }.joined(separator: " "))
+
+        let verdict = check.verdict(for: "f.txt", in: configured)
+        report("core.autocrlf=input is detected for the path",
+               verdict.transforms && verdict.configuration["core.autocrlf"] == "input", verdict.evidence)
+
+        var refusal = ""
+        guard let patch = linePatch(in: configured) else {
+            report("the filtered repository produces a line patch", false); return
+        }
+        do {
+            try actions.apply(patch: patch, to: .index, reverse: false, in: configured)
+            report("the line-level write refuses under core.autocrlf", false, "it went through")
+        } catch let stated as ContentFilterRefusal {
+            refusal = stated.description
+            report("the line-level write refuses under core.autocrlf", true)
+        } catch {
+            report("the line-level write refuses under core.autocrlf", false, "\(error)")
+        }
+        report("and the reason reaches the caller, naming the file and the setting",
+               refusal.contains("f.txt") && refusal.contains("core.autocrlf=input")
+                   && refusal.contains("Stage the whole file"), refusal)
+        report("and nothing was written — the index is still what the commit put there",
+               indexBytes("f.txt", in: configured) == [UInt8]("a\nb\nc\n".utf8),
+               String(decoding: indexBytes("f.txt", in: configured), as: UTF8.self).debugDescription)
+
+        // **The behavioural negative control**: the same patch, with the guard reverted — which is
+        // exactly `WriteActions.apply` minus its refusal, so this is the write the application did
+        // before this pass. The carriage returns land in an index that git normalises away.
+        _ = try? writer.run(.applyToIndex(reverse: false), in: configured, standardInput: patch)
+        let bypassed = indexBytes("f.txt", in: configured)
+        report("control: with the refusal removed the index holds the bytes from disk",
+               bypassed.contains(0x0D) && bypassed != byAdd,
+               bypassed.map { String(format: "%02x", $0) }.joined(separator: " "))
+        report("control: and git reports the file cleanly staged, so nothing on screen would say so",
+               shell(["status", "--porcelain", "f.txt"], in: configured).hasPrefix("M "),
+               shell(["status", "--porcelain", "f.txt"], in: configured))
+
+        // ---- .gitattributes: `* text=auto`, with no configuration set at all -------------------
+        let attributed = crlfRepository("filter-attributes", attributes: "* text=auto\n")
+        let attributeVerdict = check.verdict(for: "f.txt", in: attributed)
+        report("`* text=auto` is detected from the attributes alone",
+               attributeVerdict.transforms && attributeVerdict.attributes["text"] == "auto",
+               attributeVerdict.evidence)
+        var attributeRefusal = ""
+        guard let attributePatch = linePatch(in: attributed) else {
+            report("the attributed repository produces a line patch", false); return
+        }
+        do {
+            try actions.apply(patch: attributePatch, to: .index, reverse: false, in: attributed)
+            report("the line-level write refuses under `* text=auto`", false, "it went through")
+        } catch let stated as ContentFilterRefusal {
+            attributeRefusal = stated.description
+            report("the line-level write refuses under `* text=auto`", true)
+        } catch {
+            report("the line-level write refuses under `* text=auto`", false, "\(error)")
+        }
+        report("and that reason names the attribute rather than a setting nobody set",
+               attributeRefusal.contains("text=auto") && !attributeRefusal.contains("core.autocrlf"),
+               attributeRefusal)
+
+        _ = try? writer.run(.applyToIndex(reverse: false), in: attributed, standardInput: attributePatch)
+        let attributeBypassed = indexBytes("f.txt", in: attributed)
+        report("control: with the refusal removed the attributes case corrupts the index the same way",
+               attributeBypassed.contains(0x0D),
+               attributeBypassed.map { String(format: "%02x", $0) }.joined(separator: " "))
+
+        // The way out the refusal names has to be a way out that works.
+        let escape = crlfRepository("filter-whole-file", autocrlf: "input")
+        try? actions.stage(paths: ["f.txt"], in: escape)
+        report("staging the whole file — what the refusal tells the reader to do — stores what git stores",
+               indexBytes("f.txt", in: escape) == byAdd,
+               indexBytes("f.txt", in: escape).map { String(format: "%02x", $0) }.joined(separator: " "))
+
+        // The patch's own headers are where the paths come from, so a caller cannot forget to pass
+        // them. A body line that begins `-- ` must not be mistaken for one.
+        report("the paths a patch touches are read from its headers",
+               ContentFilterCheck.paths(inPatch: patch) == ["f.txt"],
+               ContentFilterCheck.paths(inPatch: patch).description)
+        report("control: a removed line reading `-- x` is not taken for a header",
+               ContentFilterCheck.paths(inPatch: patchData("""
+                   diff --git a/only.txt b/only.txt
+                   --- a/only.txt
+                   +++ b/only.txt
+                   @@ -1,1 +1,1 @@
+                   --- not/a/path
+                   +++ still/not/a/path
+
+                   """)) == ["only.txt"],
+               ContentFilterCheck.paths(inPatch: patchData("--- a/only.txt\n")).description)
+    }
+
     print("\n=== INV-6 for a hunk: the block under the caret, and nothing either side of it ===")
     do {
         let repo = makeRepository("hunks", in: scratch)

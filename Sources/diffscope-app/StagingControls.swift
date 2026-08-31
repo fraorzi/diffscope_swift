@@ -43,6 +43,10 @@ final class IndentGuides: NSView {
 /// to be able to see without opening it — the state GitHub Desktop draws as a dash.
 enum InclusionState: Equatable {
     case none, partial, all
+    /// A merge conflict. Drawn differently and **not clickable** — see `toggleInclusion`. The box
+    /// is kept rather than hidden because *this path is in the commit's way* is a fact the row has
+    /// to state, and a blank where every neighbour has a box reads as "nothing to decide here".
+    case conflicted
 }
 
 /// The box beside a path. A click stages or unstages the whole file; the state is read back from

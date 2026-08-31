@@ -263,6 +263,61 @@ public enum GitRunnerError: Error, CustomStringConvertible {
     }
 }
 
+/// Where the two drains run. One concurrent queue for the whole module: the work is a blocking
+/// read, not computation, so the pair costs a thread each for as long as git is alive and nothing
+/// is gained by giving every invocation a queue of its own.
+private let pipeDrainQueue = DispatchQueue(label: "local.diffscope.git.drain", attributes: .concurrent)
+
+/// Reads a subprocess's stdout **and** stderr at the same time, then waits for it.
+///
+/// The obvious form — `readDataToEndOfFile()` on stdout, and only afterwards the same call on
+/// stderr — is a deadlock, and it was the shape both runners used. stdout reaches EOF when git
+/// *and everything git started* have exited and closed their copy of the write end. A `pre-commit`
+/// hook that writes more than the pipe buffer (16 KB, growing to 64 KB, on Darwin) to stderr blocks
+/// in `write(2)` because nobody is reading stderr yet; git waits for the hook; the caller waits for
+/// a stdout EOF that can now never arrive. Three parties, each waiting on the next. Any
+/// `eslint`/`lint-staged` report longer than the buffer reproduced it, and on the write path this
+/// ran on the main thread, so the window froze rather than merely stalling.
+///
+/// Overlapping the two reads removes the cycle: stderr is being consumed while stdout is, so the
+/// hook never blocks and git can exit. There is deliberately **no timeout** here — a git invocation
+/// that genuinely takes minutes must still be allowed to finish, and *not blocking the main thread*
+/// is a property of the caller, not of this function.
+///
+/// `standardInput` joins the same group for the same reason: feeding a patch to `git apply` down a
+/// pipe before either output pipe is being read is the mirror image of the bug — a patch larger
+/// than the buffer blocks in `write(2)` while git blocks writing a diagnostic nobody is draining.
+/// All three sides move at once or none of them can.
+///
+/// Pure plumbing: it carries no arguments, no environment and no policy, so sharing it between the
+/// read runner and the write runner cannot leak either one's guarantees into the other.
+func drainConcurrently(_ process: Process, standardOutput: Pipe, standardError: Pipe,
+                       standardInput: (pipe: Pipe, data: Data)? = nil) -> (out: Data, error: Data) {
+    /// Each field is written by exactly one of the blocks and read only after all of them have
+    /// finished, so the group is the whole of the synchronisation needed.
+    final class Sink: @unchecked Sendable {
+        var out = Data()
+        var error = Data()
+    }
+    let sink = Sink()
+    let group = DispatchGroup()
+    pipeDrainQueue.async(group: group) {
+        sink.out = standardOutput.fileHandleForReading.readDataToEndOfFile()
+    }
+    pipeDrainQueue.async(group: group) {
+        sink.error = standardError.fileHandleForReading.readDataToEndOfFile()
+    }
+    if let standardInput {
+        pipeDrainQueue.async(group: group) {
+            standardInput.pipe.fileHandleForWriting.write(standardInput.data)
+            try? standardInput.pipe.fileHandleForWriting.close()
+        }
+    }
+    group.wait()
+    process.waitUntilExit()
+    return (sink.out, sink.error)
+}
+
 public final class GitRunner: @unchecked Sendable {
     public static let readOnlyGlobalArguments = ["--no-optional-locks"]
 
@@ -317,9 +372,10 @@ public final class GitRunner: @unchecked Sendable {
             throw GitRunnerError.launchFailed(String(describing: error))
         }
 
-        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+        // Both streams at once, never one and then the other — see `drainConcurrently`. Reads do
+        // not run hooks, but they do run `filter.*` and `diff.*.textconv` programs, which are as
+        // free to be noisy on stderr as a hook is.
+        let (outData, errData) = drainConcurrently(process, standardOutput: outPipe, standardError: errPipe)
 
         return GitInvocationResult(
             exitCode: process.terminationStatus,

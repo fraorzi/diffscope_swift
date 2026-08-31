@@ -36,12 +36,28 @@ private func snapshotGitDirectory(_ repository: URL) -> [String: String] {
     return digest
 }
 
-func makeRepository(_ name: String, in parent: URL) -> URL {
+/// A scratch repository, with **one place** to ask for the conditions that make git transform a
+/// path's bytes.
+///
+/// The suite's repositories set `user.email` and `user.name` and nothing else, which is why the
+/// line-staging filter defect lived under a green suite: every INV-6 arm ran in a repository where
+/// no filter could possibly apply, and each arm rolling its own `git config` afterwards would put
+/// the same three lines in four places and leave the fifth arm without them. `autocrlf`, `eol` and
+/// `attributes` are the three inputs `ContentFilterCheck` reads, so a caller can reproduce any of
+/// them by name.
+func makeRepository(_ name: String, in parent: URL,
+                    autocrlf: String? = nil, eol: String? = nil,
+                    attributes: String? = nil) -> URL {
     let url = parent.appendingPathComponent(name)
     try? fm.createDirectory(at: url, withIntermediateDirectories: true)
     shell(["init", "-q", "-b", "main", "."], in: url)
     shell(["config", "user.email", "t@t"], in: url)
     shell(["config", "user.name", "t"], in: url)
+    if let autocrlf { shell(["config", "core.autocrlf", autocrlf], in: url) }
+    if let eol { shell(["config", "core.eol", eol], in: url) }
+    if let attributes {
+        try? Data(attributes.utf8).write(to: url.appendingPathComponent(".gitattributes"))
+    }
     return url
 }
 

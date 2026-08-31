@@ -549,13 +549,14 @@ public final class GitWriter: @unchecked Sendable {
         do { try process.run() } catch {
             throw GitWriteFailure.launchFailed(String(describing: error))
         }
-        if let standardInput {
-            inPipe.fileHandleForWriting.write(standardInput)
-            try? inPipe.fileHandleForWriting.close()
-        }
-        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
-        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+        // **Both streams at once**, and the patch fed in alongside them — see `drainConcurrently`.
+        // This is the path that runs hooks, so it is the path the deadlock was found on: stdout
+        // reaches EOF only once the hook has exited too, and a `pre-commit` printing an eslint
+        // report to an unread stderr never gets to exit. Draining stdout first and stderr second
+        // hung the commit forever, on the main thread, with the window frozen behind it.
+        let (outData, errData) = drainConcurrently(
+            process, standardOutput: outPipe, standardError: errPipe,
+            standardInput: standardInput.map { (inPipe, $0) })
         return GitInvocationResult(exitCode: process.terminationStatus, standardOutput: outData,
                                    standardError: String(decoding: errData, as: UTF8.self))
     }

@@ -266,6 +266,8 @@ public let stagingPatchContext = 3
 /// A unified diff carrying exactly the selected steps.
 ///
 /// - a selected removal is `-`; an **unselected** removal is context, because it stays on both sides
+///   — unless taking it as context would move `\ No newline at end of file`, which is the rule
+///   spelled out in the body
 /// - a selected addition is `+`; an unselected addition is omitted entirely, because it exists only
 ///   on the new side and is not being taken
 ///
@@ -297,6 +299,56 @@ public func stagingPatch(path: String, originalPath: String? = nil,
                 ? .added(new.lines[newIndex], unterminated: new.isUnterminated(newIndex))
                 : .dropped)
         }
+    }
+
+    // **`\ No newline at end of file` describes the end of a *side*, not the end of a line.**
+    //
+    // An unterminated last line is only ever the last line of the side it belongs to, so the marker
+    // is well formed after a `-` (the old side ends here, unterminated) or after a `+` (the new side
+    // does). After a ` ` it is a claim about **both** sides at once — and that is the case this
+    // function used to get wrong.
+    //
+    // `unterminated` on a context line is read from the *old* side alone. When the new side carries
+    // on past that line, the line is not the same on both sides at all: the old file has `beta`, the
+    // new file has `beta\n`. Emitting it as context with the marker produced
+    //
+    //     @@ -1,2 +1,3 @@
+    //      alpha
+    //      beta
+    //     \ No newline at end of file
+    //     +gamma
+    //
+    // which `git apply` **accepts**, and which merges two lines: the index became `alpha\nbetagamma\n`.
+    // A byte nobody selected was destroyed, and `applySelection` — the independent side of INV-6 —
+    // disagreed. The existing edge arm never saw it because it selects every change, which is the
+    // one selection that happens to be well formed.
+    //
+    // So the terminator change is stated the way git states it: the line is removed unterminated and
+    // re-added terminated. That is not optional and is not part of the reader's selection — taking
+    // any later addition forces it, which is why it is synthesised here rather than offered.
+    var lastNewSideIndex = -1
+    for index in emitted.indices {
+        switch emitted[index] {
+        case .context, .added: lastNewSideIndex = index
+        case .removed, .dropped: break
+        }
+    }
+    if emitted.indices.contains(where: {
+        if case let .context(_, unterminated) = emitted[$0] { return unterminated && $0 < lastNewSideIndex }
+        return false
+    }) {
+        var repaired: [Emitted] = []
+        repaired.reserveCapacity(emitted.count + 1)
+        for index in emitted.indices {
+            if case let .context(line, unterminated) = emitted[index],
+               unterminated, index < lastNewSideIndex {
+                repaired.append(.removed(line, unterminated: true))
+                repaired.append(.added(line, unterminated: false))
+            } else {
+                repaired.append(emitted[index])
+            }
+        }
+        emitted = repaired
     }
 
     let changed = emitted.indices.filter {

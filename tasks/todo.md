@@ -3413,3 +3413,52 @@ trigger: if that share grows, *uncertain* starts meaning *large* rather than *gu
   the literal `fileTable.reloadData(forRowIndexes:` and failed the moment the call moved behind the
   ledger. It was matching the phrase, not the behaviour, which is why it kept passing while two
   other call sites full-reloaded the same table on the same path.
+
+## Step — Fala 0: the five things that could cost the reader work (UI audit, plan phase 4)
+
+The UI audit's verification passes turned up defects heavier than the flicker the plan started from.
+The product owner chose to take those first. Each one gets an arm on a real scratch repository built
+with the condition that triggers it, and a negative control.
+
+- [x] **The pipe deadlock.** `GitRunner` and `GitWrite` both drained stdout to EOF and only then
+      stderr. stdout reaches EOF when git *and everything git started* have exited, so a `pre-commit`
+      writing past the pipe buffer blocked in `write(2)` while the caller waited for an EOF that
+      could never arrive. On the write path this ran on the main thread, so the window froze.
+      One shared `drainConcurrently` now overlaps both streams — **and `standardInput`**, which is
+      the same deadlock in mirror image when a patch larger than the buffer is fed to `git apply`.
+- [x] **INV-6: `\ No newline at end of file` written above the lines the patch adds.** The marker
+      describes the end of a *side*, not the end of a line. An unterminated context line whose new
+      side carries on is not the same line on both sides at all, and git accepted the malformed
+      patch: the index became `alpha\nbetagamma\n`, two lines merged, a byte nobody selected gone.
+      The terminator change is now stated the way git states it — removed unterminated, re-added
+      terminated.
+- [x] **Line staging bypassed git's content filters.** File staging is `git add` and runs them; the
+      line-level path built its patch from the raw worktree bytes. Under `core.autocrlf=input` the
+      two disagreed permanently. Not silently repaired — running the worktree side through the clean
+      filter is an architectural change — so the write **refuses with a stated reason** where a
+      filter is in force, which is what INV-4 asks for.
+- [x] **The staging box named the wrong path for every non-ASCII filename.** `staging(in:)` was left
+      on the line-based status form when the file list moved to `-z` (DEC-111) and stripped quotes by
+      hand; `core.quotePath` is on by default, so the key was the literal escape sequence. The box
+      drew *not staged* whatever the index held and the file could never be taken back out.
+- [x] **A merge conflict drew the same mark as a staged-and-edited file.** `FileStaging.conflicted`
+      is now its own case — the compiler named every consumer, which is what the case is for. The box
+      draws a cross rather than a dash and refuses the click. The other two doors are closed too:
+      *Stage Everything* leaves conflicted paths out and says how many, and *Stage File* asks first
+      and names what goes.
+
+2102 → 2143 checks. Numbers in `22-experiment-log.md` → **M13-B**.
+
+### Step — done, what this cost and what it taught
+
+- **A check caught a hand-written keystroke.** `⇧⌥⌘C` typed into a tooltip fails `ChromeChecks` —
+  keystrokes are composed from `KeyboardMap`, because DEC-065 re-cut the map once already and a
+  hand-written shortcut lies the moment it is cut again. Fixed in all three places, including the
+  two the check does not read.
+- **Adding an enum case is how you find the consumers.** `FileStaging.conflicted` produced "switch
+  must be exhaustive" at exactly the call site that had been collapsing three merge stages.
+- **Three writers in one working tree is a real cost.** Two subagents and this agent edited the tree
+  at once; the build was transiently broken by work in flight, and one subagent died mid-way through
+  proving a negative control by reverting its own fix — leaving the doc comment for a repair whose
+  body was gone. Worth knowing before the next parallel wave: the tree state after an interrupted
+  agent is *plausible and wrong*, and the only way to tell is to run the suite.

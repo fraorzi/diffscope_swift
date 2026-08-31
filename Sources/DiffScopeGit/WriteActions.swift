@@ -100,8 +100,29 @@ public struct WriteActions: Sendable {
 
     /// Applies a patch this application generated. `intentToAdd` is passed for an untracked file:
     /// without it there is nothing in the index for the patch to apply against.
+    ///
+    /// **A patch bound for the index is refused when a content filter is in force for its path**
+    /// (INV-4, DEC-025). `git add` hands the bytes to git and git runs its clean filter on them;
+    /// `git apply --cached` is handed bytes and stores them, so a patch this application built from
+    /// the raw file on disk puts unfiltered bytes into an index that is supposed to hold filtered
+    /// ones. Measured: with `core.autocrlf=input` and a CRLF file, `git add` stores `61 0a 42 0a
+    /// 63 0a` and this path stored `61 0d 0a 42 0d 0a 63 0d 0a`, with `git status` reporting the
+    /// file cleanly staged either way. Running the filter here instead is a larger change and is
+    /// not what this guard is: the doctrine is that a degradation is **visible**, so the write is
+    /// refused and the reason is handed back in words rather than bytes being guessed at.
+    ///
+    /// The paths come out of the patch's own headers rather than from an argument, for the reason
+    /// the restore points above are taken inside the function that needs them: a guard a call site
+    /// has to remember to ask for is a guard that is one day not asked for.
     public func apply(patch: Data, to destination: PatchDestination, reverse: Bool,
                       intentToAdd path: String? = nil, in repository: URL) throws {
+        if destination == .index {
+            let check = ContentFilterCheck(runner: runner)
+            let refusals = ContentFilterCheck.paths(inPatch: patch)
+                .map { check.verdict(for: $0, in: repository) }
+                .filter(\.transforms)
+            if !refusals.isEmpty { throw ContentFilterRefusal(verdicts: refusals) }
+        }
         if let path { _ = writer.attempt(.addIntentToAdd([path]), in: repository) }
         let operation: GitWriteOperation = destination == .index
             ? .applyToIndex(reverse: reverse)
@@ -431,5 +452,321 @@ public struct WriteActions: Sendable {
                      in repository: URL) -> Result<GitInvocationResult, GitWriteFailure> {
         writer.attempt(.push(remote: remote, branch: branch, setUpstream: setUpstream,
                              forceWithLease: forceWithLease), in: repository)
+    }
+}
+
+// ---- content filters, and the line-level write that must not run through one ------------------
+//
+// **The defect this exists for, measured.** Whole-file staging is `git add`, and `git add` hands the
+// working-tree bytes to git, which runs the clean filter configured for the path before storing
+// them. Line-level staging is `git apply --cached` fed a patch this application builds from the
+// index blob and the **raw** file on disk, and `--cached` stores the bytes it is given. In a
+// repository with `core.autocrlf=input` and a CRLF file, one line edited:
+//
+//     git add f.txt          index becomes  61 0a 42 0a 63 0a          (LF, what git means to store)
+//     line staging           index becomes  61 0d 0a 42 0d 0a 63 0d 0a (CRLF, what was on disk)
+//
+// `git status` says `M ` either way, so the reader commits CRLF into a repository that normalises
+// to LF and nothing on screen looks wrong. That is a silent degradation, which is the one thing
+// `14-…` forbids outright.
+//
+// Running the clean filter here would be the other repair, and it is an architectural change: it
+// moves filter execution into the write path, and DEC-028 refused to let repository configuration
+// decide what this application executes. So this type does the thing INV-4 asks for instead — it
+// establishes that a filter *could* change the bytes, and the write is refused in words the reader
+// can act on rather than performed with bytes nobody chose.
+
+/// What git would do to one path's bytes on the way into the index, as far as it can be established
+/// without running anything the repository configures.
+public struct ContentFilterVerdict: Sendable, Equatable {
+    public let path: String
+    /// `check-attr` attributes that are set to something — `filter`, `text`, `eol`.
+    /// `unspecified` and `unset` are already dropped by `FilterCheck`, so `-text` (explicitly no
+    /// conversion) correctly does not appear here.
+    public let attributes: [String: String]
+    /// `core.autocrlf` / `core.eol`, and only where the value is one that transforms.
+    public let configuration: [String: String]
+    /// Sources that mention the question and could not be answered. Unknown is never read as clean
+    /// — that is the same rule `FilterState.unknown` follows on the read path.
+    public let undetermined: [String]
+
+    public var transforms: Bool {
+        !attributes.isEmpty || !configuration.isEmpty || !undetermined.isEmpty
+    }
+
+    /// What made this path suspect, in the shortest form that still names the setting the reader
+    /// would have to change.
+    public var evidence: String {
+        var parts = (attributes.map { "\($0.key)=\($0.value)" }
+            + configuration.map { "\($0.key)=\($0.value)" }).sorted()
+        parts += undetermined.map { "could not be determined: \($0)" }
+        return parts.joined(separator: ", ")
+    }
+}
+
+/// The refusal itself, thrown before anything is written.
+///
+/// Its own type rather than `GitWriteFailure.failed`: nothing failed and git never ran, and
+/// reporting a refusal as an exit code would be the second lie in a file about not telling the
+/// first one. It still reaches the window's status line, which prints `\(error)` for anything that
+/// is not a `GitWriteFailure`.
+public struct ContentFilterRefusal: Error, CustomStringConvertible, Equatable, Sendable {
+    public let verdicts: [ContentFilterVerdict]
+
+    public init(verdicts: [ContentFilterVerdict]) {
+        self.verdicts = verdicts
+    }
+
+    public var paths: [String] { verdicts.map(\.path) }
+
+    public var description: String {
+        let named = verdicts.map { "“\($0.path)” (\($0.evidence))" }.joined(separator: ", ")
+        return """
+            refused to stage lines of \(named): Git is configured to change this file's bytes on \
+            the way into the index, and a line-level patch carries the bytes as they are on disk — \
+            staging it would put content in the index that Git itself would not have written. \
+            Stage the whole file, which runs Git's own conversion, or turn the setting off for this \
+            repository
+            """
+    }
+}
+
+/// Establishes whether a content filter is in force for a path, from `git check-attr` and from the
+/// `core.autocrlf` / `core.eol` configuration.
+///
+/// Headless on purpose: the window calls it through `WriteActions.apply`, and the check suite calls
+/// it directly, so what ships and what is proven are the same function.
+public struct ContentFilterCheck: Sendable {
+    private let attributes: FilterCheck
+    private let state: RepositoryStateReader
+
+    public init(runner: GitRunner = GitRunner()) {
+        self.attributes = FilterCheck(runner: runner)
+        self.state = RepositoryStateReader(runner: runner)
+    }
+
+    public func verdict(for path: String, in repository: URL) -> ContentFilterVerdict {
+        let attributeState = attributes.state(for: path, in: repository)
+        var undetermined: [String] = []
+        if attributeState.unknown { undetermined.append("git check-attr did not answer for this path") }
+
+        let scan = ContentFilterCheck.configuration(
+            of: repository, gitDirectory: state.gitDirectory(of: repository))
+        undetermined += scan.undetermined
+
+        var configuration: [String: String] = [:]
+        // `autocrlf` transforms for anything but an explicit off. The values git accepts are the
+        // boolean set plus `input`, and `input` is the one that bit — it converts on the way *in*,
+        // which is exactly the direction a line-level write travels.
+        if let value = scan.values["core.autocrlf"],
+           !["false", "0", "off", "no", ""].contains(value.lowercased()) {
+            configuration["core.autocrlf"] = value
+        }
+        // `core.eol` only decides which ending a *converted* file gets, so on its own it changes
+        // nothing; `crlf` is recorded anyway because the combination that matters — a `text`
+        // attribute plus `core.eol=crlf` — is one where the attribute alone understates what
+        // happens, and over-reporting here costs a refusal while under-reporting costs bytes.
+        if let value = scan.values["core.eol"], value.lowercased() == "crlf" {
+            configuration["core.eol"] = value
+        }
+
+        return ContentFilterVerdict(path: path, attributes: attributeState.active,
+                                    configuration: configuration, undetermined: undetermined)
+    }
+
+    // ---- the configuration files, read rather than asked for ---------------------------------
+    //
+    // `git config --get` would be the direct question and there is no way to ask it: `GitOperation`
+    // is a closed registry whose whole purpose is that an invocation outside it cannot happen, and
+    // widening it is not this change's to make. So the files git would read are read in the order
+    // git reads them, last assignment winning, which is git's own precedence.
+    //
+    // Every uncertainty resolves toward refusal. A file that exists and cannot be read is recorded
+    // as undetermined rather than skipped; a **conditional** include is followed but its condition
+    // is not evaluated, so an assignment found inside one is recorded as undetermined rather than
+    // taken as either present or absent.
+
+    static let interestingKeys: Set<String> = ["core.autocrlf", "core.eol"]
+
+    static func configuration(of repository: URL,
+                              gitDirectory: URL) -> (values: [String: String], undetermined: [String]) {
+        var values: [String: String] = [:]
+        var undetermined: [String] = []
+        var seen: Set<String> = []
+        for source in sources(of: repository, gitDirectory: gitDirectory) {
+            scan(source, conditional: false, depth: 0, seen: &seen,
+                 values: &values, undetermined: &undetermined)
+        }
+        return (values, undetermined)
+    }
+
+    /// System, then global, then the repository's own, then the worktree's — git's precedence, and
+    /// the environment variables that redirect each of them.
+    private static func sources(of repository: URL, gitDirectory: URL) -> [URL] {
+        let environment = ProcessInfo.processInfo.environment
+        var files: [URL] = []
+
+        let noSystem = (environment["GIT_CONFIG_NOSYSTEM"] ?? "").lowercased()
+        if !["1", "true", "yes", "on"].contains(noSystem) {
+            if let path = environment["GIT_CONFIG_SYSTEM"] {
+                files.append(URL(fileURLWithPath: path))
+            } else {
+                // git's system path is compiled in and differs per install; all three that a macOS
+                // machine can have are read, because reading one that is not git's costs a refusal
+                // and missing the one that is costs bytes.
+                files += ["/etc/gitconfig", "/usr/local/etc/gitconfig", "/opt/homebrew/etc/gitconfig"]
+                    .map { URL(fileURLWithPath: $0) }
+            }
+        }
+
+        if let path = environment["GIT_CONFIG_GLOBAL"] {
+            files.append(URL(fileURLWithPath: path))
+        } else {
+            let home = URL(fileURLWithPath: NSHomeDirectory())
+            let xdg = environment["XDG_CONFIG_HOME"].map { URL(fileURLWithPath: $0) }
+                ?? home.appendingPathComponent(".config")
+            files.append(xdg.appendingPathComponent("git/config"))
+            files.append(home.appendingPathComponent(".gitconfig"))
+        }
+
+        files.append(gitDirectory.appendingPathComponent("config"))
+        files.append(gitDirectory.appendingPathComponent("config.worktree"))
+        return files
+    }
+
+    private static func scan(_ url: URL, conditional: Bool, depth: Int, seen: inout Set<String>,
+                             values: inout [String: String], undetermined: inout [String]) {
+        let resolved = url.standardizedFileURL
+        guard !seen.contains(resolved.path) else { return }
+        seen.insert(resolved.path)
+        guard FileManager.default.fileExists(atPath: resolved.path) else { return }
+        guard depth < 10 else {
+            undetermined.append("\(resolved.path) includes files more deeply than this reads")
+            return
+        }
+        guard let data = try? Data(contentsOf: resolved),
+              let text = String(data: data, encoding: .utf8) else {
+            undetermined.append("\(resolved.path) could not be read")
+            return
+        }
+
+        var section = ""
+        for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            var line = raw.trimmingCharacters(in: .whitespaces)
+            if line.hasPrefix("[") {
+                guard let close = line.firstIndex(of: "]") else { continue }
+                let header = line[line.index(after: line.startIndex)..<close]
+                section = String(header.prefix { !$0.isWhitespace }).lowercased()
+                line = String(line[line.index(after: close)...]).trimmingCharacters(in: .whitespaces)
+            }
+            guard let (key, value) = entry(line) else { continue }
+            let full = "\(section).\(key)"
+            if interestingKeys.contains(full) {
+                if conditional {
+                    undetermined.append("\(resolved.path) sets \(full) inside a conditional include")
+                } else {
+                    values[full] = value
+                }
+            }
+            guard key == "path", section == "include" || section == "includeif" else { continue }
+            scan(expand(value, relativeTo: resolved), conditional: conditional || section == "includeif",
+                 depth: depth + 1, seen: &seen, values: &values, undetermined: &undetermined)
+        }
+    }
+
+    /// `key = value`, with the comment git would strip and the quoting git would remove. A bare key
+    /// with no `=` is `true`, which is how `[core]\n\tautocrlf` reads.
+    private static func entry(_ line: String) -> (key: String, value: String)? {
+        var text = ""
+        var quoted = false
+        var escaped = false
+        for character in line {
+            if escaped {
+                text.append(character)
+                escaped = false
+                continue
+            }
+            if character == "\\" { escaped = true; text.append(character); continue }
+            if character == "\"" { quoted.toggle(); text.append(character); continue }
+            if (character == "#" || character == ";") && !quoted { break }
+            text.append(character)
+        }
+        text = text.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty else { return nil }
+        guard let separator = text.firstIndex(of: "=") else {
+            let key = text.lowercased()
+            guard key.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" }) else { return nil }
+            return (key, "true")
+        }
+        let key = String(text[text.startIndex..<separator]).trimmingCharacters(in: .whitespaces).lowercased()
+        var value = String(text[text.index(after: separator)...]).trimmingCharacters(in: .whitespaces)
+        if value.hasPrefix("\""), value.hasSuffix("\""), value.count >= 2 {
+            value = String(value.dropFirst().dropLast())
+        }
+        guard !key.isEmpty else { return nil }
+        return (key, value.replacingOccurrences(of: "\\\"", with: "\""))
+    }
+
+    private static func expand(_ path: String, relativeTo file: URL) -> URL {
+        if path.hasPrefix("~") { return URL(fileURLWithPath: (path as NSString).expandingTildeInPath) }
+        if path.hasPrefix("/") { return URL(fileURLWithPath: path) }
+        return file.deletingLastPathComponent().appendingPathComponent(path)
+    }
+
+    // ---- the paths a patch touches -------------------------------------------------------------
+
+    /// The paths named in a patch's headers.
+    ///
+    /// Read from the `diff --git` / `---` / `+++` block only, never from the body: a removed line
+    /// whose content begins `-- ` is written `--- ` once the `-` marker is on it, and a parser that
+    /// scanned every line would take that for a header. `diff --git ` at the start of a line cannot
+    /// be a body line, because every body line begins with a space, `-`, `+` or `\`.
+    public static func paths(inPatch patch: Data) -> [String] {
+        var paths: [String] = []
+        var inHeader = true
+        for line in String(decoding: patch, as: UTF8.self).split(separator: "\n",
+                                                                 omittingEmptySubsequences: false) {
+            if line.hasPrefix("diff --git ") { inHeader = true; continue }
+            if line.hasPrefix("@@") { inHeader = false; continue }
+            guard inHeader, line.hasPrefix("--- ") || line.hasPrefix("+++ ") else { continue }
+            var text = String(line.dropFirst(4))
+            if let tab = text.firstIndex(of: "\t") { text = String(text[text.startIndex..<tab]) }
+            guard let path = header(text), path != "/dev/null", !paths.contains(path) else { continue }
+            paths.append(path)
+        }
+        return paths
+    }
+
+    /// `a/src/List.tsx`, `b/"pa\"th"` or `"a/pa\"th"` reduced to the path itself.
+    private static func header(_ text: String) -> String? {
+        var text = text
+        if text.hasPrefix("\"") { text = unquote(text) }
+        if text.hasPrefix("a/") || text.hasPrefix("b/") { text = String(text.dropFirst(2)) }
+        if text.hasPrefix("\"") { text = unquote(text) }
+        return text.isEmpty ? nil : text
+    }
+
+    /// The inverse of the C-quoting the patch writer applies: `\"`, `\\` and three-digit octal.
+    private static func unquote(_ text: String) -> String {
+        var out = ""
+        var scalars = Array(text.unicodeScalars.dropFirst())
+        if scalars.last == "\"" { scalars.removeLast() }
+        var index = 0
+        while index < scalars.count {
+            guard scalars[index] == "\\", index + 1 < scalars.count else {
+                out.unicodeScalars.append(scalars[index]); index += 1; continue
+            }
+            let next = scalars[index + 1]
+            if next.properties.numericType != nil, index + 3 < scalars.count,
+               let value = UInt8(String(String.UnicodeScalarView(scalars[(index + 1)...(index + 3)])),
+                                 radix: 8) {
+                out.unicodeScalars.append(UnicodeScalar(value))
+                index += 4
+            } else {
+                out.unicodeScalars.append(next)
+                index += 2
+            }
+        }
+        return out
     }
 }

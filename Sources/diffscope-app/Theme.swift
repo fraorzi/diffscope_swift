@@ -416,7 +416,17 @@ enum Theme {
         mark.lineWidth = checkStroke
         mark.lineCapStyle = .round
         mark.lineJoinStyle = .round
-        if state == .partial {
+        if state == .conflicted {
+            // A cross, and the only mark here that is not a claim about staging. *This path is
+            // unmerged* is a different kind of fact from *some of it is in the commit*, and the
+            // dash used to serve both — which is how a click on a conflicted file came to collapse
+            // its three stages under a control that looked reversible.
+            let inset = side * 0.28
+            mark.move(to: NSPoint(x: frame.minX + inset, y: frame.minY + inset))
+            mark.line(to: NSPoint(x: frame.maxX - inset, y: frame.maxY - inset))
+            mark.move(to: NSPoint(x: frame.minX + inset, y: frame.maxY - inset))
+            mark.line(to: NSPoint(x: frame.maxX - inset, y: frame.minY + inset))
+        } else if state == .partial {
             // A dash, not a smaller tick: *some of this file* is a different fact from *this file*,
             // and a mark that differs only in size is one a reader has to compare against a
             // neighbour to read.

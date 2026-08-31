@@ -3541,3 +3541,95 @@ the same path. Rewired to name the ledger road; `RedrawChecks` is what now prove
 only one.
 
 2089 → 2102 checks, 36 → 37 selftest arms.
+
+## M13-B — the pipe buffer, measured, and the commit that could never come back
+
+**Date:** 2026-08-31. **Decision:** both git runners drain stdout and stderr concurrently.
+
+`GitRunner.run` and `GitWriter.invoke` each read stdout to EOF and *then* read stderr:
+
+```swift
+let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+```
+
+stdout reaches EOF when git **and every process git started** have exited and dropped their copy of
+the write end. So a `pre-commit` hook that writes past the pipe buffer to a stderr nobody is reading
+blocks in `write(2)`; git waits for the hook; the caller waits for an EOF that can no longer arrive.
+Three parties in a cycle. On the write path the caller was the main thread, so the window froze
+rather than merely stalling, and quitting the app was the only exit.
+
+### Where the cliff is
+
+A scratch repository, a `pre-commit` that `cat`s N bytes to stderr and exits 0, driven twice — once
+with the two reads sequential, once with them overlapped. Everything else identical, same machine,
+same git.
+
+| stderr from the hook | sequential drain | concurrent drain |
+|---|---|---|
+| 8 KB | 0.269 s | 0.269 s |
+| 32 KB | 0.307 s | 0.263 s |
+| 64 KB | 0.284 s | 0.316 s |
+| **65 KB** | **wedged** | 0.383 s |
+| 66 KB | wedged | 0.409 s |
+| 128 KB | wedged | 0.278 s |
+| 256 KB | wedged | 0.281 s |
+
+The cliff is exactly one byte wide, and it sits at 65536. Darwin starts a pipe at 16 KB and grows it
+to 64 KB; at 65536 bytes the hook still fits and at 65537 it does not, and the difference between
+those two commits is *returns in a third of a second* and *never returns at all*. Nothing between
+those rows is slow — the sequential drain has no degraded middle, it works or it hangs.
+
+Three things the table settles that reading the code did not:
+
+1. **git's own stdout is 89 bytes.** The wedge is not a big-output problem and no output limit would
+   have caught it. The reader was blocked on 89 bytes it could have had immediately.
+2. **The concurrent drain does not care about size.** 8 KB and 256 KB both cost about 0.28 s; the
+   cost is git's, not the drain's. There is nothing to trade off here and no reason to bound it.
+3. **The everyday trigger is ordinary.** An eslint report over a handful of files clears 64 KB
+   easily, and `lint-staged` prints one on every commit. This was not an exotic hook.
+
+### The fix, and its cost
+
+One `drainConcurrently` in `GitRunner.swift`, used by both runners, on a shared concurrent queue:
+two blocking reads in a `DispatchGroup`, and the process waited for only after both return. Standard
+input joins the same group, because feeding a large patch to `git apply` before either output pipe
+is read is the same deadlock with the arrows reversed. **No timeout** — a slow git must still be
+allowed to finish; *not blocking the main thread* is `perform`'s problem, not `invoke`'s, and it
+remains open.
+
+Through the product's own `GitWriter`, a commit behind a hook writing 256 KB to stderr now takes
+**0.335 s** and returns the hook's report in full (262144 bytes of stderr, plus git's summary on
+stdout).
+
+### The control, and why it is not flaky
+
+`HookDrainChecks` writes the reverted drain out by hand and runs it against a second scratch
+repository with the same hook, on a background queue, bounded at `0.335 × 10 + 0.5 = 3.85 s` — a
+ratio off the fixed path's own measured cost, per the doctrine in `BudgetChecks.swift` §1. The
+assertion is that the control did **not** finish, and load can only make a run slower, so unlike an
+upper bound this direction cannot be broken by a busy machine. It can fail only if the deadlock is
+absent, which is the thing being controlled for. The arm then reads stderr on another thread and
+asserts the same invocation completes — which names the cause as backpressure rather than assuming
+it.
+
+### What a reverted build actually does
+
+Worth recording, because it is not what a check normally does to a suite:
+
+```
+=== the sequential drain is gone from both runners, and cannot come back unnoticed ===
+  FAIL  neither runner reads stdout to EOF and then stderr — GitRunner.swift:375, GitWrite.swift:556
+  FAIL  and both go through the one drain that overlaps them
+
+=== the two pipes are drained at once: a hook that floods stderr must not hang a commit ===
+                                                    ← and here the suite stops, forever
+```
+
+The behavioural arms do not report a failure on a reverted build; they *hang*, exactly as the
+product did. A suite that wedges names nothing, so the two-line source arm was moved to run first
+and is what a reverted build prints before it stops. That is the reason it exists — not as a
+substitute for the behavioural proof, but so the behavioural proof has a label when it dies.
+
+12 new checks: 2108 → 2120 at the moment this landed, on a tree where other M13 work was
+adding arms in parallel.
