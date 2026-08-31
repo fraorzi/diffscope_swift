@@ -3633,3 +3633,70 @@ substitute for the behavioural proof, but so the behavioural proof has a label w
 
 12 new checks: 2108 → 2120 at the moment this landed, on a tree where other M13 work was
 adding arms in parallel.
+
+## M13-C — the place-keeping was reading the panes the layout empties
+
+**Date:** 2026-08-31. **From:** the UI audit's run A, frame A5 (the diff pane as a theatre stage),
+confirmed as V-3 in `tasks/ui-audit-verified.md`.
+
+`applyLayout` empties `left` and `right` when unified is showing — deliberately, so that no mark is
+in the DOM twice (`Renderer/src/main.js`, unified branch). Every function that keeps the reader's
+place read those two views and nothing else:
+
+| Function | Read |
+|---|---|
+| `diffscopeAnchorState` | `left.scrollDOM.scrollTop`, `left.coordsAtPos`, `left.lineBlockAt` |
+| `diffscopeCurrentLine` | `right.state.doc`, `right.scrollDOM.scrollTop` |
+| `restoreAnchor` | `[[left, …], [right, …]]` |
+| `firstVisibleStop` | `right` |
+| `goToStop` | dispatched at `left`/`right` only |
+
+Each asked an empty document where the reader was and got a truthful, useless answer: offset 0.
+
+**The window opens unified** (DEC-059) and the shell sets it in `webView(_:didFinish:)`, so this was
+not an edge case — it was the default path, and it produced four symptoms that had been reported as
+four different things:
+
+- a refresh returned the reader to the top of the file;
+- ⌘⏎ opened the editor at **line 1** of every file, whatever was on screen;
+- ⌘↓ advanced the stop index, opened folds, rebuilt decorations, printed *n of m* — and moved nothing;
+- `stageHunk`, which addresses a hunk through `diffscopeCurrentLine`, always staged the **first**
+  hunk in the file (run D's D2.5, confirmed separately as V-13).
+
+### Why no check could see it
+
+Every arm in the selftest walk sets **split** before it looks. The comment in `webView(_:didFinish:)`
+records why: they were all written while the application started in split by accident.
+`runUnifiedSelftest` does set unified — and then asks about the *document*: signs, added and removed
+line counts, geometry. The one question nobody asked was **does this move**.
+
+### The fix, and what it can honestly assert
+
+`unifiedDocPosition` / `unifiedSourcePosition` walk `unifiedRuns` — the mapping `projectSegments`
+already uses in one direction — so a side's own offsets, which is what the engine speaks, convert to
+the composed document's, which is what the unified view speaks. All five call sites now ask which
+layout is showing.
+
+`diffscopeCurrentLine` needed more than a coordinate: its answer is handed to an editor opening the
+file on disk, so it must be a **new-side line number**, and a unified row is neither side's. It reads
+`unifiedLines[row].new`, scanning to the first row below that has one, because a removed row has none.
+
+**The new arm asserts the destination, not the pixels.** `goToStop` now returns the offset it aimed
+at. Whether the pane has painted it is a question about the frame scheduler — WebKit suspends
+animation frames while the window is occluded, which a selftest launched from a terminal always is
+(T1-A), and CodeMirror applies a pending `scrollIntoView` inside its measure cycle. `diffscopeSettle()`
+does not rescue it. So the arm asserts what is decided here and reports what is not:
+
+```
+SELFTEST unified-place=OK jump={"index":1,"total":2,"at":8649} currentLine=402 aimedAt=8649 painted=0 lines=404
+```
+
+Negative control — `showingUnified()` forced to `false`, which is the code as it stood:
+
+```
+SELFTEST unified-place=MISMATCH jump={"index":1,"total":2,"at":0} currentLine=1 aimedAt=0 painted=0 lines=404
+```
+
+`at=0` and `currentLine=1` are the owner's report, in one line of log.
+
+2143 checks, 38 selftest arms.

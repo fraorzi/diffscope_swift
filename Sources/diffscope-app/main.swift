@@ -1084,6 +1084,80 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
+    /// **The place-keeping, asked in the layout the window actually opens in.**
+    ///
+    /// `applyLayout` empties `left` and `right` while unified is showing, and every function that
+    /// keeps the reader's place read those two views. Each one got a truthful, useless answer —
+    /// offset 0 — so a refresh returned the reader to the top of the file, ⌘⏎ opened the editor at
+    /// line 1 whatever they were reading, ⌘↓ advanced the stop index without moving the pane, and
+    /// `stageHunk`, which addresses a hunk by `diffscopeCurrentLine`, always staged the first hunk
+    /// in the file.
+    ///
+    /// Nothing could have caught it. Every arm in this walk sets split before it looks, because
+    /// they were all written while the application started in split by accident (see the comment
+    /// in `webView(_:didFinish:)`), and `runUnifiedSelftest` sets unified and then asks about the
+    /// *document*, never about where the reader is standing in it. The one question nobody asked
+    /// was "does this move".
+    private func runUnifiedPlaceSelftest(then next: @escaping () -> Void) {
+        // Long enough that the second stop cannot be on screen at the first: a pane that shows the
+        // whole file would pass this arm by standing still, which is the failure it exists to catch.
+        let body = (1...400).map { "const value\($0) = \($0);\n" }.joined()
+        let old = [UInt8]("const first = 1;\n\(body)const last = 2;\n".utf8)
+        let new = [UInt8]("const first = 111;\n\(body)const last = 222;\n".utf8)
+        let outcome = buildModel(path: "place.tsx", old: old, new: new, mode: .structural)
+        let render = buildRenderModel(model: outcome.model, pinOld: "pinU", pinNew: "pinV",
+                                      mode: "structural", pathTaken: outcome.pathTaken,
+                                      parser: outcome.parser, validation: outcome.validation,
+                                      notices: outcome.notices)
+        guard let json = try? encodeRenderModel(render) else { exit(74) }
+        lastPushedJSON = nil
+        bridge("window.diffscopeSetLayout(\"unified\")") { _, _ in
+            self.push(json)
+            // The second stop is the one at the bottom of a four-hundred-line file, so reaching it has to
+            // move the pane. The first would pass while standing still.
+            self.bridge("JSON.stringify(window.diffscopeCommand(\"nextChange\"))") { _, _ in
+                self.bridge("JSON.stringify(window.diffscopeCommand(\"nextChange\"))") { jump, _ in
+                    // **T1-A, through the same door as the terminal.** CodeMirror applies a pending
+                    // `scrollIntoView` inside its measure cycle, and the measure cycle is an
+                    // animation frame — which WebKit suspends whenever the window is occluded, as a
+                    // selftest launched from a terminal always is. Without this the pane genuinely
+                    // does not move and the arm reports a defect that only exists off screen.
+                    self.bridge("window.diffscopeSettle()") { _, _ in
+                    self.bridge("JSON.stringify(window.diffscopeProbe())") { value, _ in
+                        let probe = (value as? String) ?? "nil"
+                        let jumped = (jump as? String) ?? "nil"
+                        // Three questions, one per symptom. The jump's **destination** is the
+                        // assertion; whether the pane has painted it yet is the frame scheduler's
+                        // business and is reported rather than required (T1-A).
+                        let aimed = jumped.range(of: "\"at\":").map {
+                            String(jumped[$0.upperBound...].prefix(while: { $0.isNumber }))
+                        } ?? "nil"
+                        let landedSomewhereReal = aimed != "0" && aimed != "nil"
+                        func number(_ key: String) -> String {
+                            probe.range(of: "\"\(key)\":").map {
+                                String(probe[$0.upperBound...]
+                                    .prefix(while: { $0.isNumber || $0 == "-" }))
+                            } ?? "nil"
+                        }
+                        let line = number("currentLine")
+                        let openedSomewhereReal = line != "1" && line != "nil"
+                        let ok = landedSomewhereReal && openedSomewhereReal
+                            && jumped.contains("\"index\":1")
+                        FileHandle.standardError.write(Data(
+                            ("SELFTEST unified-place=\(ok ? "OK" : "MISMATCH")"
+                             + " jump=\(jumped) currentLine=\(line)"
+                             + " aimedAt=\(aimed) painted=\(number("unifiedScrollTop"))"
+                             + " lines=\(number("unifiedLines"))\n").utf8))
+                        if !ok { exit(75) }
+                        // And back, so the arms below this one still find the layout they expect.
+                        self.bridge("window.diffscopeSetLayout(\"split\")") { _, _ in next() }
+                    }
+                    }
+                }
+            }
+        }
+    }
+
     /// The redraw counters, read in a running window rather than grepped for.
     ///
     /// Every guard against an unnecessary redraw in this project so far has been checked by
@@ -1190,7 +1264,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 if !ok { exit(14) }
                 self.snapshot(named: "navigation") {
                     self.runExpandToggleSelftest {
-                        self.runRedrawSelftest { self.runRefreshSelftest() }
+                        self.runRedrawSelftest {
+                            self.runUnifiedPlaceSelftest { self.runRefreshSelftest() }
+                        }
                     }
                 }
             }

@@ -530,6 +530,53 @@ function projectSegments(segments, runs) {
   return out.sort((a, b) => a.start - b.start || a.end - b.end);
 }
 
+/// **The unified document is a projection, and until now nothing that keeps the reader's place knew
+/// it.** `applyLayout` empties `left` and `right` when unified is showing — deliberately, so the
+/// marks are not in the DOM twice — and every place-keeping function read those two views and
+/// nothing else. Each one therefore asked an empty document where the reader was and got a
+/// truthful, useless answer: offset 0.
+///
+/// The window opens unified (DEC-059) and the shell sets it, so this was not an edge: it was the
+/// default path. It cost the reader their scroll position on every refresh, sent ⌘⏎ to line 1 of
+/// every file, made ⌘↓ advance the stop index without moving the pane, and — through
+/// `diffscopeCurrentLine` — made "stage this hunk" always stage the *first* hunk in the file.
+///
+/// These two convert between a side's own offsets, which is what the engine speaks, and the
+/// composed document's, which is what the unified view speaks. `unifiedRuns` already carries the
+/// mapping; `projectSegments` walks it in one direction and these walk it in both.
+function unifiedDocPosition(side, sourceOffset) {
+  for (const run of unifiedRuns[side]) {
+    if (sourceOffset >= run.srcStart && sourceOffset <= run.srcEnd) {
+      return run.docStart + (sourceOffset - run.srcStart);
+    }
+  }
+  return null;
+}
+
+function unifiedSourcePosition(docOffset) {
+  for (const side of ["old", "new"]) {
+    for (const run of unifiedRuns[side]) {
+      const length = run.srcEnd - run.srcStart;
+      if (docOffset >= run.docStart && docOffset <= run.docStart + length) {
+        return { side, offset: run.srcStart + (docOffset - run.docStart) };
+      }
+    }
+  }
+  return null;
+}
+
+/// A stop or an anchor as a position in whatever document is on screen. The new side is preferred
+/// and the old side is the fallback, because a pure deletion has no new-side position at all and
+/// asking for one would send the reader to the top.
+function unifiedPositionFor(oldStart, newStart) {
+  const at = unifiedDocPosition("new", newStart);
+  return at !== null ? at : unifiedDocPosition("old", oldStart);
+}
+
+/// True when the composed document is the one the reader is looking at *and* it has been built.
+/// `unified` is created lazily on the first unified render, so the flag alone is not enough.
+function showingUnified() { return layout === "unified" && unified != null; }
+
 /// `@@ −12,4 +12,5` — the form every reader of a unified diff already knows, and the reason it is
 /// worth keeping: after a fold, the two number columns say where each *line* is and nothing says
 /// where the *change* is.
@@ -1202,21 +1249,44 @@ function goToStop(delta) {
     ? (delta > 0 ? 0 : stops.length - 1)
     : (stopIndex + delta + stops.length) % stops.length;
   const stop = stops[stopIndex];
-  for (const [view, from] of [[left, stop.oldStart], [right, stop.newStart]]) {
-    const position = Math.max(0, Math.min(from, view.state.doc.length));
-    // A fold covering the target would swallow the jump.
-    folds.forEach((fold, index) => {
-      const start = view === left ? fold.oldStart : fold.newStart;
-      const end = view === left ? fold.oldEnd : fold.newEnd;
-      if (position >= start && position < end) openFold(fold, index);
-    });
-    view.dispatch({
-      effects: EditorView.scrollIntoView(position, { y: "center" }),
-      selection: { anchor: position },
-    });
+  // A fold covering the target would swallow the jump. Asked in the engine's own coordinates, so
+  // the question is the same in both layouts even though the answer is applied to different views.
+  folds.forEach((fold, index) => {
+    if ((stop.oldStart >= fold.oldStart && stop.oldStart < fold.oldEnd)
+        || (stop.newStart >= fold.newStart && stop.newStart < fold.newEnd)) {
+      openFold(fold, index);
+    }
+  });
+  let target = null;
+  if (showingUnified()) {
+    // Opening a fold above the stop moves every offset below it, so the projection is rebuilt
+    // before it is read — `openFold` only records the choice.
+    applyLayout(lastModel);
+    const at = unifiedPositionFor(stop.oldStart, stop.newStart);
+    if (at !== null) {
+      target = Math.max(0, Math.min(at, unified.state.doc.length));
+      unified.dispatch({
+        effects: EditorView.scrollIntoView(target, { y: "center" }),
+        selection: { anchor: target },
+      });
+    }
+  } else {
+    for (const [view, from] of [[left, stop.oldStart], [right, stop.newStart]]) {
+      const position = Math.max(0, Math.min(from, view.state.doc.length));
+      if (view === right) target = position;
+      view.dispatch({
+        effects: EditorView.scrollIntoView(position, { y: "center" }),
+        selection: { anchor: position },
+      });
+    }
   }
   refreshDecorations();
-  return { index: stopIndex, total: stops.length };
+  // `at` is the offset the view was *told* to go to, in whatever document is on screen. It is
+  // reported because whether the pane has actually moved yet is a question about the frame
+  // scheduler — WebKit suspends animation frames while the window is occluded (T1-A), and
+  // CodeMirror applies a pending `scrollIntoView` inside its measure cycle. The destination is
+  // decided here and is checkable here; the pixels are not.
+  return { index: stopIndex, total: stops.length, at: target };
 }
 
 // DEC-034: the anchor the reader is currently looking at — the last one at or above the top of
@@ -1224,12 +1294,17 @@ function goToStop(delta) {
 // because a renderer that also chose the destination could drift without anything checking.
 window.diffscopeAnchorState = function () {
   if (!anchors.length) return null;
-  const top = left.scrollDOM.scrollTop;
+  const view = showingUnified() ? unified : left;
+  const top = view.scrollDOM.scrollTop;
   let current = anchors[0];
   for (const anchor of anchors) {
-    const position = Math.max(0, Math.min(anchor.oldStart, left.state.doc.length));
-    if (left.coordsAtPos(position) == null) continue;
-    const offset = left.lineBlockAt(position).top;
+    const at = showingUnified()
+      ? unifiedPositionFor(anchor.oldStart, anchor.newStart ?? anchor.oldStart)
+      : anchor.oldStart;
+    if (at === null) continue;
+    const position = Math.max(0, Math.min(at, view.state.doc.length));
+    if (view.coordsAtPos(position) == null) continue;
+    const offset = view.lineBlockAt(position).top;
     if (offset <= top) current = anchor; else break;
   }
   return current;
@@ -1344,6 +1419,26 @@ window.diffscopeSetWrap = function (enabled) {
 };
 
 window.diffscopeCurrentLine = function () {
+  if (showingUnified()) {
+    // The answer has to be a line number **on the new side** — it is handed to an editor opening
+    // the file on disk, and it is what `stageHunk` addresses a hunk by. A unified document line is
+    // neither: it is a row in a projection that interleaves both sides. `unifiedLines` carries the
+    // new-side number per row, `null` on a removed row, and the first row below with a number is
+    // the nearest thing the file actually has.
+    const doc = unified.state.doc;
+    const at = stopIndex >= 0 && stopIndex < stops.length
+      ? unifiedPositionFor(stops[stopIndex].oldStart, stops[stopIndex].newStart)
+      : unified.lineBlockAtHeight(unified.scrollDOM.scrollTop).from;
+    const position = Math.max(0, Math.min(at ?? 0, doc.length));
+    const row = doc.lineAt(position).number - 1;
+    for (let index = row; index < unifiedLines.length; index += 1) {
+      if (unifiedLines[index] && unifiedLines[index].new != null) return unifiedLines[index].new;
+    }
+    for (let index = row; index >= 0; index -= 1) {
+      if (unifiedLines[index] && unifiedLines[index].new != null) return unifiedLines[index].new;
+    }
+    return 1;
+  }
   const doc = right.state.doc;
   if (stopIndex >= 0 && stopIndex < stops.length) {
     const position = Math.max(0, Math.min(stops[stopIndex].newStart, doc.length));
@@ -1358,6 +1453,13 @@ window.diffscopeCurrentLine = function () {
 // rather than by a media query someone has to remember to write.
 function restoreAnchor(restore) {
   if (!restore || restore.resolution === "noPreviousAnchor") return;
+  if (showingUnified()) {
+    const at = unifiedPositionFor(restore.oldStart, restore.newStart);
+    if (at === null) return;
+    const target = Math.max(0, Math.min(at, unified.state.doc.length));
+    unified.dispatch({ effects: EditorView.scrollIntoView(target, { y: "start" }) });
+    return;
+  }
   for (const [view, position] of [[left, restore.oldStart], [right, restore.newStart]]) {
     const target = Math.max(0, Math.min(position, view.state.doc.length));
     view.dispatch({ effects: EditorView.scrollIntoView(target, { y: "start" }) });
@@ -1369,6 +1471,17 @@ function restoreAnchor(restore) {
 // mode, and the shell can switch modes and put the reader back where they were standing (DEC-057).
 function firstVisibleStop() {
   if (!stops.length) return -1;
+  if (showingUnified()) {
+    // Compared in the composed document's own coordinates: a stop's two sides land in different
+    // runs, and "which is first on screen" is a question about the column the reader is reading.
+    const block = unified.lineBlockAtHeight(unified.scrollDOM.scrollTop);
+    const top = Math.max(0, Math.min(block.from, unified.state.doc.length));
+    const found = stops.findIndex((stop) => {
+      const at = unifiedPositionFor(stop.oldStart, stop.newStart);
+      return at !== null && at >= top;
+    });
+    return found >= 0 ? found : stops.length - 1;
+  }
   const doc = right.state.doc;
   const block = right.lineBlockAtHeight(right.scrollDOM.scrollTop);
   const top = Math.max(0, Math.min(block.from, doc.length));
@@ -1973,6 +2086,11 @@ window.diffscopeProbe = function () {
     reflowFoldMarksAll: document.querySelectorAll(".ds-fold-reflow").length,
     foldLabels: [...document.querySelectorAll(".ds-fold")].map(el => el.textContent),
     scrollTop: Math.round(left.scrollDOM.scrollTop),
+    // The composed document's own scroll. Reported beside `scrollTop` because the two are different
+    // documents and, until the place-keeping learned the layout, every arm that asked where the
+    // reader was had been asking the empty one.
+    unifiedScrollTop: unified ? Math.round(unified.scrollDOM.scrollTop) : -1,
+    currentLine: window.diffscopeCurrentLine(),
     stopIndex,
     badges: [...document.querySelectorAll(".ds-badge")].map(el => el.textContent),
     // Asked from the document rather than from the model: INV-4 is a promise about what the reader

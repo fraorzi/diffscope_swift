@@ -3462,3 +3462,28 @@ with the condition that triggers it, and a negative control.
   proving a negative control by reverting its own fix — leaving the doc comment for a repair whose
   body was gone. Worth knowing before the next parallel wave: the tree state after an interrupted
   agent is *plausible and wrong*, and the only way to tell is to run the suite.
+
+## Step — the unified layout stops reading the panes it empties (V-3, M13-C)
+
+- [x] `unifiedDocPosition` / `unifiedSourcePosition` convert between a side's offsets and the
+      composed document's, walking the `unifiedRuns` mapping `projectSegments` already uses one way
+- [x] `goToStop`, `diffscopeAnchorState`, `restoreAnchor`, `firstVisibleStop` and
+      `diffscopeCurrentLine` all ask which layout is showing
+- [x] `diffscopeCurrentLine` returns a **new-side line number** in unified, read from
+      `unifiedLines[row].new` and scanning down past removed rows — a unified row is neither side's
+- [x] `goToStop` returns the offset it aimed at, so an arm can assert the destination without
+      depending on a frame the occluded window never gets
+- [x] `runUnifiedPlaceSelftest`, and the probe reports `unifiedScrollTop` and `currentLine`
+
+### Step — done, and the lesson is about the walk rather than the code
+
+**Every arm in the selftest sets split before it looks**, because they were written while the
+application started in split by accident. `runUnifiedSelftest` sets unified and then asks about the
+document — signs, counts, geometry. **The question nobody asked was "does this move".** Four
+separately-reported symptoms had one cause, and it sat under the default layout for eleven
+milestones.
+
+The paint could not be asserted: CodeMirror applies `scrollIntoView` inside its measure cycle, and
+WebKit suspends animation frames while the window is occluded (T1-A again, third time). `diffscopeSettle()`
+does not rescue it. The arm asserts the **destination**, which is decided in this code and is
+checkable here, and reports the paint as information — the same shape as `terminal-paint=SKIPPED`.
