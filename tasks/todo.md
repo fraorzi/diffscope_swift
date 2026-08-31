@@ -3487,3 +3487,31 @@ The paint could not be asserted: CodeMirror applies `scrollIntoView` inside its 
 WebKit suspends animation frames while the window is occluded (T1-A again, third time). `diffscopeSettle()`
 does not rescue it. The arm asserts the **destination**, which is decided in this code and is
 checkable here, and reports the paint as information — the same shape as `terminal-paint=SKIPPED`.
+
+## Step — Fala 1, part one: the guards stop being defeated on their own paths
+
+- [x] **A refresh of an unchanged document does no work at all.** `render` now compares the pinned
+      pair's **content hashes** against what is on screen and returns before the parse. `push`'s
+      JSON guard has been dead on the refresh path since DEC-034 gave the model a `restore` field:
+      the field is computed from where the reader is standing, so a reader who had scrolled produced
+      a different JSON every time and paid a full parse, encode, bridge crossing and document
+      replacement for bytes that had not changed. Asking about the bytes is cheaper *and* is not
+      defeatable by the reader moving.
+- [x] `displayedPin` is cleared in four places — a finished navigation, and the three surfaces that
+      take the pane away from the diff (rendered image, lens, search). A guard against redrawing is
+      one line from being a way never to draw.
+- [x] **`annotateFiles` has a generation token**, and its completion checks three things where it
+      used to check one: newest sweep, same repository, same scope. The sweep runs on a *concurrent*
+      queue, so two could both pass and the older could land last and win permanently.
+- [x] Its completion redraws **only the rows whose annotation or count changed**, instead of the
+      whole tree a fifth of a second after DEC-109's guard had just spared it.
+- [x] `refreshGitState` likewise. Both its callers run `reloadFiles()` immediately before it, so its
+      unconditional reload rebuilt sixty-three stacks of views one line after DEC-112 rebuilt one.
+- [x] `runRedrawSelftest` gained its other half: a forgotten pin **must** draw again.
+
+### Step — done
+
+The pin is compared on content hashes rather than on the serialised model, and that is the whole
+point: `pair.oldHash`/`pair.newHash` are what the engine already computes to pin a comparison, so
+*is this the same document* is answerable before any of the expensive work. ⌥⌘V is the one
+deliberate exception — it re-renders the same pair on purpose to put the reader back at a stop.

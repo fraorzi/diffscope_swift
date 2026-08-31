@@ -27,6 +27,7 @@ extension Controller {
             operationBanner?.show(.none)
             return
         }
+        let previousStaging = state.staging
         state.staging = gitState.staging(in: repository.url)
         state.branches = gitState.branches(in: repository.url)
         state.stashes = gitState.stashes(in: repository.url)
@@ -39,7 +40,16 @@ extension Controller {
         commitBox?.status.stringValue = commitSummaryLine()
         branchButton?.title = head.displayText
         updateSyncButton()
-        redraw.reloadAll(fileTable, .file, reason: "refreshGitState")
+        // **Only the boxes that changed.** Both callers run `reloadFiles()` immediately before this,
+        // and `reloadFiles` already redraws what moved — so an unconditional reload here rebuilt
+        // sixty-three stacks of views one line after DEC-112 had carefully rebuilt one. The staging
+        // read above is a *second* read of the index, so it can legitimately differ from the one
+        // `reloadFiles` made; what cannot be justified is redrawing when it does not.
+        let changed = state.fileRows.indices.filter { index in
+            guard let path = state.fileRows[index].file?.path else { return false }
+            return previousStaging[path] != state.staging[path]
+        }
+        redraw.reloadRows(fileTable, .file, IndexSet(changed), reason: "refreshGitState")
     }
 
     /// `3 files staged · 2 not staged`, or the reason there is nothing to commit. In `ChromeLabels`'

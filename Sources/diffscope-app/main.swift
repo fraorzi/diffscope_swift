@@ -982,6 +982,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         rendererReady = true
+        // The pin goes with it, for the same reason and by the same rule: an empty document has
+        // nothing pinned to it, and a refresh that decided it had nothing to do would leave the
+        // window blank.
+        displayedPin = nil
         // A finished navigation means a **new, empty document**, so what was last pushed is no
         // longer on screen. Forgetting it here is what keeps `push`'s skip safe: the guard is about
         // not drawing the same thing twice, never about not drawing at all.
@@ -1219,10 +1223,28 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                             ("SELFTEST redraw=\(ok ? "OK" : "MISMATCH")"
                              + " first=\(afterFirst) identical=\(afterSecond)"
                              + " ledger=[\(self.redraw.summary)]"
-                             + " · measured: a moved anchor re-renders an unchanged document"
-                             + "=\(anchorDefeatsGuard)\n").utf8))
+                             + " · measured: push's own JSON guard is still defeated by a moved"
+                             + " anchor=\(anchorDefeatsGuard) (closed upstream by the render pin,"
+                             + " which compares content hashes)\n").utf8))
                         if !ok { exit(72) }
-                        next()
+                        // And the guard's other half, which matters more than the guard: a pin
+                        // that is forgotten must produce a render. Without this the whole thing
+                        // would pass by never drawing anything, which is the shape of failure this
+                        // project keeps finding in its own checks.
+                        self.displayedPin = nil
+                        self.lastPushedJSON = nil
+                        self.bridge("window.diffscopeResetCounters()") { _, _ in
+                            self.push(first)
+                            self.bridge("JSON.stringify(window.diffscopeCounters())") { value, _ in
+                                let after = (value as? String) ?? "nil"
+                                let drewAgain = after.contains("\"renders\":1")
+                                FileHandle.standardError.write(Data(
+                                    ("SELFTEST redraw-control=\(drewAgain ? "OK" : "MISMATCH")"
+                                     + " a forgotten pin draws again: \(after)\n").utf8))
+                                if !drewAgain { exit(76) }
+                                next()
+                            }
+                        }
                     }
                 }
             }
@@ -5187,10 +5209,21 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
     /// Off the main thread, because it stats and reads a few kilobytes per file and the list is
     /// already on screen by then. Only the repository still selected gets its badges applied.
+    /// Which sweep is allowed to write. Monotonic, bumped when one starts, checked when one lands.
+    ///
+    /// The sweep runs on a **concurrent** queue and its completion used to guard on the repository
+    /// alone, so two sweeps over the same repository both passed — and, ordering being
+    /// unconstrained, the older one could land last and win permanently. The scope it was started
+    /// for was captured and then never consulted, so *Staged vs HEAD* counts could settle on rows
+    /// the pill labels *All local vs HEAD*.
+    private var annotationGeneration = 0
+
     private func annotateFiles(of repository: RepositorySnapshot) {
         let files = state.files
         let scope = state.scope
         let baseRef = repository.baseRefUsed ?? repository.base.ref
+        annotationGeneration += 1
+        let generation = annotationGeneration
         DispatchQueue.global(qos: .utility).async {
             let counts = (try? self.scopes.changeCounts(scope: scope, in: repository.url,
                                                         baseRef: baseRef)) ?? [:]
@@ -5202,14 +5235,30 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 }
             }
             DispatchQueue.main.async {
-                guard self.state.selectedRepository?.url == repository.url else { return }
+                // Three questions, and the first two used to be one. *Is this still the repository*
+                // is not *is this still the newest answer*, and neither is *is this still the scope
+                // the numbers were counted for*.
+                guard generation == self.annotationGeneration,
+                      self.state.selectedRepository?.url == repository.url,
+                      self.state.scope == scope else { return }
+                let previousAnnotations = self.state.annotations
+                let previousCounts = self.state.counts
                 self.state.annotations = found
                 self.state.counts = counts
-                self.redraw.reloadAll(self.fileTable, .file, reason: "annotateFiles landed")
+                // **Only the rows whose drawn content changed** — the guard DEC-109 put on
+                // `reloadFiles` and that this pass then defeated a fifth of a second later, every
+                // refresh, by rebuilding all sixty-three stacks of views unconditionally.
+                let changed = self.state.fileRows.indices.filter { index in
+                    guard let path = self.state.fileRows[index].file?.path else { return false }
+                    return previousAnnotations[path] != found[path]
+                        || previousCounts[path] != counts[path]
+                }
+                self.redraw.reloadRows(self.fileTable, .file, IndexSet(changed),
+                                       reason: "annotateFiles landed")
                 // The annotations arrive on a background sweep and land after the list is already
-                // on screen. `reloadData` keeps the selected *index* and this pass does not change
-                // the rows — but it is the one place a selection could be dropped without anybody
-                // seeing it happen, so it is restored here too rather than assumed safe.
+                // on screen. This pass does not change the rows — but it is the one place a
+                // selection could be dropped without anybody seeing it happen, so it is restored
+                // here too rather than assumed safe.
                 self.restoreFileSelection()
             }
         }
@@ -5483,6 +5532,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// needs is two sides.
     private func showRendered(file: ChangedFile, oldBytes: [UInt8], newBytes: [UInt8],
                               kind: RenderableKind) {
+        // The diff pane is about to show something that is not the diff, so the pin no longer
+        // describes what is on screen and a later refresh must not decide it has nothing to do.
+        displayedPin = nil
         let oldImage = oldBytes.isEmpty ? nil : ImageComparison.image(from: oldBytes)
         let newImage = newBytes.isEmpty ? nil : ImageComparison.image(from: newBytes)
         var differing: Int?
@@ -5725,6 +5777,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
     private func pushLens(kind: String, rows: [[String: String]], picked: [String] = [],
                           summary: String) {
+        // The diff pane is about to show something that is not the diff, so the pin no longer
+        // describes what is on screen and a later refresh must not decide it has nothing to do.
+        displayedPin = nil
         let payload: [String: Any] = ["kind": kind, "summary": summary, "picked": picked,
                                       "rows": rows.map { row -> [String: Any] in
                                           var out: [String: Any] = row
@@ -5824,6 +5879,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     }
 
     private func pushSearch(summary: String) {
+        // The diff pane is about to show something that is not the diff, so the pin no longer
+        // describes what is on screen and a later refresh must not decide it has nothing to do.
+        displayedPin = nil
         var groups: [[String: Any]] = []
         for hit in state.searchHits {
             let row: [String: Any] = ["line": hit.line, "before": hit.before,
@@ -6023,9 +6081,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
+    /// What the window is currently showing: the two content hashes and the mode they were drawn
+    /// under. Read on the render queue, written only here on the main thread, and captured before
+    /// the hop so the two never race.
+    private var displayedPin: (old: String, new: String, mode: String, path: String)?
+
     private func render(file: ChangedFile, previousAnchor: RefreshAnchor?, restoringStop: Int? = nil) {
         guard let repository = state.selectedRepository else { return }
         let mode = state.mode
+        let displayed = displayedPin
         // One at a time, and the newest wins. Walking a 63-file list at keyboard speed used to start
         // a render per keystroke on the concurrent queue: they raced inside the shared tree-sitter
         // parser (fixed in `TSXParser`), and the ones that survived pushed diffs for files the
@@ -6082,6 +6146,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 guard self.state.selectedFile?.path == file.path else { return }
                 let position = self.filePositionText().map { "\($0) · " } ?? ""
                 self.statusLabel.stringValue = "\(position)\(file.path) · \(outcome.summary)"
+                self.displayedPin = (old: pair.oldHash, new: pair.newHash,
+                                     mode: mode.rawValue, path: file.path)
                 if self.rendererReady { self.push(json) } else { self.pendingModel = json }
                 // ⌥⌘V (DEC-057): the stop is restored *after* the new model is in the document,
                 // because the stop list belongs to the model that is on screen.
