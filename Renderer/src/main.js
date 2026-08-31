@@ -344,6 +344,11 @@ const setSegments = StateEffect.define();
 const wrapping = new Compartment();
 // The unified pane has its own, because it is a separate view and a compartment belongs to one.
 const unifiedWrapping = new Compartment();
+/// What ⌥⌘W last said. The unified view is built lazily — on the first render that needs it — and
+/// it used to be constructed with wrapping hard on, so a reader who turned wrapping off *before*
+/// ever opening the unified layout got it back on the moment they did, while the menu item, the
+/// button and the shell's own `wrapEnabled` all still said off.
+let wrapEnabled = true;
 
 // `12-…` §5.1 names the gutter as one of three carriers of change meaning, beside the line tint
 // (the underline until DEC-077) and the background texture. The two others were built; this is the
@@ -670,7 +675,7 @@ function makeUnifiedPane(parent) {
         javascript({ typescript: true, jsx: true }),
         syntaxHighlighting(highlighting),
         EditorView.editable.of(false),
-        unifiedWrapping.of(EditorView.lineWrapping),
+        unifiedWrapping.of(wrapEnabled ? EditorView.lineWrapping : []),
         gutter({ class: "ds-gutter-old",
                  lineMarker: (view, line) => new NumberMarker(unifiedMeta(view, line).old) }),
         gutter({ class: "ds-gutter-new",
@@ -1201,8 +1206,23 @@ window.diffscopeShowRendered = function (json) {
 /// ⌥⌘→ (DEC-059). The pinned pair does not move, so the re-render compares the same two versions
 /// and lands on the same change stop — switching layout is a change of projection, not of subject.
 window.diffscopeSetLayout = function (name) {
-  layout = name === "unified" ? "unified" : "split";
+  const next = name === "unified" ? "unified" : "split";
+  if (next === layout) return layout;
+  // **The switch keeps the reader's place.** `⌥⌘→`'s own comment has claimed since DEC-059 that
+  // "the pinned pair and the current change stop both survive the switch", and the stop now does —
+  // it is an index into `stops`, which the engine computes from the canonical byte diff and which
+  // is therefore the same list in both layouts. Where the reader was *scrolled* to did not survive:
+  // the two layouts are different documents, so an offset does not carry across, and nothing
+  // carried anything else either.
+  //
+  // A reader who has navigated has a stop, and that is the better answer because it is the thing
+  // they were looking at. One who has only scrolled gets the first visible line matched by content
+  // in the other document — the same idea, one step weaker.
+  const mark = captureViewportLine(layout === "unified" ? unified : right);
+  layout = next;
   if (lastModel) window.diffscopeRender(lastModel);
+  if (stopIndex >= 0 && stopIndex < stops.length) goToStopIndex(stopIndex);
+  else restoreViewportLine(layout === "unified" ? unified : right, mark);
   return layout;
 };
 
@@ -1235,10 +1255,49 @@ function expandFold(index) {
 /// two-pane layout has the whole old file in the left pane already and hides those lines behind a
 /// decoration, so refreshing the decorations is the whole of it, and rebuilding would throw away
 /// the reader's scroll position for nothing.
+/// The line the reader is looking at, as something that survives a rebuild of the document.
+///
+/// A document offset does not: opening a withheld block inserts lines above the reader, so the
+/// offset they were at now names different bytes. The *first visible line's* content does, which is
+/// why this is captured as text rather than as a number — it is the same idea `RefreshAnchor` uses
+/// across a refresh, at the smaller scale of one rebuild inside one document.
+function captureViewportLine(view) {
+  if (!view || !view.state.doc.length) return null;
+  const block = view.lineBlockAtHeight(view.scrollDOM.scrollTop);
+  const line = view.state.doc.lineAt(Math.max(0, Math.min(block.from, view.state.doc.length)));
+  return { text: line.text, number: line.number };
+}
+
+function restoreViewportLine(view, mark) {
+  if (!view || !mark || !view.state.doc.length) return;
+  // The same text, nearest to where it was. A rebuild moves lines by the number it inserted, so
+  // the search starts at the old number and walks outward rather than scanning from the top.
+  const total = view.state.doc.lines;
+  for (let distance = 0; distance < total; distance += 1) {
+    for (const candidate of [mark.number + distance, mark.number - distance]) {
+      if (candidate < 1 || candidate > total) continue;
+      if (view.state.doc.line(candidate).text === mark.text) {
+        view.dispatch({ effects: EditorView.scrollIntoView(
+          view.state.doc.line(candidate).from, { y: "start" }) });
+        return;
+      }
+    }
+  }
+}
+
 function expandReflow(index) {
   expandedReflows.add(index);
-  if (layout === "unified") { if (lastModel) applyLayout(lastModel); }
-  else refreshDecorations();
+  if (layout === "unified") {
+    // **Opening a block used to drop the reader wherever `scrollTop` happened to clamp.**
+    // `applyLayout` replaces the whole composed document, so the offset they were at means
+    // something else afterwards — and this is a deliberate act on one specific block, which makes
+    // being thrown somewhere else the least welcome moment for it.
+    const mark = captureViewportLine(unified);
+    if (lastModel) applyLayout(lastModel);
+    restoreViewportLine(unified, mark);
+  } else {
+    refreshDecorations();
+  }
 }
 
 // Both panes scroll to the same stop, because a stop is stated on both sides (DEC-034 uses the
@@ -1403,6 +1462,7 @@ window.diffscopeInjectShrinkWrap = function (enable) {
 };
 
 window.diffscopeSetWrap = function (enabled) {
+  wrapEnabled = enabled;
   if (unified) {
     unified.dispatch({ effects: unifiedWrapping.reconfigure(enabled ? EditorView.lineWrapping : []) });
   }
@@ -1763,9 +1823,38 @@ function reflowFolds(model) {
 window.diffscopeRender = function (json) {
   counters.renders += 1;
   const model = typeof json === "string" ? JSON.parse(json) : json;
-  if (!lastModel || lastModel.pinOld !== model.pinOld || lastModel.pinNew !== model.pinNew) {
+  // **What the reader chose about this document, and when it stops applying.**
+  //
+  // Four values record a reader's decisions: which unchanged or formatting regions they opened
+  // (`expanded`), which re-wrapped blocks they opened (`expandedReflows`), whether they opened the
+  // notice bar (`noticesExpanded`), and where they are in the change list (`stopIndex`). They were
+  // governed by two different rules and nothing said why: the first two of those were cleared only
+  // when the pinned pair changed, and `expanded` and `stopIndex` were cleared on **every** render.
+  // So an ordinary refresh — the reader saved a different file, or the app's own `git diff` touched
+  // the index — collapsed everything they had opened and lost their place in the change list.
+  //
+  // The rule is now stated once, and it is about **what the value is an index into**:
+  //
+  // - `expanded` and `expandedReflows` hold *positions in the fold list*, and the fold list is
+  //   rebuilt from the model. Same pinned pair and same mode means the same list, so the positions
+  //   still mean what the reader meant. A different mode does not: `formattingCollapses` is empty
+  //   in Expanded, so every index after the first shifts. They reset when either changes.
+  // - `stopIndex` is a position in `stops`, which the engine computes from the **canonical byte
+  //   diff** — identical in every mode and both layouts (`Navigation.swift`). It survives a mode
+  //   change and resets only when the document does.
+  // - `noticesExpanded` is about the file, not about any list, so it follows the pinned pair.
+  const samePin = lastModel != null
+    && lastModel.pinOld === model.pinOld && lastModel.pinNew === model.pinNew;
+  const sameMode = lastModel != null && lastModel.mode === model.mode;
+  if (!samePin || !sameMode) {
+    if (expanded.size || expandedReflows.size) counters.foldStateResets += 1;
+    expanded = new Set();
     expandedReflows = new Set();
+  }
+  if (!samePin) {
     noticesExpanded = false;
+    if (stopIndex !== -1) counters.foldStateResets += 1;
+    stopIndex = -1;
   }
   lastModel = model;
   currentPin = model.pinOld + ":" + model.pinNew;
@@ -1796,14 +1885,9 @@ window.diffscopeRender = function (json) {
   }))).concat(reflowFolds(model));
   stops = model.stops || [];
   anchors = model.anchors || [];
-  // Counted, not yet changed. `expandedReflows` and `noticesExpanded` above are cleared only when
-  // the pinned pair changes; these two are cleared every time. Three variables of the same kind
-  // and two rules, with nothing saying why — so the first step is to make the loss a number and
-  // see how often a refresh that changed nothing the reader cares about still costs them their
-  // open folds and their place in the change list.
-  if (expanded.size || stopIndex !== -1) counters.foldStateResets += 1;
-  expanded = new Set();
-  stopIndex = -1;
+  // A stop index that outlived its list — a mode whose diff has fewer stops, or a document that
+  // shrank — is clamped rather than kept, because `goToStop` would otherwise index past the end.
+  if (stopIndex >= stops.length) stopIndex = stops.length - 1;
   // **Before** the layout, not after. The footer changes the page's height, and an editor
   // populated first is an editor measured against a height that is about to change: CodeMirror
   // kept the line heights it had computed and the gutter drifted out of step with the code, 33 px
@@ -1811,6 +1895,19 @@ window.diffscopeRender = function (json) {
   // other height that moved here; DEC-088 removed it.)
   updateFooter(model);
   applyLayout(model);
+  // **A new document starts at the top unless something says otherwise.** `applySide` replaces the
+  // text but not the scroll offset, so opening a file inherited the previous file's `scrollTop`,
+  // clamped to the new document's height — which put the reader somewhere in the middle of a file
+  // they had just opened, at a position that meant nothing in it. `showDiff` passes no anchor,
+  // correctly: there is nothing to restore when the reader has chosen a different file. What was
+  // missing was saying where to go instead.
+  if (!samePin && !(model.restore && model.restore.resolution !== "noPreviousAnchor")) {
+    for (const view of [left, right, unified]) {
+      if (view && view.state.doc.length) {
+        view.dispatch({ effects: EditorView.scrollIntoView(0, { y: "start" }) });
+      }
+    }
+  }
   restoreAnchor(model.restore);
   updateTrack();
   // And say so anyway. Anything else that resizes the pane — the drawer opening, the window — has

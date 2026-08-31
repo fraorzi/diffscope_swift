@@ -149,6 +149,60 @@ func runRedrawChecks(_ reportRaw: (String, Bool, String) -> Void) {
     report("a restored selection on the same file does not render again",
            shell.contains("if restoringSelection, file.path == state.selectedFile?.path { return }"))
 
+    print("\n=== what the reader chose survives what they did not choose ===")
+    let page = (try? String(contentsOfFile: "Renderer/src/main.js", encoding: .utf8)) ?? ""
+
+    // One rule, stated once, about what each value is an index into. Fold sets index the fold list,
+    // which a mode change rebuilds differently; `stopIndex` indexes `stops`, which the engine
+    // computes from the canonical byte diff and which is therefore the same list in every mode.
+    report("fold sets follow the pinned pair **and** the mode",
+           page.contains("if (!samePin || !sameMode) {")
+               && page.contains("expanded = new Set();")
+               && page.contains("expandedReflows = new Set();"))
+    report("and the change-stop follows the pinned pair alone",
+           page.range(of: "if (!samePin) {").map { range in
+               String(page[range.lowerBound...].prefix(220)).contains("stopIndex = -1;")
+           } ?? false)
+    report("a stop index outliving its list is clamped, not kept",
+           page.contains("if (stopIndex >= stops.length) stopIndex = stops.length - 1;"))
+    // The unified view is built lazily, so a wrap chosen before it existed used to be lost.
+    report("the unified view is built with the wrap the reader chose",
+           page.contains("unifiedWrapping.of(wrapEnabled ? EditorView.lineWrapping : [])")
+               && page.contains("wrapEnabled = enabled;"))
+    // Two layouts are two documents, so an offset does not carry — the stop does, and it is what
+    // the reader was actually looking at.
+    report("switching layout keeps the reader's place",
+           page.contains("if (stopIndex >= 0 && stopIndex < stops.length) goToStopIndex(stopIndex);")
+               && page.contains("restoreViewportLine("))
+    report("and opening a withheld block keeps it too",
+           page.range(of: "function expandReflow(").map { range in
+               let body = String(page[range.lowerBound...].prefix(900))
+               return body.contains("captureViewportLine(unified)")
+                   && body.contains("restoreViewportLine(unified, mark)")
+           } ?? false)
+    // A document the reader has just opened starts at the top rather than at the previous file's
+    // scroll offset, clamped.
+    report("a new document starts at the top when there is no anchor",
+           page.contains("if (!samePin && !(model.restore && model.restore.resolution !== \"noPreviousAnchor\"))"))
+
+    // Folding is a question about the list, not about which file to read.
+    report("folding a directory does not re-render the diff",
+           shell.range(of: "func setDirectory(").map { range in
+               String(shell[range.lowerBound...].prefix(1600)).contains("restoringSelection = true")
+           } ?? false)
+    report("and its fallback goes to the neighbour rather than to row zero",
+           shell.range(of: "func setDirectory(").map { range in
+               let body = String(shell[range.lowerBound...].prefix(1900))
+               return body.contains("RowNavigation.nearestSelectable(in: state.fileRows, to: previous)")
+                   && !body.contains("RowNavigation.firstSelectable(in: state.fileRows)")
+           } ?? false)
+    // The sweep re-selects a row whenever the open repository's index moves, which says nothing
+    // about the repository having changed.
+    report("collapsed directories survive a reselect of the same repository",
+           shell.contains("if self.openRepositoryPath != repository.url.standardizedFileURL.path {"))
+    report("the drawer reopens at the height the reader left it",
+           shell.contains("terminalHeightConstraint.constant = visible ? terminalHeight : 0"))
+
     print("\n=== the renderer counts what it redrew ===")
     let renderer = (try? String(contentsOfFile: "Renderer/src/main.js", encoding: .utf8)) ?? ""
     for counter in ["renders", "documentReplacements", "decorationRebuilds",

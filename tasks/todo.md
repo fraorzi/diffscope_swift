@@ -3549,3 +3549,36 @@ The lesson is not about the guard, it is about the edit. **A scripted replacemen
 match is indistinguishable from one that did** — same exit code, same green build, same green
 suite — and the only thing standing between that and a false claim in the log was a check written
 for a different purpose. Assert the anchor, or do not script the edit.
+
+## Step — Fala 2: what the reader chose survives what they did not choose
+
+- [x] **One rule, stated once, about what each value is an index into.** Four values record a
+      reader's decisions and they were governed by two rules with nothing saying why: `expanded` and
+      `stopIndex` were cleared on **every** render, `expandedReflows` and `noticesExpanded` only on
+      a pin change. Fold sets index the fold list, which a mode change rebuilds differently, so they
+      follow the pin **and** the mode. `stopIndex` indexes `stops`, which the engine computes from
+      the canonical byte diff and which is therefore the same list in every mode — it follows the
+      pin alone, and is clamped rather than kept when its list shrinks.
+- [x] **The unified view is built with the wrap the reader chose.** It is built lazily, so a reader
+      who turned wrapping off before ever opening unified got it back the moment they did, while the
+      menu item, the button and the shell all still said off.
+- [x] **Switching layout keeps the place.** ⌥⌘→'s own comment has claimed since DEC-059 that the
+      change stop survives; it does now. Where the reader was *scrolled* to could not carry across —
+      two layouts are two documents — so a reader who has navigated is put back on their stop, and
+      one who has only scrolled gets their first visible line matched by content.
+- [x] Opening a withheld block does the same, instead of dropping the reader wherever `scrollTop`
+      clamped after the composed document was rebuilt beneath them.
+- [x] **A new document starts at the top.** `applySide` replaces the text and not the scroll offset,
+      so opening a file inherited the previous file's position, clamped — the middle of a file the
+      reader had just opened, at an offset that meant nothing in it.
+- [x] **Folding a directory is not a selection**, so it no longer re-renders the diff. Its fallback
+      also stops throwing the reader to row zero: the comment promised the selection "falls to the
+      folder that swallowed it" and the code called `firstSelectable`, which is the top of the list.
+- [x] Collapsed directories survive a reselect of the same repository — the sweep re-selects
+      whenever the open repository's row *index* moves, and that was wiping the set.
+- [x] The terminal drawer reopens at the height the reader left it. DEC-077 fixed this for the
+      vertical dividers and it was never carried across to the horizontal one.
+- [x] `runReaderStateSelftest`: open a fold, re-render the identical model, and the fold is still
+      open. Negative control reproduces the defect exactly — `foldMarks 0→2`, `foldStateResets: 1`.
+
+2161 → 2172 checks, 39 selftest arms.

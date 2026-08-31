@@ -536,6 +536,9 @@ enum Theme {
     /// The terminal pane (DEC-054). Starting height and floor, both as constraints so the divider
     /// stays draggable — `--ds-term-*` covers what is drawn *inside* it.
     static let terminalPaneHeight: CGFloat = 260
+    /// Below this a drag is a collapse rather than a size, and remembering it would give the reader
+    /// back a drawer with nothing in it the next time they opened one.
+    static let terminalMinimumHeight: CGFloat = 80
     static let terminalPaneMinimumHeight: CGFloat = 90
 }
 

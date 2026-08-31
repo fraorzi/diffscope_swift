@@ -237,6 +237,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     let terminal = TerminalPane()
     var terminalSplit: NSSplitView!
     var terminalHeightConstraint: NSLayoutConstraint!
+    /// How tall the reader last made the drawer. `Theme.terminalPaneHeight` is the height it opens
+    /// at the first time and the height it went back to every time after: the drawer's split has no
+    /// delegate, and `splitViewDidResizeSubviews` filters on `=== splitView`, so a drag on the
+    /// horizontal divider was never written down anywhere. DEC-077 fixed exactly this for the
+    /// vertical dividers and the fix was never carried across.
+    var terminalHeight: CGFloat = Theme.terminalPaneHeight
     var terminalMinimumConstraint: NSLayoutConstraint!
     var terminalMenuItem: NSMenuItem?
     /// The drawer's own control (DEC-090). Held because the selftest asserts it is drawn where the
@@ -878,7 +884,13 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     func setTerminalVisible(_ visible: Bool, startingShell: Bool) {
         terminalVisible = visible
         terminal.webView.isHidden = !visible
-        terminalHeightConstraint.constant = visible ? Theme.terminalPaneHeight : 0
+        // Remember where the reader left it before it goes away, so reopening gives back the
+        // drawer they had rather than the one the theme suggests.
+        if !visible, terminalHeightConstraint.constant > 0 {
+            let drawn = terminal.webView.frame.height
+            if drawn >= Theme.terminalMinimumHeight { terminalHeight = drawn }
+        }
+        terminalHeightConstraint.constant = visible ? terminalHeight : 0
         terminalMinimumConstraint.isActive = visible
         terminalMenuItem?.state = visible ? .on : .off
         updateTerminalButton()
@@ -891,7 +903,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             window.contentView?.layoutSubtreeIfNeeded()
             return
         }
-        terminalSplit.setPosition(terminalSplit.bounds.height - Theme.terminalPaneHeight,
+        terminalSplit.setPosition(terminalSplit.bounds.height - terminalHeight,
                                   ofDividerAt: 0)
         terminal.webView.needsDisplay = true
         window.displayIfNeeded()
@@ -1089,6 +1101,62 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             self.snapshot(named: "structural") {
                 self.runModeAgreementSelftest(model: outcome.model, validation: outcome.validation,
                                               structuralProbe: text)
+            }
+        }
+    }
+
+    /// **What the reader chose survives a refresh that changed nothing they chose it about.**
+    ///
+    /// Four values record a reader's decisions about a document, and they were governed by two
+    /// different rules with nothing saying why: `expandedReflows` and `noticesExpanded` were cleared
+    /// when the pinned pair changed, `expanded` and `stopIndex` on **every** render. So an ordinary
+    /// refresh — a different file saved, or the app's own `git diff` touching the index stat cache —
+    /// collapsed every region the reader had opened and lost their place in the change list.
+    ///
+    /// The arm opens a fold, re-renders the identical model, and asks whether it is still open.
+    private func runReaderStateSelftest(then next: @escaping () -> Void) {
+        let filler = (1...30).map { "const filler\($0) = \($0);\n" }.joined()
+        let old = [UInt8]("const a = 1;\n\(filler)const z = 2;\n".utf8)
+        let new = [UInt8]("const a = 11;\n\(filler)const z = 22;\n".utf8)
+        let outcome = buildModel(path: "state.tsx", old: old, new: new, mode: .structural)
+        let render = buildRenderModel(model: outcome.model, pinOld: "pinW", pinNew: "pinX",
+                                      mode: "structural", pathTaken: outcome.pathTaken,
+                                      parser: outcome.parser, validation: outcome.validation,
+                                      notices: outcome.notices)
+        guard let json = try? encodeRenderModel(render) else { exit(77) }
+        lastPushedJSON = nil
+        push(json)
+        bridge("JSON.stringify(window.diffscopeCommand(\"expandAll\"))") { _, _ in
+            self.bridge("JSON.stringify(window.diffscopeProbe())") { opened, _ in
+                let before = (opened as? String) ?? "nil"
+                // The identical model, pushed again. `push` would swallow it, which is the point of
+                // the guard — so the guard is stepped around here rather than removed, because what
+                // is being measured is what `diffscopeRender` does when it *is* called twice.
+                self.lastPushedJSON = nil
+                self.bridge("window.diffscopeResetCounters()") { _, _ in
+                    self.push(json)
+                    self.bridge("JSON.stringify(window.diffscopeProbe())") { again, _ in
+                        let after = (again as? String) ?? "nil"
+                        self.bridge("JSON.stringify(window.diffscopeCounters())") { counts, _ in
+                            let counters = (counts as? String) ?? "nil"
+                            func marks(_ probe: String) -> String {
+                                probe.range(of: "\"foldMarks\":").map {
+                                    String(probe[$0.upperBound...].prefix(while: { $0.isNumber }))
+                                } ?? "?"
+                            }
+                            // Expanding leaves no fold marks; a reset would bring them back.
+                            let stillOpen = marks(before) == marks(after)
+                            let noLoss = counters.contains("\"foldStateResets\":0")
+                            let ok = stillOpen && noLoss
+                            FileHandle.standardError.write(Data(
+                                ("SELFTEST reader-state=\(ok ? "OK" : "MISMATCH")"
+                                 + " foldMarks \(marks(before))→\(marks(after))"
+                                 + " counters=\(counters)\n").utf8))
+                            if !ok { exit(78) }
+                            next()
+                        }
+                    }
+                }
             }
         }
     }
@@ -1292,7 +1360,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 self.snapshot(named: "navigation") {
                     self.runExpandToggleSelftest {
                         self.runRedrawSelftest {
-                            self.runUnifiedPlaceSelftest { self.runRefreshSelftest() }
+                            self.runUnifiedPlaceSelftest {
+                                self.runReaderStateSelftest { self.runRefreshSelftest() }
+                            }
                         }
                     }
                 }
@@ -4676,6 +4746,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// checked one run-loop turn later — see `tableViewSelectionDidChange`.
     private var openRepositoryGeneration = 0
 
+    /// Which repository the collapsed-directory set belongs to. Compared by path rather than by
+    /// snapshot: the sweep hands over new snapshot objects every time, so identity says nothing.
+    private var openRepositoryPath: String?
+
     private func restoreFileSelection() {
         guard let path = state.selectedFile?.path else { return }
         restoringSelection = true
@@ -5332,15 +5406,25 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let selected = selectedFilePath()
         state.fileRows = fileTreeRows(state.files, collapsed: state.collapsedDirectories)
         redraw.reloadAll(fileTable, .file, reason: "directory folded or unfolded")
-        // The selection follows its file if the file is still on screen, and falls to the folder
-        // that swallowed it otherwise — never to nothing, which is a pane that has gone blank for
-        // a reason the reader did not ask for.
+        // The selection follows its file if the file is still on screen. **Folding is not a
+        // selection**, so re-selecting the same file must not re-render the diff — the row index
+        // moved because rows above it disappeared, which says nothing about what the reader wants
+        // to read, and rendering it discarded their position for an act that changed no bytes.
+        restoringSelection = true
+        defer { restoringSelection = false }
         if let selected, let row = state.fileRows.firstIndex(where: { $0.file?.path == selected }) {
             fileTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
             fileTable.scrollRowToVisible(row)
-        } else if let first = RowNavigation.firstSelectable(in: state.fileRows) {
-            fileTable.selectRowIndexes(IndexSet(integer: first), byExtendingSelection: false)
-            fileTable.scrollRowToVisible(first)
+        } else if let previous = fileTable.selectedRow >= 0 ? fileTable.selectedRow : nil,
+                  let row = RowNavigation.nearestSelectable(in: state.fileRows, to: previous) {
+            // The comment above this used to promise the selection "falls to the folder that
+            // swallowed it", and the code called `firstSelectable`, which is the **top of the
+            // list** — folders are not selectable at all (`shouldSelectRow`). Folding the folder
+            // your file was in threw you to row zero. `nearestSelectable` searches forward from
+            // where the reader was and only then backwards, which is DEC-106's rule for the same
+            // question asked of a refresh.
+            fileTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            fileTable.scrollRowToVisible(row)
         }
         statusLabel.stringValue = folded ? "folded \(key)" : "unfolded \(key)"
     }
@@ -6717,7 +6801,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                       self.state.selectedRepository?.url == repository.url else { return }
                 self.startWatching(repository)
                 self.followTerminalIfPossible(repository)
-                self.state.collapsedDirectories = []
+                // **Only when the repository actually changed.** The sweep re-selects a row
+                // whenever the open repository's *index* moves — another repository appearing or
+                // disappearing above it is enough — and that fired this delegate and threw away
+                // every folder the reader had collapsed, for a list that holds the same files.
+                if self.openRepositoryPath != repository.url.standardizedFileURL.path {
+                    self.state.collapsedDirectories = []
+                    self.openRepositoryPath = repository.url.standardizedFileURL.path
+                }
                 self.reloadFiles()
                 self.refreshGitState()
             }
