@@ -958,7 +958,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let now = Date()
         guard now.timeIntervalSince(lastCommandRefresh) > RefreshDebounce.quietPeriod else { return }
         lastCommandRefresh = now
-        rescan()
+        // **The repository the command ran in.** A command typed in the drawer runs in the open
+        // repository, so sweeping every configured one — which is what `rescan()` does — is work
+        // for repositories the reader has not touched. The file list and the diff arrive on their
+        // own about 440 ms later, when FSEvents sees `.git` change (T3-A); this is the immediate
+        // half, and it is one `git status` rather than one per repository.
+        refreshOpenRepositoryRow()
     }
 
     /// ⌥⌘K. The explicit half of DEC-056: when the guard refused, the reader decides.
@@ -4611,10 +4616,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 // What a repository row draws, so a sweep that found nothing new redraws nothing
                 // (DEC-109). The snapshots themselves are new objects every time, so identity is no
                 // help; this is the content.
-                let drawn = outcome.snapshots.map { snapshot in
-                    [snapshot.url.path, snapshot.head.displayText, "\(snapshot.uncommittedCount)",
-                     snapshot.aheadCount.map(String.init) ?? "?"].joined(separator: "\u{1}")
-                }
+                let drawn = outcome.snapshots.map(self.repositoryRowText)
                 let unchanged = drawn == self.lastDrawnRepositoryRows
                 self.lastDrawnRepositoryRows = drawn
                 self.state.repositories = outcome.snapshots
@@ -4665,8 +4667,19 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     ///
     /// Matched by path rather than by index, because a sweep reorders and regroups: the row a file
     /// was on is not the row it is on now, and selecting the old index would mark the wrong file.
+    /// True while `restoreFileSelection` is putting the selection back where it was. The table's
+    /// delegate cannot otherwise tell *the reader chose a file* from *the list was rebuilt and the
+    /// same file is now three rows further down*, and it treated both as a fresh open.
+    private var restoringSelection = false
+
+    /// Which repository selection is allowed to do the heavy work. Bumped when a row is selected,
+    /// checked one run-loop turn later — see `tableViewSelectionDidChange`.
+    private var openRepositoryGeneration = 0
+
     private func restoreFileSelection() {
         guard let path = state.selectedFile?.path else { return }
+        restoringSelection = true
+        defer { restoringSelection = false }
         if let row = state.fileRows.firstIndex(where: { $0.file?.path == path }) {
             guard fileTable.selectedRow != row else { return }
             fileTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
@@ -4709,6 +4722,48 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let lightBox = window.standardWindowButton(.closeButton)
             .map { $0.convert($0.bounds, to: nil) } ?? .zero
         return (rowBox.midY, lightBox.midY)
+    }
+
+    /// Everything a repository row draws, as one string. DEC-109 compares this rather than the
+    /// snapshot objects, which are new every sweep and so never equal. One definition, because two
+    /// places now ask the question and a second copy would drift.
+    func repositoryRowText(_ snapshot: RepositorySnapshot) -> String {
+        [snapshot.url.path, snapshot.head.displayText, "\(snapshot.uncommittedCount)",
+         snapshot.aheadCount.map(String.init) ?? "?"].joined(separator: "\u{1}")
+    }
+
+    /// **One repository, re-read.** A write changes the branch, the uncommitted count and the ahead
+    /// count of the repository it was made in, and of no other — but `afterWrite` reached for
+    /// `rescan()`, which re-discovers every configured source and sweeps every repository found,
+    /// at `max(4, cores × 2)` concurrent git processes, after a single staged line.
+    ///
+    /// It also refreshes `state.selectedRepository` itself. That snapshot is a stored value and the
+    /// sweep only replaces it when the row *index* moves, so after a write in this window the head
+    /// and the base it carries were the ones from before the write — which is what decides whether
+    /// a scope is available.
+    func refreshOpenRepositoryRow() {
+        guard let repository = state.selectedRepository,
+              let row = state.repositories.firstIndex(where: { $0.url == repository.url })
+        else { return }
+        let override = state.configuration.baseOverrides[repository.url.standardizedFileURL.path]
+        DispatchQueue.global(qos: .utility).async {
+            guard let snapshot = try? self.reader.snapshot(of: repository.url,
+                                                           baseOverride: override) else { return }
+            DispatchQueue.main.async {
+                guard row < self.state.repositories.count,
+                      self.state.repositories[row].url == repository.url else { return }
+                let text = self.repositoryRowText(snapshot)
+                let changed = row >= self.lastDrawnRepositoryRows.count
+                    || self.lastDrawnRepositoryRows[row] != text
+                self.state.repositories[row] = snapshot
+                self.state.selectedRepository = snapshot
+                if row < self.lastDrawnRepositoryRows.count { self.lastDrawnRepositoryRows[row] = text }
+                guard changed else { return }
+                self.redraw.reloadRows(self.repoTable, .repo, IndexSet(integer: row),
+                                       reason: "the open repository changed under a write")
+                self.updateBaseBlock(for: snapshot)
+            }
+        }
     }
 
     func rescan() {
@@ -6084,7 +6139,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// What the window is currently showing: the two content hashes and the mode they were drawn
     /// under. Read on the render queue, written only here on the main thread, and captured before
     /// the hop so the two never race.
-    private var displayedPin: (old: String, new: String, mode: String, path: String)?
+    private var displayedPin: RenderPin?
 
     private func render(file: ChangedFile, previousAnchor: RefreshAnchor?, restoringStop: Int? = nil) {
         guard let repository = state.selectedRepository else { return }
@@ -6103,6 +6158,25 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             }) ?? (try? self.scopes.pinnedPair(
                 for: file, scope: self.state.scope, in: repository.url,
                 mergeBaseRev: self.state.mergeBaseRev)) else { return }
+
+            // **A refresh of an unchanged document does nothing at all.**
+            //
+            // The pinned pair carries a content hash per side, so *is this the same document* is
+            // answerable here — before the parse, which is the expensive part, and before the model
+            // is built, encoded and pushed across the bridge.
+            //
+            // `push` has guarded the last step since DEC-109, and the UI audit found that guard
+            // dead on the path it was written for: the model carries `restore`, computed from where
+            // the reader is standing, so a reader who had scrolled produced a different JSON on
+            // every refresh and paid for a document that had not changed. Asking about the bytes is
+            // cheaper *and* cannot be defeated by the reader moving.
+            //
+            // `restoringStop` is the deliberate exception: ⌥⌘V re-renders the same pair on purpose,
+            // to put the reader back at a stop after a mode change.
+            let wanted = RenderPin(path: file.path, mode: mode.rawValue,
+                                   oldHash: pair.oldHash, newHash: pair.newHash)
+            if renderIsRedundant(displayed: displayed, wanted: wanted,
+                                 restoringStop: restoringStop) { return }
             // DEC-049: the file was still being written, so these bytes may be half of one
             // version and half of another. Showing them with a warning would still be showing a
             // blend — the watcher fires again when the writing stops.
@@ -6146,8 +6220,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 guard self.state.selectedFile?.path == file.path else { return }
                 let position = self.filePositionText().map { "\($0) · " } ?? ""
                 self.statusLabel.stringValue = "\(position)\(file.path) · \(outcome.summary)"
-                self.displayedPin = (old: pair.oldHash, new: pair.newHash,
-                                     mode: mode.rawValue, path: file.path)
+                self.displayedPin = wanted
                 if self.rendererReady { self.push(json) } else { self.pendingModel = json }
                 // ⌥⌘V (DEC-057): the stop is restored *after* the new model is in the document,
                 // because the stop list belongs to the model that is on screen.
@@ -6628,14 +6701,40 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                 ?? repository.displayName
             titlePathLabel.stringValue = repository.url.path.replacingOccurrences(
                 of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
-            startWatching(repository)
-            followTerminalIfPossible(repository)
-            state.collapsedDirectories = []
-            reloadFiles()
-            refreshGitState()
+            // **A row passed through is not a row chosen.** Everything below costs real work — a
+            // torn-down and rebuilt `FSEventStream` with its three-level `node_modules` walk, two
+            // `git status` reads, five plumbing reads — and under the arrow keys every intermediate
+            // row was paying it. A reader travelling ten rows paid ten sweeps for nine repositories
+            // they never looked at; a mouse user clicking the tenth paid one.
+            //
+            // Coalesced rather than debounced on a timer the reader can feel: the work is scheduled
+            // for the next turn of the run loop, and a selection that has moved on by then cancels
+            // it. Holding an arrow key down settles on the row the reader stops at.
+            openRepositoryGeneration += 1
+            let generation = openRepositoryGeneration
+            DispatchQueue.main.async { [weak self] in
+                guard let self, generation == self.openRepositoryGeneration,
+                      self.state.selectedRepository?.url == repository.url else { return }
+                self.startWatching(repository)
+                self.followTerminalIfPossible(repository)
+                self.state.collapsedDirectories = []
+                self.reloadFiles()
+                self.refreshGitState()
+            }
         } else {
             guard table.selectedRow >= 0, table.selectedRow < state.fileRows.count,
                   let file = state.fileRows[table.selectedRow].file else { return }
+            // **One save used to cost two renders.** A refresh rebuilds the list; if the selected
+            // file's row index moved, `restoreFileSelection` re-selects it, the delegate fires, and
+            // `showDiff` renders it with **no anchor** — so the reader's position is discarded.
+            // `handle(_:in:)` then calls `refreshCurrentFile()`, which renders the same file again,
+            // this time carrying the anchor. The first render was pure loss: a full parse and a
+            // document replacement whose only effect was to throw the reader's place away before
+            // the second render tried to restore it.
+            //
+            // A restoration that lands on the *same* file is not a selection. One that lands on a
+            // neighbour — the file left the scope, DEC-106 — is, and still renders.
+            if restoringSelection, file.path == state.selectedFile?.path { return }
             showDiff(for: file)
         }
     }

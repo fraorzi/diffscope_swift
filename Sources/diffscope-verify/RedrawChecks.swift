@@ -1,4 +1,5 @@
 import Foundation
+import DiffScopeShell
 
 /// There is one road to a redraw, and it has a counter on it.
 ///
@@ -73,6 +74,80 @@ func runRedrawChecks(_ reportRaw: (String, Bool, String) -> Void) {
     let commented = "        // `reloadData` keeps the selected index and this pass does not change"
     report("control: a comment naming reloadData is not an offence",
            directCalls(in: commented).isEmpty)
+
+    print("\n=== a refresh of an unchanged document does no work ===")
+    let shell = (try? String(contentsOfFile: "Sources/diffscope-app/main.swift", encoding: .utf8)) ?? ""
+    let git = (try? String(contentsOfFile: "Sources/diffscope-app/GitActions.swift",
+                           encoding: .utf8)) ?? ""
+
+    // The decision itself, asked every question it has. It is a pure function for exactly this
+    // reason — the rule it encodes cannot otherwise be exercised without driving a window, and a
+    // rule checked once by hand is a rule that drifts.
+    let showing = RenderPin(path: "a.tsx", mode: "structural", oldHash: "h1", newHash: "h2")
+    report("the same document in the same mode is not drawn again",
+           renderIsRedundant(displayed: showing, wanted: showing, restoringStop: nil))
+    for (name, wanted) in [
+        ("a different file", RenderPin(path: "b.tsx", mode: "structural", oldHash: "h1", newHash: "h2")),
+        ("a different mode", RenderPin(path: "a.tsx", mode: "raw", oldHash: "h1", newHash: "h2")),
+        ("changed old bytes", RenderPin(path: "a.tsx", mode: "structural", oldHash: "x", newHash: "h2")),
+        ("changed new bytes", RenderPin(path: "a.tsx", mode: "structural", oldHash: "h1", newHash: "x")),
+    ] {
+        report("\(name) is drawn",
+               !renderIsRedundant(displayed: showing, wanted: wanted, restoringStop: nil))
+    }
+    // Both halves. The second is the one that matters: a guard against redrawing is one line from
+    // being a way never to draw at all.
+    report("nothing on screen means draw",
+           !renderIsRedundant(displayed: nil, wanted: showing, restoringStop: nil))
+    report("and ⌥⌘V re-renders the same pair on purpose",
+           !renderIsRedundant(displayed: showing, wanted: showing, restoringStop: 3))
+    report("the render asks it rather than deciding for itself",
+           shell.contains("renderIsRedundant(displayed: displayed, wanted: wanted,"))
+    // Inside `render`, and before the build — the whole value of the pin is that it is asked
+    // before the parse rather than after it.
+    report("and it is asked before the model is built",
+           shell.range(of: "private func render(file: ChangedFile").map { start in
+               let body = String(shell[start.lowerBound...].prefix(9000))
+               guard let pin = body.range(of: "renderIsRedundant(displayed:"),
+                     let build = body.range(of: "buildModel(path: file.path") else { return false }
+               return pin.lowerBound < build.lowerBound
+           } ?? false)
+    // Both halves, deliberately: a guard against redrawing is one line from being a way never to
+    // draw at all. Four surfaces can take the pane away from the diff or empty it.
+    report("a pin is forgotten wherever the document stops being the diff",
+           shell.components(separatedBy: "displayedPin = nil").count - 1 >= 4,
+           "\(shell.components(separatedBy: "displayedPin = nil").count - 1) sites")
+    report("and the pin it records is the one it compared",
+           shell.contains("self.displayedPin = wanted"))
+
+    // The sweep runs on a concurrent queue, so *is this the newest answer* is a different question
+    // from *is this still the repository*, and the scope it counted for is a third.
+    report("the annotation sweep checks generation, repository and scope",
+           shell.contains("generation == self.annotationGeneration")
+               && shell.contains("self.state.selectedRepository?.url == repository.url")
+               && shell.contains("self.state.scope == scope"))
+    report("and it redraws only the rows whose annotation or count changed",
+           shell.contains("previousAnnotations[path] != found[path]")
+               && shell.contains("previousCounts[path] != counts[path]"))
+    report("refreshGitState redraws only the boxes that changed",
+           git.contains("previousStaging[path] != state.staging[path]"))
+    // A write changes the counts of one repository. `rescan()` sweeps every configured one.
+    report("a write refreshes the repository it was made in, not all of them",
+           git.range(of: "func afterWrite()").map { range in
+               let body = String(git[range.lowerBound...].prefix(600))
+               return body.contains("refreshOpenRepositoryRow()") && !body.contains("rescan()\n")
+           } ?? false)
+    report("and a command finishing in the drawer does the same",
+           shell.range(of: "func refreshAfterCommand()").map { range in
+               String(shell[range.lowerBound...].prefix(1200)).contains("refreshOpenRepositoryRow()")
+           } ?? false)
+    // A row passed through under the arrow keys is not a row chosen.
+    report("walking the repository list coalesces its work",
+           shell.contains("generation == self.openRepositoryGeneration"))
+    // A restoration that lands on the same file is not a selection: rendering it discarded the
+    // reader's position a moment before the anchored render tried to restore it.
+    report("a restored selection on the same file does not render again",
+           shell.contains("if restoringSelection, file.path == state.selectedFile?.path { return }"))
 
     print("\n=== the renderer counts what it redrew ===")
     let renderer = (try? String(contentsOfFile: "Renderer/src/main.js", encoding: .utf8)) ?? ""

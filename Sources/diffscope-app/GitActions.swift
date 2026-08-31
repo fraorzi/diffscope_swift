@@ -1039,7 +1039,10 @@ extension Controller {
     func afterWrite() {
         reloadFiles()
         refreshGitState()
-        rescan()
+        // **The repository that was written to, not all of them.** `rescan()` re-discovers every
+        // configured source and sweeps every repository it finds; a staged line changes the counts
+        // of exactly one.
+        refreshOpenRepositoryRow()
     }
 
     // ---- asking --------------------------------------------------------------------------------

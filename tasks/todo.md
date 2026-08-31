@@ -3515,3 +3515,37 @@ The pin is compared on content hashes rather than on the serialised model, and t
 point: `pair.oldHash`/`pair.newHash` are what the engine already computes to pin a comparison, so
 *is this the same document* is answerable before any of the expensive work. ⌥⌘V is the one
 deliberate exception — it re-renders the same pair on purpose to put the reader back at a stop.
+
+## Step — Fala 1 finished, and a correction to the step above it
+
+- [x] **The pin guard from the previous step was never actually there.** The edit that inserted it
+      matched nothing — a `str.replace` with `for file:` where the source says `for:` — and a
+      no-op replacement is silent. The build stayed green, the suite stayed green, and the commit
+      message claimed a guard that did not exist. **The source checks written one step later are
+      what caught it**, which is the only reason it was a twenty-minute error rather than a
+      milestone-long one. Every scripted edit since asserts its anchor.
+- [x] The decision is now a pure function, `renderIsRedundant` in `DiffScopeShell/RenderPin.swift`,
+      for the reason `RefreshDebounce` and `InputRouter` are: a rule that can only be exercised by
+      driving a window gets checked once, by hand, and then drifts. It is asked all seven of its
+      questions — same document, different file, different mode, either side's bytes changed,
+      nothing on screen, and ⌥⌘V restoring a stop.
+- [x] One save costs one render. A refresh rebuilds the list; if the selected file's row moved,
+      `restoreFileSelection` re-selected it, the delegate fired, and `showDiff` rendered it **with
+      no anchor** — discarding the reader's position a moment before the anchored render tried to
+      restore it. A restoration landing on the same file is no longer a selection.
+- [x] `afterWrite` refreshes **the repository it wrote to**, not every configured one, and so does
+      a command finishing in the drawer. `refreshOpenRepositoryRow` also refreshes
+      `state.selectedRepository` itself, which the sweep only replaced when the row index moved —
+      so the head and base deciding scope availability were the ones from before the write.
+- [x] Walking the repository list coalesces: a row passed through under the arrow keys is not a row
+      chosen, and each intermediate row was paying a stream rebuild, a `node_modules` walk, two
+      `git status` reads and five plumbing reads.
+
+2143 → 2161 checks.
+
+### Step — done
+
+The lesson is not about the guard, it is about the edit. **A scripted replacement that does not
+match is indistinguishable from one that did** — same exit code, same green build, same green
+suite — and the only thing standing between that and a false claim in the log was a check written
+for a different purpose. Assert the anchor, or do not script the edit.
