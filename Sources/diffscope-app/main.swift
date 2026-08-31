@@ -6110,6 +6110,14 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             updateBaseBlock(for: repository)
             updatePaneHeaders()
             redraw.reloadAll(fileTable, .file, reason: "scope unavailable, list emptied")
+            // **And the pane, which used to keep the last diff this scope produced.** It stayed
+            // rendered, scrollable, foldable — and stageable, because neither `stageSelection` nor
+            // `stageHunk` consults availability; they key off `state.selectedFile`. So the window
+            // greyed the control with a stated reason while going on offering the result it had
+            // refused to compute, and a line click in it wrote to the index.
+            state.selectedFile = nil
+            displayedPin = nil
+            clearDiffPane(reason: "\(state.scope.title) is unavailable here — \(reason)")
             statusLabel.stringValue = "\(state.scope.title) unavailable — \(reason)"
             return
         }
@@ -6189,6 +6197,17 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         pushComparison(comparisonLabel.stringValue)
     }
 
+    /// Empty the pane and say why. The window stops showing a diff it can no longer stand behind
+    /// rather than leaving the last one it produced on screen, where it stays scrollable — and,
+    /// because staging keys off `state.selectedFile` rather than off what is being compared,
+    /// stageable.
+    func clearDiffPane(reason: String) {
+        guard let json = try? JSONSerialization.data(withJSONObject: [reason]),
+              let argument = String(data: json, encoding: .utf8) else { return }
+        bridge("window.diffscopeClearDiff(\(argument.dropFirst().dropLast()))")
+        lastPushedJSON = nil
+    }
+
     private func pushComparison(_ text: String) {
         guard let json = try? JSONSerialization.data(withJSONObject: [text]),
               let argument = String(data: json, encoding: .utf8) else { return }
@@ -6209,7 +6228,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// A refresh asks the renderer where the reader is *before* rebuilding, because the answer is
     /// about the document currently on screen (DEC-034). The engine then decides where that anchor
     /// lands in the new model; the renderer only executes the decision.
-    private func refreshCurrentFile() {
+    func refreshCurrentFile() {
         guard let file = state.selectedFile else { return }
         bridge("JSON.stringify(window.diffscopeAnchorState())") { value, _ in
             var anchor: RefreshAnchor?
@@ -6266,6 +6285,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             // blend — the watcher fires again when the writing stops.
             guard pair.stable else {
                 DispatchQueue.main.async {
+                    guard self.state.selectedFile?.path == file.path else { return }
                     self.statusLabel.stringValue =
                         "\(file.path) is being written — showing it once the file settles"
                 }
@@ -6279,6 +6299,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                                       bytes: pair.newBytes.isEmpty ? pair.oldBytes : pair.newBytes)
             if kind.rendersAsImage {
                 DispatchQueue.main.async {
+                    // The same guard the text path has carried since M8-J. Without it a slow image
+                    // comparison lands under whichever file the reader has since moved to — one
+                    // file's picture under another file's name.
+                    guard self.state.selectedFile?.path == file.path else { return }
                     self.showRendered(file: file, oldBytes: pair.oldBytes, newBytes: pair.newBytes,
                                       kind: kind)
                 }
@@ -6349,20 +6373,29 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         switch signal {
         case .changed, .rescan:
             let selected = state.selectedFile
+            // `reloadFiles` restores the selection itself, through `restoreFileSelection`, and it
+            // does so under the flag that stops a restoration counting as the reader choosing a
+            // file. This used to re-select the same row again *without* that flag, so one save
+            // rendered the file twice: once with no anchor, discarding the reader's position, and
+            // once with it, trying to put them back.
             reloadFiles()
-            // Selection survives where the file is still in scope, and says so where it is not.
-            // Against the drawn rows, not the flat file array: with headers interleaved the two
-            // indices differ, and restoring the flat index would land the reader on a neighbour.
             if let selected, state.files.contains(where: { $0.path == selected.path }) {
-                if let row = state.fileRows.firstIndex(where: { $0.file?.path == selected.path }) {
-                    fileTable.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
-                }
                 refreshCurrentFile()
-            } else if selected != nil {
-                statusLabel.stringValue = "\(selected!.path) is no longer in \(state.scope.title)"
+            } else if let selected {
+                // The row has already followed DEC-106's rule to the nearest surviving neighbour,
+                // and the pane has followed the row — so this says what happened rather than
+                // leaving the reader with a highlighted row and a diff from two different files.
+                statusLabel.stringValue = "\(selected.path) is no longer in \(state.scope.title)"
             }
+            // A dropped-events signal means the change list is **known to be incomplete**, so it
+            // gets the sweep an ordinary change does not need. It used to get the same work plus a
+            // clause appended to whatever sentence happened to be in the status line — the one feed
+            // that admits it lost data getting the narrowest response of any of them.
             if signal == .rescan {
-                statusLabel.stringValue += " · rescanned after dropped file-system events"
+                refreshOpenRepositoryRow()
+                refreshGitState()
+                statusLabel.stringValue = "\(state.files.count) files · \(state.scope.title)"
+                    + " · re-read everything after dropped file-system events"
             }
         case .rootChanged:
             statusLabel.stringValue = "\(repository.displayName) was moved or renamed — auto-refresh stopped"

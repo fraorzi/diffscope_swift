@@ -1043,6 +1043,12 @@ extension Controller {
         // configured source and sweeps every repository it finds; a staged line changes the counts
         // of exactly one.
         refreshOpenRepositoryRow()
+        // **And the pane.** Staging moves bytes between the index and the working tree, which is
+        // exactly what two of the four scopes compare — so the diff the reader is looking at is
+        // stale the moment the write lands, and it used to stay stale until the watcher noticed
+        // `.git` change some hundreds of milliseconds later. This costs nothing when the comparison
+        // did not move: the render asks the pinned pair's content hashes first.
+        refreshCurrentFile()
     }
 
     // ---- asking --------------------------------------------------------------------------------

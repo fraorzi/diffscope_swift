@@ -203,6 +203,66 @@ func runRedrawChecks(_ reportRaw: (String, Bool, String) -> Void) {
     report("the drawer reopens at the height the reader left it",
            shell.contains("terminalHeightConstraint.constant = visible ? terminalHeight : 0"))
 
+    print("\n=== the window shows one answer, and stands behind it ===")
+
+    // Five surfaces share the diff pane and four of them are `flex: 1`, so any two shown at once
+    // split it between two answers. Every show-path used to hide whichever others its author had
+    // in mind, and the render never hid the lens at all.
+    report("one place decides which surface owns the pane",
+           page.contains("const paneSurfaces = {") && page.contains("function showSurface(name)"))
+    var strays: [String] = []
+    for (number, raw) in page.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+        let line = raw.trimmingCharacters(in: .whitespaces)
+        guard line.contains("style.display ="), !line.hasPrefix("//"), !line.hasPrefix("///") else { continue }
+        // The one assignment inside `showSurface`, and the style audit reading a computed value.
+        guard !line.contains("id === name ? shown"), !line.contains("style.display ===") else { continue }
+        strays.append("line \(number + 1): \(line.prefix(60))")
+    }
+    report("and nothing else shows or hides one", strays.isEmpty, strays.joined(separator: " | "))
+    // Control: the scan has to be able to see an offender at all.
+    report("control: a surface shown outside it would be caught",
+           !page.isEmpty && "  host.style.display = \"block\";".contains("style.display ="))
+
+    // An early return that leaves the previous file's answers behind is a window offering to act
+    // on a document it is not showing.
+    report("an unrenderable file clears the folds, stops and footer it is not about",
+           page.range(of: "content cannot be displayed as text").map { range in
+               // Backwards from the sentence the branch prints — the forward form matched a
+               // same-shaped guard in `blockFacts`, four hundred lines earlier.
+               let body = String(page[..<range.lowerBound].suffix(900))
+               return body.contains("folds = [];") && body.contains("stops = [];")
+                   && body.contains("updateFooter(model);") && body.contains("stopIndex = -1;")
+           } ?? false)
+    // A scope that cannot be computed must not go on offering its last result.
+    report("an unavailable scope empties the pane rather than keeping its last diff",
+           shell.contains("clearDiffPane(reason:") && shell.contains("state.selectedFile = nil"))
+    report("and the page has a way to be emptied with a stated reason",
+           page.contains("window.diffscopeClearDiff = function (reason)"))
+    // The newest-wins guard covered the text path only.
+    report("a late image comparison cannot land under another file's name",
+           shell.range(of: "if kind.rendersAsImage {").map { range in
+               String(shell[range.lowerBound...].prefix(700))
+                   .contains("guard self.state.selectedFile?.path == file.path else { return }")
+           } ?? false)
+    report("and neither can a mid-write refusal",
+           shell.range(of: "guard pair.stable else {").map { range in
+               String(shell[range.lowerBound...].prefix(500))
+                   .contains("guard self.state.selectedFile?.path == file.path else { return }")
+           } ?? false)
+    // Staging moves bytes between the index and the working tree, which is what two scopes compare.
+    report("a write refreshes the diff it just changed",
+           git.range(of: "func afterWrite()").map { range in
+               String(git[range.lowerBound...].prefix(1200)).contains("refreshCurrentFile()")
+           } ?? false)
+    // The one feed that admits it lost data used to get a clause appended to whatever sentence
+    // happened to be in the status line.
+    report("a dropped-events signal re-reads more than one file change does",
+           shell.range(of: "if signal == .rescan {").map { range in
+               let body = String(shell[range.lowerBound...].prefix(500))
+               return body.contains("refreshOpenRepositoryRow()") && body.contains("refreshGitState()")
+                   && !body.contains("statusLabel.stringValue +=")
+           } ?? false)
+
     print("\n=== the renderer counts what it redrew ===")
     let renderer = (try? String(contentsOfFile: "Renderer/src/main.js", encoding: .utf8)) ?? ""
     for counter in ["renders", "documentReplacements", "decorationRebuilds",

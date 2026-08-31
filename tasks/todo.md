@@ -3582,3 +3582,33 @@ for a different purpose. Assert the anchor, or do not script the edit.
       open. Negative control reproduces the defect exactly — `foldMarks 0→2`, `foldStateResets: 1`.
 
 2161 → 2172 checks, 39 selftest arms.
+
+## Step — Fala 3: the window shows one answer, and stands behind it
+
+- [x] **One place decides which surface owns the diff pane.** `#stage`, `#unified`, `#lens`,
+      `#rendered` and `#unrenderable` are siblings in one flex column and four are `flex: 1`, so any
+      two shown at once split the pane between two answers. Every show-path hid whichever others its
+      author had in mind, and `diffscopeRender` never touched `#lens` at all — so a refresh arriving
+      while Blame, History or a search result was showing drew the diff underneath it, in half the
+      pane, with the mode pill still naming the lens. `showSurface` is now the only writer, and a
+      check with a scan-based control asserts nothing else shows or hides one.
+- [x] **An unrenderable file clears what it is not about.** The early return left `folds`, `stops`
+      and the footer holding the *previous* file's answers, so the footer offered to expand regions
+      of a file that was no longer on screen and ⌘↓ walked its change list.
+- [x] **An unavailable scope empties the pane** instead of keeping the last diff it produced. That
+      diff stayed rendered, scrollable and — because staging keys off `state.selectedFile` rather
+      than off what is being compared — **stageable**, while the control beside it was greyed out
+      with a stated reason. The window was arguing with itself in two adjacent regions.
+- [x] The newest-wins guard now covers the image path and the mid-write refusal, not just the text
+      path: a slow image comparison could land under whichever file the reader had moved on to.
+- [x] **A write refreshes the diff it just changed.** Staging moves bytes between the index and the
+      working tree, which is exactly what two of the four scopes compare — and the pane stayed stale
+      until the watcher noticed `.git` change some hundreds of milliseconds later. It costs nothing
+      when the comparison did not move, because the render asks the content hashes first.
+- [x] **One save costs one render on the watcher path too.** `handle(_:in:)` re-selected the same
+      row a second time, without the flag that stops a restoration counting as a selection.
+- [x] A dropped-events signal re-reads the repository and the git state rather than appending a
+      clause to whatever sentence happened to be in the status line. The one feed that admits it
+      lost data was getting the narrowest response of any of them.
+
+2172 → 2182 checks.

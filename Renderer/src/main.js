@@ -803,6 +803,27 @@ function applySide(view, side) {
 /// question DEC-059 left open, and says nothing about frame time.
 let lastTimings = null;
 
+/// **Which one thing occupies the diff pane.**
+///
+/// `#stage`, `#unified`, `#lens`, `#rendered` and `#unrenderable` are siblings in one flex column
+/// and four of them are `flex: 1`, so any two shown at once split the pane between two answers.
+/// Every show-path used to hide *some* of the others — whichever ones its author had in mind — and
+/// `diffscopeRender` never touched `#lens` at all. A refresh arriving while Blame, History or a
+/// search result was showing therefore drew the diff underneath it, in half the pane, with the
+/// mode pill still naming the lens.
+///
+/// One place decides, and it hides everything it is not asked for. The shown value is each
+/// surface's own: `#unrenderable` is a paragraph, the rest are flex containers.
+const paneSurfaces = { stage: "flex", unified: "flex", lens: "flex",
+                       rendered: "flex", unrenderable: "block" };
+
+function showSurface(name) {
+  for (const [id, shown] of Object.entries(paneSurfaces)) {
+    const element = document.getElementById(id);
+    if (element) element.style.display = id === name ? shown : "none";
+  }
+}
+
 /// Only the active layout holds a document. Populating both and hiding one would double every
 /// mark in the DOM, and the probes that count marks would agree with themselves while saying
 /// nothing — the shape of failure this project keeps finding in checks that cannot fail.
@@ -828,8 +849,7 @@ function applyLayout(model) {
     // outlive construction, because CodeMirror re-measures inside an animation frame and the frame
     // never comes while the window is occluded. `diffscopeSettle` is what actually clears them, and
     // in a window the reader can see they were never there at all.
-    stage.style.display = "none";
-    host.style.display = "flex";
+    showSurface("unified");
     if (!unified) unified = makeUnifiedPane(host);
     const composeAt = clock();
     const doc = buildUnified(model);
@@ -889,8 +909,7 @@ function applyLayout(model) {
       segmentsIn: model.payload.old.segments.length + model.payload.new.segments.length,
       segmentsOut: model.payload.old.segments.length + model.payload.new.segments.length,
     };
-    host.style.display = "none";
-    stage.style.display = "flex";
+    showSurface("stage");
   }
 }
 
@@ -983,19 +1002,44 @@ window.diffscopeShowLens = function (json) {
     host.appendChild(line);
   }
 
-  document.getElementById("stage").style.display = "none";
-  document.getElementById("unified").style.display = "none";
-  host.style.display = "block";
+  showSurface("lens");
   lastLens = { kind: payload.kind, rows: (payload.rows || []).length };
   return lastLens;
 };
 
 /// Back to the diff. The lens is a projection like the layout is, so leaving it re-renders the
 /// model that was already there rather than asking the shell for a new one.
-window.diffscopeHideLens = function () {
-  document.getElementById("lens").style.display = "none";
+/// The pane, emptied, with a sentence saying why. Used where the window has to stop showing a diff
+/// it can no longer stand behind — a comparison scope that has become impossible, for instance,
+/// whose last result stayed on screen and stageable while the control beside it was greyed out.
+window.diffscopeClearDiff = function (reason) {
+  lastModel = null;
   lastLens = null;
-  if (lastModel) window.diffscopeRender(lastModel);
+  lastRendered = null;
+  lastSummary = null;
+  currentPin = null;
+  folds = [];
+  stops = [];
+  anchors = [];
+  expanded = new Set();
+  expandedReflows = new Set();
+  stopIndex = -1;
+  for (const view of [left, right, unified]) {
+    if (view) view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: "" } });
+  }
+  document.getElementById("unrenderable").textContent = reason;
+  showSurface("unrenderable");
+  const footer = document.getElementById("diff-footer");
+  if (footer) footer.hidden = true;
+  return true;
+};
+
+window.diffscopeHideLens = function () {
+  lastLens = null;
+  // The render is what puts the diff back, and it decides which surface owns the pane. With no
+  // model there is nothing to put back, so the empty split is the honest answer rather than a
+  // lens the reader has just dismissed.
+  if (lastModel) window.diffscopeRender(lastModel); else showSurface("stage");
   return true;
 };
 
@@ -1070,10 +1114,7 @@ window.diffscopeShowSearch = function (json) {
     }
   }
 
-  document.getElementById("stage").style.display = "none";
-  document.getElementById("unified").style.display = "none";
-  document.getElementById("rendered").style.display = "none";
-  host.style.display = "block";
+  showSurface("lens");
   lastLens = { kind: "search", rows: index };
   return lastLens;
 };
@@ -1194,11 +1235,7 @@ window.diffscopeShowRendered = function (json) {
 
   host.append(bar, summary, stage);
   draw();
-  document.getElementById("stage").style.display = "none";
-  document.getElementById("unified").style.display = "none";
-  document.getElementById("lens").style.display = "none";
-  document.getElementById("unrenderable").style.display = "none";
-  host.style.display = "flex";
+  showSurface("rendered");
   lastRendered = { modes: payload.modes.length, mode };
   return lastRendered;
 };
@@ -1861,19 +1898,27 @@ window.diffscopeRender = function (json) {
   currentMode = model.mode;
   renderNotices(model);
 
-  const stage = document.getElementById("stage");
-  const unrenderable = document.getElementById("unrenderable");
-  document.getElementById("rendered").style.display = "none";
   lastRendered = null;
   if (model.payload.kind !== "text") {
-    stage.style.display = "none";
-    unrenderable.style.display = "block";
-    unrenderable.textContent = model.payload.reason || "content cannot be displayed as text";
+    // **The document is not text, so nothing below applies to it** — and until now the early
+    // return left `folds`, `stops` and the footer holding the *previous* file's answers, which the
+    // reader could then act on: the footer offered to expand regions of a file that was no longer
+    // on screen, and ⌘↓ walked its change list.
+    folds = [];
+    stops = [];
+    anchors = [];
+    expanded = new Set();
+    stopIndex = -1;
+    updateFooter(model);
+    showSurface("unrenderable");
+    document.getElementById("unrenderable").textContent =
+      model.payload.reason || "content cannot be displayed as text";
     lastSummary = { ok: true, pin: currentPin, rendered: "unrenderable", mode: currentMode };
     return lastSummary;
   }
-  stage.style.display = "flex";
-  unrenderable.style.display = "none";
+  // The diff owns the pane again — which is what a lens or a rendered comparison sitting in it
+  // needed to be told, and was not: `applyLayout` below shows whichever layout is in force.
+  lastLens = null;
 
   folds = (model.collapses || []).map(fold => ({
     ...fold, kind: "unchanged", label: `${fold.lines} unchanged lines`,
