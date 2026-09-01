@@ -264,6 +264,26 @@ func runRedrawChecks(_ reportRaw: (String, Bool, String) -> Void) {
                    && !body.contains("statusLabel.stringValue +=")
            } ?? false)
 
+    // The render queue is entered asynchronously and never waited on, which is what makes the one
+    // `DispatchQueue.main.sync` inside it safe. A single `renderQueue.sync` would deadlock the
+    // application the first time a reader walked the file list, and nothing else would say so.
+    let waits = shell.split(separator: "\n", omittingEmptySubsequences: false).filter { raw in
+        let line = raw.trimmingCharacters(in: .whitespaces)
+        // Comments name it constantly — the invariant is written down two lines above the code it
+        // protects — so a line that is a comment is not an offence. Same exemption, same reason, as
+        // the `reloadData` scan above.
+        return !line.hasPrefix("//") && !line.hasPrefix("///") && line.contains("renderQueue.sync")
+    }
+    report("nothing waits on the render queue", waits.isEmpty,
+           "the block reads the selection with main.sync, which only works while that holds")
+    report("and a walk stops before the parse rather than after the push",
+           shell.range(of: "renderQueue.async {").map { start in
+               let body = String(shell[start.lowerBound...].prefix(9000))
+               guard let bail = body.range(of: "self.state.selectedFile?.path }) == file.path"),
+                     let build = body.range(of: "buildModel(path: file.path") else { return false }
+               return bail.lowerBound < build.lowerBound
+           } ?? false)
+
     print("\n=== the same question is not asked twice ===")
 
     // One reading, parsed once, derived twice. Checked against bytes rather than against a
@@ -302,6 +322,14 @@ func runRedrawChecks(_ reportRaw: (String, Bool, String) -> Void) {
                && !page.contains("Object.fromEntries(groupCounts(model))"))
     report("the segment projection is a merge walk, not a nested loop",
            page.contains("while (first < runs.length && runs[first].srcEnd <= seg.start) first += 1;"))
+
+    // Stepping hits is a mark moving, not a list changing.
+    report("stepping a search hit moves the mark rather than rebuilding the list",
+           page.contains("window.diffscopeSetSearchCurrent = function (index, summary)")
+               && shell.contains("window.diffscopeSetSearchCurrent(\\(next),"))
+    report("and a full push is the fallback when the list on screen is not that list",
+           page.contains("if (!rows.length || index < 0 || index >= rows.length) return false;")
+               && shell.contains("if (value as? Bool) != true { self.pushSearch(summary: summary) }"))
 
     print("\n=== a control is not redrawn to say what it already says ===")
     let pill = (try? String(contentsOfFile: "Sources/diffscope-app/PillControl.swift",

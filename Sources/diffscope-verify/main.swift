@@ -318,13 +318,30 @@ do {
     let n = 120 * 1024
     let a = (0..<n).map { _ in UInt8(97 + rng.next(26)) }
     let b = (0..<n).map { _ in UInt8(97 + rng.next(26)) }
+    // A baseline on **this** machine, in this build, under whatever load is present: one pass over
+    // the same bytes, which is the cheapest thing anybody could do with them.
+    let baselineStarted = Date()
+    var sink = 0
+    for index in 0..<n where a[index] == b[index] { sink += 1 }
+    let baseline = max(Date().timeIntervalSince(baselineStarted), 0.000_001)
+
     let started = Date()
     let outcome = canonicalDiff(old: a, new: b)
     let elapsed = Date().timeIntervalSince(started)
     var exceeded = false
     if case .budgetExceeded = outcome { exceeded = true }
-    report("120 KB of unrelated bytes returns budgetExceeded", exceeded)
-    report("and returns in under 2 seconds", elapsed < 2.0, String(format: "%.2f s", elapsed))
+    report("120 KB of unrelated bytes returns budgetExceeded", exceeded, "\(sink) bytes agreed")
+    // **A ratio, not a second.** This was `elapsed < 2.0`, which is a bound on the machine rather
+    // than on the behaviour: with another build saturating the cores it measured 589 s and reported
+    // a failure while the code refused exactly as it should. M8-N moved two assertions in
+    // `BudgetChecks` off absolute wall-clock for this reason and this one was missed — the same
+    // shape, in the file that reports the count. Load inflates both numbers, so the ratio holds
+    // where the absolute does not, and the ratio is the claim anyway: *refused rather than ran*
+    // means "costs about what looking at the bytes costs".
+    report("and it refuses at about the cost of one pass over the bytes",
+           elapsed < baseline * 400 + 0.5,
+           String(format: "%.3f s against a %.4f s baseline (%.0f×)",
+                  elapsed, baseline, elapsed / baseline))
 
     let model = trivialModel(oldBytes: a, newBytes: b)
     let result = validate(model)

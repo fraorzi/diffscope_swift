@@ -6068,7 +6068,23 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let next = max(0, min(count - 1, current + delta))
         state.searchIndex = next
         let hit = state.searchHits[next]
-        pushSearch(summary: "\(hit.path):\(hit.line) · hit \(next + 1) of \(count)")
+        let summary = "\(hit.path):\(hit.line) · hit \(next + 1) of \(count)"
+        // **Move the mark rather than rebuilding the list.** This used to re-serialise every hit
+        // across the bridge and rebuild the whole DOM list once per keystroke: a search with four
+        // hundred hits paid for four hundred rows to move one triangle. The page says whether the
+        // list on screen is the one this index is about, and a full push is the fallback rather
+        // than the ordinary path.
+        guard let json = try? JSONSerialization.data(withJSONObject: [summary]),
+              let argument = String(data: json, encoding: .utf8) else {
+            pushSearch(summary: summary)
+            return
+        }
+        let quoted = argument.dropFirst().dropLast()
+        bridge("window.diffscopeSetSearchCurrent(\(next), \(quoted))") { [weak self] value, _ in
+            guard let self else { return }
+            if (value as? Bool) != true { self.pushSearch(summary: summary) }
+        }
+        statusLabel.stringValue = summary
     }
 
     @objc private func modeChanged() {
@@ -6332,6 +6348,21 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
             // DEC-028/DEC-041: asked here, on the file actually being shown, so an active filter is
             // disclosed where the discrepancy it causes is visible.
+            // **The reader has already moved on.** `renderQueue` is serial and the newest wins, so
+            // walking a 63-file tree at keyboard speed used to queue sixty-three renders and *parse
+            // every one of them* — the guard that stops a stale answer reaching the window sat at
+            // the push, after the parse, the model build and the encode had all been paid for.
+            // Asked here it costs a string comparison and saves the whole of it.
+            //
+            // The pinned pair above is deliberately still read: it is what proves the bytes were
+            // captured while the file was selected, and it is cheap beside the parse.
+            //
+            // **`main.sync` is safe here only because nothing ever waits on this queue.** Every
+            // entry to it is `renderQueue.async`; a single `renderQueue.sync` from the main thread
+            // would turn this line into a deadlock, so `RedrawChecks` asserts that none exists.
+            guard DispatchQueue.main.sync(execute: { self.state.selectedFile?.path }) == file.path
+            else { return }
+
             let filterState = self.filters.state(for: file.path, in: repository.url)
             let external = filterState.disclosure.map { [Degradation.filterActive(reason: $0)] } ?? []
             let outcome = self.buildModel(path: file.path, old: pair.oldBytes, new: pair.newBytes,

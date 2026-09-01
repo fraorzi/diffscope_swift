@@ -3639,3 +3639,30 @@ for a different purpose. Assert the anchor, or do not script the edit.
       torn down and rebuilt only when the operation changes.
 
 2182 → 2196 checks.
+
+## Step — Fala 4, part two: a walk stops before the parse, and a step moves one mark
+
+- [x] **Walking the file list stopped parsing files the reader had already left.** `renderQueue` is
+      serial and the newest wins, but the guard that stops a stale answer reaching the window sat at
+      the *push* — after the parse, the model build and the encode had all been paid for. Asked
+      before the parse it costs a string comparison and saves the whole of it. Walking a 63-file
+      tree at keyboard speed used to parse sixty-three files to show one.
+- [x] The `DispatchQueue.main.sync` this needs is safe only because nothing ever waits on the render
+      queue. That was an unwritten invariant; it is now written down and checked, because a single
+      `renderQueue.sync` would deadlock the application the first time a reader walked the list.
+- [x] **Stepping a search hit moves the mark instead of rebuilding the list.** ⌘G used to
+      re-serialise every hit across the bridge and rebuild the whole DOM list once per keystroke — a
+      search with four hundred hits paid for four hundred rows to move one triangle. A full push is
+      the fallback when the page says the list on screen is not the one the index is about.
+
+### Step — done, and one check was found to be a flake rather than a guard
+
+`main.swift`'s *"and returns in under 2 seconds"* failed at **589 s** — not a regression, but two
+verification builds competing for the cores. M8-N moved two assertions in `BudgetChecks` off
+absolute wall-clock for exactly this reason, and wrote down why; **this one, in the file that reports
+the count, was missed.** It now measures one pass over the same bytes on this machine, in this
+build, under whatever load is present, and asserts a ratio. Load inflates both numbers, so the ratio
+holds where the absolute does not — and the ratio is the claim anyway: *refused rather than ran*
+means "costs about what looking at the bytes costs", not "costs under a second".
+
+2198 → 2200 checks.

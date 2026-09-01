@@ -1047,6 +1047,33 @@ window.diffscopeClearDiff = function (reason) {
   return true;
 };
 
+/// Move the mark, do not rebuild the list.
+///
+/// Stepping hits with ⌘G used to re-serialise every hit across the bridge and rebuild the whole
+/// list in the DOM, once per keystroke — a search with four hundred hits paid for four hundred rows
+/// to move one triangle. The rows are the same rows; what changed is which one the reader is on.
+///
+/// Returns `false` when the list on screen is not the one the index is about, so the caller can
+/// fall back to a full push rather than silently marking the wrong row.
+window.diffscopeSetSearchCurrent = function (index, summary) {
+  const rows = document.querySelectorAll("#lens .ds-search-hit");
+  if (!rows.length || index < 0 || index >= rows.length) return false;
+  const previous = document.querySelector("#lens .ds-search-current");
+  if (previous) {
+    previous.classList.remove("ds-search-current");
+    const mark = previous.querySelector(".ds-lens-mark");
+    if (mark) mark.textContent = " ";
+  }
+  const row = rows[index];
+  row.classList.add("ds-search-current");
+  const mark = row.querySelector(".ds-lens-mark");
+  if (mark) mark.textContent = "▸";
+  requestAnimationFrame(() => row.scrollIntoView({ block: "center" }));
+  const header = document.querySelector("#lens .ds-lens-header");
+  if (header && typeof summary === "string") header.textContent = summary;
+  return true;
+};
+
 window.diffscopeHideLens = function () {
   lastLens = null;
   // The render is what puts the diff back, and it decides which surface owns the pane. With no
