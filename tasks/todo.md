@@ -3612,3 +3612,30 @@ for a different purpose. Assert the anchor, or do not script the edit.
       lost data was getting the narrowest response of any of them.
 
 2172 → 2182 checks.
+
+## Step — Fala 4, part one: the same question is not asked twice
+
+- [x] **`reloadFiles` ran `git status --porcelain -uall -z` twice**, once for the changed-file list
+      and once for the staging state — the same command, synchronously, on the main thread, on every
+      refresh. `StatusSnapshot` parses one reading and both derive from it. Sharing it also makes
+      them **agree by construction**: two readings a few milliseconds apart can differ, and the
+      window would draw the list from one and the checkboxes from the other.
+- [x] `StatusSnapshot(porcelainZ:)` is checked against bytes rather than against a repository, so
+      the awkward cases are written down: a non-ASCII path, a rename and its source, a name holding
+      a space and a quote, an unmerged pair.
+- [x] **Decorations are rebuilt only where a document is.** `goToStop` calls `refreshDecorations` on
+      every ⌘↓, and it dispatched at all three views — so one keystroke rebuilt the marks of the
+      layout on screen *and* of the two empty views the other layout leaves behind, each with a sort.
+- [x] An already-empty pane is not emptied again: a unified render replaced both split documents
+      with an empty string whether or not they held one. `documentReplacements` per render: **3 → 2**.
+- [x] The group counts are walked once per render instead of twice — once for the notice bar and
+      once for the summary, over every segment on both sides.
+- [x] `projectSegments` is a merge walk rather than a nested loop. Both lists are sorted by source
+      offset, so the run cursor only moves forward.
+- [x] **The label refuses a write that changes nothing.** DEC-086 fixed this once for `watchLabel`,
+      at the call site, and it stayed the only guarded assignment in the window — a rule kept at call
+      sites has to be remembered at every new one. `QuietLabel` keeps it where it cannot be bypassed.
+- [x] A pill segment relayouts its glass only when its availability changes; the operation banner is
+      torn down and rebuilt only when the operation changes.
+
+2182 → 2196 checks.

@@ -1,5 +1,6 @@
 import Foundation
 import DiffScopeShell
+import DiffScopeGit
 
 /// There is one road to a redraw, and it has a counter on it.
 ///
@@ -262,6 +263,62 @@ func runRedrawChecks(_ reportRaw: (String, Bool, String) -> Void) {
                return body.contains("refreshOpenRepositoryRow()") && body.contains("refreshGitState()")
                    && !body.contains("statusLabel.stringValue +=")
            } ?? false)
+
+    print("\n=== the same question is not asked twice ===")
+
+    // One reading, parsed once, derived twice. Checked against bytes rather than against a
+    // repository, so the awkward cases can be written down rather than constructed.
+    let porcelain = Data(([" M src/a.ts", "?? nowy/żółć.txt", "R  b.ts", "a.ts", "UU c.ts",
+                           "A  \"q r\".ts"].joined(separator: "\0") + "\0").utf8)
+    let snapshot = StatusSnapshot(porcelainZ: porcelain)
+    report("the porcelain reading is parsed once, into entries",
+           snapshot.entries.count == 5, "\(snapshot.entries.count)")
+    report("a non-ASCII path arrives unquoted and unescaped",
+           snapshot.entries.contains { $0.path == "nowy/żółć.txt" },
+           snapshot.entries.map(\.path).joined(separator: " | "))
+    report("a rename carries the path it came from",
+           snapshot.entries.contains { $0.path == "b.ts" && $0.original == "a.ts" })
+    report("and a name with a space and a quote in it is one entry",
+           snapshot.entries.contains { $0.path == "\"q r\".ts" })
+    report("an unmerged pair survives the parse",
+           snapshot.entries.contains { $0.index == "U" && $0.worktree == "U" })
+
+    // The changed-file list and the staging state are two derivations of that one reading. They
+    // used to run `git status` for themselves, one after the other, on the main thread.
+    report("reloadFiles takes one status reading and derives both from it",
+           shell.contains("statusSnapshot = StatusSnapshot(porcelainZ: result.standardOutput)")
+               && shell.contains("gitState.staging(from: $0)"))
+
+    print("\n=== the page does not pay for what it is not showing ===")
+    report("decorations are rebuilt only where a document is",
+           page.range(of: "function refreshDecorations()").map { range in
+               String(page[range.lowerBound...].prefix(400)).contains("view.state.doc.length")
+           } ?? false)
+    report("an already-empty pane is not emptied again",
+           page.contains("if (left.state.doc.length) applySide(left, empty);")
+               && page.contains("if (unified && unified.state.doc.length) {"))
+    report("the group counts are walked once per render",
+           page.contains("lastGroupCounts = groupCounts(model);")
+               && !page.contains("Object.fromEntries(groupCounts(model))"))
+    report("the segment projection is a merge walk, not a nested loop",
+           page.contains("while (first < runs.length && runs[first].srcEnd <= seg.start) first += 1;"))
+
+    print("\n=== a control is not redrawn to say what it already says ===")
+    let pill = (try? String(contentsOfFile: "Sources/diffscope-app/PillControl.swift",
+                            encoding: .utf8)) ?? ""
+    let staging = (try? String(contentsOfFile: "Sources/diffscope-app/StagingControls.swift",
+                               encoding: .utf8)) ?? ""
+    report("the chrome's labels refuse a write that changes nothing",
+           ledger.contains("final class QuietLabel: NSTextField")
+               && shell.contains("statusLabel = QuietLabel(") && shell.contains("watchLabel = QuietLabel(")
+               && shell.contains("comparisonLabel = QuietLabel(")
+               && shell.contains("let field = QuietLabel(labelWithString: \"\")"))
+    report("and the rule lives in the label rather than at 53 call sites",
+           !shell.contains("if statusLabel.stringValue !="))
+    report("a pill segment relayouts its glass only when its availability changes",
+           pill.contains("guard segments[index].enabled != enabled else { return }"))
+    report("the operation banner is rebuilt only when the operation changes",
+           staging.contains("guard drawn != operation else { return }"))
 
     print("\n=== the renderer counts what it redrew ===")
     let renderer = (try? String(contentsOfFile: "Renderer/src/main.js", encoding: .utf8)) ?? ""

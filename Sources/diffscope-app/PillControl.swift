@@ -177,7 +177,13 @@ final class PillControl: NSView {
     // MARK: - The API the window already speaks
 
     func setEnabled(_ enabled: Bool, forSegment index: Int) {
+        // **Only when it changes.** Every refresh asked all four segments of the scope pill whether
+        // they were available, and each answer — the same answer, four times a second under an
+        // autosave — marked the control dirty and re-ran `layoutGlass()`. DEC-086's rule, applied
+        // to a control rather than to a label: rewrite when the meaning changes, not when the
+        // question is asked.
         guard segments.indices.contains(index) else { return }
+        guard segments[index].enabled != enabled else { return }
         segments[index].enabled = enabled
         needsDisplay = true
         // The glass follows: a segment that has just become unavailable must stop being raised in

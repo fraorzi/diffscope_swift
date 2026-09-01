@@ -252,7 +252,14 @@ final class OperationBanner: NSView {
 
     /// Redrawn from the state rather than mutated: the verbs differ per operation, and a banner
     /// that keeps a stale button is a banner offering an action that does not apply.
+    /// What the banner is currently drawn from. The rebuild below tears down every button and
+    /// builds a new one, and `refreshGitState` calls this after **every** write and every repository
+    /// selection — almost always with the same operation, and usually with `.none`.
+    private var drawn: RepositoryOperation?
+
     func show(_ operation: RepositoryOperation) {
+        guard drawn != operation else { return }
+        drawn = operation
         isHidden = !(operation.isInProgress || operation.bannerText != nil)
         label.stringValue = operation.bannerText ?? ""
         for view in stack.arrangedSubviews { stack.removeArrangedSubview(view); view.removeFromSuperview() }

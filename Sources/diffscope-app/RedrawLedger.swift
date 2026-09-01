@@ -125,3 +125,25 @@ final class RedrawLedger {
         }.joined(separator: " · ")
     }
 }
+
+
+/// A label that does not redraw when it is told what it already says.
+///
+/// The chrome writes its labels unconditionally, from `reloadFiles`, from every render, from the
+/// annotation sweep, from the watcher — 53 assignments to the status line alone, most of them the
+/// same sentence again. Each one invalidates the field's intrinsic content size and lays out the
+/// band it sits in.
+///
+/// DEC-086 fixed this once, for `watchLabel`, by writing `if watchLabel.stringValue != sentence`
+/// at the one call site — and it stayed the only guarded assignment in the window, because a rule
+/// kept at call sites has to be remembered at every new one. Kept here it cannot be bypassed: the
+/// only way to write this label is through the setter that checks.
+///
+/// It is deliberately not a no-op for *identical work*: the sentence is still composed by the
+/// caller. What stops is the drawing, which is the part the reader can see.
+final class QuietLabel: NSTextField {
+    override var stringValue: String {
+        get { super.stringValue }
+        set { if super.stringValue != newValue { super.stringValue = newValue } }
+    }
+}

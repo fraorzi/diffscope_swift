@@ -197,32 +197,22 @@ public struct ScopeReader: Sendable {
     private func statusFiles(scope: ComparisonScope, in repository: URL) throws -> [ChangedFile] {
         let result = try runner.run(.statusPorcelainZ(), in: repository)
         guard result.succeeded else { return [] }
-        // NUL-separated, `-uall`, nothing quoted (DEC-111). A rename or a copy emits its new path in
-        // the entry and its old path as the **next** entry, so the walk consumes two.
-        var entries = String(decoding: result.standardOutput, as: UTF8.self)
-            .split(separator: "\0", omittingEmptySubsequences: true)
-            .map(String.init)
-        var files: [ChangedFile] = []
-        var index = 0
-        while index < entries.count {
-            let entry = entries[index]
-            index += 1
-            guard entry.count > 3 else { continue }
-            let chars = Array(entry)
-            let indexStatus = chars[0]
-            let worktree = chars[1]
-            let path = String(chars[3...])
-            var original: String?
-            if indexStatus == "R" || indexStatus == "C" || worktree == "R" || worktree == "C" {
-                if index < entries.count {
-                    original = entries[index]
-                    index += 1
-                }
-            }
+        return changedFiles(scope: scope, from: StatusSnapshot(porcelainZ: result.standardOutput))
+    }
 
-            let staged = indexStatus != " " && indexStatus != "?"
-            let unstaged = worktree != " " && worktree != "?"
-            let untracked = indexStatus == "?" && worktree == "?"
+    /// The same answer, from a reading somebody else already took.
+    ///
+    /// A refresh needs the changed-file list *and* the staging state, and both used to run
+    /// `git status` for themselves — the same command, twice, on the main thread. Taking the
+    /// snapshot once also makes the two agree by construction: two readings a few milliseconds
+    /// apart can differ, and the window would then draw a file list from one and a set of
+    /// checkboxes from the other.
+    public func changedFiles(scope: ComparisonScope, from snapshot: StatusSnapshot) -> [ChangedFile] {
+        var files: [ChangedFile] = []
+        for entry in snapshot.entries {
+            let staged = entry.index != " " && entry.index != "?"
+            let unstaged = entry.worktree != " " && entry.worktree != "?"
+            let untracked = entry.index == "?" && entry.worktree == "?"
 
             let include: Bool
             switch scope {
@@ -233,8 +223,8 @@ public struct ScopeReader: Sendable {
             }
             guard include else { continue }
 
-            let marker = scope == .stagedVsHead ? indexStatus : (unstaged ? worktree : indexStatus)
-            files.append(ChangedFile(path: path, originalPath: original,
+            let marker = scope == .stagedVsHead ? entry.index : (unstaged ? entry.worktree : entry.index)
+            files.append(ChangedFile(path: entry.path, originalPath: entry.original,
                                      kind: kind(for: marker, untracked: untracked)))
         }
         return files.sorted { $0.path < $1.path }

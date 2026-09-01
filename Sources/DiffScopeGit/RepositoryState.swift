@@ -176,22 +176,14 @@ public struct RepositoryStateReader: Sendable {
     public func staging(in repository: URL) -> [String: FileStaging] {
         guard let result = try? runner.run(.statusPorcelainZ(), in: repository),
               result.succeeded else { return [:] }
-        let entries = String(decoding: result.standardOutput, as: UTF8.self)
-            .split(separator: "\0", omittingEmptySubsequences: true)
-            .map(String.init)
+        return staging(from: StatusSnapshot(porcelainZ: result.standardOutput))
+    }
+
+    /// The same answer, from a reading somebody else already took — see `StatusSnapshot`.
+    public func staging(from snapshot: StatusSnapshot) -> [String: FileStaging] {
         var states: [String: FileStaging] = [:]
-        var cursor = 0
-        while cursor < entries.count {
-            let entry = entries[cursor]
-            cursor += 1
-            guard entry.count > 3 else { continue }
-            let characters = Array(entry)
-            let index = characters[0], worktree = characters[1]
-            let path = String(characters[3...])
-            if index == "R" || index == "C" || worktree == "R" || worktree == "C" {
-                if cursor < entries.count { cursor += 1 }
-            }
-            states[path] = Self.staging(index: index, worktree: worktree)
+        for entry in snapshot.entries {
+            states[entry.path] = Self.staging(index: entry.index, worktree: entry.worktree)
         }
         return states
     }

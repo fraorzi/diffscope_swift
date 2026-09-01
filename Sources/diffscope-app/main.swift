@@ -369,12 +369,12 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // control says which four scopes exist, and this says what the chosen one is comparing —
         // for scope 4, which ref and how old its newest commit is, the only staleness signal there
         // is (DEC-010, DEC-011).
-        comparisonLabel = NSTextField(labelWithString: "")
+        comparisonLabel = QuietLabel(labelWithString: "")
         comparisonLabel.font = Theme.font(Theme.textSizeTiny)
         comparisonLabel.textColor = Theme.inkQuiet
         comparisonLabel.lineBreakMode = .byTruncatingMiddle
 
-        statusLabel = NSTextField(labelWithString: "scanning…")
+        statusLabel = QuietLabel(labelWithString: "scanning…")
         statusLabel.font = Theme.font(Theme.textSizeSmall)
         statusLabel.textColor = Theme.inkQuiet
         statusLabel.lineBreakMode = .byTruncatingMiddle
@@ -4249,7 +4249,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// given: the caption is a label for a pane, not a sentence, so it takes the faintest of the
     /// three inks and the smallest of the three sizes.
     private func paneHeaderLabel() -> NSTextField {
-        let field = NSTextField(labelWithString: "")
+        let field = QuietLabel(labelWithString: "")
         field.font = Theme.font(Theme.textSizeTiny, weight: .semibold)
         field.textColor = Theme.inkFaint
         // Truncation rather than clipping (DEC-098): a count cut off mid-number reads as a
@@ -4436,7 +4436,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     private func buildStatusBar() -> NSView {
         // Left: what the watcher is doing and how old the window is (DEC-075), then whatever
         // happened last — the line that used to be the whole bar.
-        watchLabel = NSTextField(labelWithString: "")
+        watchLabel = QuietLabel(labelWithString: "")
         watchLabel.font = Theme.font(Theme.textSizeSmall)
         watchLabel.textColor = Theme.inkQuiet
         watchLabel.lineBreakMode = .byTruncatingTail
@@ -4749,6 +4749,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// Which repository the collapsed-directory set belongs to. Compared by path rather than by
     /// snapshot: the sweep hands over new snapshot objects every time, so identity says nothing.
     private var openRepositoryPath: String?
+
+    /// The porcelain reading the current `reloadFiles` took, so the staging read below it does not
+    /// take a second one. `nil` on the scopes and failure paths that do not produce one.
+    private var statusSnapshot: StatusSnapshot?
 
     private func restoreFileSelection() {
         guard let path = state.selectedFile?.path else { return }
@@ -6128,7 +6132,23 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             state.files = (try? scopes.changedFiles(between: pair.old, and: pair.new,
                                                     in: repository.url)) ?? []
         } else {
-            state.files = (try? scopes.changedFiles(scope: state.scope, in: repository.url, baseRef: baseRef)) ?? []
+            // **One reading of `git status`, used twice.** The changed-file list and the staging
+            // state below are two derivations of the same porcelain output, and each used to run
+            // the command for itself — the same command, twice, synchronously, on every refresh.
+            // Sharing the reading also makes them agree by construction: two readings taken a few
+            // milliseconds apart can differ, and the window would draw the list from one and the
+            // checkboxes from the other.
+            if state.scope == .branchVsMergeBase {
+                state.files = (try? scopes.changedFiles(scope: state.scope, in: repository.url,
+                                                        baseRef: baseRef)) ?? []
+            } else if let result = try? GitRunner().run(.statusPorcelainZ(), in: repository.url),
+                      result.succeeded {
+                statusSnapshot = StatusSnapshot(porcelainZ: result.standardOutput)
+                state.files = scopes.changedFiles(scope: state.scope, from: statusSnapshot!)
+            } else {
+                statusSnapshot = nil
+                state.files = []
+            }
         }
         let previousRows = state.fileRows
         let previousStaging = state.staging
@@ -6138,7 +6158,8 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // DEC-092: the staging state is read before the rows are drawn, because the box in each
         // row is drawn from it. Read rather than remembered — WebStorm, the drawer and every hook
         // share this index.
-        state.staging = gitState.staging(in: repository.url)
+        state.staging = statusSnapshot.map { gitState.staging(from: $0) }
+            ?? gitState.staging(in: repository.url)
         // **Only redraw a list that changed** (DEC-109). Every cell here is built from scratch —
         // there is no reuse — so `reloadData` on a 63-file tree rebuilds sixty-three stacks of views,
         // and this runs on every refresh, including the one every return to the window triggers.

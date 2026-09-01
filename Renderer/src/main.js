@@ -521,9 +521,18 @@ function buildUnified(model) {
 /// moved by that run's displacement; a segment spanning two runs comes out as two marks over the
 /// same bytes, which is what the reader should see in a document where those bytes are apart.
 function projectSegments(segments, runs) {
+  // **A merge walk, not a nested loop.** Every segment used to be compared against every run — and
+  // a unified render does this twice, once per side, on a document where both lists grow with the
+  // file. Both are sorted by source offset (`emit` appends runs in increasing order; the engine
+  // hands segments over in order), so the run cursor only ever moves forward: once a run ends
+  // before the current segment begins, no later segment can reach it either.
+  const ordered = [...segments].sort((a, b) => a.start - b.start || a.end - b.end);
   const out = [];
-  for (const seg of segments) {
-    for (const run of runs) {
+  let first = 0;
+  for (const seg of ordered) {
+    while (first < runs.length && runs[first].srcEnd <= seg.start) first += 1;
+    for (let index = first; index < runs.length && runs[index].srcStart < seg.end; index += 1) {
+      const run = runs[index];
       const from = Math.max(seg.start, run.srcStart);
       const to = Math.min(seg.end, run.srcEnd);
       if (to <= from) continue;
@@ -876,14 +885,18 @@ function applyLayout(model) {
       segmentsIn: model.payload.old.segments.length + model.payload.new.segments.length,
       segmentsOut: segments.length,
     };
-    applySide(left, empty);
-    applySide(right, empty);
+    // **Only if there is something to clear.** A unified render replaced both split documents with
+    // an empty string whether or not they already held one, so every render in the default layout
+    // cost three whole-document dispatches instead of one — two of them to empty panes nobody is
+    // looking at. `documentReplacements` counted three; it counts one once the panes are clear.
+    if (left.state.doc.length) applySide(left, empty);
+    if (right.state.doc.length) applySide(right, empty);
     // And a re-measure asked for explicitly, so the metrics cannot go stale a second way — a
     // window resized while unified is hidden, a font that loads late. It is a no-op when nothing
     // has changed.
     unified.requestMeasure();
   } else {
-    if (unified) {
+    if (unified && unified.state.doc.length) {
       counters.documentReplacements += 1;
       unified.dispatch({ changes: { from: 0, to: unified.state.doc.length, insert: "" } });
       unified.__segments = [];
@@ -1263,10 +1276,17 @@ window.diffscopeSetLayout = function (name) {
   return layout;
 };
 
+/// Rebuild the marks on the views that are actually holding a document.
+///
+/// It used to dispatch at all three, every time, and `goToStop` calls it on **every ⌘↓** — so one
+/// keystroke rebuilt the decoration set of the layout on screen *and* of the two empty views the
+/// other layout leaves behind. `decorationsFor` sorts everything it produces, so the empty pair was
+/// not free; it was two sorts of nothing, plus two state updates CodeMirror then had to reconcile.
 function refreshDecorations() {
-  if (unified) unified.dispatch({ effects: setSegments.of(unified.__segments || []) });
-  for (const view of [left, right]) {
-    view.dispatch({ effects: setSegments.of(view.__segments || []) });
+  for (const view of [left, right, unified]) {
+    if (view && view.state.doc.length) {
+      view.dispatch({ effects: setSegments.of(view.__segments || []) });
+    }
   }
 }
 
@@ -1681,6 +1701,11 @@ function updateFooter(model) {
   }
 }
 
+/// Counted once per render and read twice — by the notice bar and by the summary the probe reports.
+/// It walks every segment on both sides, so on a large file the second walk was as expensive as the
+/// first and produced the same answer.
+let lastGroupCounts = new Map();
+
 function groupCounts(model) {
   const counts = new Map();
   const moves = new Set();
@@ -1763,7 +1788,7 @@ function renderNotices(model) {
   const state = emptyDiffState(model);
   if (state) items.push(state);
   // Disclosed counts (DEC-017): grouping is only permissible while it says how much it grouped.
-  for (const [group, count] of [...groupCounts(model)].sort()) {
+  for (const [group, count] of [...lastGroupCounts].sort()) {
     items.push(`${group}: ${count} shown`);
   }
   // **The three technical chips are gone** (DEC-077). `parser: parsed — tree-sitter tsx`,
@@ -1896,6 +1921,9 @@ window.diffscopeRender = function (json) {
   lastModel = model;
   currentPin = model.pinOld + ":" + model.pinNew;
   currentMode = model.mode;
+  // Once per render. The notice bar reads it and so does the summary the probe returns, and each
+  // walk is over every segment on both sides.
+  lastGroupCounts = groupCounts(model);
   renderNotices(model);
 
   lastRendered = null;
@@ -1967,7 +1995,7 @@ window.diffscopeRender = function (json) {
     newLength: right.state.doc.length,
     oldSegments: model.payload.old.segments.length,
     newSegments: model.payload.new.segments.length,
-    groups: Object.fromEntries(groupCounts(model)),
+    groups: Object.fromEntries(lastGroupCounts),
     mode: currentMode,
     layout,
     unifiedLines: unifiedLines.length,
