@@ -784,17 +784,80 @@ const counters = {
   foldStateResets: 0,
 };
 
-window.diffscopeCounters = function () { return { ...counters }; };
+window.diffscopeCounters = function () { return { ...counters, ...lastRewrite }; };
 window.diffscopeResetCounters = function () {
   for (const key of Object.keys(counters)) counters[key] = 0;
   return true;
 };
 
-function applySide(view, side) {
+/// How much of the document a render actually rewrote, and how much it could have rewritten.
+///
+/// Reported as a pair because the ratio is the claim: *the reader added a line and the pane
+/// rewrote eleven characters* is a different statement from *it rewrote forty thousand*.
+let lastRewrite = { replaced: 0, of: 0 };
+
+/// Replace only the part that differs.
+///
+/// This replaced the whole document on every render — `{from: 0, to: doc.length}` — so adding one
+/// line to a file made CodeMirror discard and re-lay-out every line of both panes, drop the
+/// reader's selection, and re-run every decoration over text that had not moved. That is the
+/// flicker the owner reported and could not reproduce on demand: it is invisible when the refresh
+/// changes nothing (the render pin now stops those entirely) and unmissable when it changes a line.
+///
+/// **The engine still decides everything about the diff.** This is not an alignment decision and
+/// does not compute one: it trims the common prefix and the common suffix, which is a mechanical
+/// property of two strings, and hands CodeMirror one change over what is left. The resulting
+/// document is identical to `side.text` **by construction** — prefix + middle + suffix is the whole
+/// string — so the segment offsets the engine computed against that text stay exactly right.
+/// DEC-044's rule is untouched: the renderer executes, it does not decide.
+///
+/// It degrades honestly. A file rewritten end to end has no common prefix or suffix and gets the
+/// same single whole-document change it always got.
+/// Turn `view`'s document into `text` by rewriting only the part that differs.
+///
+/// Trims the common prefix and the common suffix — a mechanical property of two strings, not an
+/// alignment decision — and hands CodeMirror one change over what is left. The result is identical
+/// to `text` **by construction**, since prefix + middle + suffix is the whole string, so the offsets
+/// the engine computed against it stay exactly right. DEC-044 is untouched: the renderer executes,
+/// it does not decide.
+///
+/// A file rewritten end to end has no common prefix or suffix and gets the same single
+/// whole-document change it always got.
+function replaceDocument(view, text) {
+  const current = view.state.doc.toString();
+  if (current === text) {
+    lastRewrite = { replaced: 0, of: current.length };
+    return;
+  }
   counters.documentReplacements += 1;
+  const limit = Math.min(current.length, text.length);
+  let prefix = 0;
+  while (prefix < limit && current.charCodeAt(prefix) === text.charCodeAt(prefix)) prefix += 1;
+  let suffix = 0;
+  while (suffix < limit - prefix
+         && current.charCodeAt(current.length - 1 - suffix)
+            === text.charCodeAt(text.length - 1 - suffix)) suffix += 1;
+  // A surrogate pair split down the middle is not a position CodeMirror will accept, and it is
+  // reachable whenever an edit lands beside an emoji or a decomposed character. The pair is two
+  // units, so backing off one at each end clears it.
+  if (prefix > 0 && prefix < text.length
+      && text.charCodeAt(prefix) >= 0xDC00 && text.charCodeAt(prefix) <= 0xDFFF) prefix -= 1;
+  if (suffix > 0 && suffix < text.length
+      && text.charCodeAt(text.length - suffix) >= 0xDC00
+      && text.charCodeAt(text.length - suffix) <= 0xDFFF) suffix -= 1;
+  lastRewrite = { replaced: Math.max(0, current.length - prefix - suffix), of: current.length };
   view.dispatch({
-    changes: { from: 0, to: view.state.doc.length, insert: side.text },
+    changes: { from: prefix, to: current.length - suffix,
+               insert: text.slice(prefix, text.length - suffix) },
   });
+}
+
+/// The reader's side of the split layout. `replaceDocument` is why a refresh that adds one line no
+/// longer discards and re-lays-out every line of both panes — the flicker the owner reported and
+/// could not reproduce, because it is invisible when the refresh changes nothing and unmissable
+/// when it changes a line.
+function applySide(view, side) {
+  replaceDocument(view, side.text);
   view.__segments = side.segments;
   view.__changedLines = side.changedLines || [];
   view.dispatch({ effects: [setSegments.of(side.segments),
@@ -867,8 +930,7 @@ function applyLayout(model) {
       .concat(projectSegments(model.payload.new.segments, unifiedRuns.new))
       .sort((a, b) => a.start - b.start || a.end - b.end);
     const dispatchAt = clock();
-    counters.documentReplacements += 1;
-    unified.dispatch({ changes: { from: 0, to: unified.state.doc.length, insert: doc } });
+    replaceDocument(unified, doc);
     unified.__segments = segments;
     unified.dispatch({ effects: setSegments.of(segments) });
     const doneAt = clock();
@@ -897,8 +959,7 @@ function applyLayout(model) {
     unified.requestMeasure();
   } else {
     if (unified && unified.state.doc.length) {
-      counters.documentReplacements += 1;
-      unified.dispatch({ changes: { from: 0, to: unified.state.doc.length, insert: "" } });
+      replaceDocument(unified, "");
       unified.__segments = [];
     }
     unifiedLines = [];

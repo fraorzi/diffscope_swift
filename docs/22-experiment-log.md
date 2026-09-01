@@ -3700,3 +3700,57 @@ SELFTEST unified-place=MISMATCH jump={"index":1,"total":2,"at":0} currentLine=1 
 `at=0` and `currentLine=1` are the owner's report, in one line of log.
 
 2143 checks, 38 selftest arms.
+
+## M13-D — a refresh rewrites what changed, not the document
+
+**Date:** 2026-09-01. **From:** the UI audit's plan, wave 5 — the core of the owner's original report.
+
+`applySide` replaced the whole document on every render:
+
+```js
+view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: side.text } });
+```
+
+So adding one line to a file made CodeMirror discard and re-lay-out **every line of both panes**,
+drop the reader's selection, and re-run every decoration over text that had not moved.
+
+That is the flicker the owner reported and could not reproduce on demand, and the reason it
+resisted reproduction is now clear: it is **invisible when the refresh changes nothing** — those
+refreshes are the common case, and the render pin (M13-A, DEC-...) now stops them before the parse —
+and **unmissable when it changes a line**, which is the case nobody thought to isolate.
+
+### The measurement
+
+One line changed at line 150 of a 300-line file, split layout, measured through
+`window.diffscopeCounters()`:
+
+| | characters rewritten | of |
+|---|---|---|
+| before | 6400 | 6400 |
+| after | **3** | 6400 |
+
+The negative control is the arm with the two trimming loops removed, which is the code as it stood:
+`rewrote 6400 of 6400`.
+
+### Why this is not an alignment decision
+
+`replaceDocument` trims the **common prefix and the common suffix** and hands CodeMirror one change
+over what is left. That is a mechanical property of two strings; it computes no diff and makes no
+claim about correspondence. The resulting document is identical to the text the engine sent **by
+construction** — prefix + middle + suffix is the whole string — so the segment offsets, which are
+absolute into that text, stay exactly right. DEC-044's division of labour is untouched: the renderer
+executes, it does not decide.
+
+It degrades honestly: a file rewritten end to end has no common prefix or suffix and gets the same
+single whole-document change it always got.
+
+**Two claims are asserted, and the second matters more.** That the rewritten span is a small part of
+the document — the saving. And that the document afterwards is byte-identical to what the engine
+described — what makes the saving safe, because an incremental edit landing one character out would
+mis-mark everything below it, silently, and nothing else would notice.
+
+One hazard worth naming: a common prefix can end **inside a surrogate pair**, which is not a
+position CodeMirror accepts, and an edit beside an emoji or a decomposed character reaches one. The
+pair is two units, so backing off one at each end clears it.
+
+2200 → 2205 checks, 41 selftest arms.

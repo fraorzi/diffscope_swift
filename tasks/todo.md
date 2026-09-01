@@ -3666,3 +3666,26 @@ holds where the absolute does not — and the ratio is the claim anyway: *refuse
 means "costs about what looking at the bytes costs", not "costs under a second".
 
 2198 → 2200 checks.
+
+## Step — Fala 5: a refresh rewrites what changed, not the document (M13-D)
+
+- [x] `replaceDocument` is the one door every document replacement goes through — `applySide` for
+      both split panes, and the composed unified document. It trims the common prefix and suffix and
+      dispatches one change over the middle.
+- [x] **One line changed in the middle of a 300-line file: 6400 characters rewritten → 3.** Negative
+      control, with the trimming removed, reports `6400 of 6400`.
+- [x] The arm asserts the saving **and** that the resulting document is the one the engine described.
+      The second is what makes the first safe: segment offsets are absolute into that text.
+- [x] A common prefix can end inside a surrogate pair, which CodeMirror will not accept — backed off
+      one unit at each end.
+- [x] An unchanged document is not counted as a replacement, and does not dispatch one.
+
+### Step — done
+
+The reason this defect resisted reproduction is worth keeping: it is **invisible when the refresh
+changes nothing** and **unmissable when it changes a line**. Every attempt to reproduce it by
+refreshing repeatedly hit the first case. The render pin (M13-A) removed those refreshes entirely,
+which would have made the remaining flicker *more* obvious, not less — the two fixes had to be in
+that order for either to be legible.
+
+2200 → 2205 checks.

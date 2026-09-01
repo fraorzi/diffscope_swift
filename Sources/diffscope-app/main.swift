@@ -1105,6 +1105,80 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
+    /// **A refresh rewrites what changed, and the result is the document the engine described.**
+    ///
+    /// `applySide` replaced the whole document on every render, so adding one line to a file made
+    /// CodeMirror discard and re-lay-out every line of both panes and drop the reader's selection.
+    /// That is the flicker the owner reported and could not reproduce on demand: invisible when the
+    /// refresh changes nothing — the render pin stops those entirely now — and unmissable when it
+    /// changes a line.
+    ///
+    /// Two claims, and the second matters more than the first. **The span rewritten is a small part
+    /// of the document**, which is the saving. And **the document afterwards is byte-identical to
+    /// what the engine sent**, which is what makes the saving safe: the segment offsets are absolute
+    /// into that text, so an incremental edit that landed one character out would mis-mark
+    /// everything below it, silently.
+    private func runIncrementalSelftest(then next: @escaping () -> Void) {
+        // **Changed in the middle, not appended.** An append rewrites zero existing characters by
+        // construction — prefix covers the whole of the old text — so it would pass this arm however
+        // badly the trimming worked. A line changed at line 150 of 300 is the shape a save actually
+        // has, and it is the one where a whole-document replacement is the wrong answer.
+        func lines(_ marked: Int) -> String {
+            (1...300).map { $0 == marked ? "const value\($0) = CHANGED;\n"
+                                         : "const value\($0) = \($0);\n" }.joined()
+        }
+        let old = [UInt8]("const head = 1;\n\(lines(0))".utf8)
+        let new = [UInt8]("const head = 1;\n\(lines(150))".utf8)
+        func model(_ oldBytes: [UInt8], _ newBytes: [UInt8], _ pin: String) -> String {
+            let outcome = buildModel(path: "grow.tsx", old: oldBytes, new: newBytes, mode: .structural)
+            let render = buildRenderModel(model: outcome.model, pinOld: "g0", pinNew: pin,
+                                          mode: "structural", pathTaken: outcome.pathTaken,
+                                          parser: outcome.parser, validation: outcome.validation,
+                                          notices: outcome.notices)
+            guard let json = try? encodeRenderModel(render) else { exit(79) }
+            return json
+        }
+        // Split, because that is the layout whose two documents this is about.
+        bridge("window.diffscopeSetLayout(\"split\")") { _, _ in
+            self.lastPushedJSON = nil
+            self.displayedPin = nil
+            self.push(model(old, old, "g0"))
+            self.lastPushedJSON = nil
+            self.displayedPin = nil
+            self.bridge("window.diffscopeResetCounters()") { _, _ in
+                // The same file with one line appended — the ordinary shape of a save.
+                self.push(model(old, new, "g1"))
+                self.bridge("JSON.stringify(window.diffscopeCounters())") { value, _ in
+                    let counters = (value as? String) ?? "nil"
+                    func number(_ key: String) -> Int {
+                        counters.range(of: "\"\(key)\":").flatMap {
+                            Int(counters[$0.upperBound...].prefix(while: { $0.isNumber }))
+                        } ?? -1
+                    }
+                    let replaced = number("replaced"), total = number("of")
+                    // One line changed in the middle of three hundred. The rewritten span should
+                    // be that line — a tenth is a generous ceiling that still fails loudly against
+                    // a whole-document replacement, which is what this used to do every time.
+                    let small = replaced > 0 && total > 0 && replaced * 10 < total
+                    self.bridge("JSON.stringify(window.diffscopeProbe())") { probe, _ in
+                        let text = (probe as? String) ?? "nil"
+                        // And the document is the one the engine described. `newText` is the pane's
+                        // own contents, read back out of it.
+                        let intact = text.contains("const value150 = CHANGED;")
+                            && text.contains("const value299 = 299;")
+                        let ok = small && intact
+                        FileHandle.standardError.write(Data(
+                            ("SELFTEST incremental=\(ok ? "OK" : "MISMATCH")"
+                             + " rewrote \(replaced) of \(total) · document intact=\(intact)"
+                             + " · \(counters)\n").utf8))
+                        if !ok { exit(80) }
+                        next()
+                    }
+                }
+            }
+        }
+    }
+
     /// **What the reader chose survives a refresh that changed nothing they chose it about.**
     ///
     /// Four values record a reader's decisions about a document, and they were governed by two
@@ -1361,7 +1435,9 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                     self.runExpandToggleSelftest {
                         self.runRedrawSelftest {
                             self.runUnifiedPlaceSelftest {
-                                self.runReaderStateSelftest { self.runRefreshSelftest() }
+                                self.runReaderStateSelftest {
+                                    self.runIncrementalSelftest { self.runRefreshSelftest() }
+                                }
                             }
                         }
                     }

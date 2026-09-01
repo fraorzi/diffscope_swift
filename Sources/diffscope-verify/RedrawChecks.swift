@@ -331,6 +331,21 @@ func runRedrawChecks(_ reportRaw: (String, Bool, String) -> Void) {
            page.contains("if (!rows.length || index < 0 || index >= rows.length) return false;")
                && shell.contains("if (value as? Bool) != true { self.pushSearch(summary: summary) }"))
 
+    // One door for every document replacement, and it rewrites only what differs.
+    report("a document is turned into the next one through one function",
+           page.contains("function replaceDocument(view, text)")
+               && page.components(separatedBy: "counters.documentReplacements += 1").count - 1 == 1)
+    report("and that function trims the common prefix and suffix",
+           page.contains("while (prefix < limit && current.charCodeAt(prefix) === text.charCodeAt(prefix)) prefix += 1;")
+               && page.contains("=== text.charCodeAt(text.length - 1 - suffix)) suffix += 1;"))
+    // A split surrogate pair is not a position CodeMirror accepts, and an edit beside an emoji or a
+    // decomposed character reaches one.
+    report("and it cannot land inside a surrogate pair",
+           page.contains("text.charCodeAt(prefix) >= 0xDC00")
+               && page.contains("text.charCodeAt(text.length - suffix) >= 0xDC00"))
+    report("the rewritten span is reported beside the counters",
+           page.contains("return { ...counters, ...lastRewrite };"))
+
     print("\n=== a control is not redrawn to say what it already says ===")
     let pill = (try? String(contentsOfFile: "Sources/diffscope-app/PillControl.swift",
                             encoding: .utf8)) ?? ""
@@ -355,13 +370,17 @@ func runRedrawChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("the page counts \(counter)", renderer.contains("\(counter):"))
     }
     report("and a scenario can zero them", renderer.contains("window.diffscopeResetCounters"))
-    // Counted inside `applySide`, not at its call sites: a unified render calls it three times —
-    // the composed document and two empty panes — and a count taken outside would say one.
-    if let body = renderer.range(of: "function applySide(view, side) {") {
-        let head = String(renderer[body.upperBound...].prefix(120))
-        report("documentReplacements is counted inside applySide",
+    // Counted where the document is actually replaced, not at the call sites: a unified render
+    // reaches that point three times — the composed document and two panes it clears — and a count
+    // taken outside would say one. It moved a level deeper when the replacement became incremental,
+    // and the reason it has to live at the bottom did not change.
+    if let body = renderer.range(of: "function replaceDocument(view, text) {") {
+        let head = String(renderer[body.upperBound...].prefix(400))
+        report("documentReplacements is counted where the document is replaced",
                head.contains("counters.documentReplacements"))
+        report("and an unchanged document is not counted as a replacement",
+               head.contains("if (current === text) {"))
     } else {
-        report("applySide exists to count in", false)
+        report("replaceDocument exists to count in", false)
     }
 }
