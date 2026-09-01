@@ -316,10 +316,34 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
+    /// DEC-006: the repository list is refreshed on window focus, because the watcher covers only
+    /// the repository being looked at and everything else goes stale while the reader is in their
+    /// editor. That reasoning is right and is not what changed here.
+    ///
+    /// **What it cost was not bounded.** `rescan()` re-discovers every configured source and sweeps
+    /// every repository it finds, at `max(4, cores × 2)` concurrent git processes — and it was bound
+    /// to the exact gesture a reader makes when they want to *look* at the diff. Someone typing in
+    /// their editor and glancing over does that many times a minute, so the heaviest work in the
+    /// application fired at the one moment they were watching. DEC-109 guarded the redraw; nothing
+    /// guarded the work.
+    ///
+    /// The open repository is still re-read on every activation — it is the one on screen, it is
+    /// one snapshot, and it already runs off the main thread. The full sweep keeps a quiet period,
+    /// the same shape the terminal's command-finished refresh uses and for the same reason: a burst
+    /// of activations is one arrival, not several.
     func applicationDidBecomeActive(_ notification: Notification) {
         guard !state.repositories.isEmpty else { return }
+        refreshOpenRepositoryRow()
+        let now = Date()
+        guard now.timeIntervalSince(lastActivationSweep) > Self.activationSweepQuietPeriod else { return }
+        lastActivationSweep = now
         rescan()
     }
+
+    /// Long enough that alt-tabbing back and forth is one sweep, short enough that a reader who
+    /// left for a minute gets a fresh list. Not a debounce: the first activation sweeps at once and
+    /// the ones behind it are the ones that wait.
+    static let activationSweepQuietPeriod: TimeInterval = 5
 
     private func buildWindow() {
         window = NSWindow(
@@ -5050,9 +5074,29 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                     + "constants=[\(Int(repoPaneWidth?.constant ?? -1)),"
                     + "\(Int(filePaneWidth?.constant ?? -1))]\n").utf8))
         }
-        if !reposCollapsed, widths[0] > Theme.paneMinimumWidth { repoPaneWidth?.constant = widths[0] }
-        if !filesCollapsed, widths[1] > Theme.paneMinimumWidth { filePaneWidth?.constant = widths[1] }
+        // **Remembered, not written into a constraint that is switched off.** These constants are
+        // inactive outside a collapse — that is what lets a drag stick at all — and `applyCollapses`
+        // overwrites both with the theme's defaults before activating them. So the write below was
+        // dead, and collapsing a pane the reader had dragged and then un-collapsing it snapped the
+        // pane back to 280 pt. The comment on the constraints claimed a persistence that did not
+        // happen; this is the persistence.
+        if !reposCollapsed, widths[0] > Theme.paneMinimumWidth {
+            repoPaneWidth?.constant = widths[0]
+            draggedRepoPaneWidth = widths[0]
+        }
+        if !filesCollapsed, widths[1] > Theme.paneMinimumWidth {
+            filePaneWidth?.constant = widths[1]
+            draggedFilePaneWidth = widths[1]
+        }
     }
+
+    /// The widths the reader dragged the two dividers to, so un-collapsing gives back the pane they
+    /// had rather than the one the theme suggests. `nil` until they drag one.
+    /// When the last activation sweep ran. `.distantPast` so the first one is never held back.
+    private var lastActivationSweep = Date.distantPast
+
+    private var draggedRepoPaneWidth: CGFloat?
+    private var draggedFilePaneWidth: CGFloat?
 
     /// True while `applyCollapses` is moving the dividers itself.
     private var applyingCollapse: Bool {
@@ -5073,8 +5117,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         let animate = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         // The width constraints are switched on only while a collapse is being applied: outside
         // that they are what prevented a drag from sticking.
-        repoPaneWidth?.constant = reposCollapsed ? Theme.railWidth : Theme.repositoryPaneWidth
-        filePaneWidth?.constant = filesCollapsed ? Theme.spineWidth : Theme.filePaneWidth
+        repoPaneWidth?.constant = reposCollapsed
+            ? Theme.railWidth : (draggedRepoPaneWidth ?? Theme.repositoryPaneWidth)
+        filePaneWidth?.constant = filesCollapsed
+            ? Theme.spineWidth : (draggedFilePaneWidth ?? Theme.filePaneWidth)
         // **Strong, and only while collapsed.** At 500 the split redistributed proportionally and
         // the rail came out at 54.5 instead of 44; at 999 it wins, which is what a collapse needs.
         // Outside a collapse the constraint is off entirely, because an active `equalToConstant` is

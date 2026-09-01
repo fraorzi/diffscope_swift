@@ -284,6 +284,20 @@ func runRedrawChecks(_ reportRaw: (String, Bool, String) -> Void) {
                return bail.lowerBound < build.lowerBound
            } ?? false)
 
+    // The heaviest work in the application was bound to the gesture a reader makes to look at the
+    // diff. The repository on screen is still re-read every time; the sweep of all the others is
+    // what keeps a quiet period.
+    report("an activation re-reads the open repository and bounds the rest",
+           shell.range(of: "func applicationDidBecomeActive").map { range in
+               let body = String(shell[range.lowerBound...].prefix(600))
+               return body.contains("refreshOpenRepositoryRow()")
+                   && body.contains("activationSweepQuietPeriod")
+           } ?? false)
+    // And the pane the reader dragged comes back the width they left it, rather than the theme's.
+    report("un-collapsing gives back the width the reader dragged to",
+           shell.contains("draggedRepoPaneWidth = widths[0]")
+               && shell.contains("(draggedRepoPaneWidth ?? Theme.repositoryPaneWidth)"))
+
     print("\n=== the same question is not asked twice ===")
 
     // One reading, parsed once, derived twice. Checked against bytes rather than against a
