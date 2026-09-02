@@ -3754,3 +3754,44 @@ position CodeMirror accepts, and an edit beside an emoji or a decomposed charact
 pair is two units, so backing off one at each end clears it.
 
 2200 → 2205 checks, 41 selftest arms.
+
+## M13-E — the git reads leave the main thread
+
+**Date:** 2026-09-02. **From:** the UI audit's finding #20, the last item of wave 4.
+
+`RepositoryWatcher` delivers on `.main` (`Watcher.swift:90`), and `handle(.changed)` called
+`reloadFiles()`, which ran `git merge-base`, `git status --porcelain -uall -z` and a staging read
+**synchronously on the main thread**. Every save from the reader's editor stopped the interface for
+as long as those took — on whatever filesystem the repository happens to live on. `refreshGitState`
+added five more plumbing reads on the same thread, after every write and on every repository click.
+
+### The shape
+
+Both are split three ways, and the split is a type rather than a convention:
+
+| | reads | draws |
+|---|---|---|
+| the file list | `static readFileList` → `FileListReading` | `applyFileList` |
+| the repository | `static readGitState` → `GitStateReading` | `applyGitState` |
+
+The read halves are **static and handed their collaborators**, so they cannot reach `state` or a
+view from the background queue by accident — the compiler enforces it rather than a comment asking.
+Both run on one serial `gatherQueue`, so a burst of saves does not spawn a process per event.
+
+### The guard that had to come with it
+
+Both apply halves **refuse a reading for a repository — or, for the file list, a scope — the reader
+has since left**. This is the same newest-wins rule the render path has carried since M8-J, at list
+scale: applying otherwise would draw one repository's files under another's name, which is the exact
+defect M8-J found in the render path and fixed there alone.
+
+### What it cost the callers
+
+`reloadFiles(then:)` and `refreshGitState(then:)`. Five of the file list's eight callers are
+fire-and-forget. Three depended on the old synchronous ordering and now nest: the watcher, which
+asks whether the selected file survived the refresh; the repository-selection delegate; and
+`afterWrite`, which moved **everything** into the completion — `refreshCurrentFile` had been running
+before the list was applied. Harmless today, because the render pin re-reads the content hashes, but
+ordering that used to be statement order is now nesting, and the intent has to be visible.
+
+2210 → 2214 checks.

@@ -3713,3 +3713,15 @@ They run after a write and on a repository selection, not on every save, so the 
 while typing is gone; the one they feel when clicking a repository is not.
 
 2207 → 2210 checks.
+
+## Step — Fala 4, part four: the repository-wide reads follow
+
+- [x] `refreshGitState` split the same way — `static readGitState` → `GitStateReading` →
+      `applyGitState` — so the five plumbing reads after every write and every repository click no
+      longer run on the main thread.
+- [x] Both read halves are static and handed their collaborators, which is the compiler enforcing
+      that a background queue cannot reach `state` or a view. A check asserts the shape, because it
+      is the kind of thing a later edit makes non-static without noticing.
+- [x] Both apply halves refuse a reading for a repository the reader has left.
+
+**Waves 1 through 5 are complete.** 2214 checks, 41 selftest arms.

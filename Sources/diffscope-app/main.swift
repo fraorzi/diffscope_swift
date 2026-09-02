@@ -118,6 +118,16 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// Everything a file-list refresh reads from git, carried from the background queue that read
     /// it to the main thread that draws it. A struct rather than four `inout` parameters so that
     /// the boundary between *reading* and *drawing* is a type rather than a convention.
+    /// Everything `refreshGitState` reads from git, carried from the queue that read it to the
+    /// thread that draws it. Same shape and same reason as `FileListReading`.
+    struct GitStateReading {
+        let staging: [String: FileStaging]
+        let branches: [BranchInfo]
+        let stashes: [StashEntry]
+        let head: HeadState
+        let operation: RepositoryOperation
+    }
+
     struct FileListReading {
         let mergeBaseRev: String?
         let files: [ChangedFile]

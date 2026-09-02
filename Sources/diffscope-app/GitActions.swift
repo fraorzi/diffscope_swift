@@ -21,30 +21,68 @@ extension Controller {
 
     /// Re-reads everything version two draws. Cheap enough to run after every write: five plumbing
     /// reads against a repository whose objects are already warm.
-    func refreshGitState() {
+    /// Everything version two draws about the repository as a whole: the branch, the stashes, the
+    /// operation in progress, the commit box's sentence.
+    ///
+    /// **Five plumbing reads, and they used to run here on the main thread.** They are cheap against
+    /// a warm repository and they are not cheap against a cold one, a large one, or one on a network
+    /// volume — and this runs after every write and on every repository selection, which is a click
+    /// the reader is watching. Split the same way `reloadFiles` is: read off the main thread, draw
+    /// on it, and refuse a reading for a repository the reader has since left.
+    func refreshGitState(then completion: (() -> Void)? = nil) {
         guard let repository = state.selectedRepository else {
             state.staging = [:]; state.branches = []; state.stashes = []; state.operation = .none
             operationBanner?.show(.none)
+            completion?()
             return
         }
-        let previousStaging = state.staging
-        state.staging = gitState.staging(in: repository.url)
-        state.branches = gitState.branches(in: repository.url)
-        state.stashes = gitState.stashes(in: repository.url)
+        gatherQueue.async { [weak self] in
+            guard let self else { return }
+            let reading = Self.readGitState(gitState: self.gitState, reader: self.reader,
+                                            repository: repository)
+            DispatchQueue.main.async {
+                guard self.state.selectedRepository?.url == repository.url else {
+                    completion?()
+                    return
+                }
+                self.applyGitState(reading)
+                completion?()
+            }
+        }
+    }
+
+    /// Everything `refreshGitState` reads. Static and handed its collaborators, so it cannot reach
+    /// `state` or a view from the background queue.
+    private static func readGitState(gitState: RepositoryStateReader, reader: RepositoryReader,
+                                     repository: RepositorySnapshot) -> GitStateReading {
         let head = (try? reader.headState(of: repository.url)) ?? .unborn(intendedBranch: nil)
-        state.operation = gitState.operation(in: repository.url, head: head)
+        return GitStateReading(
+            staging: gitState.staging(in: repository.url),
+            branches: gitState.branches(in: repository.url),
+            stashes: gitState.stashes(in: repository.url),
+            head: head,
+            operation: gitState.operation(in: repository.url, head: head))
+    }
+
+    /// And everything it draws. Main thread only.
+    private func applyGitState(_ reading: GitStateReading) {
+        let previousStaging = state.staging
+        state.staging = reading.staging
+        state.branches = reading.branches
+        state.stashes = reading.stashes
+        state.operation = reading.operation
 
         operationBanner?.show(state.operation)
         bannerHeightConstraint?.constant = operationBanner?.isHidden == false ? Theme.bannerHeight : 0
-        commitBox?.branchName = head.displayText
+        commitBox?.branchName = reading.head.displayText
         commitBox?.status.stringValue = commitSummaryLine()
-        branchButton?.title = head.displayText
+        branchButton?.title = reading.head.displayText
         updateSyncButton()
-        // **Only the boxes that changed.** Both callers run `reloadFiles()` immediately before this,
-        // and `reloadFiles` already redraws what moved — so an unconditional reload here rebuilt
+        // **Only the boxes that changed.** Both callers refresh the file list immediately before
+        // this, and that already redraws what moved — so an unconditional reload here rebuilt
         // sixty-three stacks of views one line after DEC-112 had carefully rebuilt one. The staging
-        // read above is a *second* read of the index, so it can legitimately differ from the one
-        // `reloadFiles` made; what cannot be justified is redrawing when it does not.
+        // read above is a *second* read of the index, so it can legitimately differ from the one the
+        // list made; what cannot be justified is redrawing when it does not.
         let changed = state.fileRows.indices.filter { index in
             guard let path = state.fileRows[index].file?.path else { return false }
             return previousStaging[path] != state.staging[path]

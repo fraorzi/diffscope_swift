@@ -132,6 +132,21 @@ func runRedrawChecks(_ reportRaw: (String, Bool, String) -> Void) {
                && shell.contains("previousCounts[path] != counts[path]"))
     report("refreshGitState redraws only the boxes that changed",
            git.contains("previousStaging[path] != state.staging[path]"))
+    // The repository-wide reads went the same way the file-list reads did, and for the same reason:
+    // five plumbing commands are cheap against a warm repository and are not cheap against a cold
+    // one, a large one, or one on a network volume.
+    report("the repository-wide reads cannot touch the window either",
+           git.contains("private static func readGitState(gitState: RepositoryStateReader,"))
+    report("and their drawing is a separate function that refuses a stale reading",
+           git.contains("private func applyGitState(_ reading: GitStateReading)")
+               && git.contains("guard self.state.selectedRepository?.url == repository.url else {"))
+    // Nothing in either read path may reach a view. The two functions are static and handed their
+    // collaborators, which the compiler enforces; this catches the shape drifting back.
+    for name in ["readFileList", "readGitState"] {
+        let source = name == "readFileList" ? shell : git
+        report("\(name) is static, so it cannot reach self",
+               source.contains("private static func \(name)("))
+    }
     // A write changes the counts of one repository. `rescan()` sweeps every configured one.
     report("a write refreshes the repository it was made in, not all of them",
            git.range(of: "func afterWrite()").map { range in
