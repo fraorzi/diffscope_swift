@@ -135,7 +135,7 @@ func runRedrawChecks(_ reportRaw: (String, Bool, String) -> Void) {
     // A write changes the counts of one repository. `rescan()` sweeps every configured one.
     report("a write refreshes the repository it was made in, not all of them",
            git.range(of: "func afterWrite()").map { range in
-               let body = String(git[range.lowerBound...].prefix(600))
+               let body = String(git[range.lowerBound...].prefix(1400))
                return body.contains("refreshOpenRepositoryRow()") && !body.contains("rescan()\n")
            } ?? false)
     report("and a command finishing in the drawer does the same",
@@ -253,7 +253,7 @@ func runRedrawChecks(_ reportRaw: (String, Bool, String) -> Void) {
     // Staging moves bytes between the index and the working tree, which is what two scopes compare.
     report("a write refreshes the diff it just changed",
            git.range(of: "func afterWrite()").map { range in
-               String(git[range.lowerBound...].prefix(1200)).contains("refreshCurrentFile()")
+               String(git[range.lowerBound...].prefix(1600)).contains("refreshCurrentFile()")
            } ?? false)
     // The one feed that admits it lost data used to get a clause appended to whatever sentence
     // happened to be in the status line.
@@ -319,9 +319,18 @@ func runRedrawChecks(_ reportRaw: (String, Bool, String) -> Void) {
 
     // The changed-file list and the staging state are two derivations of that one reading. They
     // used to run `git status` for themselves, one after the other, on the main thread.
-    report("reloadFiles takes one status reading and derives both from it",
-           shell.contains("statusSnapshot = StatusSnapshot(porcelainZ: result.standardOutput)")
-               && shell.contains("gitState.staging(from: $0)"))
+    report("a file-list refresh takes one status reading and derives both from it",
+           shell.contains("let snapshot = StatusSnapshot(porcelainZ: result.standardOutput)")
+               && shell.contains("staging: gitState.staging(from: snapshot)"))
+    // The reads are a static function handed its collaborators, so it cannot reach `state` or a
+    // view from the background queue by accident — the boundary is a type rather than a rule.
+    report("and the reads cannot touch the window",
+           shell.contains("private static func readFileList(scopes: ScopeReader,"))
+    report("the drawing is a separate function on the main thread",
+           shell.contains("private func applyFileList(_ reading: FileListReading,"))
+    report("and the apply refuses a reading for a repository or scope the reader has left",
+           shell.contains("guard self.state.selectedRepository?.url == repository.url,")
+               && shell.contains("self.state.scope == scope else { completion?(); return }"))
 
     print("\n=== the page does not pay for what it is not showing ===")
     report("decorations are rebuilt only where a document is",

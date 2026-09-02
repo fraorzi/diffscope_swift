@@ -110,6 +110,23 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     let parser = TSXParser()
     /// Renders run here, one at a time. See `render(file:previousAnchor:restoringStop:)`.
     let renderQueue = DispatchQueue(label: "local.diffscope.render", qos: .userInitiated)
+    /// Where a file-list refresh runs its git reads. Serial, so a burst of saves does not spawn a
+    /// process per event, and `.userInitiated` because the reader is waiting for the answer even
+    /// though they are no longer waiting for the *window*.
+    let gatherQueue = DispatchQueue(label: "local.diffscope.gather", qos: .userInitiated)
+
+    /// Everything a file-list refresh reads from git, carried from the background queue that read
+    /// it to the main thread that draws it. A struct rather than four `inout` parameters so that
+    /// the boundary between *reading* and *drawing* is a type rather than a convention.
+    struct FileListReading {
+        let mergeBaseRev: String?
+        let files: [ChangedFile]
+        /// `nil` on the paths that do not produce one — a history pair, a merge-base scope, or a
+        /// failed read — so the staging derivation falls back to its own read rather than to a
+        /// snapshot that describes a different question.
+        let snapshot: StatusSnapshot?
+        let staging: [String: FileStaging]
+    }
 
     var window: NSWindow!
     var repoTable: NSTableView!
@@ -6218,17 +6235,18 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         if let file = state.selectedFile { showDiff(for: file) }
     }
 
-    func reloadFiles() {
-        guard let repository = state.selectedRepository else { return }
+    /// Rebuild the changed-file list from git.
+    ///
+    /// **The reads are off the main thread; the drawing is on it.** `completion` runs after the
+    /// drawing, on the main thread, and it is what the three callers that depended on the old
+    /// synchronous ordering use — the watcher, which asks whether the selected file survived; the
+    /// repository-selection delegate; and `afterWrite`. The other five are fire-and-forget and pass
+    /// nothing.
+    func reloadFiles(then completion: (() -> Void)? = nil) {
+        guard let repository = state.selectedRepository else { completion?(); return }
         var baseRef: String?
-        state.mergeBaseRev = nil
         if state.scope == .branchVsMergeBase, let resolved = repository.base.ref {
             baseRef = repository.baseRefUsed ?? resolved
-            if let ref = baseRef,
-               let result = try? GitRunner().run(.mergeBase(ref, "HEAD"), in: repository.url),
-               result.succeeded {
-                state.mergeBaseRev = result.trimmedOutput
-            }
         }
         // `12-…` §3: scopes that cannot work are **disabled with a stated reason, never hidden**.
         // Leaving them enabled lets the reader click into a dead end and makes the control lie
@@ -6261,33 +6279,79 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             displayedPin = nil
             clearDiffPane(reason: "\(state.scope.title) is unavailable here — \(reason)")
             statusLabel.stringValue = "\(state.scope.title) unavailable — \(reason)"
+            completion?()
             return
         }
-        // A history selection names the two sides instead of the scope (DEC-061). The scope bar
-        // still shows which four exist and which one is armed; the base row says what is actually
-        // being compared, which is the question a reader has after picking a commit.
-        if let pair = state.historyPair {
-            state.files = (try? scopes.changedFiles(between: pair.old, and: pair.new,
-                                                    in: repository.url)) ?? []
-        } else {
-            // **One reading of `git status`, used twice.** The changed-file list and the staging
-            // state below are two derivations of the same porcelain output, and each used to run
-            // the command for itself — the same command, twice, synchronously, on every refresh.
-            // Sharing the reading also makes them agree by construction: two readings taken a few
-            // milliseconds apart can differ, and the window would draw the list from one and the
-            // checkboxes from the other.
-            if state.scope == .branchVsMergeBase {
-                state.files = (try? scopes.changedFiles(scope: state.scope, in: repository.url,
-                                                        baseRef: baseRef)) ?? []
-            } else if let result = try? GitRunner().run(.statusPorcelainZ(), in: repository.url),
-                      result.succeeded {
-                statusSnapshot = StatusSnapshot(porcelainZ: result.standardOutput)
-                state.files = scopes.changedFiles(scope: state.scope, from: statusSnapshot!)
-            } else {
-                statusSnapshot = nil
-                state.files = []
+        // **The reads happen off the main thread from here.** Everything above is a pure question
+        // about the snapshot the sweep already took; everything below is drawing. In between are
+        // two or three git invocations, and they used to run here — so every save from the reader's
+        // editor stopped the interface for as long as `git status` took, on whatever filesystem the
+        // repository happens to live on.
+        let scope = state.scope
+        let historyPair = state.historyPair
+        gatherQueue.async { [weak self] in
+            guard let self else { return }
+            let reading = Self.readFileList(scopes: self.scopes, gitState: self.gitState,
+                                            repository: repository, scope: scope,
+                                            historyPair: historyPair, baseRef: baseRef)
+            DispatchQueue.main.async {
+                // The reader may have moved to another repository, or changed the scope, while the
+                // reads were in flight. Applying then would draw one repository's files under
+                // another's name — the same defect the render path guards against, at list scale.
+                guard self.state.selectedRepository?.url == repository.url,
+                      self.state.scope == scope else { completion?(); return }
+                self.applyFileList(reading, repository: repository, unavailable: unavailable)
+                completion?()
             }
         }
+    }
+
+    /// Every git read a file-list refresh needs, and nothing else. Static, and handed its
+    /// collaborators, so that it cannot reach `state` or a view by accident from a background queue.
+    private static func readFileList(scopes: ScopeReader, gitState: RepositoryStateReader,
+                                     repository: RepositorySnapshot, scope: ComparisonScope,
+                                     historyPair: (old: String, new: String?)?,
+                                     baseRef: String?) -> FileListReading {
+        var mergeBaseRev: String?
+        if scope == .branchVsMergeBase, let ref = baseRef,
+           let result = try? GitRunner().run(.mergeBase(ref, "HEAD"), in: repository.url),
+           result.succeeded {
+            mergeBaseRev = result.trimmedOutput
+        }
+        // A history selection names the two sides instead of the scope (DEC-061).
+        if let pair = historyPair {
+            let files = (try? scopes.changedFiles(between: pair.old, and: pair.new,
+                                                  in: repository.url)) ?? []
+            return FileListReading(mergeBaseRev: mergeBaseRev, files: files, snapshot: nil,
+                                   staging: gitState.staging(in: repository.url))
+        }
+        // **One reading of `git status`, used twice.** The changed-file list and the staging state
+        // are two derivations of the same porcelain output, and each used to run the command for
+        // itself. Sharing the reading also makes them agree by construction: two readings taken a
+        // few milliseconds apart can differ, and the window would draw the list from one and the
+        // checkboxes from the other.
+        if scope == .branchVsMergeBase {
+            let files = (try? scopes.changedFiles(scope: scope, in: repository.url,
+                                                  baseRef: baseRef)) ?? []
+            return FileListReading(mergeBaseRev: mergeBaseRev, files: files, snapshot: nil,
+                                   staging: gitState.staging(in: repository.url))
+        }
+        guard let result = try? GitRunner().run(.statusPorcelainZ(), in: repository.url),
+              result.succeeded else {
+            return FileListReading(mergeBaseRev: mergeBaseRev, files: [], snapshot: nil, staging: [:])
+        }
+        let snapshot = StatusSnapshot(porcelainZ: result.standardOutput)
+        return FileListReading(mergeBaseRev: mergeBaseRev,
+                               files: scopes.changedFiles(scope: scope, from: snapshot),
+                               snapshot: snapshot, staging: gitState.staging(from: snapshot))
+    }
+
+    /// Everything the reading changes on screen. Main thread only.
+    private func applyFileList(_ reading: FileListReading, repository: RepositorySnapshot,
+                               unavailable: [String]) {
+        state.mergeBaseRev = reading.mergeBaseRev
+        statusSnapshot = reading.snapshot
+        state.files = reading.files
         let previousRows = state.fileRows
         let previousStaging = state.staging
         state.fileRows = fileTreeRows(state.files, collapsed: state.collapsedDirectories)
@@ -6296,8 +6360,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         // DEC-092: the staging state is read before the rows are drawn, because the box in each
         // row is drawn from it. Read rather than remembered — WebStorm, the drawer and every hook
         // share this index.
-        state.staging = statusSnapshot.map { gitState.staging(from: $0) }
-            ?? gitState.staging(in: repository.url)
+        state.staging = reading.staging
         // **Only redraw a list that changed** (DEC-109). Every cell here is built from scratch —
         // there is no reuse — so `reloadData` on a 63-file tree rebuilds sixty-three stacks of views,
         // and this runs on every refresh, including the one every return to the window triggers.
@@ -6552,14 +6615,17 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
             // file. This used to re-select the same row again *without* that flag, so one save
             // rendered the file twice: once with no anchor, discarding the reader's position, and
             // once with it, trying to put them back.
-            reloadFiles()
-            if let selected, state.files.contains(where: { $0.path == selected.path }) {
-                refreshCurrentFile()
+            reloadFiles { [weak self] in
+            guard let self else { return }
+            if let selected, self.state.files.contains(where: { $0.path == selected.path }) {
+                self.refreshCurrentFile()
             } else if let selected {
                 // The row has already followed DEC-106's rule to the nearest surviving neighbour,
                 // and the pane has followed the row — so this says what happened rather than
                 // leaving the reader with a highlighted row and a diff from two different files.
-                statusLabel.stringValue = "\(selected.path) is no longer in \(state.scope.title)"
+                self.statusLabel.stringValue =
+                    "\(selected.path) is no longer in \(self.state.scope.title)"
+            }
             }
             // A dropped-events signal means the change list is **known to be incomplete**, so it
             // gets the sweep an ordinary change does not need. It used to get the same work plus a
@@ -7016,8 +7082,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                     self.state.collapsedDirectories = []
                     self.openRepositoryPath = repository.url.standardizedFileURL.path
                 }
-                self.reloadFiles()
-                self.refreshGitState()
+                self.reloadFiles { self.refreshGitState() }
             }
         } else {
             guard table.selectedRow >= 0, table.selectedRow < state.fileRows.count,

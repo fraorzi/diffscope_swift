@@ -3689,3 +3689,27 @@ which would have made the remaining flicker *more* obvious, not less — the two
 that order for either to be legible.
 
 2200 → 2205 checks.
+
+## Step — Fala 4, part three: the file-list reads leave the main thread
+
+- [x] `reloadFiles` is split in three: a pure question about the snapshot the sweep already took
+      (which scopes are available, what the base ref is), a **static** `readFileList` that does every
+      git read and is handed its collaborators so it cannot reach `state` or a view by accident, and
+      `applyFileList`, which draws. The reads run on `gatherQueue`; the drawing runs on main.
+- [x] `FileListReading` carries the results across, so the boundary between *reading* and *drawing*
+      is a type rather than a convention.
+- [x] The apply **refuses a reading for a repository or a scope the reader has left** — the same
+      newest-wins guard the render path has, at list scale. Applying otherwise would draw one
+      repository's files under another's name.
+- [x] `reloadFiles(then:)`. Five of its eight callers are fire-and-forget; three depended on the old
+      synchronous ordering and now nest: the watcher, which asks whether the selected file survived;
+      the repository-selection delegate; and `afterWrite`.
+- [x] `afterWrite` moved **everything** into the completion. `refreshCurrentFile` was running before
+      the list had been applied — harmless today, because the render pin re-reads the content hashes,
+      but ordering that used to be statement order is now nesting and the intent has to be visible.
+
+**Still on the main thread, and stated rather than hidden:** `refreshGitState`'s five plumbing reads.
+They run after a write and on a repository selection, not on every save, so the stall a reader feels
+while typing is gone; the one they feel when clicking a repository is not.
+
+2207 → 2210 checks.

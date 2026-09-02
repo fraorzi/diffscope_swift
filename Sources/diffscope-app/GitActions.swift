@@ -1037,18 +1037,24 @@ extension Controller {
     /// DEC-092 §5 point 6 — refresh currently assumes changes come from outside, and after a write
     /// they also come from inside.
     func afterWrite() {
-        reloadFiles()
-        refreshGitState()
-        // **The repository that was written to, not all of them.** `rescan()` re-discovers every
-        // configured source and sweeps every repository it finds; a staged line changes the counts
-        // of exactly one.
-        refreshOpenRepositoryRow()
-        // **And the pane.** Staging moves bytes between the index and the working tree, which is
-        // exactly what two of the four scopes compare — so the diff the reader is looking at is
-        // stale the moment the write lands, and it used to stay stale until the watcher noticed
-        // `.git` change some hundreds of milliseconds later. This costs nothing when the comparison
-        // did not move: the render asks the pinned pair's content hashes first.
-        refreshCurrentFile()
+        // **Everything after a write happens after the list has been applied.** The reads are no
+        // longer synchronous, so ordering that used to be a matter of statement order is now a
+        // matter of nesting: `refreshGitState` compares the staging it reads against the one on
+        // screen, and running it first would compare against the list from before the write.
+        reloadFiles { [weak self] in
+            guard let self else { return }
+            self.refreshGitState()
+            // **The repository that was written to, not all of them.** `rescan()` re-discovers
+            // every configured source and sweeps every repository it finds; a staged line changes
+            // the counts of exactly one.
+            self.refreshOpenRepositoryRow()
+            // **And the pane.** Staging moves bytes between the index and the working tree, which
+            // is exactly what two of the four scopes compare — so the diff the reader is looking at
+            // is stale the moment the write lands, and it used to stay stale until the watcher
+            // noticed `.git` change some hundreds of milliseconds later. This costs nothing when
+            // the comparison did not move: the render asks the pinned pair's content hashes first.
+            self.refreshCurrentFile()
+        }
     }
 
     // ---- asking --------------------------------------------------------------------------------
