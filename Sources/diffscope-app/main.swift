@@ -358,6 +358,51 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// one snapshot, and it already runs off the main thread. The full sweep keeps a quiet period,
     /// the same shape the terminal's command-finished refresh uses and for the same reason: a burst
     /// of activations is one arrival, not several.
+    /// **The two measurements a headless run cannot take.**
+    ///
+    /// Backing-scale change and full-screen occlusion are physical acts: a window dragged between
+    /// two displays with different pixel densities, and a window moved to another Space. Nothing in
+    /// the application observes either — there is no `windowDidChangeBackingProperties`, no
+    /// `windowDidChangeOcclusionState`, no full-screen delegate anywhere — so whether the metrics
+    /// actually go stale is a question about WebKit and AppKit, not about this code, and it can
+    /// only be answered by doing it.
+    ///
+    /// `DIFFSCOPE_GEOMETRY_PROBE=1` makes the window report both, once a second, to stderr. Drag it
+    /// to the other display, or press ⌃⌘F, and read the line.
+    ///
+    /// - `settle` is `before→after` line heights per view. A **non-identity pair** means CodeMirror
+    ///   was holding a measurement it had not been asked to refresh, and nothing was going to ask.
+    /// - `rowDrift` counts lines with no gutter row level with them — the visible form of the same
+    ///   staleness, and the one a reader would report.
+    /// - `renders` unchanged across a frame the reader saw blank means the blank was WebKit
+    ///   discarding compositing layers, not the application re-rendering.
+    private func startGeometryProbe() {
+        guard ProcessInfo.processInfo.environment["DIFFSCOPE_GEOMETRY_PROBE"] != nil else { return }
+        FileHandle.standardError.write(Data(
+            ("GEOMETRY probe armed — drag the window between displays, or press ⌃⌘F, "
+             + "and watch `settle` and `rowDrift`\n").utf8))
+        geometryProbe = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self else { return }
+            let scale = self.window.backingScaleFactor
+            let screen = self.window.screen?.localizedName ?? "none"
+            self.bridge("window.diffscopeSettle()") { settle, _ in
+                self.bridge("JSON.stringify(window.diffscopeWidths())") { widths, _ in
+                    self.bridge("JSON.stringify(window.diffscopeCounters())") { counters, _ in
+                        let drift = ((widths as? String) ?? "")
+                            .components(separatedBy: "\"rowDrift\":")
+                            .dropFirst()
+                            .map { String($0.prefix(while: { $0 != "\"" }).drop(while: { $0 == "\"" })) }
+                        FileHandle.standardError.write(Data(
+                            ("GEOMETRY scale=\(scale) screen=\(screen)"
+                             + " settle=\((settle as? String) ?? "nil")"
+                             + " rowDrift=\(drift.joined(separator: " | "))"
+                             + " counters=\((counters as? String) ?? "nil")\n").utf8))
+                    }
+                }
+            }
+        }
+    }
+
     func applicationDidBecomeActive(_ notification: Notification) {
         guard !state.repositories.isEmpty else { return }
         refreshOpenRepositoryRow()
@@ -1050,6 +1095,7 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         rendererReady = true
+        startGeometryProbe()
         // The pin goes with it, for the same reason and by the same rule: an empty document has
         // nothing pinned to it, and a refresh that decided it had nothing to do would leave the
         // window blank.
@@ -5119,6 +5165,15 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
 
     /// The widths the reader dragged the two dividers to, so un-collapsing gives back the pane they
     /// had rather than the one the theme suggests. `nil` until they drag one.
+    /// The pending re-read of a file that was being written when it was last asked for. At most
+    /// one: a second refusal replaces it rather than queueing behind it.
+    private var unstableRetry: DispatchWorkItem?
+    private var geometryProbe: Timer?
+
+    /// Longer than `RefreshDebounce.quietPeriod`, so a retry lands after the burst it is waiting
+    /// out rather than inside it.
+    static let unstableRetryDelay: TimeInterval = 0.6
+
     /// When the last activation sweep ran. `.distantPast` so the first one is never held back.
     private var lastActivationSweep = Date.distantPast
 
@@ -6520,6 +6575,26 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                     guard self.state.selectedFile?.path == file.path else { return }
                     self.statusLabel.stringValue =
                         "\(file.path) is being written — showing it once the file settles"
+                    // **And the sentence has to come true on its own.** The refusal was terminal:
+                    // it printed that promise and then waited for the next file-system event to
+                    // keep it. Under an editor autosaving faster than the debounce's quiet period,
+                    // the *last* save of a burst is the one most likely to be caught mid-write and
+                    // is by definition the one no further event follows — so the pane could sit on
+                    // that sentence until the reader typed again. Measured at rest the guard
+                    // refuses nothing (0 of 114 reads on this machine); the rate was never the
+                    // problem, the stickiness was.
+                    //
+                    // One retry, on a delay longer than the write it is waiting out. It is
+                    // cancelled by any refresh that gets there first, because `render` is entered
+                    // again and the pin will find the document already drawn.
+                    self.unstableRetry?.cancel()
+                    let retry = DispatchWorkItem { [weak self] in
+                        guard let self, self.state.selectedFile?.path == file.path else { return }
+                        self.refreshCurrentFile()
+                    }
+                    self.unstableRetry = retry
+                    DispatchQueue.main.asyncAfter(deadline: .now() + Self.unstableRetryDelay,
+                                                  execute: retry)
                 }
                 return
             }

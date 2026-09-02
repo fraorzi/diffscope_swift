@@ -3725,3 +3725,18 @@ while typing is gone; the one they feel when clicking a repository is not.
 - [x] Both apply halves refuse a reading for a repository the reader has left.
 
 **Waves 1 through 5 are complete.** 2214 checks, 41 selftest arms.
+
+## Step — the four NEEDS-MEASUREMENT items (M13-F)
+
+- [x] **Exclusion budget: refuted by measurement.** 25 repositories, max 1 `node_modules` each
+      against a limit of 8. `--watch-survey` is the command; re-measure if a nested-workspace
+      monorepo is ever added.
+- [x] **Mid-write refusals: 0 of 114 at rest.** The finding was right about the defect and wrong
+      about its cause — the refusal was *terminal*, not too eager. The last save of an autosave
+      burst is the one most likely to be caught mid-write and the one no further event follows, so
+      the pane could sit on *"showing it once the file settles"* until the reader typed again. One
+      retry now follows on a 0.6 s delay, cancelled by any refresh that gets there first.
+- [x] **Backing scale and full-screen occlusion: instrumented, not answered.** They are physical
+      acts. `DIFFSCOPE_GEOMETRY_PROBE=1` reports scale, screen, `settle`'s before→after line heights,
+      `rowDrift` and the render counters once a second. Nothing in the application observes either
+      event — that part is code-true and now written down.

@@ -78,6 +78,11 @@ if CommandLine.arguments.count > 2, CommandLine.arguments[1] == "--budget-survey
     exit(0)
 }
 
+if CommandLine.arguments.count > 2, CommandLine.arguments[1] == "--watch-survey" {
+    runWatchSurvey(root: CommandLine.arguments[2])
+    exit(0)
+}
+
 if CommandLine.arguments.count > 2, CommandLine.arguments[1] == "--survey" {
     let root = URL(fileURLWithPath: CommandLine.arguments[2])
     let discovery = RepositoryDiscovery(maximumDepth: 2)

@@ -3795,3 +3795,60 @@ before the list was applied. Harmless today, because the render pin re-reads the
 ordering that used to be statement order is now nesting, and the intent has to be visible.
 
 2210 → 2214 checks.
+
+## M13-F — the four the audit could not settle by reading
+
+**Date:** 2026-09-02. Two measured against the reader's own repositories, one corrected, one left as
+an armed instrument because it cannot be taken headlessly.
+
+### The watcher's exclusion budget (C3.5) — refuted by measurement
+
+`swift run -c release diffscope-verify --watch-survey ~/WebstormProjects`, over **25 repositories**:
+
+```
+node_modules found: max 1 · mean 0.8 · over the limit: 0 of 25
+```
+
+`FSEventStreamSetExclusionPaths` takes eight and the search goes three levels deep. Nothing in this
+tree comes close, and the failure mode when it did would be a **noisier** watcher rather than a deaf
+one — the surplus stays watched. Recorded so it is not re-litigated; re-measure if a monorepo with
+nested workspace packages is ever added.
+
+### The mid-write refusal rate (C4.1) — the rate was never the problem
+
+Same survey, 114 pinned reads over the same repositories: **0 refused, 0.0%**. DEC-068 measured
+42–52 refusals per 100 pins at a 20 ms confirm delay; at 5 ms, at rest, on this filesystem, none.
+
+The suite's own arms already measure it under load and disagree usefully:
+`continuous rewrite: 200 reads, 200 refused` — correct, the file *is* being written — and
+`saves 30 ms apart: 100 reads, 8 refused`.
+
+**So the finding was right about the defect and wrong about its cause.** The refusal is not too
+eager; it was **terminal**. `render` printed *"showing it once the file settles"* and then waited for
+the next file-system event to keep that promise — and under an editor autosaving faster than the
+debounce's quiet period, the last save of a burst is both the one most likely to be caught mid-write
+and, by definition, the one no further event follows. The pane could sit on that sentence until the
+reader typed again.
+
+One retry now follows, on a 0.6 s delay — longer than `RefreshDebounce.quietPeriod`, so it lands
+after the burst rather than inside it — cancelled by any refresh that gets there first.
+
+### Backing scale and full-screen occlusion (A4.1, B3.2, B4.5) — an instrument, not a number
+
+These are physical acts and no headless run can take them. The premise is code-true and worth
+restating: **nothing in the application observes either.** There is no
+`windowDidChangeBackingProperties`, no `windowDidChangeOcclusionState` and no full-screen delegate
+anywhere in `Sources/diffscope-app/`.
+
+```
+DIFFSCOPE_GEOMETRY_PROBE=1 swift run -c release diffscope-app
+```
+
+reports once a second: the backing scale and screen name, `diffscopeSettle()`'s `before→after` line
+heights per view, `rowDrift` (lines with no gutter row level with them), and the render counters.
+
+- A **non-identity `settle` pair** after dragging between displays means CodeMirror was holding a
+  measurement nobody was going to ask it to refresh.
+- `renders` unchanged across a frame the reader saw blank means the blank was WebKit discarding
+  compositing layers, not the application re-rendering — which would make it a lifecycle problem
+  rather than a diff-loading one.
