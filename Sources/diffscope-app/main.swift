@@ -78,7 +78,7 @@ final class AppState {
     var operation: RepositoryOperation = .none
 }
 
-final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, NSSplitViewDelegate, WKNavigationDelegate, WKScriptMessageHandler {
+final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, NSTableViewDelegate, NSSplitViewDelegate, NSWindowDelegate, WKNavigationDelegate, WKScriptMessageHandler {
     let state = AppState()
     let discovery = RepositoryDiscovery(maximumDepth: 2)
     let reader = RepositoryReader()
@@ -403,6 +403,51 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         }
     }
 
+    // ---- the geometry the editor measured itself against ----------------------------------------
+
+    /// **Nothing observed these, and the measurements they invalidate are cached.**
+    ///
+    /// CodeMirror measures a character's width and a line's height once and keeps them until
+    /// something asks it to look again. It asks itself on a `ResizeObserver` over the scroller and
+    /// on a window `resize` — and **neither fires** when the window moves to a display with a
+    /// different pixel density, when it changes screen, or when it comes back from another Space.
+    /// The logical size is identical; the basis the measurement was taken against is not.
+    ///
+    /// The audit could not settle whether the metrics actually drift, and it cannot be settled on
+    /// this machine at all: there is one display. So this is fixed rather than measured, which is
+    /// defensible because **re-measuring is idempotent** — `diffscopeSettle()` reads the pending
+    /// measurement and reports `before→after`, and when nothing has changed those are the same
+    /// number and nothing is redrawn. The cost of being wrong about the defect is one no-op per
+    /// window event; the cost of leaving it is line numbers that drift out of register down a
+    /// document, which is the shape M8-D took a milestone to find.
+    func windowDidChangeBackingProperties(_ notification: Notification) {
+        resettle("the backing scale changed")
+    }
+
+    func windowDidChangeScreen(_ notification: Notification) {
+        resettle("the window changed screen")
+    }
+
+    /// Coming back from another Space, or out from behind another window. WebKit suspends animation
+    /// frames while a window is occluded (T1-A), and CodeMirror's re-measure runs inside one — so a
+    /// resize that happened while hidden was observed and then never acted on.
+    func windowDidChangeOcclusionState(_ notification: Notification) {
+        guard window.occlusionState.contains(.visible) else { return }
+        resettle("the window became visible")
+    }
+
+    func windowDidEnterFullScreen(_ notification: Notification) { resettle("entered full screen") }
+    func windowDidExitFullScreen(_ notification: Notification) { resettle("left full screen") }
+
+    private func resettle(_ reason: String) {
+        guard rendererReady else { return }
+        bridge("window.diffscopeSettle()") { value, _ in
+            guard ProcessInfo.processInfo.environment["DIFFSCOPE_GEOMETRY_PROBE"] != nil else { return }
+            FileHandle.standardError.write(Data(
+                ("GEOMETRY resettled — \(reason): \((value as? String) ?? "nil")\n").utf8))
+        }
+    }
+
     func applicationDidBecomeActive(_ notification: Notification) {
         guard !state.repositories.isEmpty else { return }
         refreshOpenRepositoryRow()
@@ -440,6 +485,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
         window.isOpaque = false
         window.backgroundColor = .clear
         window.titleVisibility = .hidden
+        // The window's own events — backing scale, screen, occlusion, full screen — are the ones
+        // that invalidate a measurement without changing a size, and nothing was listening for any
+        // of them. See `windowDidChangeBackingProperties`.
+        window.delegate = self
         window.center()
 
         repoTable = makeTable(identifier: "repo")

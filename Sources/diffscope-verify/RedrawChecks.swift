@@ -313,6 +313,21 @@ func runRedrawChecks(_ reportRaw: (String, Bool, String) -> Void) {
            shell.contains("draggedRepoPaneWidth = widths[0]")
                && shell.contains("(draggedRepoPaneWidth ?? Theme.repositoryPaneWidth)"))
 
+    // The window events that invalidate a measurement without changing a size. Nothing listened
+    // for any of them, and CodeMirror's own re-measure triggers — a `ResizeObserver` on the
+    // scroller and a window `resize` — fire for none of them.
+    for handler in ["windowDidChangeBackingProperties", "windowDidChangeScreen",
+                    "windowDidChangeOcclusionState", "windowDidEnterFullScreen",
+                    "windowDidExitFullScreen"] {
+        report("the window re-measures on \(handler)", shell.contains("func \(handler)("))
+    }
+    report("and something is actually listening",
+           shell.contains("window.delegate = self") && shell.contains("NSWindowDelegate"))
+    report("re-measuring is idempotent, so being wrong about the defect costs a no-op",
+           page.range(of: "window.diffscopeSettle = function").map { range in
+               String(page[range.lowerBound...].prefix(400)).contains("requestMeasure()")
+           } ?? false)
+
     print("\n=== the same question is not asked twice ===")
 
     // One reading, parsed once, derived twice. Checked against bytes rather than against a

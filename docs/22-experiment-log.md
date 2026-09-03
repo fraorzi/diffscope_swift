@@ -3852,3 +3852,26 @@ heights per view, `rowDrift` (lines with no gutter row level with them), and the
 - `renders` unchanged across a frame the reader saw blank means the blank was WebKit discarding
   compositing layers, not the application re-rendering — which would make it a lifecycle problem
   rather than a diff-loading one.
+
+### M13-F addendum — the two that cannot be measured here, fixed rather than left open
+
+The machine has **one display, scale 2.0**. There is nowhere to drag the window to, so the
+backing-scale scenario is not reachable — not by an agent and not by the owner. The full-screen one
+is reachable but only by hand, and a selftest window is occluded throughout, which is the condition
+that confounds the measurement (T1-A).
+
+**So it is fixed blind, and that is defensible because re-measuring is idempotent.**
+`diffscopeSettle()` reads the pending measurement and reports `before→after`; when nothing has
+changed those are the same number and nothing is redrawn. The cost of being wrong about the defect
+is one no-op per window event. The cost of leaving it is line numbers drifting out of register down
+a document — the shape M8-D took a milestone to find.
+
+`Controller` is now the window's delegate and re-measures on **backing properties, screen change,
+occlusion becoming visible, and both full-screen transitions**. CodeMirror's own triggers — a
+`ResizeObserver` on the scroller and a window `resize` — fire for none of those: the logical size is
+identical, and only the basis the measurement was taken against has moved.
+
+Under `DIFFSCOPE_GEOMETRY_PROBE=1` each one prints `GEOMETRY resettled — <reason>: before→after`, so
+if a second display is ever attached the question can still be answered rather than assumed.
+
+2214 → 2221 checks.

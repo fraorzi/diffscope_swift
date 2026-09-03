@@ -3740,3 +3740,11 @@ while typing is gone; the one they feel when clicking a repository is not.
       acts. `DIFFSCOPE_GEOMETRY_PROBE=1` reports scale, screen, `settle`'s before→after line heights,
       `rowDrift` and the render counters once a second. Nothing in the application observes either
       event — that part is code-true and now written down.
+
+- [x] **Backing scale and occlusion: fixed rather than measured.** One display on this machine, so
+      the scenario is unreachable for both agent and owner. `Controller` is the window delegate and
+      re-measures on backing properties, screen change, occlusion becoming visible, and both
+      full-screen transitions — none of which fire CodeMirror's own re-measure triggers, because the
+      logical size does not change. Idempotent, so being wrong costs a no-op per window event.
+
+**The UI audit is closed.** 2086 → 2221 checks, 36 → 41 selftest arms.
