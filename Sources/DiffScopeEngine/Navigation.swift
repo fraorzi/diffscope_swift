@@ -6,6 +6,13 @@ public struct ChangeStop: Codable, Sendable, Equatable {
     public let oldEnd: Int
     public let newStart: Int
     public let newEnd: Int
+
+    public init(oldStart: Int, oldEnd: Int, newStart: Int, newEnd: Int) {
+        self.oldStart = oldStart
+        self.oldEnd = oldEnd
+        self.newStart = newStart
+        self.newEnd = newEnd
+    }
 }
 
 /// An unchanged stretch long enough to be worth folding. Byte-equal on both sides by

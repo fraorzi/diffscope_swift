@@ -3962,3 +3962,62 @@ the wrong reason and proves nothing**; this one was caught because it was run ra
 about.
 
 2221 → 2231 checks.
+
+## M14-B — the window the withholding question is asked over
+
+**Date:** 2026-09-04. **Decision:** DEC-119.
+
+### The sweep
+
+| `reflowLookaheadLines` | `reflowed-block` | `duplicated-line` | `silent-old-side` |
+|---|---|---|---|
+| 0 (DEC-108, shipped) | 6071 | 147 | 205 |
+| **1 — taken** | **6206** | **144** | **171** |
+| 2 | 6242 | 148 | 171 |
+| 3 | 6262 | 146 | 171 |
+
+The first line is worth 135 blocks; the second 36 and the third 20. `silent-old-side` takes its whole
+improvement — 205 → 171 — from the first line and does not move again. That is the shape saying what
+it is: the formatter's closing token sits exactly one line past the block, and nothing else does.
+
+`false lines` 9079, `missed lines` 7083, `marks` 70632, `presented bytes` 2696245 and `loud bytes`
+2601011 are **identical at every setting including 0**, which is the check on the rest of the table:
+DEC-119 changes which old lines are printed and nothing about which bytes differ.
+
+### Why `duplicated-line` never saw this family
+
+`duplicatedLineBreakdown` in `CorpusSurvey.swift` counts an old line as duplicated only when a
+**byte-identical** new line exists in the same block:
+
+```swift
+guard let newIndex = newLines.indices.first(where: {
+    !taken.contains($0) && Array(new[newLines[$0].start..<newLines[$0].end]) == text
+}) else { continue }
+```
+
+A rewrapped line has no byte-identical partner by construction. So the shape the owner reported —
+one old line printed beside the four new lines it became — scored **zero** on the metric named after
+it, throughout. `reflowed-block` is the number that moves, and it moves because a block that
+withholds is a block that stopped printing twice.
+
+### The two properties that had to move, and why that is not loosening them
+
+`over every fixture, a withheld half is on screen in the half that stays` and `over every fixture,
+what is withheld is on the new side in order` both failed on `prettier-formatting` the moment the
+lookahead landed. Both asserted the subsequence against `fixture.new[block.newStart..<block.newEnd]`.
+
+The claim is *on screen*, and the context line is on screen — it is printed directly below the block.
+The block was a proxy for the claim and stopped being an accurate one. Both now ask
+`withheldWindowEnd`, and the bound they used to carry implicitly is asserted explicitly instead:
+over every fixture the window crosses at most `reflowLookaheadLines` terminators, and a unit case
+pins that a stop-touched line is refused.
+
+### Method note — the negative control, watched twice
+
+`reflowLookaheadLines` was set to 0 and the suite re-run: *and its old half is withheld rather than
+printed beside its own rewrap* failed, and the inline control *with no lookahead the old half is
+kept* passed. Restored, both hold the other way. The restore is also what surfaced the two fixture
+properties above — they were green with the rule reverted and red with it in place, which is the only
+reason they were found before the commit rather than after it.
+
+2231 → 2238 checks.

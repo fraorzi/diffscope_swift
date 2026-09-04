@@ -194,10 +194,16 @@ func runUnifiedChecks(_ reportRaw: (String, Bool, String) -> Void) {
             let model = structuralDiff(oldPath: fixture.oldPath, oldBytes: fixture.old,
                                        newPath: fixture.newPath, newBytes: fixture.new,
                                        parser: parser).model
-            for block in unifiedBlocks(model, stops: changeStops(model)) where block.reflowed {
+            let fixtureStops = changeStops(model)
+            for block in unifiedBlocks(model, stops: fixtureStops) where block.reflowed {
                 found += 1
+                // Against the window the rule reads, not against the block: DEC-119 lets the walk
+                // see one line of context past the block, and that line is printed directly below
+                // it. "On screen" is the claim; the block was only ever a proxy for it.
+                let windowEnd = withheldWindowEnd(new: fixture.new, block: block,
+                                                  stops: fixtureStops)
                 let oldTokens = layoutTokens(fixture.old[block.oldStart..<block.oldEnd])
-                let newTokens = layoutTokens(fixture.new[block.newStart..<block.newEnd])
+                let newTokens = layoutTokens(fixture.new[block.newStart..<windowEnd])
                 if !isTokenSubsequence(oldTokens, of: newTokens) { offenders.append(fixture.name) }
             }
         }
@@ -259,12 +265,15 @@ func runUnifiedChecks(_ reportRaw: (String, Bool, String) -> Void) {
             let model = structuralDiff(oldPath: fixture.oldPath, oldBytes: fixture.old,
                                        newPath: fixture.newPath, newBytes: fixture.new,
                                        parser: parser).model
-            for block in unifiedBlocks(model, stops: changeStops(model)) {
+            let fixtureStops = changeStops(model)
+            for block in unifiedBlocks(model, stops: fixtureStops) {
                 guard !block.withheldOld.isEmpty else { continue }
                 let hidden = block.withheldOld.flatMap { Array(fixture.old[$0.start..<$0.end]) }
                 withheldLines += block.withheldOld.count
+                let windowEnd = withheldWindowEnd(new: fixture.new, block: block,
+                                                  stops: fixtureStops)
                 if !isTokenSubsequence(layoutTokens(hidden[...]),
-                                       of: layoutTokens(fixture.new[block.newStart..<block.newEnd])) {
+                                       of: layoutTokens(fixture.new[block.newStart..<windowEnd])) {
                     offenders.append(fixture.name)
                 }
             }
@@ -309,5 +318,78 @@ func runUnifiedChecks(_ reportRaw: (String, Bool, String) -> Void) {
                source.contains("function expandReflow") && source.contains("expandReflow(this.reflowIndex)"))
         report("and the header says how much is behind it",
                source.contains("lines not printed"))
+    }
+
+    print("\n=== DEC-119: a closing token on its own line does not print the element twice ===")
+    do {
+        // The owner's second report, reduced to one element. Prettier explodes the attributes and
+        // puts `/>` on a line of its own; that line is unchanged, so it is outside every hunk and
+        // outside the block, and the old line's `/` and `>` used to fall off the end of the walk.
+        let old = [UInt8]("<Img src={a.src} alt=\"\" />\n".utf8)
+        let new = [UInt8]("<Img\n  src={a.src}\n  loading=\"lazy\"\n  alt=\"\"\n/>\n".utf8)
+        let model = trivialModel(oldBytes: old, newBytes: new)
+        let stops = changeStops(model)
+        let blocks = unifiedBlocks(model, stops: stops)
+
+        report("the rewrapped element is one block", blocks.count == 1, "\(blocks.count) blocks")
+        report("and its old half is withheld rather than printed beside its own rewrap",
+               blocks.first?.reflowed == true)
+
+        // The negative control: with no lookahead this is DEC-108's behaviour, and the element is
+        // printed twice. Asserted rather than assumed, because the whole entry is the one line.
+        if let block = blocks.first {
+            report("control: with no lookahead the old half is kept",
+                   withheldOldRanges(old: old, new: new, block: block,
+                                     stops: stops, lookaheadLines: 0).isEmpty)
+        } else {
+            report("control: with no lookahead the old half is kept", false, "no block")
+        }
+    }
+
+    print("\n=== DEC-119: the lookahead stops at the next change, and a removal stays visible ===")
+    do {
+        // The barrier, at the smallest scale that can express it. The old line's second token lives
+        // only on the new side's second line; whether the walk may reach it is the whole rule.
+        let old = [UInt8]("x y\n".utf8)
+        let new = [UInt8]("x\ny\n".utf8)
+        let block = UnifiedBlock(oldStart: 0, oldEnd: old.count, newStart: 0, newEnd: 2)
+
+        report("context one line past the block is reachable",
+               !withheldOldRanges(old: old, new: new, block: block, stops: []).isEmpty)
+        report("but a line the next change touches is not",
+               withheldOldRanges(old: old, new: new, block: block,
+                                 stops: [ChangeStop(oldStart: 0, oldEnd: 0,
+                                                    newStart: 2, newEnd: 4)]).isEmpty)
+
+        // And the property that matters more than either: a line that was genuinely removed beside
+        // a rewrap is still kept, so the reader still sees the removal.
+        let oldPair = [UInt8]("const x = foo(a);\nafter();\nafter();\n".utf8)
+        let newPair = [UInt8]("const x = foo(\n  a,\n);\nafter();\n".utf8)
+        let model = trivialModel(oldBytes: oldPair, newBytes: newPair)
+        let pairStops = changeStops(model)
+        let withheld = unifiedBlocks(model, stops: pairStops).flatMap(\.withheldOld)
+        let removedLineStart = 18   // the second `after();`, which is the one that went
+        // And the bound, over every fixture, so the window cannot quietly grow: whatever the walk
+        // reads past a block is at most `reflowLookaheadLines` line terminators further on.
+        var overshoot: [String] = []
+        let parser = TSXParser()
+        for fixture in loadFixtures(root: URL(fileURLWithPath: "fixtures")) {
+            let fixtureModel = structuralDiff(oldPath: fixture.oldPath, oldBytes: fixture.old,
+                                              newPath: fixture.newPath, newBytes: fixture.new,
+                                              parser: parser).model
+            let fixtureStops = changeStops(fixtureModel)
+            for block in unifiedBlocks(fixtureModel, stops: fixtureStops) {
+                let windowEnd = withheldWindowEnd(new: fixture.new, block: block,
+                                                  stops: fixtureStops)
+                let crossed = fixture.new[block.newEnd..<windowEnd].filter { $0 == 0x0A }.count
+                if crossed > reflowLookaheadLines { overshoot.append(fixture.name) }
+            }
+        }
+        report("the window never reaches further than the bound allows", overshoot.isEmpty,
+               overshoot.joined(separator: ", "))
+
+        report("a removed line beside a rewrap is not withheld",
+               !withheld.contains { $0.start <= removedLineStart && $0.end > removedLineStart },
+               withheld.map { "\($0.start)..<\($0.end)" }.joined(separator: ","))
     }
 }

@@ -73,12 +73,60 @@ public struct UnifiedBlock: Codable, Sendable, Equatable {
 ///
 /// **Only whole lines**, so what remains on screen is still a diff of lines, and the withheld ranges
 /// are merged where they touch so the header can count them.
-public func withheldOldRanges(old: [UInt8], new: [UInt8], block: UnifiedBlock) -> [ByteRange] {
-    guard block.oldEnd > block.oldStart, block.newEnd > block.newStart else { return [] }
-    guard block.oldEnd - block.oldStart <= reflowTokenBudget,
-          block.newEnd - block.newStart <= reflowTokenBudget else { return [] }
+/// How far past a block's new half the withholding walk may look, in whole lines of context
+/// (DEC-119). Zero reproduces the behaviour DEC-108 shipped, which is the negative control.
+public let reflowLookaheadLines = 1
 
-    let newTokens = layoutTokens(new[block.newStart..<block.newEnd])
+/// The new-side span the withholding walk is allowed to read: the block's new half, plus at most
+/// `lookaheadLines` whole lines of **context** after it (DEC-119).
+///
+/// Exposed rather than inlined so the property checks ask this function instead of restating the
+/// window. A check that restates a rule stops being a check the moment the rule moves; what keeps
+/// this one honest is that the bound is asserted separately — the walk may not cross a line any stop
+/// touches, and it may not travel further than the constant allows.
+public func withheldWindowEnd(new: [UInt8], block: UnifiedBlock, stops: [ChangeStop],
+                              lookaheadLines: Int = reflowLookaheadLines) -> Int {
+    var windowEnd = block.newEnd
+    var remaining = max(0, lookaheadLines)
+    while remaining > 0, windowEnd < new.count {
+        var lineEnd = windowEnd
+        while lineEnd < new.count, new[lineEnd] != 0x0A { lineEnd += 1 }
+        if lineEnd < new.count { lineEnd += 1 }
+        guard lineEnd > windowEnd else { break }
+        let touched = stops.contains {
+            $0.newEnd > $0.newStart && $0.newStart < lineEnd && $0.newEnd > windowEnd
+        }
+        if touched { break }
+        windowEnd = lineEnd
+        remaining -= 1
+    }
+    return windowEnd
+}
+
+public func withheldOldRanges(old: [UInt8], new: [UInt8], block: UnifiedBlock,
+                              stops: [ChangeStop] = [],
+                              lookaheadLines: Int = reflowLookaheadLines) -> [ByteRange] {
+    guard block.oldEnd > block.oldStart, block.newEnd > block.newStart else { return [] }
+
+    // **The window the question is asked over, which is not the block** (DEC-119).
+    //
+    // A block's new half ends at the last line a hunk touched. Prettier ends an exploded element
+    // with its closing token on a line of its own, and that line is **unchanged** — so it is outside
+    // every hunk, outside the block, and invisible to the walk below. The old line still contains
+    // `/` and `>`, the walk runs out of tape on them, the line is kept, and the element is printed
+    // twice. On the old side the very same bytes are *inside* the block, because the block was
+    // snapped to whole lines independently on each side; the asymmetry is the whole defect.
+    //
+    // So the walk may look past `block.newEnd`, by whole lines, and **only into context**. A line a
+    // stop touches belongs to the next block's change, and withholding an old line on the strength
+    // of new content would hide a removal — which is the one thing this pass may never do.
+    let windowEnd = withheldWindowEnd(new: new, block: block, stops: stops,
+                                      lookaheadLines: lookaheadLines)
+
+    guard block.oldEnd - block.oldStart <= reflowTokenBudget,
+          windowEnd - block.newStart <= reflowTokenBudget else { return [] }
+
+    let newTokens = layoutTokens(new[block.newStart..<windowEnd])
     guard !newTokens.isEmpty else { return [] }
 
     var ranges: [ByteRange] = []
@@ -240,6 +288,7 @@ public func unifiedBlocks(_ model: DiffModel, stops: [ChangeStop]) -> [UnifiedBl
         let block = UnifiedBlock(oldStart: oldStart, oldEnd: oldEnd,
                                  newStart: newStart, newEnd: newEnd)
         return UnifiedBlock(oldStart: oldStart, oldEnd: oldEnd, newStart: newStart, newEnd: newEnd,
-                            withheldOld: withheldOldRanges(old: old, new: new, block: block))
+                            withheldOld: withheldOldRanges(old: old, new: new, block: block,
+                                                          stops: stops))
     }
 }

@@ -5620,3 +5620,87 @@ reader of that tool is looking for. It now prints `validation.summary`, which al
 Reopen if the 40 M canonical budget is ever raised, which would shrink this path, or if a file is
 found where the line-anchored stops are so coarse that navigation is worse than none — the DEC-105
 entry records 200 000 lines as the point where even anchoring is refused.
+
+---
+
+## DEC-119 — A closing token on its own line does not print the element twice
+
+- **Date:** 2026-09-04 · **Topic:** the window `withheldOldRanges` asks its question over · **Status:** Accepted · **Amends DEC-108; measured in [22-experiment-log.md](22-experiment-log.md) → M14-B**
+
+### Context
+
+The owner's second report: *a whole element shown as removed and immediately re-added, although only
+one prop changed — the prop lengthened the line, prettier wrapped it over several lines, and the
+element reads as rewritten.* DEC-102 and DEC-108 were both aimed at it and neither reached it.
+
+Reduced to one element, with a control that isolates the cause to a single line break:
+
+```
+old   <Img src={a.src} alt="" />
+new   <Img\n  src={a.src}\n  loading="lazy"\n  alt=""\n/>
+        → block  old 1–1  new 1–4            — old half printed in full
+
+control, the same edit with the closing token on the last changed line:
+new   <Img\n  src={a.src}\n  loading="lazy"\n  alt="" />
+        → block  old 1–1  new 1–4  reflowed — the whole old half is withheld
+```
+
+`withheldOldRanges` asked its question over `new[block.newStart..<block.newEnd]`. A block's new half
+ends at **the last line any hunk touched**. Prettier ends an exploded element with its closing token
+on a line of its own, and that line is *unchanged* — so it is outside every hunk, outside the block,
+and invisible to the walk. The old line still contains `/` and `>`; the walk ran out of tape on them,
+the line was kept, and the element was printed beside its own rewrap.
+
+**The asymmetry is the whole defect.** On the old side those very bytes are *inside* the block,
+because the block is snapped to whole lines independently on each side.
+
+It is also invisible to the survey. `duplicatedLineBreakdown` counts an old line as duplicated only
+when a **byte-identical** new line exists in the block, and a rewrapped line has no byte-identical
+partner by construction — so this entire family scored zero on `duplicated-line`, which is why 106
+duplicated lines looked small next to what the owner was seeing.
+
+### Options considered
+
+1. **Ask the question over the whole new file.** Rejected: the walk matches tokens in order and
+   nothing else, so an unbounded window will eventually withhold a genuinely removed line because
+   its tokens recur somewhere below. Withholding is the one act in this product that puts source out
+   of sight; its window has to be bounded by something.
+2. **Extend the block itself.** Rejected: the block is what the layout prints, and printing the
+   closing line as part of the change would be a second wrong answer.
+3. **Let the walk read a bounded run of context past the block.** Chosen.
+
+### Final decision
+
+**Option 3.** The walk may look past `block.newEnd` by at most `reflowLookaheadLines` — **one** —
+whole line, and **only into context**: a line that any stop touches belongs to the next block's
+change, and withholding an old line on the strength of new content would hide a removal, which is
+the one thing this pass may never do.
+
+**One line, because the curve is flat after it.** Measured over 4016 pairs: blocks that withhold
+something go 6071 → **6206** at one line, 6242 at two, 6262 at three. The first line is the
+formatter's closing token and it is the shape; past it the gain is marginal and the risk that a
+removed line is matched against distant context grows with every line admitted.
+
+`withheldWindowEnd(new:block:stops:lookaheadLines:)` is exposed rather than inlined, and the two
+fixture-wide properties ask **it** instead of restating the window. A check that restates a rule
+stops being a check the moment the rule moves. What keeps these honest is that the bound is asserted
+separately: over every fixture the window crosses at most one line terminator, and a unit case pins
+that a stop-touched line is refused.
+
+### Consequences
+
+- **The model does not move by a byte.** `false lines`, `missed lines`, `marks`, `presented bytes`
+  and `loud bytes` are identical before and after. This is a layout change and the survey says so.
+- `silent-old-side` **205 → 171**, `reflowed-block` 6071 → 6206, `duplicated-line` 147 → 144.
+- **A removal beside a rewrap stays visible**, checked three ways: a deleted closing brace forms its
+  own block and is marked; a duplicated line of which one copy was deleted keeps the copy that
+  carries the removal; and the barrier refuses a line the next change touches.
+- Two existing fixture properties had to be re-pointed at the window rather than the block. They are
+  the same claim — *what is withheld is on screen, in order* — and "on screen" was always the claim;
+  the block was a proxy for it that stopped being accurate.
+
+### Revisit trigger
+
+Reopen if a corpus pair is ever found where a line git reports as removed is withheld. The property
+that prevents it is ordering plus the context barrier, not a proof, and one line of slack is the
+whole of the margin.
