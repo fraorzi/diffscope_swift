@@ -120,7 +120,8 @@ public func structuralDiff(
         // paints the whole file only where it cannot.
         return StructuralResult(
             model: trivialModel(oldBytes: oldBytes, newBytes: newBytes,
-                                absorption: AbsorptionSettings(islandBytes: settings.absorbIslandBytes)),
+                                absorption: AbsorptionSettings(islandBytes: settings.absorbIslandBytes,
+                                       refuseBetweenLayoutFlanks: settings.absorbRefusesLayoutFlanks)),
             stats: StructuralStats(anchors: 0, ambiguities: 0,
                                    unchangedBytesOld: 0, unchangedBytesNew: 0,
                                    usedFallback: true, degradation: degradation)
@@ -345,7 +346,8 @@ public func structuralDiff(
     // already reached a node boundary has no word left to finish and the pass costs nothing; before
     // the grapheme snap, which must stay last for the reason above. All three only widen, so the
     // order changes what is spent and never what is claimed.
-    let absorption = AbsorptionSettings(islandBytes: settings.absorbIslandBytes)
+    let absorption = AbsorptionSettings(islandBytes: settings.absorbIslandBytes,
+                                       refuseBetweenLayoutFlanks: settings.absorbRefusesLayoutFlanks)
     let oldStrings = stringRegions(tree: oldTree)
     let newStrings = stringRegions(tree: newTree)
     let oldPartition = snapToGraphemeBoundaries(snapToWordBoundaries(snapPresentation(

@@ -73,12 +73,40 @@ private func lineIndex(of offset: Int, in starts: [Int]) -> Int {
 /// Navigation follows the **canonical diff**, not the presented segments: the same alignment
 /// the invariant is stated against, so "next change" cannot drift away from what INV-2 checks.
 /// Presented ranges are supersets of these, so every stop lands inside a marked region.
-public func changeStops(_ model: DiffModel) -> [ChangeStop] {
-    guard case let .exact(hunks) = canonicalDiff(old: model.oldBytes, new: model.newBytes) else {
-        return []
-    }
-    return hunks.map {
-        ChangeStop(oldStart: $0.oldStart, oldEnd: $0.oldEnd, newStart: $0.newStart, newEnd: $0.newEnd)
+///
+/// **When the byte diff runs out of budget the answer is lines, not silence** (DEC-118) — DEC-105
+/// carried onto the navigation path. `fallbackPartitions` has taken that route since DEC-105 on the reasoning that
+/// *the byte diff refusing to answer is not the same thing as there being no answer*. This function
+/// did not: it returned an empty list, and an empty stop list is not a quiet degradation. It is the
+/// whole of the unified layout, because `unifiedBlocks` opens with `guard !stops.isEmpty`, and it is
+/// the whole of `⌘↓`.
+///
+/// Measured on the corpus: the 40 M budget is exhausted on real `.tsx` pages — a small file replaced
+/// by a large one is enough — and on those pairs the default layout drew no block at all while the
+/// notice bar said only *coverage not verified*. That sentence is true and is not the one the reader
+/// needs; the line-anchored hunks are, and they already exist.
+///
+/// The stops this route returns are wider than minimal, which is the same trade DEC-105 accepted:
+/// what it leaves unstopped is byte-identical line pairs, so no change loses its stop. Navigation
+/// asks for somewhere to go, not for the smallest possible somewhere.
+///
+/// - Parameter lineFallback: off reproduces the empty-list behaviour exactly, so the negative control
+///   exercises this rule rather than a different code path.
+public func changeStops(_ model: DiffModel, lineFallback: Bool = true) -> [ChangeStop] {
+    switch canonicalDiff(old: model.oldBytes, new: model.newBytes) {
+    case let .exact(hunks):
+        return hunks.map {
+            ChangeStop(oldStart: $0.oldStart, oldEnd: $0.oldEnd,
+                       newStart: $0.newStart, newEnd: $0.newEnd)
+        }
+    case .budgetExceeded:
+        guard lineFallback,
+              let hunks = lineAnchoredHunks(old: model.oldBytes, new: model.newBytes)
+        else { return [] }
+        return hunks.map {
+            ChangeStop(oldStart: $0.oldStart, oldEnd: $0.oldEnd,
+                       newStart: $0.newStart, newEnd: $0.newEnd)
+        }
     }
 }
 

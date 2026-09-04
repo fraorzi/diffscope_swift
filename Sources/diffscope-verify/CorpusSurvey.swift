@@ -62,6 +62,7 @@ func runCorpusSurvey(root: String, jsonOut: String?, limit: Int?, only: String?,
            "snap=\(settings.boundarySnapBudget) word=\(settings.wordSnapBudget)"
            + " merge=\(settings.mergeSplitMarksInWords ? 1 : 0)"
            + " reabsorb=\(settings.absorbAfterWidening ? 1 : 0)"
+           + " layoutflanks=\(settings.absorbRefusesLayoutFlanks ? 1 : 0)"
            + " island=\(settings.absorbIslandBytes)")
     if let jsonOut { writeSurveyJSON(results, to: jsonOut) }
 }

@@ -217,4 +217,52 @@ func runAbsorptionChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("both sides still reconstruct byte for byte", reconstructed)
         report("and the pass is idempotent", idempotent)
     }
+
+    print("\n=== DEC-117: a line break moving does not swallow the code it moved around ===")
+    do {
+        // The shape the owner reported, reduced to one line. A rewrap puts indentation either side
+        // of an identifier nobody touched; the two marks are pure layout and the island is a word.
+        let bytes = [UInt8]("foo(\n                  locale,\n                  bar)".utf8)
+        let indentOne = 4..<23      // a newline and eighteen spaces — a real rewrap's indent
+        let word = 23..<29             // "locale"
+        let indentTwo = 29..<49      // a comma, a newline and eighteen spaces
+        let partition = Partition(totalLength: bytes.count, segments: [
+            Segment(start: 0, end: 4, label: .unchanged, confidence: 1),
+            Segment(start: indentOne.lowerBound, end: indentOne.upperBound, label: .changed,
+                    classification: ChangeClass.whitespace.rawValue, confidence: 0.8),
+            Segment(start: word.lowerBound, end: word.upperBound, label: .unchanged, confidence: 1),
+            Segment(start: indentTwo.lowerBound, end: indentTwo.upperBound, label: .changed,
+                    classification: ChangeClass.whitespace.rawValue, confidence: 0.8),
+            Segment(start: 49, end: bytes.count, label: .unchanged, confidence: 1),
+        ])
+
+        func wordIsPresented(_ settings: AbsorptionSettings) -> Bool {
+            absorbIslands(partition, bytes: bytes, settings: settings).segments
+                .contains { $0.isPresented && $0.start <= word.lowerBound && $0.end >= word.upperBound }
+        }
+
+        report("an untouched word between two indent marks is left unmarked",
+               !wordIsPresented(AbsorptionSettings()))
+
+        // The negative control. With the rule off this is the pass as DEC-094 shipped it, and the
+        // word is swallowed — which is the defect, reproduced rather than asserted away.
+        report("control: with the rule off the word is swallowed",
+               wordIsPresented(AbsorptionSettings(refuseBetweenLayoutFlanks: false)))
+
+        // The floor is the other half of the rule and it has to be seen to hold: a one- or two-byte
+        // gap is still absorbed, because that gap is the confetti DEC-094 exists to remove.
+        let tight = [UInt8]("a\n  ,\n  b".utf8)
+        let tightPartition = Partition(totalLength: tight.count, segments: [
+            Segment(start: 0, end: 1, label: .unchanged, confidence: 1),
+            Segment(start: 1, end: 4, label: .changed,
+                    classification: ChangeClass.whitespace.rawValue, confidence: 0.8),
+            Segment(start: 4, end: 5, label: .unchanged, confidence: 1),
+            Segment(start: 5, end: 8, label: .changed,
+                    classification: ChangeClass.whitespace.rawValue, confidence: 0.8),
+            Segment(start: 8, end: tight.count, label: .unchanged, confidence: 1),
+        ])
+        report("a one-byte island between the same two marks is still absorbed",
+               absorbIslands(tightPartition, bytes: tight, settings: AbsorptionSettings())
+                   .segments.contains { $0.isPresented && $0.start <= 4 && $0.end >= 5 })
+    }
 }

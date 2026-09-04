@@ -4,13 +4,26 @@ import Foundation
 /// `22-experiment-log.md` → M11-D.
 public let absorbIslandBytes = 8
 
+/// The shortest island of real content that the layout-flank rule will refuse (DEC-117).
+///
+/// Below it the pass keeps absorbing, and that is not a concession — a one- or two-byte gap between
+/// two marks is the confetti DEC-094 exists to remove, and refusing it trades one complaint for
+/// another. Three is where a token starts: `t('` is three bytes and `locale` is six, and those are
+/// the shapes the owner reported.
+public let layoutFlankIslandFloor = 3
+
 public struct AbsorptionSettings: Sendable, Equatable {
     public var islandBytes: Int
     public var relativeToFlanks: Bool
+    /// Whether an island of real content between two flanks made only of layout bytes is refused
+    /// (DEC-117). Off reproduces the pass as DEC-094 shipped it, which is the negative control.
+    public var refuseBetweenLayoutFlanks: Bool
 
-    public init(islandBytes: Int = absorbIslandBytes, relativeToFlanks: Bool = true) {
+    public init(islandBytes: Int = absorbIslandBytes, relativeToFlanks: Bool = true,
+                refuseBetweenLayoutFlanks: Bool = true) {
         self.islandBytes = islandBytes
         self.relativeToFlanks = relativeToFlanks
+        self.refuseBetweenLayoutFlanks = refuseBetweenLayoutFlanks
     }
 }
 
@@ -88,7 +101,8 @@ public func absorbIslands(
     for index in 1..<max(segments.count - 1, 1) where !segments[index].isPresented {
         guard segments[index - 1].isPresented, segments[index + 1].isPresented,
               qualifies(segments[index], between: segments[index - 1], and: segments[index + 1],
-                        lines: lines, presentedLines: presentedLines, settings: settings)
+                        bytes: bytes, lines: lines, presentedLines: presentedLines,
+                        settings: settings)
         else { continue }
         absorb[index] = true
     }
@@ -117,11 +131,33 @@ private func qualifies(
     _ island: Segment,
     between left: Segment,
     and right: Segment,
+    bytes: [UInt8],
     lines: LineIndex,
     presentedLines: Set<Int>,
     settings: AbsorptionSettings
 ) -> Bool {
     guard island.length > 0, island.length <= settings.islandBytes else { return false }
+    // **A fifth condition, and it is about what the flanks *are* rather than how long they are**
+    // (DEC-117). The four rules above are all geometry: length, length against the flanks, and the
+    // lines touched. None of them asks what the pass is absorbing across.
+    //
+    // Two flanks made of nothing but layout bytes are not a run of change with confetti in it. They
+    // are a line break moving — which is exactly what a prettier rewrap produces — and the thing
+    // between them is code the reader can see is untouched. The owner reported it as
+    // *an attribute that did not change is drawn as if it had been added*, and the corpus case is
+    // `formatSierotki(locale, t('…'))` rewrapped, where `locale` and `t('` sit between two runs of
+    // indentation and are drawn inside one loud mark.
+    //
+    // The confetti this pass exists for is unaffected: inside a nine-line insertion the flanks are
+    // runs of inserted **code**, not indentation, so the condition does not fire. And an island that
+    // is itself only whitespace is still absorbed, because joining two line breaks across a space
+    // says nothing a reader can disagree with.
+    if settings.refuseBetweenLayoutFlanks,
+       island.length >= layoutFlankIslandFloor,
+       onlyLayoutBytes(bytes, left) || onlyLayoutBytes(bytes, right),
+       !onlyLayoutBytes(bytes, island) {
+        return false
+    }
     // A move is the one label that is a claim about *both* sides: DEC-038 requires the two ranges to
     // be byte-identical, and the two sides are absorbed independently, so widening one is not
     // guaranteed to widen the other. Refused outright rather than guarded — T-11 caught this, and a
@@ -135,6 +171,14 @@ private func qualifies(
     // but only into lines its own flanks already mark.
     return lines.touched(from: island.start, to: island.end)
         .allSatisfy { presentedLines.contains($0) }
+}
+
+/// Whether every byte of a segment is a space, tab, carriage return or newline.
+private func onlyLayoutBytes(_ bytes: [UInt8], _ segment: Segment) -> Bool {
+    guard segment.start >= 0, segment.end <= bytes.count, segment.end > segment.start else {
+        return false
+    }
+    return bytes[segment.start..<segment.end].allSatisfy(isLayoutByte)
 }
 
 /// Line starts on `0x0A` only, built once so the pass stays linear in the file rather than

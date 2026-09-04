@@ -3875,3 +3875,90 @@ Under `DIFFSCOPE_GEOMETRY_PROBE=1` each one prints `GEOMETRY resettled — <reas
 if a second display is ever attached the question can still be answered rather than assumed.
 
 2214 → 2221 checks.
+
+## M14-A — the first two repairs of the diff audit, measured apart
+
+**Date:** 2026-09-04. **Decisions:** DEC-117 (absorption refuses across a layout flank), DEC-118
+(navigation falls back to line-anchored hunks).
+
+Both changes landed in one working tree, so they are measured **separately** — the corpus survey's
+`--layout-flanks 0` isolates DEC-118, and the difference between the two runs isolates DEC-117.
+Conflating them would have made DEC-118 look like a regression, for the reason below.
+
+### DEC-118 alone — the model does not move, and two shapes get worse
+
+| | before | after (`--layout-flanks 0`) |
+|---|---|---|
+| false lines | 9079 (17.5%) | **9079** |
+| missed lines | 7083 (19.9%) | **7083** |
+| marks | 70039 | **70039** |
+| presented bytes | 2699559 | **2699559** |
+| loud bytes | 2607458 | **2607458** |
+| `duplicated-line` | 106 in 74 pairs | 147 in 82 pairs |
+| `reflowed-block` | 5822 in 2295 pairs | 6071 in 2332 pairs |
+| `silent-old-side` | 203 in 166 pairs | 205 in 167 pairs |
+
+**The first five rows are the check on the last three.** DEC-118 changes navigation and the unified
+layout and nothing else; a model number that moved would mean it had reached into the analysis.
+
+**The last three rows got worse and that is the change working.** 39 of 4016 pairs exhaust the 40 M
+canonical work budget, and on every one of them `changeStops` returned an empty list, so
+`unifiedBlocks` — which opens with `guard !stops.isEmpty` — produced nothing. Those pairs could not
+contribute a duplicated line or a reflowed block because they contributed no block at all. The 41
+duplicated lines and 249 reflowed blocks were always there. **A metric that improves by hiding its
+input is the defect, not the measurement.**
+
+Direct counts, one process per pair over all 4016:
+
+```
+pairs=4016  budgetExceeded=39  stillEmptyBlocks=0
+```
+
+Before the change all 39 had an empty block list; after it, none do.
+
+### DEC-117 alone — three variants, and why the middle one
+
+| variant | loud bytes | Δ loud | marks | `micro-island` | `missed` |
+|---|---|---|---|---|---|
+| shipped (no rule) | 2607458 | — | 70039 | 1332 | 7083 |
+| both flanks layout-only | 2605198 | −2260 | 70367 | 1366 | 7083 |
+| either flank, no floor | 2588075 | **−19383** | 72153 | **2822** | **7084** |
+| **either flank, floor 3 — taken** | **2601011** | **−6447** | 70632 | 1351 | 7083 |
+
+The loose variant buys 8.5 times the loud-byte reduction of the conservative one and pays for it by
+**doubling `micro-island`** — the metric M11-D tuned `absorbIslandBytes` against — and by moving
+`missed lines` one in the wrong direction. The floor of three bytes takes 2.9 times the conservative
+variant's win at 1/78th of the confetti cost: `micro-island` 1332 → 1351.
+
+`false lines`, `split-mark` and `duplicated-line` do not move under any variant, which is the
+property the rule rests on: it changes which *unchanged* bytes are drawn inside a mark and nothing
+about which bytes differ.
+
+### The reproduction, before and after
+
+`corpus/5bonsai__website__nextjs/013cb0699eb9__src_app__locale__career_page.tsx`, new side:
+
+```
+before   *  143 | description: formatSierotki⟦changed|(
+         *  144 |                   locale,
+         *  145 |                   t('Homepage.⟧Support.Slider.SlideOne.description')…
+
+after    *  143 | description: formatSierotki⟦changed/whitespace|(
+         *  144 |                   ⟧locale⟦changed/whitespace|,
+         *  145 |                   ⟧t('⟦changed|Homepage.⟧Support.Slider.SlideOne.description')…
+```
+
+`locale` and `t('` leave the mark, the indentation is labelled as the rewrap it is, and the only
+loud mark left is the nine bytes that were actually inserted.
+
+### Method note — the negative control was watched, and it failed for the wrong reason first
+
+The DEC-117 check's control asserts that with the rule off the word *is* swallowed. It failed on the
+first run: the synthetic case used a three-byte indent, so DEC-094's *no longer than the shorter
+flank* rule had already refused the island and the new rule was never reached. The case was rebuilt
+with an eighteen-space indent — what a real rewrap produces — and the control then failed and passed
+in the right order. **A negative control that cannot reach the code it is controlling for passes for
+the wrong reason and proves nothing**; this one was caught because it was run rather than reasoned
+about.
+
+2221 → 2231 checks.

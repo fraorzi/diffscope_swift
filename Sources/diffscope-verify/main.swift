@@ -45,6 +45,7 @@ if CommandLine.arguments.count > 2, CommandLine.arguments[1] == "--corpus-survey
         case "--ws-class": settings.classifyWhitespaceHunks = CommandLine.arguments[index + 1] != "0"
         case "--reabsorb": settings.absorbAfterWidening = CommandLine.arguments[index + 1] != "0"
         case "--island": settings.absorbIslandBytes = Int(CommandLine.arguments[index + 1]) ?? absorbIslandBytes
+        case "--layout-flanks": settings.absorbRefusesLayoutFlanks = CommandLine.arguments[index + 1] != "0"
         default: break
         }
         index += 2

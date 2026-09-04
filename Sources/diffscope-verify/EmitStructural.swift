@@ -28,7 +28,10 @@ func runEmitStructural(oldPath: String, newPath: String, displayPath: String, sn
     print("path: \(stats.usedFallback ? "raw (fallback)" : "structural")"
         + "  anchors=\(stats.anchors)  ambiguities=\(stats.ambiguities)"
         + "  moved=\(stats.movedSegments)  formatting-only=\(stats.formattingOnlySegments)")
-    print("validation: \(validation.passed ? "passed" : "FAILED — \(validation.summary)")")
+    // `passed` reads only `violations`, so a run whose coverage check never happened printed
+    // "passed" — the one word that hides the thing the reader of this tool is looking for. The
+    // summary already distinguishes "verified" from "unverified (coverage budget exceeded)".
+    print("validation: \(validation.passed ? validation.summary : "FAILED — \(validation.summary)")")
     if let degradation = stats.degradation { print("degradation: \(degradation.reason)") }
     print("")
     print("legend: ⟦label/classification⟧ … ⟧ marks one segment. `~` after the label means uncertain.")

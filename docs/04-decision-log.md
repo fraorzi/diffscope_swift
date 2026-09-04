@@ -5461,3 +5461,162 @@ is the control: the change reaches `fallbackPartitions` and nothing else.
 Reopen if the line-anchored route stops being rare. It is 332 marks and 60.8% of presented bytes on
 this corpus — the files that reach it are the big ones — and if that share grows, *uncertain* starts
 meaning *large* rather than *guessed*, which is the same defect one level up.
+
+---
+
+## DEC-117 — A line break moving does not swallow the code it moved around
+
+- **Date:** 2026-09-04 · **Topic:** island absorption across a layout-only flank · **Status:** Accepted · **Amends DEC-094; measured in [22-experiment-log.md](22-experiment-log.md) → M14-A**
+
+### Context
+
+The owner reports, from real diffs across several Next.js repositories: *an attribute that did not
+change is drawn with the stronger tint, as if it had been added.* Reproduced on
+`corpus/5bonsai__website__nextjs/013cb0699eb9__src_app__locale__career_page.tsx`, where
+`formatSierotki(locale, t('…'))` was rewrapped by prettier and `Homepage.` was inserted into the key:
+
+```
+*  143 |                 description: formatSierotki⟦changed|(
+*  144 |                   locale,
+*  145 |                   t('Homepage.⟧Support.Slider.SlideOne.description')…
+```
+
+One loud, unclassified mark over `locale` and `t('` — two bytes-identical fragments nobody touched.
+With `--island 0` the same pair produces `changed/whitespace` marks over the indentation and leaves
+`locale` and `t('` unmarked, which is the correct answer. So neither the alignment nor the
+classification is at fault: **the alignment is right, DEC-101 labels the whitespace correctly, and
+absorption then joins the labelled whitespace to the unlabelled insertion across the untouched
+identifier between them.** `coalesceAdjacent`'s disagreement rule turns the joined run's
+classification into `nil`, and `nil` is drawn at full weight.
+
+DEC-094's four conditions are all geometry — the island's length, its length against the shorter
+flank, and the lines it touches. **None of them asks what the pass is absorbing across.**
+
+### Options considered
+
+1. **Lower `absorbIslandBytes`.** Rejected: it is 8 by measurement (M11-D) and lowering it costs the
+   confetti case the pass exists for, in every file, to fix one shape.
+2. **Refuse when *both* flanks are layout-only.** Measured: −2260 loud bytes, +328 marks. It is the
+   sentence that reads best and it leaves most of the shape in place, because after a rewrap one
+   flank very often carries the comma or the paren the line break moved past.
+3. **Refuse when *either* flank is layout-only.** Measured: −19383 loud bytes, +2114 marks, and
+   `micro-island` 1332 → 2822. It doubles the metric M11-D was tuned against and moves `missed
+   lines` by one. Rejected: this repository does not take a gain that costs a tuned metric on the
+   argument that the gain is larger.
+4. **Refuse when either flank is layout-only *and* the island is at least three bytes.** Chosen.
+
+### Final decision
+
+**Option 4.** A fifth condition joins `qualifies`:
+
+> An island is not absorbed when it is **three bytes or longer**, contains a byte that is not layout,
+> and **at least one flank is made only of layout bytes**.
+
+Two flanks of pure indentation are not a run of change with confetti in it — they are a line break
+moving, which is what a rewrap is, and the thing between them is code the reader can see is
+untouched. Joining them says the code changed.
+
+**The floor is not a concession.** Below three bytes the pass keeps absorbing, because a one- or
+two-byte gap between two marks is exactly the confetti DEC-094 removes, and refusing it would trade
+one complaint for another. Three is where a token starts: `t('` is three bytes and `locale` is six,
+and those are the fragments the owner named.
+
+`AbsorptionSettings.refuseBetweenLayoutFlanks` turns it off and reproduces DEC-094 exactly, so the
+negative control exercises this rule rather than a different code path. `--layout-flanks 0` reaches
+it from the corpus survey.
+
+### Consequences
+
+- Over 4016 real changes: **loud bytes 2607458 → 2601011 (−6447)**, presented bytes 2699559 →
+  2696245, marks 70039 → 70632. **`false lines`, `missed lines`, `split-mark` and `duplicated-line`
+  do not move at all** — which is the property this rests on: the rule changes which unchanged bytes
+  are drawn inside a mark and nothing about which bytes differ.
+- `micro-island` 1332 → 1351 and `whitespace-only-mark` 10405 → 10479. Both are the floor working:
+  what is refused is left standing, and a refused island is by definition an island.
+- INV-2 is untouched. Absorption only ever relabels `unchanged` as presented, so refusing to absorb
+  removes bytes from the presented set that were never in a canonical hunk — the direction that
+  cannot break containment.
+
+### Revisit trigger
+
+Reopen if the corpus ever shows a *changed* island being refused. The condition tests
+`onlyLayoutBytes` on the flanks and the island's own content, not on what changed, and a future pass
+that presents whitespace for a different reason could make the flanks look like a rewrap when they
+are not.
+
+---
+
+## DEC-118 — A byte diff that runs out of budget still has somewhere to go
+
+- **Date:** 2026-09-04 · **Topic:** `changeStops` on canonical-diff budget exhaustion · **Status:** Accepted · **Extends DEC-105; measured in [22-experiment-log.md](22-experiment-log.md) → M14-A**
+
+### Context
+
+`changeStops` opened with
+
+```swift
+guard case let .exact(hunks) = canonicalDiff(old: model.oldBytes, new: model.newBytes) else {
+    return []
+}
+```
+
+An empty stop list is not a quiet degradation. `unifiedBlocks` opens with `guard !stops.isEmpty`,
+so it is **the whole of the unified layout** — which is the launch default (DEC-059) — and it is the
+whole of ⌘↓.
+
+**It fires on real files.** Measured over the 4016-pair corpus: **39 pairs (0.97%) exhaust the 40 M
+canonical work budget**, none of them minified — ordinary `.tsx` pages where a small file was
+replaced by a large one. On
+`corpus/5bonsai__website__nextjs/1326287cc991__src_app__locale__page.tsx` (846 B → 10094 B) the tool
+printed a structural result with 93 anchors, `validation: passed`, and **no unified blocks at all**.
+
+The notice bar was not silent — `buildRenderModel` appends *"coverage not verified for this file"*
+and the contract carries `coverageVerified: false`, both checked since DEC-043. But that sentence is
+true and is not the one the reader needs. It says the cross-check did not run. It does not say *and
+this view will show you nothing, and the next-change key will not move*.
+
+**The answer already existed one function away.** DEC-105 gave `fallbackPartitions` a line-anchored
+route for exactly this condition, on the reasoning that *the byte diff refusing to answer is not the
+same thing as there being no answer*. Navigation never learned it.
+
+### Options considered
+
+1. **Route the whole file to `fallbackResult` when the canonical budget is exceeded.** Rejected: it
+   discards a structural result that is sound for everything except the cross-check, and DEC-050's
+   gates exist to withhold structure *before* it is computed, not to throw it away afterwards.
+2. **Emit one whole-file stop.** Rejected: it restores navigation and tells the reader nothing about
+   where to look, on precisely the files that are hardest to read.
+3. **Fall back to `lineAnchoredHunks`, as `fallbackPartitions` already does.** Chosen.
+
+### Final decision
+
+**Option 3.** On `.budgetExceeded`, `changeStops` returns the line-anchored hunks. The stops are
+wider than minimal, which is the trade DEC-105 already accepted: what it leaves unstopped is
+byte-identical line pairs, so no change loses its stop. Navigation asks for somewhere to go, not for
+the smallest possible somewhere.
+
+`changeStops(_:lineFallback:)` — off reproduces the empty list exactly, so the negative control
+exercises this rule rather than a different code path.
+
+**And `--emit-structural` stops saying `passed`.** `ValidationResult.passed` reads only
+`violations`, so a run whose coverage check never happened printed the one word that hides what a
+reader of that tool is looking for. It now prints `validation.summary`, which already distinguished
+*verified* from *unverified (coverage budget exceeded)* and was only ever shown on failure.
+
+### Consequences
+
+- **39 of 4016 pairs go from zero unified blocks to a full set.** Measured after the change: 0 pairs
+  with an empty block list.
+- **The model does not move by a byte.** `false lines`, `missed lines`, `marks`, `presented bytes`
+  and `loud bytes` are identical to the digit before and after. This is a navigation and layout
+  change and the survey says so rather than being trusted to.
+- **Two survey shapes get worse, and that is the change working.** `duplicated-line` 106 → 147 and
+  `reflowed-block` 5822 → 6071. Those lines and blocks were always there; they were uncountable
+  because the layout produced nothing to count. A metric that improves by hiding its input is the
+  defect this entry removes.
+
+### Revisit trigger
+
+Reopen if the 40 M canonical budget is ever raised, which would shrink this path, or if a file is
+found where the line-anchored stops are so coarse that navigation is worse than none — the DEC-105
+entry records 200 000 lines as the point where even anchoring is refused.

@@ -18,6 +18,9 @@ public struct MatcherSettings: Sendable {
     /// Whether absorption runs a second time, after the wideners (DEC-103).
     public var absorbAfterWidening: Bool
     public var absorbIslandBytes: Int
+    /// Whether absorption refuses an island of real content between two flanks made only of layout
+    /// bytes (DEC-117). Off reproduces the pass as DEC-094 shipped it.
+    public var absorbRefusesLayoutFlanks: Bool
     public var moveContentFloor: Int
     /// Counted work, not elapsed time. A wall-clock deadline makes the *result* depend on machine
     /// load, and T-7 requires the same input to produce the same output — including the same
@@ -31,6 +34,7 @@ public struct MatcherSettings: Sendable {
                 classifyWhitespaceHunks: Bool = true,
                 absorbAfterWidening: Bool = true,
                 absorbIslandBytes: Int = DiffScopeEngine.absorbIslandBytes,
+                absorbRefusesLayoutFlanks: Bool = true,
                 moveContentFloor: Int = DiffScopeSyntax.moveContentFloor,
                 matchWorkBudget: Int = DiffScopeSyntax.matchWorkBudget) {
         self.minimumHeight = minimumHeight
@@ -42,6 +46,7 @@ public struct MatcherSettings: Sendable {
         self.classifyWhitespaceHunks = classifyWhitespaceHunks
         self.absorbAfterWidening = absorbAfterWidening
         self.absorbIslandBytes = absorbIslandBytes
+        self.absorbRefusesLayoutFlanks = absorbRefusesLayoutFlanks
         self.moveContentFloor = moveContentFloor
         self.matchWorkBudget = matchWorkBudget
     }

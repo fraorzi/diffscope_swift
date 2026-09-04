@@ -94,4 +94,45 @@ func runNavigationChecks(_ reportRaw: (String, Bool, String) -> Void) {
                                    pinOld: "a", pinNew: "b", mode: "raw")
         report("Raw navigates to the same places as Structural", raw.stops == render.stops)
     }
+
+    print("\n=== a byte diff that runs out of budget still has somewhere to go ===")
+    do {
+        // A small file replaced by a large one. Not exotic: the corpus carries real `.tsx` pages of
+        // this shape, and 850 against 10870 bytes with nothing in common is enough to exhaust the
+        // 40 M work budget.
+        let old = [UInt8]((0..<30).map { "import { a\($0) } from './m\($0)';\n" }.joined().utf8)
+        let new = [UInt8]((0..<140).map {
+            "export const value\($0) = { id: \($0), label: \"item \($0)\", nested: { deep: true } };\n"
+        }.joined().utf8)
+
+        // **The control on the premise, before the check that rests on it.** A check asserting what
+        // happens when the budget is exceeded is worth nothing if the budget was never exceeded.
+        var budgetExceeded = false
+        if case .budgetExceeded = canonicalDiff(old: old, new: new) { budgetExceeded = true }
+        report("the pair really does exhaust the canonical work budget", budgetExceeded)
+
+        let model = trivialModel(oldBytes: old, newBytes: new)
+        let stops = changeStops(model)
+        report("navigation still offers a stop", !stops.isEmpty, "\(stops.count) stops")
+        report("and the unified layout still has a block",
+               !unifiedBlocks(model, stops: stops).isEmpty)
+        report("the stops stay inside both files",
+               stops.allSatisfy { $0.oldStart >= 0 && $0.oldEnd <= old.count
+                                  && $0.newStart >= 0 && $0.newEnd <= new.count })
+        report("and stay ordered on both sides",
+               zip(stops, stops.dropFirst()).allSatisfy {
+                   $0.oldEnd <= $1.oldStart && $0.newEnd <= $1.newStart
+               })
+
+        // The negative control, and it is the whole point: with the line-anchored route off this is
+        // the empty list the engine shipped, which is what left the default layout with no block to
+        // build and `⌘↓` with nowhere to go.
+        report("control: without the line-anchored route there is nothing at all",
+               changeStops(model, lineFallback: false).isEmpty)
+
+        // The validator's own account of the same file must not read as a clean bill of health.
+        let validation = validate(model)
+        report("and the file is reported unverified rather than passed",
+               validation.passed && !validation.coverageChecked, validation.summary)
+    }
 }
