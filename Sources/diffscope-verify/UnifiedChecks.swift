@@ -388,6 +388,19 @@ func runUnifiedChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("the window never reaches further than the bound allows", overshoot.isEmpty,
                overshoot.joined(separator: ", "))
 
+        // **The hole the first version of DEC-119 had, kept as a case.** `const first = 1;` becoming
+        // `const first = 111;` is a real edit, and the `1` it still needs exists four tokens into
+        // the unrelated context line below. Skipping into context found it and withheld the old
+        // half of a change; refusing to skip past the block does not.
+        let editOld = [UInt8]("const first = 1;\nconst value1 = 1;\n".utf8)
+        let editNew = [UInt8]("const first = 111;\nconst value1 = 1;\n".utf8)
+        let editModel = trivialModel(oldBytes: editOld, newBytes: editNew)
+        let editBlocks = unifiedBlocks(editModel, stops: changeStops(editModel))
+        report("a changed line is not withheld because a token of it recurs in the next line",
+               editBlocks.allSatisfy { $0.withheldOld.isEmpty },
+               editBlocks.map { "\($0.oldStart)..<\($0.oldEnd) withheld=\($0.withheldOld.count)" }
+                   .joined(separator: " "))
+
         report("a removed line beside a rewrap is not withheld",
                !withheld.contains { $0.start <= removedLineStart && $0.end > removedLineStart },
                withheld.map { "\($0.start)..<\($0.end)" }.joined(separator: ","))

@@ -128,6 +128,9 @@ public func withheldOldRanges(old: [UInt8], new: [UInt8], block: UnifiedBlock,
 
     let newTokens = layoutTokens(new[block.newStart..<windowEnd])
     guard !newTokens.isEmpty else { return [] }
+    // How many of those tokens are the block's own. Past this index the walk is reading context,
+    // and **context may not be skipped into** — see the loop below.
+    let blockTokens = layoutTokens(new[block.newStart..<block.newEnd]).count
 
     var ranges: [ByteRange] = []
     var cursor = 0
@@ -146,6 +149,20 @@ public func withheldOldRanges(old: [UInt8], new: [UInt8], block: UnifiedBlock,
                 let candidate = newTokens[walker]
                 walker += 1
                 if candidate == token { found = true; break }
+                // **Inside the block the walk skips; past it, it may not** (DEC-119, corrected).
+                //
+                // Skipping is right within the block: that is how an old line survives a prop being
+                // inserted in the middle of it. Carried into the context past the block it is a hole
+                // wide enough to hide a change, and the first version of this rule fell into it —
+                // `const first = 1;` becoming `const first = 111;` had its old half withheld,
+                // because the `1` it still needed was found in the `1` of `const value1 = 1;` on the
+                // next line. A real edit, hidden, by a token four positions into an unrelated line.
+                //
+                // What the formatter actually does is push the **tail of the construct** onto the
+                // next line, where it sits at that line's start. So a token taken from the context
+                // must be the next one there, consecutively. `/>` qualifies; a coincidence four
+                // tokens in does not.
+                if walker > blockTokens { break }
             }
             if !found { matched = false; break }
         }

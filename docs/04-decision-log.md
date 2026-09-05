@@ -5760,3 +5760,58 @@ neither.
 Reopen if a class is ever added to `formattingOnly` that a reader would not accept being grouped
 with the others — the merge now hands the group to a run whose parts were two different things, and
 the group has to stay something a single word can honestly describe.
+
+---
+
+## DEC-119a — Correction: the lookahead may not skip, and the first version hid a real change
+
+- **Date:** 2026-09-05 · **Topic:** amending DEC-119 the day it shipped · **Status:** Accepted · **Amends DEC-119; measured in [22-experiment-log.md](22-experiment-log.md) → M14-D**
+
+### What was wrong
+
+DEC-119 let the withholding walk read one line of context past a block. The walk **skips** — that is
+how an old line survives a prop inserted into the middle of it — and the first version carried the
+skipping into the context. That is a hole wide enough to hide a change, and it did:
+
+```
+old   const first = 1;      new   const first = 111;
+      const value1 = 1;           const value1 = 1;
+```
+
+The old line's tokens are `const first = 1 ;`. `const`, `first` and `=` match inside the block; `1`
+does not, so the walk reached the context line and found the `1` of `const value1 = 1;` — four
+tokens in, in an unrelated statement — then `;` after it. The line was withheld. **A real edit had
+its old half hidden, and the reader would have seen `const first = 111;` with nothing to compare it
+to.**
+
+`swift run diffscope-verify` was green. The suite that caught it was the **application selftest**,
+whose `expand-toggle` arm asserts that expanding every fold and collapsing again puts the document
+back as it was: it read `2→0→3`. That arm is not about withholding at all; it failed because the
+navigation model had silently gained a reflow fold.
+
+### The correction
+
+Inside the block the walk skips. **Past the block it may not.** A token taken from the context must
+be the next one there, consecutively.
+
+The rule follows from what a formatter actually does: it pushes the **tail of the construct** onto
+the next line, where that tail sits at the line's *start*. `/>` on its own line qualifies. A token
+four positions into an unrelated statement is a coincidence, and coincidences are what the first
+version was matching.
+
+### Consequences
+
+- The `<Img …/>` case still withholds; the `const first = 1;` case no longer does. Both are checks.
+- Over 4016 pairs: `reflowed-block` 6206 → **6142**, `duplicated-line` 144 → **137**,
+  `silent-old-side` 171 → **174**. Sixty-four blocks stop withholding, and they are the ones that
+  were being withheld on a coincidence.
+- The model is untouched: `false lines` 9079, `missed lines` 7083, `marks` 70632, `presented bytes`
+  2696245, `loud bytes` 2600684 — identical before and after.
+
+### What this changes about the process
+
+**`swift run diffscope-verify` is not the whole gate.** `CLAUDE.md` names it and `swift build`, and
+the application selftest is run by `Scripts/package.sh`. A change that touches no renderer file can
+still change what the renderer receives, and this one did. Every engine change that alters
+`unifiedBlocks`, `changeStops`, `folds` or `collapses` has to run `DIFFSCOPE_SELFTEST=1 swift run
+diffscope-app` before it is committed, and DEC-119 was committed without it.

@@ -4049,3 +4049,58 @@ same content laid out differently. The quietening is not being lost at the merge
 computed, or it is computed and has nowhere to go.
 
 2238 → 2241 checks.
+
+## M14-D — the correction to M14-B, and the arm that found it
+
+**Date:** 2026-09-05. **Decision:** DEC-119a.
+
+| | DEC-119 as shipped | corrected |
+|---|---|---|
+| `reflowed-block` | 6206 | **6142** |
+| `duplicated-line` | 144 | **137** |
+| `silent-old-side` | 171 | 174 |
+| false / missed lines | 9079 / 7083 | 9079 / 7083 |
+| marks / presented / loud | 70632 / 2696245 / 2600684 | **unchanged** |
+
+Sixty-four blocks stop withholding. They were being withheld because a token the old line still
+needed was found somewhere in the middle of the following context line — the `1` of
+`const value1 = 1;` standing in for the `1` of `const first = 1;`.
+
+### How it was found, and how it was not
+
+`diffscope-verify` was green through the whole of M14-B: 2238/2238. Nothing in it drives the
+window, and nothing in it asks whether a block that withholds *should*.
+
+`DIFFSCOPE_SELFTEST=1 swift run diffscope-app` failed on `expand-toggle`, an arm about a keystroke
+round trip:
+
+```
+SELFTEST expand-before folds=2
+SELFTEST expand-expanded folds=0
+SELFTEST expand-collapsed folds=3
+SELFTEST expand-toggle=MISMATCH 2→0→3 folds
+```
+
+Bisected across the three commits of this milestone, it landed on 941276c — DEC-119. The navigation
+model, `const first = 1;` against `const first = 111;` with forty filler lines, had gained a reflow
+fold it should not have. **An arm about ⌘E caught a losslessness defect in the withholding rule**,
+because a fold appearing where none belongs is the same event seen from the other end.
+
+### A second control that passed for the wrong reason
+
+While checking whether DEC-048's formatting group reaches the unified layout, a new arm was written
+and it passed — and it passed with the fix reverted as well. `diffscopeProbe`'s `foldMarks` counts
+`.ds-fold` across the whole page, and the test model carried other folds; the arm was measuring
+them. Rewritten to count `.ds-fold-formatting`, the marker the group is actually drawn with, it
+reports `split=2 unified=2` — **with and without the change**.
+
+So the claim *formatting groups are offered in split and absent in unified* is **not demonstrated**
+and the change was reverted. For the model used, the group's old range overlaps a context run and
+the existing projection finds it. What would settle it is a model whose formatting group lies wholly
+inside blocks on the old side; the corpus has one
+(`js-gloves__website__nextjs/1edef025e8d6__…ProductHeroSection.tsx`, group `old 4947..<5226`) and the
+selftest cannot carry a corpus file. Recorded as open rather than fixed.
+
+The arm stays, because *the group's marker exists in both layouts* is worth pinning either way.
+
+2241 → 2242 checks, 41 → 42 selftest arms.

@@ -1334,6 +1334,57 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
     /// collapsed every region the reader had opened and lost their place in the change list.
     ///
     /// The arm opens a fold, re-renders the identical model, and asks whether it is still open.
+    /// DEC-121: **the formatting group exists in the layout the reader starts in.**
+    ///
+    /// DEC-048's group is the one affordance DEC-017 allows for quietening — a run of formatting-only
+    /// changes offered collapsed, with its count stated and one keystroke to open it. `foldsForUnified`
+    /// projected every fold through the old side's *context* runs, which is right for a byte-equal
+    /// fold and finds nothing at all for a group that sits inside a block. So it was offered in split
+    /// and absent in unified, which is the launch default (DEC-059).
+    ///
+    /// The arm asks both layouts about the same model, because the split answer is the control on the
+    /// premise: a group that is missing in unified and also missing in split would say the model has
+    /// no group, not that the projection dropped it.
+    private func runFormattingGroupSelftest(then next: @escaping () -> Void) {
+        // A pure reindent of six lines: every mark is layout, so the engine offers one group.
+        let body = (1...6).map { "const v\($0) = \($0);\n" }
+        let old = [UInt8](("function f() {\n" + body.map { "  " + $0 }.joined() + "}\n").utf8)
+        let new = [UInt8](("function f() {\n" + body.map { "    " + $0 }.joined() + "}\n").utf8)
+        let outcome = buildModel(path: "group.tsx", old: old, new: new, mode: .structural)
+        let render = buildRenderModel(model: outcome.model, pinOld: "pinG", pinNew: "pinH",
+                                      mode: "structural", pathTaken: outcome.pathTaken,
+                                      parser: outcome.parser, validation: outcome.validation,
+                                      notices: outcome.notices)
+        guard let json = try? encodeRenderModel(render) else { exit(79) }
+        lastPushedJSON = nil
+        push(json)
+
+        // **The group's own marker, not every fold on the page.** `diffscopeProbe`'s `foldMarks`
+        // counts `.ds-fold` across the document, and this model carries other folds — so the first
+        // version of this arm passed with the projection reverted, measuring folds that were never
+        // in question. `ds-fold-formatting` is the class DEC-048's group is drawn with.
+        let countMarkers = "document.querySelectorAll('.ds-fold-formatting').length"
+
+        bridge("window.diffscopeSetLayout(\"split\")") { _, _ in
+            self.bridge(countMarkers) { splitProbe, _ in
+                let inSplit = (splitProbe as? Int) ?? -1
+                self.bridge("window.diffscopeSetLayout(\"unified\")") { _, _ in
+                    self.bridge(countMarkers) { unifiedProbe, _ in
+                        let inUnified = (unifiedProbe as? Int) ?? -1
+                        let groups = render.formattingCollapses.count
+                        let ok = groups > 0 && inSplit > 0 && inUnified > 0
+                        FileHandle.standardError.write(Data(
+                            ("SELFTEST formatting-group=\(ok ? "OK" : "MISMATCH") groups=\(groups)"
+                             + " foldMarks split=\(inSplit) unified=\(inUnified)\n").utf8))
+                        if !ok { exit(79) }
+                        // Back to two panes: every arm after this one probes two documents.
+                        self.bridge("window.diffscopeSetLayout(\"split\")") { _, _ in next() }
+                    }
+                }
+            }
+        }
+    }
+
     private func runReaderStateSelftest(then next: @escaping () -> Void) {
         let filler = (1...30).map { "const filler\($0) = \($0);\n" }.joined()
         let old = [UInt8]("const a = 1;\n\(filler)const z = 2;\n".utf8)
@@ -1581,8 +1632,10 @@ final class Controller: NSObject, NSApplicationDelegate, NSTableViewDataSource, 
                     self.runExpandToggleSelftest {
                         self.runRedrawSelftest {
                             self.runUnifiedPlaceSelftest {
-                                self.runReaderStateSelftest {
-                                    self.runIncrementalSelftest { self.runRefreshSelftest() }
+                                self.runFormattingGroupSelftest {
+                                    self.runReaderStateSelftest {
+                                        self.runIncrementalSelftest { self.runRefreshSelftest() }
+                                    }
                                 }
                             }
                         }

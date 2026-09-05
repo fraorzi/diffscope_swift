@@ -43,6 +43,16 @@ func runEmitStructural(oldPath: String, newPath: String, displayPath: String, sn
     // The unified layout's own view of the same model (DEC-096, DEC-102). Printed here because
     // "why is this element shown twice" is a question about blocks, and until now the only way to
     // ask it was to read the window.
+    // DEC-048's groups, and the runs it found and could not offer. Until now the only way to ask
+    // *why is this reflow not collapsed* was to read the window.
+    let collapses = formattingCollapses(result.model)
+    print("")
+    print("=== FORMATTING GROUPS === offered=\(collapses.ranges.count) unpaired=\(collapses.unpaired)")
+    for group in collapses.ranges {
+        print("  old \(group.oldStart)..<\(group.oldEnd)  new \(group.newStart)..<\(group.newEnd)"
+            + "  \(group.lines) lines, \(group.changes) changes")
+    }
+
     print("")
     print("=== UNIFIED BLOCKS ===")
     let stops = changeStops(result.model)
