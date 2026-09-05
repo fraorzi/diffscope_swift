@@ -340,3 +340,168 @@ There are **zero** pairs whose two sides are equal after stripping per-line lead
 the "pure reindentation" subset several candidates propose is empty and must be constructed.
 
 ---
+
+# Verdicts
+
+## The added wrapper, root-caused
+
+E-G is the answer and it is not the one any candidate gave. On both the constructed pair and the
+real corpus pair (`js-gloves…ProductHeroSection.tsx`, a genuine `<div className='sticky top-40'>`
+added around six lines):
+
+- **the old side is tiled by matches end to end**, so the old-side canonical changed mask is
+  **empty**, and after `reconcile` **no old byte can be presented whatever the anchors said**;
+- the new side carries one mark per inter-token gap the reindent created — and **they are
+  classified**: `formatting-only=6` on the real pair, `changed/whitespace` on nine of the ten marks;
+- both unified blocks withhold their whole old half.
+
+So the engine's answer is already close to right: nothing is claimed to be removed, the re-indented
+lines are labelled as layout, and the old halves are held back. **What the owner sees as "everything
+was rewritten" is those correctly-classified marks being drawn identically to real ones**, which is
+DEC-083's doing and is area C's finding, not this area's.
+
+The one thing that is this area's: on the real pair, of eight added lines **six carry only
+formatting-only marks** and two are genuinely new. The information needed to quieten six of eight
+lines exists in the model and dies at the stylesheet.
+
+## The refutation that decides eleven candidates
+
+**E-A — `reconcile` demotes.** Its first arm rewrites every part of an anchor-derived `.changed`
+segment lying outside the canonical mask to `.unchanged, confidence: 1`. With the second arm the
+identity is exact:
+
+> When `coverageKnown` is true, the bytes `reconcile` leaves presented are **exactly** the canonical
+> byte diff's changed mask.
+
+The anchor stage decides **no presented byte**. It decides the subdivision of that mask, the
+`classification` and `disclosure` carried into it, and the confidence. Every candidate whose harm
+runs through "the anchors over-mark and reconcile makes it binding" is wrong about the mechanism.
+
+That does **not** make the anchor stage harmless. Classification is computed on the gap pair and
+nowhere else, so an anchor the filters refuse costs a *label*, which is what the formatting group is
+made of. The consequence moved; it did not vanish.
+
+## Grouped verdicts
+
+### The anchor filters — code-true, consequence reassigned
+
+**D2, D4, D5, D10, D12, D19, D23 — CONFIRMED as code-true.** All five filters are as described
+(`anchors()`), there is no length or content floor unlike `MoveSearch`'s `moveContentFloor`, the
+greedy scan is first-fit with no weight, ambiguity is a hard gate evaluated once before any
+positional evidence exists, both confidence-lowering causes write into one channel with no
+provenance, and no gate measures syntactic validity. What each of them *costs* is a classification,
+not a mark.
+
+**D6, D11, D36 — CONFIRMED.** E-C: on a 1673-byte real file, 306 anchors against 286 crude tokens of
+which 164 are one-byte punctuation, so **at least ~53% of kept anchors are single punctuation bytes**
+and the true figure is higher. "710 anchors on 175 lines" is the token count of the file, not a
+health metric.
+
+**D3, D27, D33 — NEEDS-MEASUREMENT.** E-D halves them: the **old-side** half of the monotone guard
+can never reject anything (candidates are one per `oldID`, leaves do not nest, the list is sorted by
+`oldStart`), so the scan is effectively one-sided and drops exactly the *crossings* — a move, a
+reorder, a repeated-sibling mis-pairing. Whether a crossing anchor with a distant new-side partner
+starves a file is not instrumented. *Run:* count candidates rejected by the guard per pair and the
+largest new-side jump between kept anchors.
+
+### The degradation gates
+
+**D8, D15, D18, D32, D40 — CONFIRMED.** E-E, `--budget-survey` over 400 files:
+
+| gate | budget | observed max | headroom |
+|---|---|---|---|
+| size | 2 097 152 B | 20 816 B | ×100 |
+| nodes | 30 000 | 3 762 | ×8 |
+| matcher work | 10 000 000 | 118 130 | ×85 |
+
+`gates on 400 files: size 0, nodes 0, work 0`. The synthetic block of the same survey shows both
+node and work gates catching the pathological shapes they were placed for, so they are correctly
+placed and unreachable by real code. D32's sharper claim — that the gates measure size where the
+damage is density — stands: the worst pairs by the two error rates sit comfortably inside every
+budget.
+
+**D16, D17, D26, D29, D30, D25, D21 — NEEDS-MEASUREMENT.** Matcher phase profiling, anchor density
+against file size, the ambiguity flag against textual repetition, `jsx_text` leaf lengths, ancestor
+chains of kept anchors, and gap-pair correspondence under asymmetric insertion. None was
+instrumented; each states its own experiment.
+
+**D9 — NEEDS-MEASUREMENT, and it is cheap.** *Run:* assert for every kept anchor that
+`bytes[oldStart..<oldEnd]` equals the node text taken from the tree, over all 4016 pairs, then repeat
+with a BOM prepended and with CRLF. If anchor text is fetched through the tree's own slicing the
+byte-identity filter is self-consistent even when the offsets no longer address the same bytes.
+
+### Refuted
+
+**D7, D13, D14, D38 — REFUTED.** See E-A. `reconcile` is not one-directional; the presented set is
+the canonical mask exactly. D7's "a single conservative decision at the gap stage is permanent" is
+the reverse of what the code does.
+
+**D20, D34 — REFUTED.** A reflow does not destroy leaf anchors: whitespace lies *between* leaves,
+not inside them, so the leaves' text is unchanged and E-G's old side is tiled end to end. The
+premise that byte-identity fails "for every leaf on every rewrapped line simultaneously" is not what
+the parse produces.
+
+**D24 — REFUTED for the anchor scan.** E-D: the sort key `oldStart` is unique across candidates, so
+the comparator never sees a tie and the unstable sort has nothing to be unstable about. Whether
+`matchTrees` itself is order-exposed is a separate question and unmeasured.
+
+**D31 — REFUTED.** `markUnparsed` relabels only `.changed` segments, which the candidate calls the
+dangerous direction. It is the safe one: an unchanged segment inside an `ERROR` region is unchanged
+because the **byte diff** says so, and the byte diff never depended on the parse (DEC-021).
+
+**D35 — REFUTED.** Ambiguity exclusion cannot be a "tint-widening policy": by E-A the anchors do not
+decide which bytes are tinted.
+
+**D37 — REFUTED.** `emitGap` emits a segment for every non-empty span, and a non-empty old span
+against an empty new span is unequal by construction, so it is marked. A deletion between two
+anchors is presented.
+
+**D39 — REFUTED, with the decision.** Move search finds nothing on wrapper pairs (`moved=0` on both),
+because a reindented block is **not byte-identical** and DEC-038 restricts v1 to byte-identical
+moves, recording the consequence: *"Moved-and-modified content presents as delete plus add —
+correct, merely less legible."* The observation is right; it is a decision, not a defect.
+
+**D1 — REFUTED on the mechanism, CONFIRMED on the outcome.** The gaps do not decide, `reconcile`
+does, and the old side is silent rather than "painted changed". The outcome — twelve consecutive new
+lines flagged — is real and its cause is the rendering, not the anchor stage.
+
+**D22, D28 — CONFIRMED, cause reassigned.** 19.9% of removed lines carry no mark, and by E-A that is
+a fact about the **canonical alignment**, not the structural layer: those bytes were matched
+elsewhere. It belongs to area A, and there is still no assertion anywhere that git's removed-line set
+is contained in the tool's marked set. D28's per-gap mechanism is visible in E-G's mark list — one
+whitespace mark per attribute boundary — and those marks are classified, so the residue is again the
+rendering.
+
+## Label per candidate
+
+| | | | |
+|---|---|---|---|
+| D1 REFUTED¹ | D2 CONFIRMED | D3 NEEDS-MEASUREMENT | D4 CONFIRMED |
+| D5 CONFIRMED | D6 CONFIRMED | D7 REFUTED | D8 CONFIRMED |
+| D9 NEEDS-MEASUREMENT | D10 CONFIRMED | D11 DUPLICATE of D6 | D12 CONFIRMED |
+| D13 DUPLICATE of D7 | D14 REFUTED | D15 CONFIRMED | D16 NEEDS-MEASUREMENT |
+| D17 NEEDS-MEASUREMENT | D18 DUPLICATE of D15 | D19 CONFIRMED | D20 REFUTED |
+| D21 NEEDS-MEASUREMENT | D22 CONFIRMED² | D23 CONFIRMED | D24 REFUTED |
+| D25 NEEDS-MEASUREMENT | D26 NEEDS-MEASUREMENT | D27 NEEDS-MEASUREMENT | D28 CONFIRMED² |
+| D29 NEEDS-MEASUREMENT | D30 NEEDS-MEASUREMENT | D31 REFUTED | D32 CONFIRMED |
+| D33 DUPLICATE of D27 | D34 REFUTED | D35 REFUTED | D36 DUPLICATE of D6 |
+| D37 REFUTED | D38 DUPLICATE of D14 | D39 REFUTED | D40 DUPLICATE of D15 |
+
+¹ REFUTED on the mechanism, CONFIRMED on the outcome; the cause is area C's.
+² CONFIRMED, but the cause belongs to area A (D22) or area C (D28).
+
+**Tally: 12 CONFIRMED · 11 NEEDS-MEASUREMENT · 10 REFUTED · 7 DUPLICATE.**
+
+## What the candidates missed
+
+1. **`coverageKnown` is an undocumented gate, and it is the only one that fires.** E-F. When the
+   canonical diff's own 40 M budget is exceeded, `reconcile` becomes the identity, `validate` skips
+   the INV-2 containment check, `usedFallback` stays false and `degradation` stays `nil`. Two of its
+   three silences are now fixed (DEC-118); the third — **the anchor/gap marks ship unclipped on
+   those 39 pairs and INV-2 is never checked** — is open. Forty candidates were written about the
+   four named gates and none about the one that actually fires.
+2. **The whole anchor stage decides no presented byte.** E-A. Half the candidates in this area, and
+   seven in area A, are built on the opposite assumption.
+3. **The corpus has no pure-reindentation pair.** Zero pairs are equal after stripping per-line
+   leading whitespace, so every candidate proposing that subset is proposing one that has to be
+   constructed.
