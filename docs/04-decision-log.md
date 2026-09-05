@@ -5815,3 +5815,67 @@ the application selftest is run by `Scripts/package.sh`. A change that touches n
 still change what the renderer receives, and this one did. Every engine change that alters
 `unifiedBlocks`, `changeStops`, `folds` or `collapses` has to run `DIFFSCOPE_SELFTEST=1 swift run
 diffscope-app` before it is committed, and DEC-119 was committed without it.
+
+---
+
+## DEC-122 — When the byte diff gives up, the mask is lines rather than nothing
+
+- **Date:** 2026-09-05 · **Topic:** `reconcile` on canonical-diff budget exhaustion · **Status:** Accepted · **Extends DEC-105 and DEC-118; measured in [22-experiment-log.md](22-experiment-log.md) → M14-E**
+
+### Context
+
+The third and last of the silences the area-D verification found behind `coverageKnown`
+(`tasks/verify-D.md` → E-F). `reconcile` opens with `guard applied else { return segments }`, and
+`applied` is false whenever `canonicalDiff` returns `.budgetExceeded`. On those pairs the anchor and
+gap marks shipped **unclipped** — and an anchor gap is the whole span between two anchors, so a file
+that exhausted the budget drew lines 13–24 as changed where only line 12 was touched.
+
+DEC-118 fixed navigation and the tool's own account of such a file. This is the half that decides
+what the reader sees marked.
+
+**39 of 4016 pairs (0.97%)** are affected, and they turn out to carry a share of the corpus's error
+out of all proportion to their number.
+
+### Final decision
+
+On `.budgetExceeded`, the changed mask is `lineAnchoredHunks` — DEC-105's line anchoring, the same
+mechanism `fallbackPartitions` and now `changeStops` use for this condition.
+
+**Clipping against it is safe in both directions**, and the reason is DEC-105's own guarantee:
+*what it leaves unmarked is byte-identical line pairs*, so its hunks cover every byte that differs.
+A byte outside every line hunk is byte-identical and may be demoted; a byte inside one may be
+promoted, which is the over-marking direction.
+
+INV-2 is unaffected. It is stated against `D`, and where `D` cannot be computed the file is
+`unverified` and says so (`Contract.swift:141`, checked since DEC-043). **This does not make such a
+file verified.** It makes the marks on it narrower than the anchors alone, which is what the reader
+is looking at.
+
+`MatcherSettings.lineMaskWhenBudgetExceeded` turns it off and reproduces the previous numbers to the
+digit; `--line-mask 0` reaches it from the corpus survey.
+
+### Consequences
+
+Over 4016 pairs, and these are the largest numbers this milestone has moved:
+
+| | before | after |
+|---|---|---|
+| **false lines** | 9079 (17.5% of `+`) | **2993 (5.8%)** |
+| presented bytes | 2696245 | **2429828** |
+| loud bytes | 2600684 | **2320896** |
+| marks | 70632 | **52279** |
+| missed lines | 7083 | 7110 |
+| uncertain marks | 4565 (6.5%) | 4956 (9.5%) |
+
+**Exactly 39 pairs changed.** One percent of the corpus was producing two thirds of its false lines.
+
+`missed lines` rises by 27 and `uncertain` by 391. Both are the line-anchored mask being coarser and
+less certain than a byte-minimal one, which is what it is; on these pairs the alternative was no mask
+at all.
+
+### Revisit trigger
+
+Reopen if the 40 M canonical budget is raised — it would shrink this path — or if a pair is found
+where the line-anchored mask demotes a byte that genuinely differs. DEC-105's guarantee makes that
+impossible in principle and the check asserts containment on one constructed pair; a corpus-wide
+assertion would be better.

@@ -4104,3 +4104,52 @@ selftest cannot carry a corpus file. Recorded as open rather than fixed.
 The arm stays, because *the group's marker exists in both layouts* is worth pinning either way.
 
 2241 → 2242 checks, 41 → 42 selftest arms.
+
+## M14-E — one percent of the corpus was two thirds of its error
+
+**Date:** 2026-09-05. **Decision:** DEC-122. All 4016 pairs, `--line-mask 0` as the control.
+
+| | control (`--line-mask 0`) | shipped |
+|---|---|---|
+| **false lines** | 9079 (17.5% of `+`) | **2993 (5.8%)** |
+| missed lines | 7083 (19.9%) | 7110 (20.0%) |
+| marks | 70632 | **52279** |
+| presented bytes | 2696245 | **2429828** |
+| loud bytes | 2600684 (96.5%) | **2320896 (95.5%)** |
+| uncertain marks | 4565 (6.5%) | 4956 (9.5%) |
+
+The control reproduces the previous run to the digit, so the knob is an honest one.
+
+**Thirty-nine pairs moved and nothing else did.** Six of them:
+
+```
+src/app/[locale]/synerise/page.tsx           false 16→2   presented 10816→10802
+src/app/[locale]/page.tsx                    false 10→0   presented 10040→10074
+…/LinkedinBlockSlider.tsx                    false 15→1   presented 11133→12477
+src/app/[locale]/case-studies/page.tsx       false 15→2   presented 14585→14559
+src/components/layout/Footer/Footer.tsx      false 26→9   presented 13439→13471
+src/app/[locale]/salesforce/page.tsx         false 25→5   presented 14065→14037
+```
+
+Presented bytes go **up** on three of the six while false lines go down, which is the clipping doing
+two things at once: it removes the anchors' over-wide gaps and it promotes bytes inside the line
+hunks that the anchors had called unchanged.
+
+### A correction to M-A2, and to what was reported from it
+
+M-A2 measured the alignment's share of the error as **2373 canonical false lines against 9079
+shipped**, and that difference — 6706 — was reported as *the widening passes' contribution* and named
+as the largest unaddressed lever in the audit. **That attribution was wrong.**
+
+The 39 budget-exhausted pairs contribute **zero** canonical hunk lines, because they have no
+canonical hunks, while contributing heavily to the shipped 9079. So most of the 6706 was never the
+widening passes. It was `reconcile` not running at all.
+
+With DEC-122 in place the shipped figure is 2993. The widening passes' true contribution has to be
+re-derived against that; it is smaller than 6706 by most of the gap, and the next milestone should
+measure it rather than inherit the old number.
+
+*The lesson is the one M12-J already recorded from the other side:* a difference between two
+measurements is only an attribution if both were taken over the same population, and these were not.
+
+2242 → 2244 checks.

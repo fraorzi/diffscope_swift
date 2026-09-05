@@ -238,12 +238,42 @@ public func structuralDiff(
     var newReflowed: [(start: Int, end: Int)] = []
     var allHunks: [(oldStart: Int, oldEnd: Int, newStart: Int, newEnd: Int)] = []
     var coverageKnown = false
-    if case let .exact(hunks) = canonicalDiff(old: oldBytes, new: newBytes) {
+    // **When the byte diff gives up, the mask is lines rather than nothing** (DEC-122, the third of
+    // the silences E-F named and the last one open).
+    //
+    // `reconcile` opens with `guard applied else { return segments }`, so on a pair the canonical
+    // diff cannot finish it was the identity — and the anchor/gap marks shipped **unclipped**. Those
+    // marks are the whole gap between two anchors, which is why a file that exhausts the budget drew
+    // lines 13–24 as changed where only line 12 was touched. The file is disclosed as unverified
+    // (`Contract.swift:141`) and nothing said the marks on it were the anchors' rather than the byte
+    // diff's.
+    //
+    // DEC-105's line anchoring answers exactly this condition and its guarantee is the one needed
+    // here: *what it leaves unmarked is byte-identical line pairs*, so its hunks **cover every byte
+    // that differs**. Clipping against a superset of the truth is safe in both directions — a byte
+    // outside every line hunk is byte-identical and may be demoted, and a byte inside one may be
+    // promoted, which is the direction that over-marks.
+    //
+    // INV-2 is unaffected either way: it is stated against `D`, and where `D` cannot be computed the
+    // file is `unverified` and says so. This does not make it verified. It makes the marks on it
+    // narrower than the anchors alone, which is what the reader is looking at.
+    switch canonicalDiff(old: oldBytes, new: newBytes) {
+    case let .exact(hunks):
         coverageKnown = true
         for hunk in hunks {
             if hunk.oldEnd > hunk.oldStart { oldChangedMask.append((hunk.oldStart, hunk.oldEnd)) }
             if hunk.newEnd > hunk.newStart { newChangedMask.append((hunk.newStart, hunk.newEnd)) }
             allHunks.append((hunk.oldStart, hunk.oldEnd, hunk.newStart, hunk.newEnd))
+        }
+    case .budgetExceeded:
+        if settings.lineMaskWhenBudgetExceeded,
+           let hunks = lineAnchoredHunks(old: oldBytes, new: newBytes) {
+            coverageKnown = true
+            for hunk in hunks {
+                if hunk.oldEnd > hunk.oldStart { oldChangedMask.append((hunk.oldStart, hunk.oldEnd)) }
+                if hunk.newEnd > hunk.newStart { newChangedMask.append((hunk.newStart, hunk.newEnd)) }
+                allHunks.append((hunk.oldStart, hunk.oldEnd, hunk.newStart, hunk.newEnd))
+            }
         }
     }
 

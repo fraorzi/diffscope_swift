@@ -134,5 +134,46 @@ func runNavigationChecks(_ reportRaw: (String, Bool, String) -> Void) {
         let validation = validate(model)
         report("and the file is reported unverified rather than passed",
                validation.passed && !validation.coverageChecked, validation.summary)
+
+        // DEC-122: and the marks on it are clipped to the line-anchored hunks rather than shipped
+        // as whatever the anchors said.
+        guard let parser = TSXParser() else { report("parser for the budget checks", false); return }
+        // A second pair for the clipping, because the first has nothing in common: a small file
+        // replaced by a large one that still carries thirty of the old lines verbatim, scattered.
+        // That is the shape of the corpus's own budget-exhausting pairs, and it is the shape where
+        // clipping has something to remove.
+        let sharedOld = [UInt8]((0..<30).map { "const a\($0) = \($0);\n" }.joined().utf8)
+        let sharedNew = [UInt8]((0..<200).map { index -> String in
+            index % 6 == 0 && index / 6 < 30
+                ? "const a\(index / 6) = \(index / 6);\n"
+                : "export const generated\(index) = { id: \(index), label: \"row \(index)\" };\n"
+        }.joined().utf8)
+        func presentedBytes(_ lineMask: Bool) -> Int {
+            var settings = MatcherSettings()
+            settings.lineMaskWhenBudgetExceeded = lineMask
+            let result = structuralDiff(oldPath: "big.tsx", oldBytes: sharedOld,
+                                        newPath: "big.tsx", newBytes: sharedNew,
+                                        parser: parser, settings: settings)
+            return [result.model.oldPartition, result.model.newPartition].reduce(0) { total, part in
+                total + part.segments.filter(\.isPresented).reduce(0) { $0 + $1.length }
+            }
+        }
+        let clipped = presentedBytes(true)
+        let unclipped = presentedBytes(false)
+        report("the marks are clipped to the line-anchored hunks", clipped < unclipped,
+               "\(unclipped) → \(clipped) presented bytes")
+
+        // Every presented byte has to sit inside one of those hunks, or the clipping is not the
+        // thing doing the work.
+        var settings = MatcherSettings()
+        settings.lineMaskWhenBudgetExceeded = true
+        let result = structuralDiff(oldPath: "big.tsx", oldBytes: sharedOld, newPath: "big.tsx",
+                                    newBytes: sharedNew, parser: parser, settings: settings)
+        let lineHunks = lineAnchoredHunks(old: sharedOld, new: sharedNew) ?? []
+        let outside = result.model.newPartition.segments.filter(\.isPresented).filter { segment in
+            !lineHunks.contains { $0.newStart <= segment.start && $0.newEnd >= segment.end }
+        }
+        report("and every one of them lies inside one", outside.isEmpty,
+               "\(outside.count) segments outside the mask")
     }
 }

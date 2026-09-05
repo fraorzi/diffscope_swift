@@ -21,6 +21,9 @@ public struct MatcherSettings: Sendable {
     /// Whether absorption refuses an island of real content between two flanks made only of layout
     /// bytes (DEC-117). Off reproduces the pass as DEC-094 shipped it.
     public var absorbRefusesLayoutFlanks: Bool
+    /// Whether a pair whose canonical diff ran out of budget is reconciled against line-anchored
+    /// hunks instead of not at all (DEC-122). Off ships the anchor marks unclipped, as before.
+    public var lineMaskWhenBudgetExceeded: Bool
     public var moveContentFloor: Int
     /// Counted work, not elapsed time. A wall-clock deadline makes the *result* depend on machine
     /// load, and T-7 requires the same input to produce the same output — including the same
@@ -35,6 +38,7 @@ public struct MatcherSettings: Sendable {
                 absorbAfterWidening: Bool = true,
                 absorbIslandBytes: Int = DiffScopeEngine.absorbIslandBytes,
                 absorbRefusesLayoutFlanks: Bool = true,
+                lineMaskWhenBudgetExceeded: Bool = true,
                 moveContentFloor: Int = DiffScopeSyntax.moveContentFloor,
                 matchWorkBudget: Int = DiffScopeSyntax.matchWorkBudget) {
         self.minimumHeight = minimumHeight
@@ -47,6 +51,7 @@ public struct MatcherSettings: Sendable {
         self.absorbAfterWidening = absorbAfterWidening
         self.absorbIslandBytes = absorbIslandBytes
         self.absorbRefusesLayoutFlanks = absorbRefusesLayoutFlanks
+        self.lineMaskWhenBudgetExceeded = lineMaskWhenBudgetExceeded
         self.moveContentFloor = moveContentFloor
         self.matchWorkBudget = matchWorkBudget
     }
