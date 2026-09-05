@@ -212,4 +212,58 @@ func runBoundaryChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("the duplicated body is not swallowed",
                String(decoding: unchangedText, as: UTF8.self).contains("function b"))
     }
+
+    print("\n=== DEC-123: the snap finishes a construct, it does not reach into the line above ===")
+    do {
+        // Two lines, a one-byte mark on the second, and the only boundary within budget on the
+        // first. Written against `SyntaxBoundaries(offsets:)` rather than a parse, so the case is
+        // about the rule and not about which nodes tree-sitter happens to name.
+        let bytes = [UInt8]("abc\ndef\n".utf8)
+        let boundaries = SyntaxBoundaries(offsets: [2, 7])
+        let mask = [(start: 5, end: 6)]          // the "e", two bytes into line 2
+
+        let bounded = snapToBoundaries(mask, boundaries: boundaries, budget: 16, bytes: bytes)
+        report("an edge is not widened onto a boundary on the line above",
+               bounded.count == 1 && bounded[0].start == 5 && bounded[0].end == 7,
+               bounded.map { "\($0.start)..<\($0.end)" }.joined(separator: ","))
+
+        // The negative control: with the rule off this is the pass as DEC-047 shipped it, and the
+        // mark reaches back across the newline onto offset 2.
+        let crossing = snapToBoundaries(mask, boundaries: boundaries, budget: 16, bytes: bytes,
+                                        crossesLineBreaks: true)
+        report("control: with the rule off it reaches back across the newline",
+               crossing.count == 1 && crossing[0].start == 2 && crossing[0].end == 7,
+               crossing.map { "\($0.start)..<\($0.end)" }.joined(separator: ","))
+
+        // And the property, over every fixture, stated so it survives the merge the pass does at
+        // the end: **no line terminator enters the presented set because of this pass.** Zipping the
+        // inputs against the outputs would be wrong — `snapToBoundaries` sorts and merges what now
+        // overlaps, so the two lists are not parallel.
+        guard let parser = TSXParser() else { report("parser for the boundary checks", false); return }
+        var crossed: [String] = []
+        for fixture in loadFixtures(root: URL(fileURLWithPath: "fixtures")) {
+            let model = structuralDiff(oldPath: fixture.oldPath, oldBytes: fixture.old,
+                                       newPath: fixture.newPath, newBytes: fixture.new,
+                                       parser: parser).model
+            for (bytes, partition) in [(fixture.old, model.oldPartition),
+                                       (fixture.new, model.newPartition)] {
+                guard let tree = parser.parseTree(bytes) else { continue }
+                let presented = partition.segments.filter(\.isPresented)
+                    .map { (start: $0.start, end: $0.end) }
+                guard !presented.isEmpty else { continue }
+                var before = Set<Int>()
+                for range in presented { for offset in range.start..<range.end { before.insert(offset) } }
+                let widened = snapToBoundaries(presented, boundaries: SyntaxBoundaries(tree: tree),
+                                               budget: boundarySnapBudget, bytes: bytes)
+                for range in widened {
+                    for offset in range.start..<range.end
+                    where bytes[offset] == 0x0A && !before.contains(offset) {
+                        crossed.append(fixture.name)
+                    }
+                }
+            }
+        }
+        report("over every fixture, the snap adds no line terminator to the presented set",
+               crossed.isEmpty, Set(crossed).sorted().joined(separator: ", "))
+    }
 }

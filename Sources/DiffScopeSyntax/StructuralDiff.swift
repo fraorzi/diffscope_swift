@@ -383,13 +383,15 @@ public func structuralDiff(
     let oldPartition = snapToGraphemeBoundaries(snapToWordBoundaries(snapPresentation(
         absorbIslands(movedOld, bytes: oldBytes, settings: absorption),
         boundaries: SyntaxBoundaries(tree: oldTree),
-        budget: settings.boundarySnapBudget, bytes: oldBytes
+        budget: settings.boundarySnapBudget, bytes: oldBytes,
+        crossesLineBreaks: settings.snapCrossesLineBreaks
     ), bytes: oldBytes, stringRegions: oldStrings,
        budget: settings.wordSnapBudget), bytes: oldBytes)
     let newPartition = snapToGraphemeBoundaries(snapToWordBoundaries(snapPresentation(
         absorbIslands(movedNew, bytes: newBytes, settings: absorption),
         boundaries: SyntaxBoundaries(tree: newTree),
-        budget: settings.boundarySnapBudget, bytes: newBytes
+        budget: settings.boundarySnapBudget, bytes: newBytes,
+        crossesLineBreaks: settings.snapCrossesLineBreaks
     ), bytes: newBytes, stringRegions: newStrings,
        budget: settings.wordSnapBudget), bytes: newBytes)
 

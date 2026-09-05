@@ -47,6 +47,7 @@ if CommandLine.arguments.count > 2, CommandLine.arguments[1] == "--corpus-survey
         case "--island": settings.absorbIslandBytes = Int(CommandLine.arguments[index + 1]) ?? absorbIslandBytes
         case "--layout-flanks": settings.absorbRefusesLayoutFlanks = CommandLine.arguments[index + 1] != "0"
         case "--line-mask": settings.lineMaskWhenBudgetExceeded = CommandLine.arguments[index + 1] != "0"
+        case "--snap-lines": settings.snapCrossesLineBreaks = CommandLine.arguments[index + 1] != "0"
         default: break
         }
         index += 2

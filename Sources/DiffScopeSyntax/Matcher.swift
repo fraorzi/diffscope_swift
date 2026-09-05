@@ -24,6 +24,9 @@ public struct MatcherSettings: Sendable {
     /// Whether a pair whose canonical diff ran out of budget is reconciled against line-anchored
     /// hunks instead of not at all (DEC-122). Off ships the anchor marks unclipped, as before.
     public var lineMaskWhenBudgetExceeded: Bool
+    /// Whether the syntax snap may widen a mark across a line terminator (DEC-123). On reproduces
+    /// the pass as DEC-047 shipped it, which is the negative control.
+    public var snapCrossesLineBreaks: Bool
     public var moveContentFloor: Int
     /// Counted work, not elapsed time. A wall-clock deadline makes the *result* depend on machine
     /// load, and T-7 requires the same input to produce the same output — including the same
@@ -39,6 +42,7 @@ public struct MatcherSettings: Sendable {
                 absorbIslandBytes: Int = DiffScopeEngine.absorbIslandBytes,
                 absorbRefusesLayoutFlanks: Bool = true,
                 lineMaskWhenBudgetExceeded: Bool = true,
+                snapCrossesLineBreaks: Bool = false,
                 moveContentFloor: Int = DiffScopeSyntax.moveContentFloor,
                 matchWorkBudget: Int = DiffScopeSyntax.matchWorkBudget) {
         self.minimumHeight = minimumHeight
@@ -52,6 +56,7 @@ public struct MatcherSettings: Sendable {
         self.absorbIslandBytes = absorbIslandBytes
         self.absorbRefusesLayoutFlanks = absorbRefusesLayoutFlanks
         self.lineMaskWhenBudgetExceeded = lineMaskWhenBudgetExceeded
+        self.snapCrossesLineBreaks = snapCrossesLineBreaks
         self.moveContentFloor = moveContentFloor
         self.matchWorkBudget = matchWorkBudget
     }

@@ -5879,3 +5879,73 @@ Reopen if the 40 M canonical budget is raised — it would shrink this path — 
 where the line-anchored mask demotes a byte that genuinely differs. DEC-105's guarantee makes that
 impossible in principle and the check asserts containment on one constructed pair; a corpus-wide
 assertion would be better.
+
+---
+
+## DEC-123 — The snap finishes a construct; it does not reach into the line above
+
+- **Date:** 2026-09-05 · **Topic:** bounding the syntax snap by the line as well as by its budget · **Status:** Accepted · **Amends DEC-047, extends DEC-087; measured in [22-experiment-log.md](22-experiment-log.md) → M14-F**
+
+### Context
+
+With the audit's other repairs in, the syntax snap is **the whole of the widening stack's line cost**.
+Isolated over 4016 pairs: `--snap 0` moves false lines 2993 → 2666 and presented bytes by 108 KB,
+while the word snap, the second absorption and the in-word merge move **no lines at all** between
+them. Of the 358 false lines the widening passes account for, **327 are this one pass**.
+
+DEC-087 already found the shape from one side and fixed the case it could see: an edge that has
+*arrived* at a line start is not widened, because the same budget then spends itself spilling into
+the neighbouring line — measured, with the guard absent the corpus reported more wrong lines with the
+snap than without it. That guard says nothing about an edge two bytes into a line whose nearest node
+boundary is on the line above.
+
+### Options considered
+
+1. **Lower `boundarySnapBudget`.** Measured across 0, 4, 8, 12, 16, 24: the curve is **monotone in
+   both directions** — every step trades false lines against mark count with no knee. Re-picking a
+   point on a smooth trade-off is not a repair, and M6-B chose 16 by measurement.
+2. **Bound the widening by the mark's own length** — the scale-free shape DEC-094 uses. Measured:
+   false 2754, marks 57239. That is **indistinguishable from a flat budget of 4** (false 2748, marks
+   57283). A different point on the same curve, not a better shape. Recorded as a negative result.
+3. **Bound it by the line.** Chosen.
+
+### Final decision
+
+Each edge's budget is `min(boundarySnapBudget, room to the nearest line terminator in the direction
+it is travelling)`.
+
+**A boundary on another line is a claim about that line.** This pass exists to finish a construct the
+change already touched, not to reach into one it did not — and reaching is the entirety of its line
+cost.
+
+`MatcherSettings.snapCrossesLineBreaks` turns it off and reproduces DEC-047's behaviour to the digit;
+`--snap-lines 1` reaches it from the corpus survey.
+
+### Consequences
+
+| | control (`--snap-lines 1`) | shipped |
+|---|---|---|
+| false lines | 2993 (5.8%) | **2666 (5.1%)** |
+| missed lines | 7110 | 7227 |
+| marks | 52279 | 53825 |
+| presented bytes | 2429828 | **2397012** |
+| loud bytes | 2320896 | **2297774** |
+
+**It reaches the false-line count of turning the snap off entirely — 2666 — while keeping 73% of the
+marks the snap merges.** Turning it off costs 5661 extra marks; this costs 1546.
+
+`missed lines` rises by 117, back to the `--snap 0` figure, so **every missed line the snap used to
+recover, it recovered by crossing into another line**. A mark that reaches a removed line only by
+covering unchanged bytes on it has marked the line for the wrong reason; giving that up is not a
+loss worth defending.
+
+The property is asserted as *no line terminator enters the presented set because of this pass*,
+stated that way because `snapToBoundaries` sorts and merges its output — zipping inputs against
+outputs would compare unrelated ranges, which the first draft of the check did and crashed on.
+
+### Revisit trigger
+
+Reopen if a construct is found that a reader needs completed **across** a line — a template literal
+or a JSX text node whose meaningful unit spans lines is the candidate shape. The rule is about
+syntax-node boundaries, and those are the two node kinds where the boundary a reader cares about is
+not on one line.

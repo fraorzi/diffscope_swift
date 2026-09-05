@@ -4153,3 +4153,61 @@ measure it rather than inherit the old number.
 measurements is only an attribution if both were taken over the same population, and these were not.
 
 2242 → 2244 checks.
+
+## M14-F — the syntax snap's line cost, and two shapes that did not beat it
+
+**Date:** 2026-09-05. **Decision:** DEC-123. All 4016 pairs.
+
+### Each widening pass, isolated
+
+| | false | missed | marks | presented | loud | micro-island |
+|---|---|---|---|---|---|---|
+| shipped before this entry | 2993 | 7110 | 52279 | 2429828 | 2320896 | 1361 |
+| `--snap 0` | **2666** | 7227 | 57940 | 2321455 | 2251909 | 1917 |
+| `--word-snap 0` | 2993 | 7110 | 54832 | 2391744 | 2282801 | 2048 |
+| `--island 0` | 2962 | 7113 | 65577 | 2411301 | 2288643 | 12891 |
+| `--reabsorb 0` | 2993 | 7110 | 56678 | 2422177 | 2307958 | 5233 |
+| `--word-merge 0` | 2993 | 7110 | 55198 | 2429828 | 2320988 | 1361 |
+
+**Only the syntax snap moves a line.** 327 of the 358 the whole stack accounts for. The word snap
+costs 38 KB of presented bytes and **zero** lines, which reframes it entirely: it is a within-line
+cost and can be tuned without touching any line metric.
+
+### The budget curve, and why moving the number is not a repair
+
+| snap | false | missed | marks | presented |
+|---|---|---|---|---|
+| 0 | 2666 | 7227 | 57940 | 2321455 |
+| 4 | 2748 | 7214 | 57283 | 2330547 |
+| 8 | 2830 | 7195 | 56069 | 2349455 |
+| 12 | 2895 | 7152 | 54237 | 2383622 |
+| 16 | 2993 | 7110 | 52279 | 2429828 |
+| 24 | 3106 | 7059 | 50022 | 2500538 |
+
+Monotone in both directions, no knee. Every value is a different point on one trade-off.
+
+### The negative result worth keeping
+
+Bounding the widening by **the mark's own length** — the scale-free shape DEC-094 uses for
+absorption, and the obvious second idea — measures **false 2754, marks 57239, presented 2337929**.
+Set against the table above that is flat budget 4 to within a rounding error. *It is not a better
+shape; it is the same curve reached another way.* Recorded so the idea is not tried a third time.
+
+### What being off the curve looks like
+
+| | false | missed | marks | presented |
+|---|---|---|---|---|
+| snap 0 | 2666 | 7227 | 57940 | 2321455 |
+| snap 4 | 2748 | 7214 | 57283 | 2330547 |
+| **line-bounded, budget 16** | **2666** | 7227 | **53825** | 2397012 |
+
+The false-line count of turning the pass off, with 4115 of its 5661 merged marks kept.
+
+### Method note
+
+The fixture-wide property crashed on its first run — `Range requires lowerBound <= upperBound` —
+because it zipped the pass's inputs against its outputs, and `snapToBoundaries` **sorts and merges**
+what overlaps, so the two lists are not parallel. Restated as *no line terminator enters the
+presented set because of this pass*, which is the claim itself and is merge-safe.
+
+2244 → 2247 checks.

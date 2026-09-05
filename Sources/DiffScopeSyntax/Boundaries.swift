@@ -72,7 +72,8 @@ public func snapToBoundaries(
     _ mask: [(start: Int, end: Int)],
     boundaries: SyntaxBoundaries,
     budget: Int,
-    bytes: [UInt8] = []
+    bytes: [UInt8] = [],
+    crossesLineBreaks: Bool = false
 ) -> [(start: Int, end: Int)] {
     guard budget > 0, !boundaries.offsets.isEmpty, !mask.isEmpty else { return mask }
 
@@ -87,9 +88,38 @@ public func snapToBoundaries(
         return offset == 0 || (offset <= bytes.count && bytes[offset - 1] == 0x0A)
     }
 
+    // **The budget is bounded by the line as well as by its own number** (DEC-123).
+    //
+    // DEC-087 already found the shape from one side: an edge that has *arrived* at a line start must
+    // not be widened, because the same budget then spends itself spilling into the neighbouring
+    // line, and the corpus reported more wrong lines with the snap than without it. That guard fixes
+    // the case where the edge starts on a boundary. It says nothing about an edge two bytes into a
+    // line whose nearest node boundary is on the line above.
+    //
+    // A boundary on another line is a claim about that line. This pass exists to finish a construct
+    // the change already touched, not to reach into one it did not — and reaching is the whole of
+    // the pass's line cost: measured, the snap costs 327 false lines and every one of them is a
+    // crossing. Bounded this way it costs **none**, and still keeps 73% of the marks it merges.
+    func roomBackwards(_ offset: Int) -> Int {
+        var at = min(offset, bytes.count)
+        var room = 0
+        while at > 0, bytes[at - 1] != 0x0A { at -= 1; room += 1 }
+        return room
+    }
+    func roomForwards(_ offset: Int) -> Int {
+        var at = max(0, offset)
+        var room = 0
+        while at < bytes.count, bytes[at] != 0x0A { at += 1; room += 1 }
+        return room
+    }
+    let bounded = !crossesLineBreaks && !bytes.isEmpty
     var widened = mask.map { range -> (start: Int, end: Int) in
-        (atLineStart(range.start) ? range.start : boundaries.snapDown(range.start, budget: budget),
-         atLineStart(range.end) ? range.end : boundaries.snapUp(range.end, budget: budget))
+        let back = bounded ? min(budget, roomBackwards(range.start)) : budget
+        let forward = bounded ? min(budget, roomForwards(range.end)) : budget
+        return (atLineStart(range.start) ? range.start
+                    : boundaries.snapDown(range.start, budget: back),
+                atLineStart(range.end) ? range.end
+                    : boundaries.snapUp(range.end, budget: forward))
     }
     widened.sort { $0.start < $1.start }
 
@@ -115,13 +145,15 @@ public func snapPresentation(
     _ partition: Partition,
     boundaries: SyntaxBoundaries,
     budget: Int = boundarySnapBudget,
-    bytes: [UInt8] = []
+    bytes: [UInt8] = [],
+    crossesLineBreaks: Bool = false
 ) -> Partition {
     let presented = partition.segments.filter(\.isPresented).map { (start: $0.start, end: $0.end) }
     guard !presented.isEmpty else { return partition }
     return widenPresented(partition,
                           to: snapToBoundaries(presented, boundaries: boundaries,
-                                               budget: budget, bytes: bytes))
+                                               budget: budget, bytes: bytes,
+                                               crossesLineBreaks: crossesLineBreaks))
 }
 
 /// The byte ranges tree-sitter could not parse (F1 of `13-error-and-fallback-model.md` §2).
