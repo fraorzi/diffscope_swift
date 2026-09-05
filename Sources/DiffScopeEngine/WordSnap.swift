@@ -180,7 +180,7 @@ public func coalesceAcrossWords(
         }
         out[out.count - 1] = Segment(
             start: last.start, end: segment.end, label: last.label,
-            classification: last.classification == segment.classification ? last.classification : nil,
+            classification: mergedClassification(last.classification, segment.classification),
             disclosure: last.disclosure,
             confidence: min(last.confidence ?? 1, segment.confidence ?? 1),
             link: last.link

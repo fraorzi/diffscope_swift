@@ -64,13 +64,40 @@ func runCoalesceChecks(_ reportRaw: (String, Bool, String) -> Void) {
                pair(Segment(start: 0, end: 4, label: .changed, confidence: 0.8),
                     Segment(start: 4, end: 8, label: .changed, confidence: 1)) == 1)
 
-        let disagreeing = coalesceAdjacent(Partition(totalLength: 8, segments: [
+        // DEC-120. Two neighbours that disagree about *which* formatting they are still agree that
+        // they are formatting, and the run keeps the group rather than losing the claim. `nil` is
+        // the value a segment nobody classified carries, and it is drawn at full weight.
+        let twoFormatting = coalesceAdjacent(Partition(totalLength: 8, segments: [
             Segment(start: 0, end: 4, label: .changed, classification: "whitespace"),
             Segment(start: 4, end: 8, label: .changed, classification: "quote-style"),
         ]))
-        report("two classifications in one run leave it unclassified",
-               disagreeing.segments.count == 1 && disagreeing.segments[0].classification == nil,
-               disagreeing.segments[0].classification ?? "nil")
+        report("two kinds of formatting in one run keep the group",
+               twoFormatting.segments.count == 1
+                   && twoFormatting.segments[0].classification == ChangeClass.formatting.rawValue,
+               twoFormatting.segments[0].classification ?? "nil")
+        report("and the group is still formatting-only",
+               classificationGroup(of: twoFormatting.segments[0].classification)
+                   == ClassificationGroup.formattingOnly.rawValue)
+
+        // The half of the old rule that does **not** move, and the reason DEC-120 is a refinement
+        // rather than a loosening: a run holding a formatting change and a behaviour-affecting one
+        // has earned neither label.
+        let acrossGroups = coalesceAdjacent(Partition(totalLength: 8, segments: [
+            Segment(start: 0, end: 4, label: .changed, classification: "whitespace"),
+            Segment(start: 4, end: 8, label: .changed, classification: "reordering"),
+        ]))
+        report("a formatting change beside a behaviour-affecting one still leaves the run bare",
+               acrossGroups.segments.count == 1 && acrossGroups.segments[0].classification == nil,
+               acrossGroups.segments[0].classification ?? "nil")
+
+        // And an unknown string is not a group, so it cannot lend one.
+        let unknown = coalesceAdjacent(Partition(totalLength: 8, segments: [
+            Segment(start: 0, end: 4, label: .changed, classification: "whitespace"),
+            Segment(start: 4, end: 8, label: .changed, classification: "parse-error"),
+        ]))
+        report("an unclassifiable neighbour still leaves the run bare",
+               unknown.segments.count == 1 && unknown.segments[0].classification == nil,
+               unknown.segments[0].classification ?? "nil")
     }
 
     print("\n=== the pass reaches the shipping result ===")

@@ -4021,3 +4021,31 @@ properties above — they were green with the rule reverted and red with it in p
 reason they were found before the commit rather than after it.
 
 2231 → 2238 checks.
+
+## M14-C — merging by group instead of by string
+
+**Date:** 2026-09-05. **Decision:** DEC-120. All 4016 pairs.
+
+| | before | after |
+|---|---|---|
+| loud bytes | 2601011 | **2600684** |
+| presented bytes | 2696245 | 2696245 |
+| marks | 70632 | 70632 |
+| false / missed lines | 9079 / 7083 | 9079 / 7083 |
+| every survey shape | — | **unchanged** |
+
+−327 bytes. The entry is worth keeping for what the number rules out rather than for what it buys:
+**the classification leak at the merge is real and it is not where the 96.6% goes.**
+
+The reason it is small is structural. A disagreement can only happen between two *classified*
+neighbours, and there are few of those: `classifyLayoutMarks` labels only marks made entirely of
+whitespace, and `changeClassification` labels only whole gap pairs before `reconcile` cuts them. The
+pipeline does not produce many adjacent classified segments carrying different strings, so fixing
+what happens when it does moves 0.01% of the presented bytes.
+
+**What this leaves standing**, and what M14-D has to answer: of 2696245 presented bytes, 95595 are
+in the formatting-only group and 2600684 are not — while 58.8% of pairs contain a block that is the
+same content laid out differently. The quietening is not being lost at the merge. It is either never
+computed, or it is computed and has nowhere to go.
+
+2238 → 2241 checks.

@@ -22,9 +22,13 @@ import Foundation
 ///
 /// The two that do merge resolve in the direction that shows the reader more:
 ///
-/// - **`classification` disagrees → the run is unclassified.** Classification is what lets a run be
-///   quietened as formatting; a run holding two different claims has not earned that, and
-///   unclassified is drawn at full weight.
+/// - **`classification` disagrees → the run keeps whatever the two still agree on** (DEC-120). That
+///   used to be nothing at all, on the reasoning that a run holding two claims has not earned
+///   either. The reasoning conflated *which* formatting with *whether* formatting: `whitespace`
+///   beside `quote-style` is two strings and one group, and dropping to `nil` threw away the half
+///   the interface actually reads — `nil` being the same value a segment nobody classified carries,
+///   and drawn at full weight. Across groups the old answer stands: a formatting change beside a
+///   behaviour-affecting one has earned neither label. See `mergedClassification`.
 /// - **`confidence` differs on the same side of the floor → the lower one wins.** No part of a run is
 ///   better attributed than its worst-attributed part.
 public func coalesceAdjacent(_ partition: Partition) -> Partition {
@@ -48,7 +52,7 @@ public func coalesceAdjacent(_ partition: Partition) -> Partition {
             start: last.start,
             end: segment.end,
             label: last.label,
-            classification: last.classification == segment.classification ? last.classification : nil,
+            classification: mergedClassification(last.classification, segment.classification),
             disclosure: last.disclosure,
             confidence: confidence,
             link: last.link

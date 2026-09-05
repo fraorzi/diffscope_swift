@@ -5704,3 +5704,59 @@ that a stop-touched line is refused.
 Reopen if a corpus pair is ever found where a line git reports as removed is withheld. The property
 that prevents it is ordering plus the context barrier, not a proof, and one line of slack is the
 whole of the margin.
+
+---
+
+## DEC-120 — Two kinds of formatting still add up to formatting
+
+- **Date:** 2026-09-05 · **Topic:** what a merged run's classification becomes when its parts disagree · **Status:** Accepted · **Amends DEC-045's merge rules; measured in [22-experiment-log.md](22-experiment-log.md) → M14-C**
+
+### Context
+
+Four passes combine segments — `coalesceAdjacent`, `absorbIslands`, `coalesceAcrossWords` and
+`widenPresented` — and all four resolved a classification disagreement the same way:
+
+```swift
+classification: last.classification == segment.classification ? last.classification : nil,
+```
+
+The reasoning, recorded in `Coalesce.swift`, was that *a run holding two different claims has not
+earned one*. It conflates two questions. `whitespace` beside `quote-style` is **two strings and one
+group**: both map to `formattingOnly`, which is the half the interface actually reads. Dropping to
+`nil` threw the group away — and `nil` is not a neutral value. It is what a segment nobody
+classified carries, and it is drawn at full weight.
+
+A prettier rewrap produces exactly this shape: `whitespace` next to `trailing-comma` next to
+`quote-style`, three claims that agree on the thing that matters, collapsing into no claim at all at
+the last pass before the screen.
+
+### Final decision
+
+`mergedClassification(_:_:)` replaces the string comparison at all four sites. Where both parts are
+known classes of the **same group**, the run keeps the group; for formatting that is a new
+`ChangeClass.formatting`, a case with no producer of its own whose only job is to be the answer
+here. Where the groups differ, or either part is unknown, `nil` stands — **a formatting change
+beside a behaviour-affecting one has earned neither label**, which is the half of the old rule that
+does not move and is now checked separately so it cannot drift.
+
+`widenPresented` folds rather than compares for the same reason. `disclosure` keeps the strict rule:
+it is a claim about the exact bytes that render alike, and a run holding two different ones holds
+neither.
+
+### Consequences
+
+- **Loud bytes 2601011 → 2600684, and that is the whole of it.** −327 bytes over 4016 changes. Every
+  other number in the survey is identical.
+- **The small number is the finding.** Adjacent *classified* segments that disagree are rare,
+  because `classifyLayoutMarks` labels only marks made entirely of whitespace (DEC-101) and
+  `changeClassification` labels only whole gap pairs — so there are few classified neighbours to
+  disagree in the first place. This entry closes a real leak and demonstrates that the leak was not
+  where the 96.6% goes.
+- Adding a case to `ChangeClass` made the compiler name its only consumer, `group`. That is what the
+  case is for.
+
+### Revisit trigger
+
+Reopen if a class is ever added to `formattingOnly` that a reader would not accept being grouped
+with the others — the merge now hands the group to a run whose parts were two different things, and
+the group has to stay something a single word can honestly describe.

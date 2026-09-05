@@ -117,7 +117,7 @@ public func absorbIslands(
             start: segment.start,
             end: segment.end,
             label: left.label,
-            classification: left.classification == right.classification ? left.classification : nil,
+            classification: mergedClassification(left.classification, right.classification),
             disclosure: left.disclosure,
             confidence: min(left.confidence ?? 1, right.confidence ?? 1),
             link: left.link

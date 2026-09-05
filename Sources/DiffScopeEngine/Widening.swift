@@ -20,7 +20,20 @@ public func widenPresented(_ partition: Partition, to snapped: [(start: Int, end
         }
         return found ?? nil
     }
-    let inherited = snapped.map { agreed($0, \.classification) }
+    /// Classification folds rather than agrees (DEC-120). Two changes inside one run that disagree
+    /// about *which* formatting they are still agree that they are formatting, and the widened
+    /// flank may say so. `disclosure` keeps the strict rule above: it is a claim about the exact
+    /// bytes that render alike, and a run holding two different ones holds neither.
+    func folded(_ range: (start: Int, end: Int)) -> String? {
+        var found: String??
+        for segment in partition.segments
+        where segment.isPresented && segment.start < range.end && segment.end > range.start {
+            found = found == nil ? segment.classification
+                                 : mergedClassification(found!, segment.classification)
+        }
+        return found ?? nil
+    }
+    let inherited = snapped.map { folded($0) }
     let disclosed = snapped.map { agreed($0, \.disclosure) }
     // **The widened bytes keep the run's label, and `.changed` is not a safe default.** On the
     // fallback path the run is `.fallback` — INV-4's promise that every presented range in a file
