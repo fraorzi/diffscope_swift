@@ -283,6 +283,48 @@ func runUnifiedChecks(_ reportRaw: (String, Bool, String) -> Void) {
                offenders.isEmpty ? "\(withheldLines) withheld runs" : offenders.joined(separator: ", "))
     }
 
+    print("\n=== every block accounts for its own old half ===")
+    do {
+        // The nearest thing the engine can assert to INV-1 for the *rendered* document. There is no
+        // check anywhere that what the window prints, with every marker opened, is the file — INV-1
+        // constrains the partition, not the view. This is the half of that property the engine owns:
+        // a block's withheld ranges must lie inside it, must not overlap, and must be whole lines,
+        // so *printed plus withheld* is exactly the block and nothing can go missing between them.
+        guard let parser = TSXParser() else { report("parser for the block accounting", false); return }
+        var offenders: [String] = []
+        var blocksSeen = 0
+        var withheldSeen = 0
+        for fixture in loadFixtures(root: URL(fileURLWithPath: "fixtures")) {
+            let model = structuralDiff(oldPath: fixture.oldPath, oldBytes: fixture.old,
+                                       newPath: fixture.newPath, newBytes: fixture.new,
+                                       parser: parser).model
+            for block in unifiedBlocks(model, stops: changeStops(model)) {
+                blocksSeen += 1
+                var cursor = block.oldStart
+                for range in block.withheldOld {
+                    withheldSeen += 1
+                    if range.start < cursor || range.end > block.oldEnd || range.end <= range.start {
+                        offenders.append("\(fixture.name): range outside or out of order")
+                        break
+                    }
+                    // Whole lines only: a withheld range starts at a line start and ends past a
+                    // terminator or at the end of the file.
+                    let startsALine = range.start == 0 || fixture.old[range.start - 1] == 0x0A
+                    let endsALine = range.end == fixture.old.count || fixture.old[range.end - 1] == 0x0A
+                    if !startsALine || !endsALine {
+                        offenders.append("\(fixture.name): withheld range is not whole lines")
+                        break
+                    }
+                    cursor = range.end
+                }
+            }
+        }
+        report("withheld ranges lie inside their block, in order, and never overlap",
+               offenders.isEmpty, Set(offenders).sorted().joined(separator: " | "))
+        report("and the fixtures actually exercise it", blocksSeen > 0 && withheldSeen > 0,
+               "\(blocksSeen) blocks, \(withheldSeen) withheld ranges")
+    }
+
     print("\n=== DEC-102: the flag reaches the renderer ===")
     do {
         let parser = TSXParser()

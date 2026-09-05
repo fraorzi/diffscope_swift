@@ -39,12 +39,19 @@ public func wholeFilePartition(length: Int, label: SegmentLabel) -> Partition {
 /// coalescing all run, because none of them needs a parse either.
 /// The work the fallback path may spend on a byte diff before giving the whole file as the answer.
 ///
-/// A tenth of `defaultCanonicalDiffWorkBudget`, and the reason is the path it is on: a file arrives
-/// here *because* something about it was too expensive or too unknown to analyse, so spending the
-/// full budget re-deriving that is the wrong trade. Measured in M11-E: the dense-JSX gate case goes
-/// from 0.98 s back to the parse baseline, and every file small enough to be read on screen still
-/// gets its localised diff.
-public let fallbackDiffWorkBudget = defaultCanonicalDiffWorkBudget / 10
+/// **The same budget the validator uses, since DEC-125.** It was a tenth, on the reasoning that a
+/// file arriving here was already too expensive to analyse — and M11-E measured the dense-JSX gate
+/// case back to the parse baseline on that basis.
+///
+/// The trade was real and it was made against the wrong number. `validate` computes `D` at the
+/// **full** budget one function later, so on a file where `D` exists at the full budget and not at a
+/// tenth the model was built from DEC-105's line anchors and then checked against an alignment it
+/// had never been shown. Eleven files of `corpus-styles` failed INV-2 exactly that way, and nothing
+/// measured it because the corpus surveys never validated.
+///
+/// INV-2 is stated against *the* canonical minimal diff, not against a family of them indexed by
+/// budget. Where that diff exists the model has to be built from it.
+public let fallbackDiffWorkBudget = defaultCanonicalDiffWorkBudget
 
 /// A change whose range came from the canonical byte diff, on the path with no grammar. The same
 /// number an ordinary structural change gets, because it is the same claim: *these bytes differ, and

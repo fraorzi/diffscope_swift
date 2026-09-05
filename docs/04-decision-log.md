@@ -5949,3 +5949,95 @@ Reopen if a construct is found that a reader needs completed **across** a line �
 or a JSX text node whose meaningful unit spans lines is the candidate shape. The rule is about
 syntax-node boundaries, and those are the two node kinds where the boundary a reader cares about is
 not on one line.
+
+---
+
+## DEC-124 — The consume floor is sixteen, and the eight it replaced was measured on eleven files
+
+- **Date:** 2026-09-05 · **Topic:** `matchConsumeFloor` · **Status:** Accepted · **Amends DEC-097; measured in [22-experiment-log.md](22-experiment-log.md) → M14-G**
+
+`CanonicalDiff.swift` justified the value with *"M11-G finds 8, 16, 24, 48 and 96 identical on the
+corpus"*. **M11-G was eleven files of one repository** (`22-experiment-log.md:2978`), and on the
+4016-pair corpus they are not identical. Swept through the whole pipeline:
+
+| floor | false lines | marks | presented | shredded-word |
+|---|---|---|---|---|
+| 0 | 3500 | 54919 | 2415570 | 629 |
+| 4 | 2807 | 54015 | 2398550 | 545 |
+| 8 | 2666 | 53825 | 2397012 | 541 |
+| **16 — taken** | **2605** | 53764 | 2396437 | 540 |
+| 24 | 2592 | 53740 | 2396365 | 540 |
+
+The curve saturates at 16; 24 buys another 13 lines of 2666. **DEC-097's own rule — the smallest
+value that buys the whole effect — points at 16 once the measurement is taken on the corpus rather
+than on eleven files.** Invariants stay clean at every setting.
+
+`matchConsumeFloor` gains an environment override, `DIFFSCOPE_CONSUME_FLOOR`, because M-A7 found
+there was **no route to it at all** and every experiment in this area needed a rebuild. It stays a
+global `let` rather than a `MatcherSettings` field on purpose: the model and `Validation` derive `D`
+independently (DEC-039), and a floor that differed between them would make INV-2 fail for a reason
+that is not a defect.
+
+---
+
+## DEC-125 — The model is built from the diff the invariant is stated against
+
+- **Date:** 2026-09-05 · **Topic:** `fallbackDiffWorkBudget` · **Status:** Accepted · **Amends DEC-095 and M11-E; measured in [22-experiment-log.md](22-experiment-log.md) → M14-G**
+
+### What was found
+
+The corpus surveys have run over 4016 TypeScript pairs and 364 style pairs since M11, and **neither
+ever called `validate`.** The check suite validated a few dozen fixtures; four thousand real files
+went through the shipped pipeline on every run with no invariant asked of them.
+
+Asked for the first time, `corpus-styles` reported **11 pairs violating INV-2**:
+
+```
+validation: FAILED — INV-2 new: byte 15759 differs but lies in no presented segment
+                     (hunk old[15763..<15763] new[15759..<17933])
+```
+
+Reproduced at `500e568`, before this milestone's first commit. **It has been shipping since
+DEC-105.**
+
+### Root cause
+
+Not a defect of implementation but a **disagreement of parameters**. `fallbackPartitions` computed
+its byte diff at `defaultCanonicalDiffWorkBudget / 10` and, on exceeding it, took DEC-105's
+line-anchored route. `validate` computes `D` at the **full** budget one function later. On a file
+where `D` exists at the full budget and not at a tenth, the model was built from line anchors and
+then checked against an alignment it had never been shown.
+
+DEC-105's guarantee — *what it leaves unmarked is byte-identical line pairs* — is a statement about
+line identity. INV-2 is a statement about the canonical alignment. They are not the same thing, and
+Myers is free to place a hunk boundary inside a line that is byte-identical to some other line.
+
+### Final decision
+
+`fallbackDiffWorkBudget` **is** `defaultCanonicalDiffWorkBudget`. **INV-2 is stated against *the*
+canonical minimal diff, not against a family of them indexed by budget; where that diff exists the
+model has to be built from it.** Line anchoring remains, for the case it was written for: where `D`
+genuinely cannot be computed, and where `validate` therefore reports the file unverified rather than
+violated.
+
+### Consequences
+
+- `corpus-styles`: **11 violations → 0.** Presented bytes 268 732 → 257 254, uncertain marks 332 →
+  174 and uncertain bytes 60.8% → 32.4%, because fewer files reach the line-anchored route at all.
+  False lines 194 → 224 and missed 796 → 805: the byte-minimal answer is less flattering on a
+  line-shaped metric than the line-shaped one was, which is what it is.
+- The 4016-pair structural corpus is **unchanged to the digit** — it takes this path zero times.
+- **The cost is real and it is half a second on one synthetic shape.** The dense-JSX gate case,
+  timed over the product path, goes 1.12 s → 1.65 s against a 0.17 s parse baseline. M11-E's number
+  was taken over `structuralDiff` alone, and timing a sub-path is how a cost gets attributed to the
+  wrong decision: the tenth kept *that* number down and bought the reader nothing, because
+  `validate` went on computing the full-budget diff regardless.
+- `BudgetChecks`' multiple moves from 4 to 16 **and the thing it measures moves with it**, from
+  `structuralDiff` to build-and-validate. A budget check that does not measure what the reader waits
+  for is measuring the wrong file.
+
+### Revisit trigger
+
+**The follow-up that would take the half second back is to compute `D` once and hand it to both.**
+DEC-039 requires independence between the *presentation path* and `D` — not between two calls to the
+same function, which is what these are. Reopen with that measurement.

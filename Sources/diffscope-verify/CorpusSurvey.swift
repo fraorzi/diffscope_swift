@@ -170,6 +170,14 @@ struct PairMeasurement: Codable {
     /// The number DEC-101 exists to move: a rewrapped element should cost the reader one loud mark
     /// on what changed and quiet ones on the rewrap.
     let loudBytes: Int
+    /// INV-1…INV-3 over this pair. **The survey never asked before**: 4016 real pairs went through
+    /// the shipped pipeline on every run and nothing checked an invariant on any of them, while the
+    /// check suite validated a few dozen fixtures. A violation here is the only signal that tells a
+    /// metric moving because the presentation improved from one moving because the model broke.
+    let violations: Int
+    /// False where `D` could not be computed, so INV-2 was not checked rather than checked and
+    /// passed (DEC-043). Counted so "0 violations" cannot quietly mean "0 questions asked".
+    let coverageChecked: Bool
     let shapes: [String: Int]
 
     func count(_ shape: WrongShape) -> Int { shapes[shape.rawValue] ?? 0 }
@@ -325,6 +333,8 @@ private func measure(pair: CorpusPair, parser: TSXParser?,
     let changed = max(1, oldLines.count + newLines.count)
     if marks > 2 * changed { add(.markConfetti) }
 
+    let validation = validate(model)
+
     return PairMeasurement(
         repo: pair.meta.repo, commit: String(pair.meta.commit.prefix(12)), path: pair.meta.path,
         structural: !result.stats.usedFallback,
@@ -337,7 +347,10 @@ private func measure(pair: CorpusPair, parser: TSXParser?,
         uncertainBytes: uncertainOld.bytes + uncertainNew.bytes,
         junctionReasons: junctionReasons, islandReasons: islandReasons,
         duplicateReasons: duplicateReasons,
-        loudBytes: loudBytes, shapes: shapes
+        loudBytes: loudBytes,
+        violations: validation.violations.count,
+        coverageChecked: validation.coverageChecked,
+        shapes: shapes
     )
 }
 
@@ -553,6 +566,18 @@ private func report(_ results: [PairMeasurement], elapsed: TimeInterval, setting
     print("=== corpus survey: \(results.count) pairs, \(structural) structural, "
         + String(format: "%.1f s", elapsed) + " ===")
     print("  settings: \(settingsLine)")
+    print("")
+
+    // The invariants, before any presentation metric. A survey that reports a prettier picture over
+    // a broken model is worse than no survey, and until this line existed nothing over these 4016
+    // pairs could tell the two apart.
+    let violating = results.filter { $0.violations > 0 }
+    let unverified = results.filter { !$0.coverageChecked }.count
+    print("  invariants           \(violating.isEmpty ? "clean" : "\(violating.count) PAIRS VIOLATE")"
+        + "  ·  \(unverified) unverified (coverage budget exceeded)")
+    for pair in violating.prefix(10) {
+        print("    !! \(pair.repo) \(pair.commit) \(pair.path) — \(pair.violations) violation(s)")
+    }
     print("")
 
     let falseLines = results.reduce(0) { $0 + $1.falseLines }

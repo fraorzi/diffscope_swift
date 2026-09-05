@@ -4211,3 +4211,56 @@ what overlaps, so the two lists are not parallel. Restated as *no line terminato
 presented set because of this pass*, which is the claim itself and is merge-safe.
 
 2244 → 2247 checks.
+
+## M14-G — the consume floor on the corpus, and an invariant violation nobody had asked about
+
+**Date:** 2026-09-05. **Decisions:** DEC-124, DEC-125.
+
+### The consume floor, swept through the whole pipeline
+
+| floor | false | missed | marks | presented | loud | shredded-word |
+|---|---|---|---|---|---|---|
+| 0 | 3500 | 7226 | 54919 | 2415570 | 2316497 | 629 |
+| 4 | 2807 | 7227 | 54015 | 2398550 | 2299314 | 545 |
+| 8 | 2666 | 7227 | 53825 | 2397012 | 2297774 | 541 |
+| **16** | **2605** | 7227 | 53764 | 2396437 | 2297222 | 540 |
+| 24 | 2592 | 7227 | 53740 | 2396365 | 2297162 | 540 |
+
+Invariants clean at every setting. M-A4 measured the same shape at the canonical level from an
+instrumented copy; this is the shipped pipeline, and it agrees.
+
+### The check nobody had written
+
+`runCorpusSurvey` now calls `validate` on every pair and reports violations before any presentation
+metric. **This is the first time either corpus has been asked an invariant.**
+
+```
+corpus         invariants  clean  ·  39 unverified (coverage budget exceeded)
+corpus-styles  invariants  11 PAIRS VIOLATE  ·  7 unverified
+```
+
+Eleven real files, failing INV-2, shipping since DEC-105, invisible because every survey measured
+presentation and none measured correctness. Reproduced at `500e568` to confirm it was not this
+milestone's doing.
+
+After DEC-125 both corpora report **clean**.
+
+### What the survey now costs
+
+Adding validation takes the 4016-pair run from 27.5 s to 40.6 s. That is the price of the survey
+being able to tell *the picture got better* from *the model broke*, and it is worth it: every metric
+in this log before today was reported without that distinction available.
+
+### The cost of DEC-125, measured over the right path
+
+| | build only (M11-E's measurement) | build **and** validate |
+|---|---|---|
+| budget ÷ 10 | ~0.7 s | 1.12 s |
+| budgets equal | 1.05 s | 1.65 s |
+| parse baseline | 0.17 s | 0.17 s |
+
+M11-E timed `structuralDiff` alone and set a 4× multiple against it. The reader waits for build *and*
+validate, and over that path the tenth-budget saving is half a second on one synthetic shape — bought
+at the price of an invariant violation on eleven real files.
+
+2249 → 2251 checks.

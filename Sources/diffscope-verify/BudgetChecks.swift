@@ -37,10 +37,17 @@ func runBudgetChecks(_ reportRaw: (String, Bool, String) -> Void) {
         // exists to stop the *matching* that follows, which is quadratic. A run that gave up at the
         // gate should therefore cost about what the two parses cost and nothing beyond them.
         let parseBaseline = measure { _ = parser.parseTree(denseBytes) }
+        // **Build *and* validate, because that is what the reader waits for** (DEC-125). This used to
+        // time `structuralDiff` alone, and timing a sub-path is how a cost gets attributed to the
+        // wrong decision: the fallback's byte diff was given a tenth of the budget to keep *this*
+        // number down, while `validate` went on computing the same diff at the full budget one
+        // function later. The tenth bought nothing the product ever felt and cost an INV-2
+        // violation on eleven real files.
         let elapsed = measure {
-            _ = structuralDiff(oldPath: "dense.tsx", oldBytes: denseBytes,
-                               newPath: "dense.tsx", newBytes: [UInt8](denseEdited.utf8),
-                               parser: parser)
+            let built = structuralDiff(oldPath: "dense.tsx", oldBytes: denseBytes,
+                                       newPath: "dense.tsx", newBytes: [UInt8](denseEdited.utf8),
+                                       parser: parser)
+            _ = validate(built.model)
         }
         let result = structuralDiff(oldPath: "dense.tsx", oldBytes: denseBytes,
                                     newPath: "dense.tsx", newBytes: [UInt8](denseEdited.utf8),
@@ -48,11 +55,23 @@ func runBudgetChecks(_ reportRaw: (String, Bool, String) -> Void) {
 
         report("a pathologically dense file falls back rather than matching",
                result.stats.usedFallback, result.stats.fallbackReason ?? "did not fall back")
-        // Four, not two: two parses plus the node walk and the fallback partition, with room for
-        // the scheduler. The number that matters is that it is a small multiple rather than the
-        // unbounded one a hang would produce.
+        // **Sixteen, and the number moved because the thing being measured did** (DEC-125). It was
+        // four, against `structuralDiff` alone. Timed over the product path — build *and* validate,
+        // which is what the reader waits for — the same file measures about ten times the parse
+        // baseline: 1.12 s before DEC-125 and 1.65 s after, against 0.17 s.
+        //
+        // The difference is the price of the invariant. `fallbackPartitions` used a tenth of the
+        // canonical budget while `validate` used all of it, so on files where `D` existed at the
+        // full budget and not at a tenth the model was built from line anchors and then checked
+        // against an alignment it had never seen — **eleven real files failed INV-2 that way**.
+        // Equalising costs half a second on this synthetic worst case and removes the violation.
+        //
+        // Sixteen rather than ten, because the assertion is against a hang and the two numbers above
+        // are what an ordinary machine reports under load. **The follow-up that would bring it back
+        // down is to compute `D` once and hand it to both** — the independence DEC-039 requires is
+        // between the *presentation path* and `D`, not between two calls to the same function.
         report("and it costs about what parsing it costs, rather than hanging",
-               elapsed < parseBaseline * 4 + 0.2,
+               elapsed < parseBaseline * 16 + 0.2,
                String(format: "%.2f s against a %.2f s parse baseline", elapsed, parseBaseline))
         report("the fallback names which budget was exceeded",
                (result.stats.fallbackReason ?? "").contains("budget")

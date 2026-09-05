@@ -300,4 +300,24 @@ func runAlignmentChecks(_ reportRaw: (String, Bool, String) -> Void) {
         report("consuming a match leaves the total matched length where it was, and drops the match",
                preserved)
     }
+    print("\n=== DEC-124: the consume floor, and the sweep that chose it ===")
+    do {
+        // The value is a measurement, so the check is that the measurement is still reachable and
+        // that the two computations of `D` agree about it. `matchConsumeFloor` is a global `let`
+        // rather than a setting for exactly that reason: the model and `Validation` derive `D`
+        // independently (DEC-039), and a floor that differed between them would make INV-2 fail for
+        // a reason that is not a defect.
+        report("the floor is the value DEC-124 measured", matchConsumeFloor == 16,
+               "\(matchConsumeFloor)")
+
+        // A pair the floor decides: two insertions with a short match between them. At a floor
+        // below the match's length the match survives and the reader is shown two marks with an
+        // island; at or above it the shift may consume it and show one.
+        let old = [UInt8]("const value = alpha;\n".utf8)
+        let new = [UInt8]("const value = alphaXXXbetaYYYalpha;\n".utf8)
+        let model = trivialModel(oldBytes: old, newBytes: new)
+        let marks = model.newPartition.segments.filter(\.isPresented).count
+        report("and a pair whose alignment it decides still validates", validate(model).passed,
+               "\(marks) marks")
+    }
 }

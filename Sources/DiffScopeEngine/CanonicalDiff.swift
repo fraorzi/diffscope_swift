@@ -94,11 +94,21 @@ func lexicalClass(_ byte: UInt8) -> UInt8 {
 /// nothing. Bounded in turn, because with no bound a file of small scattered edits could collapse
 /// into one hunk covering it.
 ///
-/// **Eight, because that is where the curve saturates and not because larger is safer.** M11-G finds
-/// 8, 16, 24, 48 and 96 identical on the corpus, and consuming is the one direction in this pass
-/// that relocates presented bytes rather than merely renaming a boundary — so the smallest value
-/// that buys the whole effect is the one to take.
-public let matchConsumeFloor = 8
+/// **Sixteen, and the eight it replaced was measured on eleven files** (DEC-124). The comment here
+/// used to read *"M11-G finds 8, 16, 24, 48 and 96 identical on the corpus"* — M11-G was eleven files
+/// of one repository (`22-experiment-log.md`), and on the 4016-pair corpus they are not identical.
+/// Swept through the whole pipeline: false lines 3500 at a floor of 0, 2807 at 4, **2666 at 8, 2605
+/// at 16**, 2592 at 24. The curve saturates at 16 and DEC-097's own rule — the smallest value that
+/// buys the whole effect — then points there rather than at 8.
+///
+/// Consuming is still the one direction in this pass that relocates presented bytes rather than
+/// merely renaming a boundary, which is why the rule is *smallest that saturates* and not *largest
+/// that helps*.
+/// **Overridable from the environment, and globally rather than per call** (M-A7's gap). The model
+/// and `Validation` compute `D` independently on purpose (DEC-039), so a floor that differed between
+/// them would make INV-2 fail for a reason that is not a defect. One global `let`, read once.
+public let matchConsumeFloor = ProcessInfo.processInfo.environment["DIFFSCOPE_CONSUME_FLOOR"]
+    .flatMap(Int.init) ?? 16
 
 /// How well one position reads as a place for a change to begin or end. Lower is better, and the
 /// numbers are the ranks of DEC-088's total order; `nil` means the position is not a boundary at all.
