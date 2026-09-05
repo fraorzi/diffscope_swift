@@ -29,34 +29,35 @@ most of this file's value.
 | **DEC-119** + **119a** | a formatter's closing token on its own line made the whole element print twice — the owner's observation 2 | `silent-old-side` 205 → 174, `duplicated-line` 147 → 137 |
 | **DEC-120** | four passes resolved a classification disagreement to `nil`, which renders at full weight, even when both parts were formatting | loud bytes −327 |
 | **DEC-122** | on the same 39 pairs `reconcile` was the identity, so anchor marks shipped unclipped | **false lines 9079 → 2993**, presented −266 KB, marks −18 353 |
+| **DEC-123** | the syntax snap widened across line terminators, which was the whole of the widening stack's line cost | **false lines 2993 → 2666**, presented −33 KB, marks +1546 |
 
-Suite: 2221 → 2244 checks, 41 → 42 selftest arms.
+Suite: 2221 → 2247 checks, 41 → 42 selftest arms.
+Fallback-path control (`corpus-styles`, 364 pairs): **unchanged** from M12-K — 332 uncertain marks,
+3868 marks, 268 732 presented bytes, 194 false, 796 missed. None of the six repairs reached it.
+
+**False lines over the milestone: 9079 → 2666, 17.5% → 5.1% of added lines.**
 
 ## Open, ranked by what the evidence says they cost
 
-1. **The syntax snap is the whole of the widening passes' line cost** — B3. `--snap 0` moves false
-   lines 2993 → 2666 and presented bytes by 108 KB. Of the 358 false lines the widening stack
-   accounts for, 327 are this one pass. It widens to a node boundary within 16 bytes, which on a JSX
-   attribute is the whole attribute.
-2. **Observation 3 has no repair.** The engine classifies a wrapper's reindent correctly
+1. **Observation 3 has no repair.** The engine classifies a wrapper's reindent correctly
    (`formatting-only=6` on the real corpus pair, six of eight added lines carrying only formatting
    marks) and **DEC-083 draws formatting identically to a real change**. Two routes were tried and
    both closed: a third tint does not fit the luminance ladder (1.267 light / 1.370 dark, splitting
    gives steps of ~1.10 against a 1.20 rule), and the formatting-group-in-unified route was not
    demonstrated and was reverted. DEC-083's own revisit trigger has fired.
-3. **`matchConsumeFloor = 8`'s justification is stale** — A3. The comment cites M11-G as the corpus;
+2. **`matchConsumeFloor = 8`'s justification is stale** — A3. The comment cites M11-G as the corpus;
    M11-G was eleven files of one repository. Over 4016 pairs a floor of 16 gives 61 fewer canonical
    false lines and a different alignment digest.
-4. **Nothing asserts that git's removed-line set is contained in the tool's marked set** — D22, and
+3. **Nothing asserts that git's removed-line set is contained in the tool's marked set** — D22, and
    area E's closing question. 19.9% of removed lines carry no mark; most is explained (pure
    insertions), and the property that would prove it is not checked anywhere.
-5. **There is no reconstruction check for the rendered document** — E24. INV-1 covers the partition.
+4. **There is no reconstruction check for the rendered document** — E24. INV-1 covers the partition.
    Nothing concatenates what the window prints, with every marker opened, and compares it to the
    pinned bytes.
-6. **The relative-length clause is inverted for the smallest edits** — B17. A one-byte flank can
+5. **The relative-length clause is inverted for the smallest edits** — B17. A one-byte flank can
    never absorb a two-byte island, so the edits that fragment worst are the ones absorption declines
    to repair.
-7. **Per-side widening breaks a linked pair** — B4, with area E's E-4 as the case: a one-byte
+6. **Per-side widening breaks a linked pair** — B4, with area E's E-4 as the case: a one-byte
    insertion inside an identifier marks 21 bytes on the new side and none on the old.
 
 35 NEEDS-MEASUREMENT items are recorded in the per-area files, each with the command or the
