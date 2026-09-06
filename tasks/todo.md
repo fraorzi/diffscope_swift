@@ -3748,3 +3748,68 @@ while typing is gone; the one they feel when clicking a repository is not.
       logical size does not change. Idempotent, so being wrong costs a no-op per window event.
 
 **The UI audit is closed.** 2086 → 2221 checks, 36 → 41 selftest arms.
+
+## Step — the diff-engine audit: divergent phase
+
+- [x] 25 generators, five per area, `/adhd` frames, isolated and parallel, **no code access and no
+      `file:line`** — a guessed line number is worse than none.
+- [x] **Not pruned to three.** The skill prunes by default; switched off, because the pruned ones are
+      the awkward edge cases the audit is for. **200 candidates** in `tasks/diff-audit-candidates.md`.
+- [x] Three seeds reproduced before the phase ran, so the generators had proof the family exists.
+
+## Step — verification, five areas
+
+- [x] `tasks/verify-A.md` … `verify-E.md`, every one of the 200 labelled exactly once.
+      **63 CONFIRMED · 35 NEEDS-MEASUREMENT · 35 REFUTED · 67 DUPLICATE.**
+- [x] `tasks/diff-audit-verified.md` consolidates them.
+- [x] Areas B and C were done by hand after their subagents died to session limits; A, D and E left
+      partial reports that survived **because they were told to write incrementally**.
+
+### What the verification overturned
+
+- **`reconcile` demotes.** When `coverageKnown` is true the presented byte set is *exactly* the
+  canonical mask, so the anchors decide **no presented byte**. Eleven candidates in D and seven in A
+  were built on the opposite assumption.
+- The counter and the keystroke are one array. A reflow does not destroy leaf anchors. The consume
+  rule swallows single bytes, not indentation runs. `reflowTokenBudget` is unreachable on this
+  corpus. The corpus has **no** pure-reindentation pair.
+
+## Step — seven repairs, measured apart
+
+- [x] **DEC-122** — the byte diff giving up left `reconcile` a no-op. 39 pairs of 4016 were producing
+      two thirds of the corpus's false lines. **9079 → 2993.**
+- [x] **DEC-118** — those same pairs had no blocks and no navigation. Model unmoved to the digit;
+      `duplicated-line` and `reflowed-block` got *worse*, because the layout stopped hiding its input.
+- [x] **DEC-123** — the syntax snap bounded by the line. **2993 → 2666**, keeping 73% of its merges.
+- [x] **DEC-117** — absorption refuses across a layout flank. The owner's first report.
+- [x] **DEC-119 + 119a** — the withholding window, and the correction the day it shipped.
+- [x] **DEC-120** — two kinds of formatting still add up to formatting.
+- [x] **DEC-124** — `matchConsumeFloor` re-measured on the corpus. **2666 → 2605.**
+- [x] **DEC-125** — the model is built from the diff the invariant is stated against.
+
+## Step — the check that found a live invariant violation
+
+- [x] The corpus surveys had **never** called `validate`. Added; it runs before any presentation
+      metric, and distinguishes *clean* from *unverified*.
+- [x] First run: **11 pairs of `corpus-styles` violating INV-2**, reproduced at `500e568`, shipping
+      since DEC-105. Fixed by DEC-125; both corpora now clean.
+- [x] Withheld ranges are asserted to lie inside their block, in order, without overlap, whole lines.
+
+### Step — done, and three things went wrong worth keeping
+
+**I shipped a fix that hid a real change, and `diffscope-verify` was green for it.** DEC-119's first
+version let the withholding walk skip into the context past a block; `const first = 1;` becoming
+`const first = 111;` had its old half withheld because the `1` it needed was found in
+`const value1 = 1;` below. The **application selftest** caught it, in an arm about ⌘E.
+`CLAUDE.md` names `swift build` and `swift run diffscope-verify`; that is not the whole gate.
+
+**I wrote a selftest arm that passed for the wrong reason**, counting `.ds-fold` across a page whose
+model carried other folds. Rewritten to count the group's own marker it passed with the fix reverted
+too — so the claim was not demonstrated and **the change was reverted rather than shipped**.
+
+**I reported a number to the owner that was a bad attribution.** "6706 of 9079 false lines come from
+the widening passes" compared two measurements taken over populations that were not the same.
+Re-derived by isolating each pass: the widening stack accounts for **358**, of which the syntax snap
+is 327.
+
+**2221 → 2251 checks, 41 → 42 selftest arms. False lines 17.5% → 5.0%.**
